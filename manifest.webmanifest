@@ -1,0 +1,23 @@
+{
+  "name": "Threadline",
+  "short_name": "Threadline",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0d1321",
+  "theme_color": "#0d1321",
+  "description": "PWA zum Schreiben und automatischen Aufteilen von Bluesky-Threads.",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/maskable-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

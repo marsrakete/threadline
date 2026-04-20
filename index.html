@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0d1321">
+    <meta name="description" content="PWA zum Entwerfen und Veröffentlichen von Bluesky-Posts und Threads.">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icons/icon.svg">
+    <link rel="stylesheet" href="styles.css">
+    <title>Threadline</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <img class="brand-icon" src="icons/icon.svg" alt="Threadline Icon">
+          <div class="brand-copy">
+            <p class="eyebrow" data-i18n="brandEyebrow">Bluesky AT Proto</p>
+            <h1>Threadline</h1>
+          </div>
+        </div>
+
+        <p class="intro" data-i18n="intro">
+          Schreibe einen Post oder zerlege lange Texte automatisch in sauber getrennte Thread-Abschnitte.
+        </p>
+
+        <div class="top-actions">
+          <button type="button" class="ghost-button" id="settings-button" data-i18n="settingsButton">Einstellungen</button>
+          <button type="button" class="ghost-button" id="help-button" data-i18n="helpButton">Hilfe</button>
+        </div>
+
+        <form id="login-form" class="login-form">
+          <label>
+            <span data-i18n="identifierLabel">Handle oder E-Mail</span>
+            <input id="identifier" name="identifier" type="text" placeholder="z. B. name.bsky.social" autocomplete="username" required>
+          </label>
+
+          <label>
+            <span data-i18n="passwordLabel">App-Passwort</span>
+            <input id="password" name="password" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password" required>
+            <small class="field-hint" data-i18n="passwordHint">Nicht das Bsky-Passwort!</small>
+          </label>
+
+          <div class="login-actions">
+            <button type="submit" id="login-button" data-i18n="loginButton">Verbinden</button>
+            <button type="button" class="ghost-button danger-button" id="logout-button" data-i18n="logoutButton" hidden>Abmelden</button>
+          </div>
+        </form>
+
+        <div class="status-panel">
+          <p class="eyebrow" data-i18n="statusEyebrow">Status</p>
+          <p id="status-text">Service Worker wird vorbereitet …</p>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section class="editor-pane">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow" data-i18n="composerEyebrow">Composer</p>
+              <h2 data-i18n="composerTitle">Text eingeben</h2>
+            </div>
+
+            <label class="toggle">
+              <input id="counter-toggle" type="checkbox" checked>
+              <span data-i18n="counterToggle">Zähler anhängen</span>
+            </label>
+          </div>
+
+          <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
+          <textarea id="source-text" maxlength="5000" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …"></textarea>
+
+          <div class="composer-meta">
+            <span id="character-count">0 Zeichen</span>
+            <span id="segment-summary">Ein einzelner Post bis 300 Zeichen.</span>
+          </div>
+
+          <div class="editor-actions">
+            <button id="clear-button" type="button" class="ghost-button" data-i18n="clearButton">Text löschen</button>
+          </div>
+
+          <section class="tips-panel">
+            <p class="eyebrow" data-i18n="tipsEyebrow">Tipps</p>
+            <p class="tips-title" data-i18n="tipsTitle">Kurzer Hinweis für bessere Posts</p>
+            <p id="tip-text" class="tips-text"></p>
+          </section>
+        </section>
+
+        <section class="segments-pane" id="segments-pane" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow" data-i18n="splitEyebrow">Auto-Split</p>
+              <h2 data-i18n="splitTitle">Thread-Abschnitte</h2>
+            </div>
+          </div>
+
+          <div id="segments-list" class="segments-list"></div>
+        </section>
+
+        <div class="primary-actions split-actions">
+          <button id="publish-button" type="button" data-i18n="publishButton">Auf Bluesky posten</button>
+        </div>
+      </main>
+    </div>
+
+    <dialog id="settings-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="settingsEyebrow">Einstellungen</p>
+            <h2 data-i18n="settingsTitle">Sprache wählen</h2>
+          </div>
+          <button type="submit" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <label>
+          <span data-i18n="languageLabel">Sprache</span>
+          <select id="language-select">
+            <option value="auto">Automatisch</option>
+            <option value="de">Deutsch</option>
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+          </select>
+        </label>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="updatesEyebrow">Updates</p>
+          <div class="settings-actions">
+            <button type="button" id="check-updates-button" class="ghost-button" data-i18n="checkUpdatesButton">Auf Updates prüfen</button>
+            <button type="button" id="reload-app-button" class="ghost-button" data-i18n="reloadButton" hidden>Neu laden</button>
+          </div>
+          <p id="update-status" class="settings-note" hidden></p>
+        </section>
+      </form>
+    </dialog>
+
+    <dialog id="publish-result-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="publishResultEyebrow">Veröffentlicht</p>
+            <h2 data-i18n="publishResultTitle">Post erfolgreich erstellt</h2>
+          </div>
+          <button type="submit" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <p id="publish-result-text" class="settings-note"></p>
+        <div class="settings-actions">
+          <a id="publish-result-link" class="ghost-button link-button" href="#" target="_blank" rel="noreferrer noopener" data-i18n="openPostLink">Post auf Bluesky öffnen</a>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="help-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet help-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="helpEyebrow">Hilfe</p>
+            <h2 data-i18n="helpTitle">README</h2>
+          </div>
+          <button type="submit" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <p id="help-status" class="settings-note"></p>
+        <div id="help-content" class="help-content"></div>
+      </form>
+    </dialog>
+
+    <template id="segment-template">
+      <article class="segment-card">
+        <div class="segment-header">
+          <span class="segment-index"></span>
+          <span class="segment-length"></span>
+        </div>
+        <textarea class="segment-text" rows="5"></textarea>
+      </article>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
