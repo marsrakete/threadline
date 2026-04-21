@@ -1,4 +1,4 @@
-const APP_VERSION = "v11";
+const APP_VERSION = "v27";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -19,7 +19,152 @@ const STORE_NAME = "settings";
 const AUTH_KEY = "auth";
 const DRAFT_KEY = "draft";
 const LOCALE_KEY = "locale";
+const SETTINGS_KEY = "ui-settings";
 const API_BASE = "https://bsky.social/xrpc";
+
+function parseHashtagValue(value) {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/^#+/, "")
+    .replace(/\s+/g, "")
+    .replace(/[.,;:!?]+$/g, "");
+
+  if (!cleaned) {
+    return null;
+  }
+
+  return {
+    value: cleaned,
+    normalized: cleaned.toLowerCase(),
+  };
+}
+
+function normalizeHashtagEntries(entries) {
+  const seen = new Set();
+  const result = [];
+
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const parsed = typeof entry === "string"
+      ? parseHashtagValue(entry)
+      : parseHashtagValue(entry?.value || entry?.tag || entry?.label || "");
+
+    if (!parsed || seen.has(parsed.normalized)) {
+      continue;
+    }
+
+    seen.add(parsed.normalized);
+    result.push(parsed);
+  }
+
+  return result;
+}
+
+function normalizeSelectedHashtagEntries(entries, hashtags) {
+  const validSet = new Set((hashtags || []).map((tag) => tag.normalized));
+  const seen = new Set();
+  const result = [];
+
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const normalized = typeof entry === "string"
+      ? parseHashtagValue(entry)?.normalized || String(entry).trim().toLowerCase()
+      : parseHashtagValue(entry?.value || entry?.tag || entry?.normalized || "")?.normalized;
+
+    if (!normalized || !validSet.has(normalized) || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+function normalizeImageEdit(edit = {}) {
+  return {
+    zoom: Math.min(3, Math.max(0.5, Number(edit.zoom) || 1)),
+    offsetX: Number(edit.offsetX) || 0,
+    offsetY: Number(edit.offsetY) || 0,
+    flipX: Boolean(edit.flipX),
+    flipY: Boolean(edit.flipY),
+    rotation: ((((Number(edit.rotation) || 0) % 360) + 360) % 360),
+  };
+}
+
+function normalizeThreadImage(entry = {}) {
+  if (!entry?.dataUrl) {
+    return null;
+  }
+
+  return {
+    id: entry.id || crypto.randomUUID(),
+    name: entry.name || "image",
+    type: entry.type || "image/jpeg",
+    dataUrl: entry.dataUrl,
+    alt: String(entry.alt || "").slice(0, 1000),
+    width: Number(entry.width) || 0,
+    height: Number(entry.height) || 0,
+    originalSizeBytes: Math.max(0, Number(entry.originalSizeBytes) || 0),
+    edit: normalizeImageEdit(entry.edit),
+    exportQuality: Math.min(0.92, Math.max(0.45, Number(entry.exportQuality) || 0.88)),
+    exportScale: Math.min(1, Math.max(0.35, Number(entry.exportScale) || 1)),
+    validation: entry.validation && typeof entry.validation === "object"
+      ? {
+          sizeBytes: Number(entry.validation.sizeBytes) || 0,
+          tooBig: Boolean(entry.validation.tooBig),
+        }
+      : { sizeBytes: 0, tooBig: false },
+  };
+}
+
+function normalizeSegmentImages(segments) {
+  return (Array.isArray(segments) ? segments : []).map((images) =>
+    (Array.isArray(images) ? images : [])
+      .map((entry) => normalizeThreadImage(entry))
+      .filter(Boolean)
+      .slice(0, 4),
+  );
+}
+
+function normalizeSegmentOverrides(segments) {
+  const normalized = (Array.isArray(segments) ? segments : [])
+    .map((entry) => String(entry || ""))
+    .filter((entry) => entry.trim().length > 0);
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizePostingHistory(entries) {
+  const seen = new Set();
+  const result = [];
+
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const url = typeof entry?.url === "string" ? entry.url.trim() : "";
+    const createdAt = typeof entry?.createdAt === "string" ? entry.createdAt : "";
+
+    if (!url || !createdAt) {
+      continue;
+    }
+
+    const key = `${url}|${createdAt}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push({
+      id: typeof entry.id === "string" && entry.id ? entry.id : key,
+      url,
+      createdAt,
+      threadCount: Math.max(1, Number(entry.threadCount) || 1),
+      imageCount: Math.max(0, Number(entry.imageCount) || 0),
+    });
+  }
+
+  return result
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+    .slice(0, 30);
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -93,7 +238,7 @@ self.addEventListener("message", (event) => {
     return;
   }
 
-  handleMessage(event.data)
+  handleMessage(event.data, port)
     .then((result) => port.postMessage({ ok: true, result }))
     .catch((error) => {
       console.error(error);
@@ -101,7 +246,7 @@ self.addEventListener("message", (event) => {
     });
 });
 
-async function handleMessage(message) {
+async function handleMessage(message, port) {
   switch (message.type) {
     case "LOGIN":
       return login(message.payload);
@@ -118,7 +263,7 @@ async function handleMessage(message) {
     case "LOGOUT":
       return logout();
     case "PUBLISH_THREAD":
-      return publishThread(message.payload);
+      return publishThread(message.payload, (progress) => port.postMessage({ progress }));
     default:
       throw new Error("Unbekannter Service-Worker-Befehl.");
   }
@@ -257,6 +402,31 @@ async function bskyFetch(endpoint, options = {}) {
   return data;
 }
 
+async function uploadBlob(auth, file) {
+  const response = await fetch(`${API_BASE}/com.atproto.repo.uploadBlob`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+      "content-type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+
+  const text = await response.text();
+  let data = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { message: text };
+    }
+  }
+  if (!response.ok) {
+    throw new Error(data.message || data.error || `Bluesky-Fehler: ${response.status}`);
+  }
+  return data.blob;
+}
+
 async function login({ identifier, appPassword }) {
   if (!identifier || !appPassword) {
     throw new Error("Handle und App-Passwort sind erforderlich.");
@@ -305,26 +475,66 @@ async function authStatus() {
 async function getAppState({ browserLocale } = {}) {
   const auth = await readStoredAuth();
   const draft = await readStoredValue(DRAFT_KEY);
-  const localePreference = await readStoredValue(LOCALE_KEY);
+  const storedSettings = await readStoredValue(SETTINGS_KEY);
+  const legacyLocalePreference = await readStoredValue(LOCALE_KEY);
+  const hashtags = normalizeHashtagEntries(storedSettings?.hashtags);
+  const selectedHashtags = normalizeSelectedHashtagEntries(storedSettings?.selectedHashtags, hashtags);
+  const localePreference = storedSettings?.localePreference || legacyLocalePreference;
   const locale = localePreference && localePreference !== "auto" ? localePreference : (browserLocale || "en");
 
   return {
     authenticated: Boolean(auth?.session?.did),
     identifier: auth?.identifier || "",
     handle: auth?.session?.handle || "",
-    draft: draft || "",
+    draft: typeof draft === "string" ? draft : (draft?.sourceText || ""),
     locale,
     localePreference: localePreference || "auto",
+    tipsVisible: storedSettings?.tipsVisible !== false,
+    altTextRequired: storedSettings?.altTextRequired !== false,
+    hashtags,
+    selectedHashtags,
+    hashtagPlacement: storedSettings?.hashtagPlacement === "last" ? "last" : "first",
+    segmentImages: normalizeSegmentImages(storedSettings?.segmentImages || draft?.segmentImages),
+    segmentOverrides: normalizeSegmentOverrides(draft?.segmentOverrides),
+    postingHistory: normalizePostingHistory(storedSettings?.postingHistory),
   };
 }
 
-async function saveDraft({ draft } = {}) {
-  await writeStoredValue(DRAFT_KEY, draft || "");
+async function saveDraft({ draft, segmentImages, segmentOverrides } = {}) {
+  await writeStoredValue(DRAFT_KEY, {
+    sourceText: draft || "",
+    segmentImages: normalizeSegmentImages(segmentImages),
+    segmentOverrides: normalizeSegmentOverrides(segmentOverrides),
+  });
   return { ok: true };
 }
 
-async function saveSettings({ localePreference } = {}) {
-  await writeStoredValue(LOCALE_KEY, localePreference || "auto");
+async function saveSettings(settings = {}) {
+  const existing = await readStoredValue(SETTINGS_KEY) || {};
+  const hashtags = Array.isArray(settings.hashtags)
+    ? normalizeHashtagEntries(settings.hashtags)
+    : normalizeHashtagEntries(existing.hashtags);
+  const selectedHashtags = Array.isArray(settings.selectedHashtags)
+    ? normalizeSelectedHashtagEntries(settings.selectedHashtags, hashtags)
+    : normalizeSelectedHashtagEntries(existing.selectedHashtags, hashtags);
+  const nextSettings = {
+    ...existing,
+    ...settings,
+    localePreference: settings.localePreference || existing.localePreference || "auto",
+    tipsVisible: settings.tipsVisible !== undefined ? settings.tipsVisible : (existing.tipsVisible !== false),
+    altTextRequired: settings.altTextRequired !== false,
+    hashtags,
+    selectedHashtags,
+    hashtagPlacement: settings.hashtagPlacement === "last" ? "last" : (existing.hashtagPlacement === "last" ? "last" : "first"),
+    segmentImages: Array.isArray(settings.segmentImages)
+      ? normalizeSegmentImages(settings.segmentImages)
+      : normalizeSegmentImages(existing.segmentImages),
+    postingHistory: Array.isArray(settings.postingHistory)
+      ? normalizePostingHistory(settings.postingHistory)
+      : normalizePostingHistory(existing.postingHistory),
+  };
+  await writeStoredValue(SETTINGS_KEY, nextSettings);
+  await writeStoredValue(LOCALE_KEY, nextSettings.localePreference);
   return { ok: true };
 }
 
@@ -399,7 +609,7 @@ async function ensureSession() {
   });
 }
 
-async function publishThread({ segments }) {
+async function publishThread({ segments }, notifyProgress = () => {}) {
   if (!Array.isArray(segments) || segments.length === 0) {
     throw new Error("Es gibt keine Segmente zum Posten.");
   }
@@ -409,12 +619,34 @@ async function publishThread({ segments }) {
   let root = null;
   let parent = null;
 
-  for (const segment of segments) {
+  notifyProgress({ message: "Thread wird auf Bluesky gepostet …" });
+
+  for (const [segmentIndex, segment] of segments.entries()) {
+    notifyProgress({ message: `Thread-Abschnitt ${segmentIndex + 1}/${segments.length} wird gepostet …` });
     const record = {
       $type: "app.bsky.feed.post",
-      text: segment,
+      text: typeof segment === "string" ? segment : segment.text,
       createdAt: new Date().toISOString(),
     };
+
+    const images = Array.isArray(segment?.images) ? segment.images.slice(0, 4) : [];
+    if (images.length > 0) {
+      const embeddedImages = [];
+      for (const [imageIndex, image] of images.entries()) {
+        notifyProgress({ message: `Bild ${imageIndex + 1}/${images.length} für Abschnitt ${segmentIndex + 1} wird hochgeladen …` });
+        const blobRef = await uploadBlob(auth, image.blob);
+        embeddedImages.push({
+          alt: String(image.alt || "").slice(0, 1000),
+          image: blobRef,
+          aspectRatio: image.width && image.height ? { width: image.width, height: image.height } : undefined,
+        });
+      }
+
+      record.embed = {
+        $type: "app.bsky.embed.images",
+        images: embeddedImages,
+      };
+    }
 
     if (root && parent) {
       record.reply = {

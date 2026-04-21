@@ -53,55 +53,100 @@
           <p class="eyebrow" data-i18n="statusEyebrow">Status</p>
           <p id="status-text">Service Worker wird vorbereitet …</p>
         </div>
+
+        <div class="status-history-panel">
+          <button type="button" class="ghost-button status-history-button" id="history-button" data-i18n="historyButton">
+            Letzte Postings
+          </button>
+        </div>
       </aside>
 
       <main class="workspace">
-        <section class="editor-pane">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow" data-i18n="composerEyebrow">Composer</p>
-              <h2 data-i18n="composerTitle">Text eingeben</h2>
+        <div class="composer-column">
+          <section class="editor-pane">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow" data-i18n="composerEyebrow">Composer</p>
+                <h2 data-i18n="composerTitle">Text eingeben</h2>
+              </div>
+
+              <label class="toggle">
+                <input id="counter-toggle" type="checkbox" checked>
+                <span data-i18n="counterToggle">Zähler anhängen</span>
+              </label>
             </div>
 
-            <label class="toggle">
-              <input id="counter-toggle" type="checkbox" checked>
-              <span data-i18n="counterToggle">Zähler anhängen</span>
-            </label>
-          </div>
+            <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
+            <textarea id="source-text" maxlength="5000" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …"></textarea>
 
-          <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
-          <textarea id="source-text" maxlength="5000" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …"></textarea>
+            <div class="composer-meta">
+              <span id="character-count">0 Zeichen</span>
+              <span id="segment-summary">Ein einzelner Post bis 300 Zeichen.</span>
+            </div>
+            <p class="composer-note" data-i18n="manualSplitHint">
+              Manueller Abschnittswechsel: Mit <code>%%</code> beginnt der folgende Text sicher im naechsten Thread-Abschnitt.
+            </p>
+            <div id="composer-lock-note" class="composer-lock-note" hidden>
+              <p data-i18n="composerLockWarning">Es wurde eine Änderung im Thread-Abschnitt vorgenommen. Änderungen in diesem Editor überschreiben die Änderung im Abschnitt dann wieder.</p>
+              <button id="composer-unlock-button" type="button" class="ghost-button" data-i18n="composerUnlockButton">Änderung ignorieren</button>
+            </div>
 
-          <div class="composer-meta">
-            <span id="character-count">0 Zeichen</span>
-            <span id="segment-summary">Ein einzelner Post bis 300 Zeichen.</span>
-          </div>
+            <div class="editor-actions">
+              <button id="clear-button" type="button" class="ghost-button" data-i18n="clearButton">Text löschen</button>
+              <button type="button" class="ghost-button" id="load-thread-button" data-i18n="loadThreadButton">Thread laden</button>
+              <button id="save-thread-button" type="button" class="ghost-button" data-i18n="saveThreadButton">Thread speichern</button>
+            </div>
 
-          <div class="editor-actions">
-            <button id="clear-button" type="button" class="ghost-button" data-i18n="clearButton">Text löschen</button>
-          </div>
-
-          <section class="tips-panel">
-            <p class="eyebrow" data-i18n="tipsEyebrow">Tipps</p>
-            <p class="tips-title" data-i18n="tipsTitle">Kurzer Hinweis für bessere Posts</p>
-            <p id="tip-text" class="tips-text"></p>
+            <section class="tips-panel">
+              <p class="eyebrow" data-i18n="tipsEyebrow">Tipps</p>
+              <p class="tips-title" data-i18n="tipsTitle">Kurzer Hinweis für bessere Posts</p>
+              <p id="tip-text" class="tips-text"></p>
+              <div class="tips-actions">
+                <button id="next-tip-button" type="button" class="ghost-button" data-i18n="nextTipButton">Nächster Tipp</button>
+                <button id="hide-tips-button" type="button" class="ghost-button" data-i18n="hideTipsButton">Keine Tipps mehr anzeigen</button>
+              </div>
+            </section>
           </section>
-        </section>
+
+          <section class="hashtags-pane">
+            <p class="eyebrow" data-i18n="hashtagsEyebrow">Hashtags</p>
+            <p class="tips-title" data-i18n="hashtagsTitle">Hashtag-Verwalter</p>
+            <form id="hashtag-form" class="hashtag-form">
+              <input id="hashtag-input" type="text" placeholder="#deinTag" autocomplete="off">
+              <button id="hashtag-add-button" type="submit" class="ghost-button" data-i18n="addHashtagButton">Hinzufügen</button>
+            </form>
+            <label class="hashtag-placement-label">
+              <span data-i18n="hashtagPlacementLabel">Ausgewählte Hashtags platzieren</span>
+              <select id="hashtag-placement-select">
+                <option value="first">Im ersten Abschnitt</option>
+                <option value="last">Im letzten Abschnitt</option>
+              </select>
+            </label>
+            <div id="hashtag-cloud" class="hashtag-cloud"></div>
+            <p id="hashtag-selection-note" class="tips-text"></p>
+          </section>
+        </div>
 
         <section class="segments-pane" id="segments-pane" hidden>
           <div class="section-heading">
             <div>
               <p class="eyebrow" data-i18n="splitEyebrow">Auto-Split</p>
               <h2 data-i18n="splitTitle">Thread-Abschnitte</h2>
+              <p class="section-note" data-i18n="splitHint">Feinschliff möglich! Das Editieren in den Abschnitten ist erlaubt. Änderungen im Composer überschreiben das aber!</p>
             </div>
           </div>
 
           <div id="segments-list" class="segments-list"></div>
-        </section>
 
-        <div class="primary-actions split-actions">
-          <button id="publish-button" type="button" data-i18n="publishButton">Auf Bluesky posten</button>
-        </div>
+          <div class="split-actions-wrap">
+            <p id="publish-warning" class="publish-warning" hidden data-i18n="publishAltTextWarning">
+              Bitte die ALT-Texte vollständig ausfüllen.
+            </p>
+            <div class="primary-actions split-actions">
+              <button id="publish-button" type="button" data-i18n="publishButton">Auf Bluesky posten</button>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -124,6 +169,41 @@
             <option value="fr">Français</option>
           </select>
         </label>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="tipsSettingsEyebrow">Tipps</p>
+          <label class="settings-check">
+            <input id="tips-visible-toggle" type="checkbox" checked>
+            <span data-i18n="showTipsSetting">Tipps wieder anzeigen</span>
+          </label>
+          <label class="settings-check">
+            <input id="alt-text-required-toggle" type="checkbox">
+            <span data-i18n="altTextRequiredSetting">ALT-Text Pflicht: Ich möchte inklusive Postings erstellen</span>
+          </label>
+        </section>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="historyEyebrow">Historie</p>
+          <div class="settings-actions">
+            <button type="button" id="clear-history-button" class="ghost-button" data-i18n="clearHistoryButton">Historie löschen</button>
+          </div>
+        </section>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="backupEyebrow">Backup</p>
+          <p class="settings-note" data-i18n="backupNote">
+            Dieses Backup enthaelt Einstellungen und Hashtags, aber ausdruecklich kein Konto und kein Passwort.
+          </p>
+          <p class="settings-note" data-i18n="backupMergeNote">
+            Beim Import werden vorhandene Hashtags behalten und nur neue Hashtags ohne Dubletten hinzugefuegt.
+          </p>
+          <div class="settings-actions">
+            <button type="button" id="export-settings-button" class="ghost-button" data-i18n="exportSettingsButton">Backup speichern</button>
+            <button type="button" id="import-settings-button" class="ghost-button" data-i18n="importSettingsButton">Backup importieren</button>
+          </div>
+          <input id="import-settings-input" class="is-hidden" type="file" accept="application/json,.json">
+          <p id="backup-status" class="settings-note" hidden></p>
+        </section>
 
         <section class="settings-block">
           <p class="eyebrow" data-i18n="updatesEyebrow">Updates</p>
@@ -153,6 +233,47 @@
       </form>
     </dialog>
 
+    <dialog id="progress-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="progressEyebrow">Fortschritt</p>
+            <h2 id="progress-title" data-i18n="progressTitle">Posting läuft</h2>
+          </div>
+        </div>
+
+        <p id="progress-message" class="settings-note"></p>
+      </form>
+    </dialog>
+
+    <dialog id="error-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="errorEyebrow">Fehler</p>
+            <h2 id="error-title" data-i18n="errorTitle">Posting fehlgeschlagen</h2>
+          </div>
+          <button type="submit" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <p id="error-message" class="settings-note"></p>
+      </form>
+    </dialog>
+
+    <dialog id="history-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet history-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="historyEyebrow">Historie</p>
+            <h2 data-i18n="historyTitle">Letzte Postings</h2>
+          </div>
+          <button type="submit" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <div id="history-list" class="history-list"></div>
+      </form>
+    </dialog>
+
     <dialog id="help-dialog" class="settings-dialog">
       <form method="dialog" class="settings-sheet help-sheet">
         <div class="section-heading settings-heading">
@@ -168,6 +289,116 @@
       </form>
     </dialog>
 
+    <dialog id="hashtag-edit-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="hashtagsEyebrow">Hashtags</p>
+            <h2 data-i18n="editHashtagTitle">Hashtag bearbeiten</h2>
+          </div>
+          <button type="button" id="hashtag-edit-cancel-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <label for="hashtag-edit-input">
+          <span data-i18n="editHashtagLabel">Hashtag</span>
+          <input id="hashtag-edit-input" type="text" autocomplete="off">
+        </label>
+
+        <div class="settings-actions">
+          <button type="button" id="hashtag-edit-save-button" data-i18n="saveButton">Speichern</button>
+          <button type="button" id="hashtag-edit-cancel-button" class="ghost-button" data-i18n="cancelButton">Abbrechen</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="alt-text-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="imagesEyebrow">Bilder</p>
+            <h2 data-i18n="altTextTitle">ALT-Text bearbeiten</h2>
+          </div>
+          <button type="button" id="alt-text-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <label for="alt-text-input">
+          <span data-i18n="altTextLabel">ALT-Text</span>
+          <textarea id="alt-text-input" rows="8" maxlength="1000"></textarea>
+        </label>
+
+        <div class="composer-meta">
+          <span id="alt-text-count">0/1000</span>
+        </div>
+
+        <div class="settings-actions">
+          <button type="button" id="alt-text-save-button" data-i18n="saveButton">Speichern</button>
+          <button type="button" id="alt-text-cancel-button" class="ghost-button" data-i18n="cancelButton">Abbrechen</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="image-editor-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet image-editor-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="imagesEyebrow">Bilder</p>
+            <h2 data-i18n="imageEditorTitle">Bild bearbeiten</h2>
+          </div>
+          <button type="button" id="image-editor-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <div class="image-editor-stage">
+          <canvas id="image-editor-canvas" width="560" height="360"></canvas>
+        </div>
+
+        <label class="zoom-field" for="image-zoom-input">
+          <span data-i18n="imageZoomLabel">Zoom</span>
+          <input id="image-zoom-input" type="range" min="0.5" max="3" step="0.01" value="1">
+        </label>
+
+        <div class="settings-actions">
+          <button type="button" id="image-flip-horizontal-button" class="ghost-button" data-i18n="flipHorizontalButton">Horizontal spiegeln</button>
+          <button type="button" id="image-flip-vertical-button" class="ghost-button" data-i18n="flipVerticalButton">Vertikal spiegeln</button>
+          <button type="button" id="image-rotate-left-button" class="ghost-button" data-i18n="rotateLeftButton">90° links</button>
+          <button type="button" id="image-reset-button" class="ghost-button" data-i18n="resetImageButton">Zurücksetzen</button>
+        </div>
+
+        <p class="settings-note" data-i18n="imageEditorHint">Bild im Ausschnitt verschieben, per Zoom anpassen und dann speichern.</p>
+        <p id="image-editor-suggestion" class="settings-note" hidden data-i18n="imageTooLargeEditorHint">
+          Reinzoomen und Ausschnitt festlegen.
+        </p>
+        <p class="settings-note" data-i18n="lossyResizeHint">
+          Reduziert Auflösung und JPEG-Qualität für den Bluesky-Upload.
+        </p>
+
+        <div class="settings-actions">
+          <button type="button" id="image-lossy-resize-button" class="ghost-button" data-i18n="lossyResizeButton">Verkleinern (Verlustbehaftet)</button>
+          <button type="button" id="image-editor-save-button" data-i18n="saveButton">Speichern</button>
+          <button type="button" id="image-editor-cancel-button" class="ghost-button" data-i18n="cancelButton">Abbrechen</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="confirm-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="confirmEyebrow">Bestätigen</p>
+            <h2 id="confirm-dialog-title" data-i18n="confirmTitle">Bitte bestätigen</h2>
+          </div>
+        </div>
+
+        <p id="confirm-dialog-message" class="settings-note"></p>
+
+        <div class="settings-actions">
+          <button type="button" id="confirm-dialog-confirm-button" data-i18n="confirmYes">Ja</button>
+          <button type="button" id="confirm-dialog-cancel-button" class="ghost-button" data-i18n="confirmNo">Nein</button>
+        </div>
+      </form>
+    </dialog>
+
+    <input id="thread-import-input" class="is-hidden" type="file" accept="application/json,application/gzip,.json,.gz,.threadline,.threadline.gz">
+
     <template id="segment-template">
       <article class="segment-card">
         <div class="segment-header">
@@ -175,6 +406,10 @@
           <span class="segment-length"></span>
         </div>
         <textarea class="segment-text" rows="5"></textarea>
+        <div class="segment-image-actions">
+          <button type="button" class="ghost-button segment-add-image-button" data-i18n="addImagesButton">Bilder laden</button>
+        </div>
+        <div class="segment-images"></div>
       </article>
     </template>
 

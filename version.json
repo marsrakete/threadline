@@ -1,5 +1,5 @@
 {
-  "appVersion": "0.1.9",
-  "cacheVersion": "v11",
-  "label": "Password field hint clarifying app password usage"
+  "appVersion": "0.4.11",
+  "cacheVersion": "v27",
+  "label": "Composer lock note hidden fix"
 }
