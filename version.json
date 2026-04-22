@@ -1,5 +1,5 @@
 {
-  "appVersion": "0.4.13",
-  "cacheVersion": "v29",
-  "label": "Rich text facets for tags and mentions"
+  "appVersion": "0.4.14",
+  "cacheVersion": "v30",
+  "label": "Posting connectivity and partial failure handling"
 }

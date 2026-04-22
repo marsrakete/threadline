@@ -1,4 +1,4 @@
-const APP_VERSION = "v29";
+const APP_VERSION = "v30";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -406,7 +406,11 @@ self.addEventListener("message", (event) => {
     .then((result) => port.postMessage({ ok: true, result }))
     .catch((error) => {
       console.error(error);
-      port.postMessage({ ok: false, error: error.message || "Unbekannter Fehler." });
+      port.postMessage({
+        ok: false,
+        error: error.message || "Unbekannter Fehler.",
+        details: error.details || null,
+      });
     });
 });
 
@@ -420,6 +424,8 @@ async function handleMessage(message, port) {
       return getAppState(message.payload);
     case "VERIFY_SESSION":
       return verifySession();
+    case "CHECK_CONNECTIVITY":
+      return checkConnectivity();
     case "SAVE_DRAFT":
       return saveDraft(message.payload);
     case "SAVE_SETTINGS":
@@ -773,6 +779,33 @@ async function ensureSession() {
   });
 }
 
+async function checkConnectivity() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(`${API_BASE}/com.atproto.server.describeServer`, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Bluesky-Fehler: ${response.status}`);
+    }
+
+    return { ok: true };
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("Der Verbindungscheck zu Bluesky hat zu lange gedauert.");
+    }
+
+    throw new Error("Keine Verbindung zu Bluesky möglich.");
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function publishThread({ segments }, notifyProgress = () => {}) {
   if (!Array.isArray(segments) || segments.length === 0) {
     throw new Error("Es gibt keine Segmente zum Posten.");
@@ -786,67 +819,81 @@ async function publishThread({ segments }, notifyProgress = () => {}) {
 
   notifyProgress({ message: "Thread wird auf Bluesky gepostet …" });
 
-  for (const [segmentIndex, segment] of segments.entries()) {
-    notifyProgress({ message: `Thread-Abschnitt ${segmentIndex + 1}/${segments.length} wird gepostet …` });
-    const record = {
-      $type: "app.bsky.feed.post",
-      text: typeof segment === "string" ? segment : segment.text,
-      createdAt: new Date().toISOString(),
-    };
-    const facets = await buildRichTextFacets(record.text, auth, resolveCache);
-    if (facets) {
-      record.facets = facets;
-    }
-
-    const images = Array.isArray(segment?.images) ? segment.images.slice(0, 4) : [];
-    if (images.length > 0) {
-      const embeddedImages = [];
-      for (const [imageIndex, image] of images.entries()) {
-        notifyProgress({ message: `Bild ${imageIndex + 1}/${images.length} für Abschnitt ${segmentIndex + 1} wird hochgeladen …` });
-        const blobRef = await uploadBlob(auth, image.blob);
-        embeddedImages.push({
-          alt: String(image.alt || "").slice(0, 1000),
-          image: blobRef,
-          aspectRatio: image.width && image.height ? { width: image.width, height: image.height } : undefined,
-        });
+  try {
+    for (const [segmentIndex, segment] of segments.entries()) {
+      notifyProgress({ message: `Thread-Abschnitt ${segmentIndex + 1}/${segments.length} wird gepostet …` });
+      const record = {
+        $type: "app.bsky.feed.post",
+        text: typeof segment === "string" ? segment : segment.text,
+        createdAt: new Date().toISOString(),
+      };
+      const facets = await buildRichTextFacets(record.text, auth, resolveCache);
+      if (facets) {
+        record.facets = facets;
       }
 
-      record.embed = {
-        $type: "app.bsky.embed.images",
-        images: embeddedImages,
+      const images = Array.isArray(segment?.images) ? segment.images.slice(0, 4) : [];
+      if (images.length > 0) {
+        const embeddedImages = [];
+        for (const [imageIndex, image] of images.entries()) {
+          notifyProgress({ message: `Bild ${imageIndex + 1}/${images.length} für Abschnitt ${segmentIndex + 1} wird hochgeladen …` });
+          const blobRef = await uploadBlob(auth, image.blob);
+          embeddedImages.push({
+            alt: String(image.alt || "").slice(0, 1000),
+            image: blobRef,
+            aspectRatio: image.width && image.height ? { width: image.width, height: image.height } : undefined,
+          });
+        }
+
+        record.embed = {
+          $type: "app.bsky.embed.images",
+          images: embeddedImages,
+        };
+      }
+
+      if (root && parent) {
+        record.reply = {
+          root,
+          parent,
+        };
+      }
+
+      const created = await bskyFetch("com.atproto.repo.createRecord", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${auth.session.accessJwt}`,
+        },
+        body: JSON.stringify({
+          repo: auth.session.did,
+          collection: "app.bsky.feed.post",
+          record,
+        }),
+      });
+
+      const ref = {
+        uri: created.uri,
+        cid: created.cid,
       };
-    }
 
-    if (root && parent) {
-      record.reply = {
-        root,
-        parent,
+      if (!root) {
+        root = ref;
+      }
+
+      parent = ref;
+      posts.push(ref);
+    }
+  } catch (error) {
+    if (posts.length > 0) {
+      const partialError = new Error(error?.message || "Thread konnte nicht vollständig gepostet werden.");
+      partialError.details = {
+        code: "PARTIAL_PUBLISH",
+        postedCount: posts.length,
+        totalCount: segments.length,
       };
+      throw partialError;
     }
 
-    const created = await bskyFetch("com.atproto.repo.createRecord", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${auth.session.accessJwt}`,
-      },
-      body: JSON.stringify({
-        repo: auth.session.did,
-        collection: "app.bsky.feed.post",
-        record,
-      }),
-    });
-
-    const ref = {
-      uri: created.uri,
-      cid: created.cid,
-    };
-
-    if (!root) {
-      root = ref;
-    }
-
-    parent = ref;
-    posts.push(ref);
+    throw error;
   }
 
   return {

@@ -11,9 +11,9 @@ const IMAGE_EXPORT_WIDTH = 1400;
 const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH) * IMAGE_EDITOR_CANVAS_HEIGHT);
 const MAX_POSTING_HISTORY = 30;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.13",
-  cacheVersion: "v29",
-  label: "Rich text facets for tags and mentions",
+  appVersion: "0.4.14",
+  cacheVersion: "v30",
+  label: "Posting connectivity and partial failure handling",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -192,11 +192,25 @@ async function sendToServiceWorker(type, payload = {}, options = {}) {
         return;
       }
 
-      reject(new Error(event.data?.error || "Unbekannter Fehler im Service Worker."));
+      const error = new Error(event.data?.error || "Unbekannter Fehler im Service Worker.");
+      error.details = event.data?.details || null;
+      reject(error);
     };
 
     worker.postMessage({ type, payload }, [channel.port2]);
   });
+}
+
+function buildPublishErrorMessage(error) {
+  if (error?.details?.code === "PARTIAL_PUBLISH") {
+    const summary = t("publishPartialFailure", {
+      posted: error.details.postedCount,
+      total: error.details.totalCount,
+    });
+    return error.message ? `${summary}\n${error.message}` : summary;
+  }
+
+  return error?.message || t("errorTitle");
 }
 
 function setStatus(message, tone = "neutral") {
@@ -2334,8 +2348,16 @@ publishButton.addEventListener("click", async () => {
     return;
   }
 
+  if (!navigator.onLine) {
+    setStatus(t("statusOfflineBeforePublish"), "error");
+    showErrorDialog(t("statusOfflineBeforePublish"));
+    return;
+  }
+
   try {
     setBusy(publishButton, true, t("publishBusy"), t("publishButton"));
+    showProgressDialog(t("progressTitle"), t("progressCheckingConnectivity"));
+    await sendToServiceWorker("CHECK_CONNECTIVITY");
     showProgressDialog(t("progressTitle"), t("progressPreparing"));
     const preparedSegments = [];
     for (const [segmentIndex, segment] of segments.entries()) {
@@ -2382,9 +2404,10 @@ publishButton.addEventListener("click", async () => {
     showPublishResult(result);
   } catch (error) {
     console.error(error);
-    setStatus(error.message, "error");
+    const message = buildPublishErrorMessage(error);
+    setStatus(message, "error");
     hideProgressDialog();
-    showErrorDialog(error.message);
+    showErrorDialog(message);
   } finally {
     hideProgressDialog();
     setBusy(publishButton, false, t("publishBusy"), t("publishButton"));
