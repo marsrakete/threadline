@@ -1,4 +1,4 @@
-const APP_VERSION = "v27";
+const APP_VERSION = "v29";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -164,6 +164,170 @@ function normalizePostingHistory(entries) {
   return result
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
     .slice(0, 30);
+}
+
+const textEncoder = new TextEncoder();
+
+function utf16IndexToUtf8Index(text, index) {
+  return textEncoder.encode(text.slice(0, index)).byteLength;
+}
+
+function facetRangesOverlap(left, right) {
+  return left.byteStart < right.byteEnd && right.byteStart < left.byteEnd;
+}
+
+function parseLinkFacets(text) {
+  const facets = [];
+  const regex = /(^|\s|\()((https?:\/\/[^\s]+)|((?<domain>[a-z][a-z0-9-]*(\.[a-z0-9-]+)+)[^\s]*))/gim;
+  let match;
+
+  while ((match = regex.exec(text))) {
+    let uri = match[2];
+    let start = match.index + match[1].length;
+    let end = start + match[2].length;
+
+    if (!uri.startsWith("http")) {
+      uri = `https://${uri}`;
+    }
+
+    while (/[.,;!?]$/.test(uri)) {
+      uri = uri.slice(0, -1);
+      end -= 1;
+    }
+
+    if (/[)]$/.test(uri) && !uri.includes("(")) {
+      uri = uri.slice(0, -1);
+      end -= 1;
+    }
+
+    facets.push({
+      index: {
+        byteStart: utf16IndexToUtf8Index(text, start),
+        byteEnd: utf16IndexToUtf8Index(text, end),
+      },
+      features: [
+        {
+          $type: "app.bsky.richtext.facet#link",
+          uri,
+        },
+      ],
+    });
+  }
+
+  return facets;
+}
+
+function parseHashtagFacets(text) {
+  const facets = [];
+  const regex = /(?:^|\s)(#[^\d\s]\S*)(?=\s|$)/gu;
+  let match;
+
+  while ((match = regex.exec(text))) {
+    let tag = match[1].replace(/\p{P}+$/gu, "");
+    if (tag.length < 2 || tag.length > 66) {
+      continue;
+    }
+
+    const start = match.index + match[0].indexOf("#");
+    const end = start + tag.length;
+    facets.push({
+      index: {
+        byteStart: utf16IndexToUtf8Index(text, start),
+        byteEnd: utf16IndexToUtf8Index(text, end),
+      },
+      features: [
+        {
+          $type: "app.bsky.richtext.facet#tag",
+          tag: tag.slice(1),
+        },
+      ],
+    });
+  }
+
+  return facets;
+}
+
+function parseMentionCandidates(text) {
+  const candidates = [];
+  const regex = /(^|\s|\()(@)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+)(?=$|[\s).,;:!?])/g;
+  let match;
+
+  while ((match = regex.exec(text))) {
+    const handle = match[3].toLowerCase();
+    const start = match.index + match[1].length;
+    const end = start + handle.length + 1;
+    candidates.push({ handle, start, end });
+  }
+
+  return candidates;
+}
+
+async function resolveHandleToDid(handle, auth, cache) {
+  if (cache.has(handle)) {
+    return cache.get(handle);
+  }
+
+  const url = `${API_BASE}/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`;
+  const response = await fetch(url, {
+    headers: auth?.session?.accessJwt
+      ? { authorization: `Bearer ${auth.session.accessJwt}` }
+      : undefined,
+  });
+
+  if (!response.ok) {
+    cache.set(handle, null);
+    return null;
+  }
+
+  const data = await response.json().catch(() => ({}));
+  const did = typeof data.did === "string" && data.did ? data.did : null;
+  cache.set(handle, did);
+  return did;
+}
+
+async function parseMentionFacets(text, auth, cache) {
+  const facets = [];
+  const candidates = parseMentionCandidates(text);
+
+  for (const candidate of candidates) {
+    const did = await resolveHandleToDid(candidate.handle, auth, cache);
+    if (!did) {
+      continue;
+    }
+
+    facets.push({
+      index: {
+        byteStart: utf16IndexToUtf8Index(text, candidate.start),
+        byteEnd: utf16IndexToUtf8Index(text, candidate.end),
+      },
+      features: [
+        {
+          $type: "app.bsky.richtext.facet#mention",
+          did,
+        },
+      ],
+    });
+  }
+
+  return facets;
+}
+
+async function buildRichTextFacets(text, auth, resolveCache) {
+  const linkFacets = parseLinkFacets(text);
+  const hashtagFacets = parseHashtagFacets(text);
+  const mentionFacets = await parseMentionFacets(text, auth, resolveCache);
+  const combined = [...linkFacets, ...mentionFacets, ...hashtagFacets]
+    .sort((left, right) => left.index.byteStart - right.index.byteStart);
+
+  const accepted = [];
+  for (const facet of combined) {
+    if (accepted.some((entry) => facetRangesOverlap(entry.index, facet.index))) {
+      continue;
+    }
+    accepted.push(facet);
+  }
+
+  return accepted.length > 0 ? accepted : undefined;
 }
 
 self.addEventListener("install", (event) => {
@@ -615,6 +779,7 @@ async function publishThread({ segments }, notifyProgress = () => {}) {
   }
 
   const auth = await ensureSession();
+  const resolveCache = new Map();
   const posts = [];
   let root = null;
   let parent = null;
@@ -628,6 +793,10 @@ async function publishThread({ segments }, notifyProgress = () => {}) {
       text: typeof segment === "string" ? segment : segment.text,
       createdAt: new Date().toISOString(),
     };
+    const facets = await buildRichTextFacets(record.text, auth, resolveCache);
+    if (facets) {
+      record.facets = facets;
+    }
 
     const images = Array.isArray(segment?.images) ? segment.images.slice(0, 4) : [];
     if (images.length > 0) {

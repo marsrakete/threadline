@@ -29,6 +29,7 @@
         <div class="top-actions">
           <button type="button" class="ghost-button" id="settings-button" data-i18n="settingsButton">Einstellungen</button>
           <button type="button" class="ghost-button" id="help-button" data-i18n="helpButton">Hilfe</button>
+          <button type="button" class="ghost-button" id="install-button" data-i18n="installButton" hidden>App installieren</button>
         </div>
 
         <form id="login-form" class="login-form">
@@ -286,6 +287,26 @@
 
         <p id="help-status" class="settings-note"></p>
         <div id="help-content" class="help-content"></div>
+      </form>
+    </dialog>
+
+    <dialog id="install-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="installEyebrow">Installieren</p>
+            <h2 data-i18n="installTitle">App installieren</h2>
+          </div>
+          <button type="submit" class="ghost-button" data-i18n="dialogClose">Schließen</button>
+        </div>
+        <p class="settings-note" data-i18n="installIosIntro">
+          Auf dem iPhone oder iPad kann die Installation nicht direkt ausgelöst werden. Bitte nutze Safari und gehe so vor:
+        </p>
+        <ol class="settings-note">
+          <li data-i18n="installIosStep1">Teilen-Menü in Safari öffnen.</li>
+          <li data-i18n="installIosStep2">Auf "Zum Home-Bildschirm" tippen.</li>
+          <li data-i18n="installIosStep3">Den Namen bestätigen und hinzufügen.</li>
+        </ol>
       </form>
     </dialog>
 

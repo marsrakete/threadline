@@ -1,5 +1,5 @@
 {
-  "appVersion": "0.4.11",
-  "cacheVersion": "v27",
-  "label": "Composer lock note hidden fix"
+  "appVersion": "0.4.13",
+  "cacheVersion": "v29",
+  "label": "Rich text facets for tags and mentions"
 }

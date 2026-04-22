@@ -11,9 +11,9 @@ const IMAGE_EXPORT_WIDTH = 1400;
 const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH) * IMAGE_EDITOR_CANVAS_HEIGHT);
 const MAX_POSTING_HISTORY = 30;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.11",
-  cacheVersion: "v27",
-  label: "Composer lock note hidden fix",
+  appVersion: "0.4.13",
+  cacheVersion: "v29",
+  label: "Rich text facets for tags and mentions",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -24,6 +24,7 @@ const clearButton = document.querySelector("#clear-button");
 const settingsButton = document.querySelector("#settings-button");
 const loadThreadButton = document.querySelector("#load-thread-button");
 const helpButton = document.querySelector("#help-button");
+const installButton = document.querySelector("#install-button");
 const historyButton = document.querySelector("#history-button");
 const saveThreadButton = document.querySelector("#save-thread-button");
 const settingsDialog = document.querySelector("#settings-dialog");
@@ -32,6 +33,7 @@ const progressDialog = document.querySelector("#progress-dialog");
 const errorDialog = document.querySelector("#error-dialog");
 const historyDialog = document.querySelector("#history-dialog");
 const helpDialog = document.querySelector("#help-dialog");
+const installDialog = document.querySelector("#install-dialog");
 const hashtagEditDialog = document.querySelector("#hashtag-edit-dialog");
 const altTextDialog = document.querySelector("#alt-text-dialog");
 const imageEditorDialog = document.querySelector("#image-editor-dialog");
@@ -112,6 +114,7 @@ let draftSaveTimer = null;
 let serviceWorkerRegistration = null;
 let updateInProgress = false;
 let sessionCheckTimer = null;
+let deferredInstallPrompt = null;
 let helpCache = {
   path: "",
   text: "",
@@ -269,6 +272,20 @@ function detectBrowserLocale() {
   return candidates.find((value) => SUPPORTED_LOCALES.includes(value)) || DEFAULT_LOCALE;
 }
 
+function isIosDevice() {
+  return /iPad|iPhone|iPod/.test(window.navigator.userAgent)
+    || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
+}
+
+function isStandaloneMode() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+function updateInstallButtonVisibility() {
+  const canShow = !isStandaloneMode() && (Boolean(deferredInstallPrompt) || isIosDevice());
+  installButton.hidden = !canShow;
+}
+
 function formatTemplate(template, values = {}) {
   return template.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "");
 }
@@ -303,6 +320,7 @@ function applyTranslations() {
   settingsButton.textContent = t("settingsButton");
   loadThreadButton.textContent = t("loadThreadButton");
   helpButton.textContent = t("helpButton");
+  installButton.textContent = t("installButton");
   saveThreadButton.textContent = t("saveThreadButton");
   checkUpdatesButton.textContent = t("checkUpdatesButton");
   reloadAppButton.textContent = t("reloadButton");
@@ -2426,6 +2444,29 @@ helpButton.addEventListener("click", () => {
   void loadReadmeContent();
 });
 
+installButton.addEventListener("click", async () => {
+  if (isIosDevice()) {
+    installDialog.showModal();
+    return;
+  }
+
+  if (!deferredInstallPrompt) {
+    updateInstallButtonVisibility();
+    return;
+  }
+
+  deferredInstallPrompt.prompt();
+
+  try {
+    await deferredInstallPrompt.userChoice;
+  } catch (error) {
+    console.error(error);
+  }
+
+  deferredInstallPrompt = null;
+  updateInstallButtonVisibility();
+});
+
 loadThreadButton.addEventListener("click", () => {
   threadImportInput.click();
 });
@@ -2693,6 +2734,21 @@ window.addEventListener("focus", () => {
   void verifySession({ silent: true });
 });
 
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateInstallButtonVisibility();
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  updateInstallButtonVisibility();
+});
+
+window.matchMedia("(display-mode: standalone)").addEventListener("change", () => {
+  updateInstallButtonVisibility();
+});
+
 currentLocale = detectBrowserLocale();
 localePreference = "auto";
 currentTipIndex = pickRandomTipIndex();
@@ -2700,6 +2756,7 @@ tipsVisible = true;
 hashtagPlacement = "first";
 languageSelect.value = localePreference;
   applyTranslations();
+  updateInstallButtonVisibility();
   setStatus(t("statusPreparing"));
   registerServiceWorker();
   renderSegments();
