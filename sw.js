@@ -1,4 +1,4 @@
-const APP_VERSION = "v30";
+const APP_VERSION = "v37";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -10,6 +10,7 @@ const APP_SHELL = [
   "./version.json",
   "./README.md",
   "./README.de.md",
+  "./og-image.jpg",
   "./icons/icon.svg",
   "./icons/maskable-icon.svg",
 ];
@@ -132,6 +133,12 @@ function normalizeSegmentOverrides(segments) {
     .filter((entry) => entry.trim().length > 0);
 
   return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeSegmentLinkCardDismissals(entries) {
+  return Array.isArray(entries)
+    ? entries.map((entry) => (typeof entry === "string" && entry.trim() ? entry.trim() : ""))
+    : [];
 }
 
 function normalizePostingHistory(entries) {
@@ -666,15 +673,17 @@ async function getAppState({ browserLocale } = {}) {
     hashtagPlacement: storedSettings?.hashtagPlacement === "last" ? "last" : "first",
     segmentImages: normalizeSegmentImages(storedSettings?.segmentImages || draft?.segmentImages),
     segmentOverrides: normalizeSegmentOverrides(draft?.segmentOverrides),
+    segmentLinkCardDismissals: normalizeSegmentLinkCardDismissals(draft?.segmentLinkCardDismissals),
     postingHistory: normalizePostingHistory(storedSettings?.postingHistory),
   };
 }
 
-async function saveDraft({ draft, segmentImages, segmentOverrides } = {}) {
+async function saveDraft({ draft, segmentImages, segmentOverrides, segmentLinkCardDismissals } = {}) {
   await writeStoredValue(DRAFT_KEY, {
     sourceText: draft || "",
     segmentImages: normalizeSegmentImages(segmentImages),
     segmentOverrides: normalizeSegmentOverrides(segmentOverrides),
+    segmentLinkCardDismissals: normalizeSegmentLinkCardDismissals(segmentLinkCardDismissals),
   });
   return { ok: true };
 }

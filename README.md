@@ -128,6 +128,16 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Progress and errors are shown in UI popups
 - Hashtags, mentions, and links are posted as rich-text facets so they become clickable in Bluesky
 
+## Why There Are No Link Cards
+
+### Plain-Language Explanation
+
+Threadline is a fully static browser app and does not run its own backend. Because of that, it cannot reliably read third-party websites in order to build preview cards with title, description, and image. Links in the text still work and stay clickable on Bluesky, but Threadline does not currently generate automatic link cards.
+
+### Technical Explanation
+
+The blocker is cross-origin access in the browser. To read Open Graph data from another website, that site would need to allow the request through CORS. Many sites do not. Without a custom server or worker, a PWA hosted on GitHub Pages cannot reliably fetch those HTML pages and preview images, then turn them into a proper `app.bsky.embed.external` with a thumbnail. For that reason, Threadline currently sticks to clickable links via rich-text facets.
+
 ## Recent Posts
 
 - Below the status area there is a `Recent posts` section

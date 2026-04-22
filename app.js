@@ -11,9 +11,9 @@ const IMAGE_EXPORT_WIDTH = 1400;
 const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH) * IMAGE_EDITOR_CANVAS_HEIGHT);
 const MAX_POSTING_HISTORY = 30;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.14",
-  cacheVersion: "v30",
-  label: "Posting connectivity and partial failure handling",
+  appVersion: "0.4.21",
+  cacheVersion: "v37",
+  label: "Remove link cards",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -1203,6 +1203,7 @@ function resolveConfirmDialog(value) {
 }
 
 function buildThreadExportPayload() {
+  const segments = getSegmentPayloads();
   return {
     app: "Threadline",
     exportedAt: new Date().toISOString(),
@@ -1216,7 +1217,7 @@ function buildThreadExportPayload() {
       hashtagPlacement,
       hashtags,
       selectedHashtags,
-      segments: getSegmentPayloads().map((segment) => ({
+      segments: segments.map((segment, index) => ({
         text: segment.text,
         images: normalizeSegmentImages([segment.images])[0] || [],
       })),
