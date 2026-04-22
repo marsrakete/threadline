@@ -13,6 +13,7 @@
 ## Live-App
 
 - URL: [https://marsrakete.github.io/threadline/](https://marsrakete.github.io/threadline/)
+- Repository: [https://github.com/marsrakete/threadline](https://github.com/marsrakete/threadline)
 
 ## Überblick
 
@@ -37,6 +38,7 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Umbruch möglichst an Wortgrenzen
 - Vorhandene Zeilenumbrüche werden berücksichtigt
 - Optionaler Zähler `1/x`, immer in einer eigenen Schlusszeile pro Abschnitt
+- Optionales Thread-Emoji `⤵️` für alle Abschnitte außer dem letzten, vor einem aktiven Zähler
 - Manueller harter Abschnittswechsel mit `%%`
 - Die Thread-Abschnitte dürfen nachträglich bearbeitet werden
 - Sobald ein Abschnitt manuell verändert wurde, wird der Composer gesperrt, damit die Bearbeitung nicht versehentlich überschrieben wird

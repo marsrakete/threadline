@@ -1,4 +1,4 @@
-const APP_VERSION = "v37";
+const APP_VERSION = "v40";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -133,12 +133,6 @@ function normalizeSegmentOverrides(segments) {
     .filter((entry) => entry.trim().length > 0);
 
   return normalized.length > 0 ? normalized : null;
-}
-
-function normalizeSegmentLinkCardDismissals(entries) {
-  return Array.isArray(entries)
-    ? entries.map((entry) => (typeof entry === "string" && entry.trim() ? entry.trim() : ""))
-    : [];
 }
 
 function normalizePostingHistory(entries) {
@@ -668,22 +662,21 @@ async function getAppState({ browserLocale } = {}) {
     localePreference: localePreference || "auto",
     tipsVisible: storedSettings?.tipsVisible !== false,
     altTextRequired: storedSettings?.altTextRequired !== false,
+    appendThreadEmoji: storedSettings?.appendThreadEmoji === true,
     hashtags,
     selectedHashtags,
     hashtagPlacement: storedSettings?.hashtagPlacement === "last" ? "last" : "first",
     segmentImages: normalizeSegmentImages(storedSettings?.segmentImages || draft?.segmentImages),
     segmentOverrides: normalizeSegmentOverrides(draft?.segmentOverrides),
-    segmentLinkCardDismissals: normalizeSegmentLinkCardDismissals(draft?.segmentLinkCardDismissals),
     postingHistory: normalizePostingHistory(storedSettings?.postingHistory),
   };
 }
 
-async function saveDraft({ draft, segmentImages, segmentOverrides, segmentLinkCardDismissals } = {}) {
+async function saveDraft({ draft, segmentImages, segmentOverrides } = {}) {
   await writeStoredValue(DRAFT_KEY, {
     sourceText: draft || "",
     segmentImages: normalizeSegmentImages(segmentImages),
     segmentOverrides: normalizeSegmentOverrides(segmentOverrides),
-    segmentLinkCardDismissals: normalizeSegmentLinkCardDismissals(segmentLinkCardDismissals),
   });
   return { ok: true };
 }
@@ -702,6 +695,7 @@ async function saveSettings(settings = {}) {
     localePreference: settings.localePreference || existing.localePreference || "auto",
     tipsVisible: settings.tipsVisible !== undefined ? settings.tipsVisible : (existing.tipsVisible !== false),
     altTextRequired: settings.altTextRequired !== false,
+    appendThreadEmoji: settings.appendThreadEmoji === true,
     hashtags,
     selectedHashtags,
     hashtagPlacement: settings.hashtagPlacement === "last" ? "last" : (existing.hashtagPlacement === "last" ? "last" : "first"),

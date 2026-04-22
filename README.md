@@ -13,6 +13,7 @@
 ## Live App
 
 - URL: [https://marsrakete.github.io/threadline/](https://marsrakete.github.io/threadline/)
+- Repository: [https://github.com/marsrakete/threadline](https://github.com/marsrakete/threadline)
 
 ## Overview
 
@@ -37,6 +38,7 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Splits try to break on word boundaries
 - Existing line breaks are preserved as well as possible
 - Optional `1/x` counters, always appended on their own line
+- Optional thread emoji `⤵️` for every segment except the last one, inserted before an active counter
 - Manual hard split marker with `%%`
 - Thread segments can be edited after splitting
 - As soon as a segment is edited manually, the composer is locked to prevent accidental overwrites

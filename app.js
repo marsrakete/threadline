@@ -11,9 +11,9 @@ const IMAGE_EXPORT_WIDTH = 1400;
 const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH) * IMAGE_EDITOR_CANVAS_HEIGHT);
 const MAX_POSTING_HISTORY = 30;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.21",
-  cacheVersion: "v37",
-  label: "Remove link cards",
+  appVersion: "0.4.24",
+  cacheVersion: "v40",
+  label: "Group composer toggles",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -97,6 +97,7 @@ const sourceText = document.querySelector("#source-text");
 const composerLockNote = document.querySelector("#composer-lock-note");
 const composerUnlockButton = document.querySelector("#composer-unlock-button");
 const counterToggle = document.querySelector("#counter-toggle");
+const threadEmojiToggle = document.querySelector("#thread-emoji-toggle");
 const characterCount = document.querySelector("#character-count");
 const segmentSummary = document.querySelector("#segment-summary");
 const publishWarning = document.querySelector("#publish-warning");
@@ -127,6 +128,7 @@ let selectedHashtags = [];
 let hashtagPlacement = "first";
 let postingHistory = [];
 let currentComposedText = "";
+let appendThreadEmoji = false;
 let segmentOverrides = null;
 let composerLocked = false;
 let backupStatusTimer = null;
@@ -269,6 +271,7 @@ function updatePublishAvailability() {
 function updateComposerLockState() {
   sourceText.disabled = composerLocked;
   counterToggle.disabled = composerLocked;
+  threadEmojiToggle.disabled = composerLocked;
   clearButton.disabled = composerLocked;
   composerLockNote.hidden = !composerLocked;
 }
@@ -1213,6 +1216,7 @@ function buildThreadExportPayload() {
     thread: {
       sourceText: sourceText.value,
       useCounters: counterToggle.checked,
+      appendThreadEmoji,
       localePreference,
       hashtagPlacement,
       hashtags,
@@ -1273,6 +1277,8 @@ async function importThreadFile(file) {
   const thread = parsed.thread;
   sourceText.value = thread.sourceText || "";
   counterToggle.checked = thread.useCounters !== false;
+  appendThreadEmoji = thread.appendThreadEmoji === true;
+  threadEmojiToggle.checked = appendThreadEmoji;
   localePreference = SUPPORTED_LOCALES.includes(thread.localePreference) || thread.localePreference === "auto"
     ? thread.localePreference
     : localePreference;
@@ -1415,6 +1421,7 @@ async function persistSettings() {
       localePreference,
       tipsVisible,
       altTextRequired,
+      appendThreadEmoji,
       hashtags,
       selectedHashtags,
       hashtagPlacement,
@@ -1439,6 +1446,7 @@ function createSettingsBackupPayload() {
       localePreference,
       tipsVisible,
       altTextRequired,
+      appendThreadEmoji,
       hashtagPlacement,
       hashtags,
       selectedHashtags,
@@ -1487,6 +1495,8 @@ async function importSettingsBackup(file) {
   hashtagPlacementSelect.value = hashtagPlacement;
   tipsVisible = imported.tipsVisible !== false;
   altTextRequired = imported.altTextRequired === true;
+  appendThreadEmoji = imported.appendThreadEmoji === true;
+  threadEmojiToggle.checked = appendThreadEmoji;
   localePreference = SUPPORTED_LOCALES.includes(imported.localePreference) || imported.localePreference === "auto"
     ? imported.localePreference
     : localePreference;
@@ -1925,6 +1935,10 @@ function reserveForCounters(segmentCount) {
   return 2 * digits + 3;
 }
 
+function reserveForThreadEmoji() {
+  return "\n⤵️".length;
+}
+
 function splitByManualMarkers(text) {
   return String(text || "")
     .replace(/\r\n/g, "\n")
@@ -1937,14 +1951,36 @@ function splitChunksGreedy(chunks, limitFactory) {
   return chunks.flatMap((chunk) => greedySplit(chunk, limitFactory));
 }
 
-function splitIntoSegments(text, withCounters) {
+function decorateSegments(segments, withCounters, withThreadEmoji) {
+  return segments.map((segment, segmentIndex) => {
+    let suffix = "";
+    const isLastSegment = segmentIndex === segments.length - 1;
+
+    if (withThreadEmoji && !isLastSegment) {
+      suffix += "\n⤵️";
+    }
+
+    if (withCounters) {
+      suffix += `\n${segmentIndex + 1}/${segments.length}`;
+    }
+
+    return `${segment}${suffix}`;
+  });
+}
+
+function splitIntoSegments(text, withCounters, withThreadEmoji) {
   const manualChunks = splitByManualMarkers(text);
 
   if (manualChunks.length === 0) {
     return [];
   }
 
-  if (!withCounters) {
+  const reserveForSuffix = (segmentCount) => (
+    (withThreadEmoji ? reserveForThreadEmoji() : 0)
+    + (withCounters ? reserveForCounters(segmentCount) : 0)
+  );
+
+  if (!withCounters && !withThreadEmoji) {
     return splitChunksGreedy(manualChunks, () => MAX_POST_LENGTH);
   }
 
@@ -1952,19 +1988,19 @@ function splitIntoSegments(text, withCounters) {
   let guess = Math.max(1, Math.ceil(estimatedLength / MAX_POST_LENGTH), manualChunks.length);
 
   for (let index = 0; index < 12; index += 1) {
-    const reserve = reserveForCounters(guess);
+    const reserve = reserveForSuffix(guess);
     const segments = splitChunksGreedy(manualChunks, () => MAX_POST_LENGTH - reserve);
 
     if (segments.length === guess) {
-      return segments.map((segment, segmentIndex) => `${segment}\n${segmentIndex + 1}/${segments.length}`);
+      return decorateSegments(segments, withCounters, withThreadEmoji);
     }
 
     guess = segments.length;
   }
 
-  const fallbackReserve = reserveForCounters(guess);
+  const fallbackReserve = reserveForSuffix(guess);
   const fallbackSegments = splitChunksGreedy(manualChunks, () => MAX_POST_LENGTH - fallbackReserve);
-  return fallbackSegments.map((segment, segmentIndex) => `${segment}\n${segmentIndex + 1}/${fallbackSegments.length}`);
+  return decorateSegments(fallbackSegments, withCounters, withThreadEmoji);
 }
 
 function normalizeInput(text) {
@@ -2149,8 +2185,9 @@ function renderSegments(options = {}) {
   const { preserveOverrides = Boolean(segmentOverrides) } = options;
   const text = sourceText.value;
   const useCounters = counterToggle.checked;
+  appendThreadEmoji = threadEmojiToggle.checked;
   currentComposedText = buildComposedText(text);
-  const generatedSegments = currentComposedText.trim() ? splitIntoSegments(currentComposedText, useCounters) : [];
+  const generatedSegments = currentComposedText.trim() ? splitIntoSegments(currentComposedText, useCounters, appendThreadEmoji) : [];
   activeSegments = preserveOverrides ? (normalizeSegmentOverrides(segmentOverrides) || generatedSegments) : generatedSegments;
   segmentOverrides = preserveOverrides ? normalizeSegmentOverrides(activeSegments) : null;
   syncSegmentImages(activeSegments.length);
@@ -2231,6 +2268,7 @@ async function hydrateAppState() {
     hashtagPlacement = state.hashtagPlacement === "last" ? "last" : "first";
     segmentImages = normalizeSegmentImages(state.segmentImages);
     segmentOverrides = normalizeSegmentOverrides(state.segmentOverrides);
+    appendThreadEmoji = state.appendThreadEmoji === true;
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
     currentLocale = localePreference === "auto"
@@ -2242,6 +2280,7 @@ async function hydrateAppState() {
     passwordField.value = "";
     logoutButton.hidden = !state.authenticated;
     hashtagPlacementSelect.value = hashtagPlacement;
+    threadEmojiToggle.checked = appendThreadEmoji;
     applyTranslations();
     if (segmentImages.some((images) => (images || []).length > 0)) {
       scheduleImageValidation();
@@ -2425,6 +2464,14 @@ counterToggle.addEventListener("change", () => {
   segmentOverrides = null;
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
+  queueDraftSave();
+});
+threadEmojiToggle.addEventListener("change", () => {
+  appendThreadEmoji = threadEmojiToggle.checked;
+  segmentOverrides = null;
+  setComposerLocked(false);
+  renderSegments({ preserveOverrides: false });
+  void persistSettings();
   queueDraftSave();
 });
 

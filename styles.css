@@ -363,6 +363,12 @@ button.is-danger:disabled {
   accent-color: var(--accent);
 }
 
+.toggle-stack {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
 .composer-meta {
   margin-top: 14px;
   display: flex;
