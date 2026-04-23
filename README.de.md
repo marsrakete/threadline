@@ -10,6 +10,8 @@
   Eine Progressive Web App zum Schreiben, Aufteilen, Speichern und Veröffentlichen von Bluesky-Threads inklusive Bildern, Hashtags und lokaler Backup-Funktion.
 </p>
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U7U01OC260)
+
 ## Live-App
 
 - URL: [https://marsrakete.github.io/threadline/](https://marsrakete.github.io/threadline/)
