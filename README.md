@@ -123,6 +123,40 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Duplicates are ignored
 - Important: the backup explicitly does **not** include the Bluesky account or password
 
+### Account Archive
+
+- The dedicated `Account archive` area can back up your own Bluesky posts together with their images
+- You can also choose an `Archive type` before loading:
+- `Full archive`: loads all of your own posts and all of your own replies, including replies inside other people's threads
+- `Own posts only`: loads your own top-level posts and your own replies only inside your own threads, but skips your replies in foreign threads
+- `My threads complete`: loads your own posts, your own replies inside those threads, and replies from other accounts inside your own threads
+- The normal user workflow is:
+1. Choose the range: all posts, a single year, or a custom date range
+2. Choose the archive type: full archive, own posts only, or my threads complete
+3. Use `Load next wave` to fetch the next posts and images into the current archive session
+4. Pause or cancel if needed and continue later from the same checkpoint
+5. Use `Save archive as ZIP` to store a technical backup containing posts, metadata, and images
+6. Use `Generate HTML archive` to create an offline-readable version with search, filters, and collapsible threads
+7. Use `Generate PDF volumes` to create a paginated PDF version from that same loaded archive
+- For large accounts, the export should ideally be done on a desktop device with plenty of free storage and in multiple waves
+
+### Account Archive For Techies
+
+- The export runs fully inside the existing PWA without a custom backend
+- Posts are loaded page by page via `com.atproto.repo.listRecords` for `app.bsky.feed.post`
+- Phase 1 of the filter works directly on your own repo records:
+- `Full archive` keeps all of your own posts
+- `Own posts only` removes your replies inside other people's threads
+- Phase 2 additionally expands your own thread roots through `app.bsky.feed.getPostThread` when `My threads complete` is selected
+- That step also pulls in replies from other accounts inside your own threads
+- Metrics are hydrated in batches through `app.bsky.feed.getPosts`
+- Images are fetched through `com.atproto.sync.getBlob` and copied into the archive with stable paths
+- Large exports run in waves; the browser only keeps small resume metadata for that process
+- The ZIP contains `manifest.json`, `posts.json`, and all downloaded image files
+- The HTML archive is a single file with embedded images, a search field, date filters, and options for `only posts with images` and `only threads`
+- PDF volumes are generated from the loaded archive model, not directly from live API responses
+- The PDF volume size intentionally supports up to `1000` posts
+
 ## Publishing To Bluesky
 
 - Short text can be sent as a single post

@@ -71,99 +71,281 @@
             Letzte Postings
           </button>
         </div>
+
+        <div class="archive-launch-panel">
+          <p class="eyebrow" data-i18n="archiveLaunchEyebrow">Archiv</p>
+          <button type="button" class="ghost-button status-history-button" id="archive-button" data-i18n="archiveLaunchButton" disabled>
+            Account-Archiv
+          </button>
+          <p id="archive-launch-note" class="archive-launch-note" data-i18n="archiveLaunchDisabledNote">
+            Zum Sichern bitte zuerst verbinden.
+          </p>
+        </div>
       </aside>
 
       <main class="workspace">
-        <div class="composer-column">
-          <section class="editor-pane">
+        <div id="composer-workspace" class="workspace-view workspace-view-active">
+          <div class="composer-column">
+            <section class="editor-pane">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow" data-i18n="composerEyebrow">Composer</p>
+                  <h2 data-i18n="composerTitle">Text eingeben</h2>
+                </div>
+
+                <div class="toggle-stack">
+                  <label class="toggle">
+                    <input id="counter-toggle" type="checkbox" checked>
+                    <span data-i18n="counterToggle">Zähler anhängen</span>
+                  </label>
+
+                  <label class="toggle">
+                    <input id="thread-emoji-toggle" type="checkbox">
+                    <span data-i18n="threadEmojiToggle">Thread-Emoji anhängen</span>
+                  </label>
+                </div>
+              </div>
+
+              <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
+              <textarea id="source-text" maxlength="5000" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …"></textarea>
+
+              <div class="composer-meta">
+                <span id="character-count">0 Zeichen</span>
+                <span id="segment-summary">Ein einzelner Post bis 300 Zeichen.</span>
+              </div>
+              <p class="composer-note" data-i18n="manualSplitHint">
+                Manueller Abschnittswechsel: Mit <code>%%</code> beginnt der folgende Text sicher im naechsten Thread-Abschnitt.
+              </p>
+              <div id="composer-lock-note" class="composer-lock-note" hidden>
+                <p data-i18n="composerLockWarning">Es wurde eine Änderung im Thread-Abschnitt vorgenommen. Änderungen in diesem Editor überschreiben die Änderung im Abschnitt dann wieder.</p>
+                <button id="composer-unlock-button" type="button" class="ghost-button" data-i18n="composerUnlockButton">Änderung ignorieren</button>
+              </div>
+
+              <div class="editor-actions">
+                <button id="clear-button" type="button" class="ghost-button" data-i18n="clearButton">Text löschen</button>
+                <button type="button" class="ghost-button" id="load-thread-button" data-i18n="loadThreadButton">Thread laden</button>
+                <button id="save-thread-button" type="button" class="ghost-button" data-i18n="saveThreadButton">Thread speichern</button>
+              </div>
+
+              <section class="tips-panel">
+                <p class="eyebrow" data-i18n="tipsEyebrow">Tipps</p>
+                <p class="tips-title" data-i18n="tipsTitle">Kurzer Hinweis für bessere Posts</p>
+                <p id="tip-text" class="tips-text"></p>
+                <div class="tips-actions">
+                  <button id="next-tip-button" type="button" class="ghost-button" data-i18n="nextTipButton">Nächster Tipp</button>
+                  <button id="hide-tips-button" type="button" class="ghost-button" data-i18n="hideTipsButton">Keine Tipps mehr anzeigen</button>
+                </div>
+              </section>
+            </section>
+
+            <section class="hashtags-pane">
+              <p class="eyebrow" data-i18n="hashtagsEyebrow">Hashtags</p>
+              <p class="tips-title" data-i18n="hashtagsTitle">Hashtag-Verwalter</p>
+              <form id="hashtag-form" class="hashtag-form">
+                <input id="hashtag-input" type="text" placeholder="#deinTag" autocomplete="off">
+                <button id="hashtag-add-button" type="submit" class="ghost-button" data-i18n="addHashtagButton">Hinzufügen</button>
+              </form>
+              <label class="hashtag-placement-label">
+                <span data-i18n="hashtagPlacementLabel">Ausgewählte Hashtags platzieren</span>
+                <select id="hashtag-placement-select">
+                  <option value="first">Im ersten Abschnitt</option>
+                  <option value="last">Im letzten Abschnitt</option>
+                </select>
+              </label>
+              <div id="hashtag-cloud" class="hashtag-cloud"></div>
+              <p id="hashtag-selection-note" class="tips-text"></p>
+            </section>
+          </div>
+
+          <section class="segments-pane" id="segments-pane" hidden>
             <div class="section-heading">
               <div>
-                <p class="eyebrow" data-i18n="composerEyebrow">Composer</p>
-                <h2 data-i18n="composerTitle">Text eingeben</h2>
-              </div>
-
-              <div class="toggle-stack">
-                <label class="toggle">
-                  <input id="counter-toggle" type="checkbox" checked>
-                  <span data-i18n="counterToggle">Zähler anhängen</span>
-                </label>
-
-                <label class="toggle">
-                  <input id="thread-emoji-toggle" type="checkbox">
-                  <span data-i18n="threadEmojiToggle">Thread-Emoji anhängen</span>
-                </label>
+                <p class="eyebrow" data-i18n="splitEyebrow">Auto-Split</p>
+                <h2 data-i18n="splitTitle">Thread-Abschnitte</h2>
+                <p class="section-note" data-i18n="splitHint">Feinschliff möglich! Das Editieren in den Abschnitten ist erlaubt. Änderungen im Composer überschreiben das aber!</p>
               </div>
             </div>
 
-            <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
-            <textarea id="source-text" maxlength="5000" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …"></textarea>
+            <div id="segments-list" class="segments-list"></div>
 
-            <div class="composer-meta">
-              <span id="character-count">0 Zeichen</span>
-              <span id="segment-summary">Ein einzelner Post bis 300 Zeichen.</span>
-            </div>
-            <p class="composer-note" data-i18n="manualSplitHint">
-              Manueller Abschnittswechsel: Mit <code>%%</code> beginnt der folgende Text sicher im naechsten Thread-Abschnitt.
-            </p>
-            <div id="composer-lock-note" class="composer-lock-note" hidden>
-              <p data-i18n="composerLockWarning">Es wurde eine Änderung im Thread-Abschnitt vorgenommen. Änderungen in diesem Editor überschreiben die Änderung im Abschnitt dann wieder.</p>
-              <button id="composer-unlock-button" type="button" class="ghost-button" data-i18n="composerUnlockButton">Änderung ignorieren</button>
-            </div>
-
-            <div class="editor-actions">
-              <button id="clear-button" type="button" class="ghost-button" data-i18n="clearButton">Text löschen</button>
-              <button type="button" class="ghost-button" id="load-thread-button" data-i18n="loadThreadButton">Thread laden</button>
-              <button id="save-thread-button" type="button" class="ghost-button" data-i18n="saveThreadButton">Thread speichern</button>
-            </div>
-
-            <section class="tips-panel">
-              <p class="eyebrow" data-i18n="tipsEyebrow">Tipps</p>
-              <p class="tips-title" data-i18n="tipsTitle">Kurzer Hinweis für bessere Posts</p>
-              <p id="tip-text" class="tips-text"></p>
-              <div class="tips-actions">
-                <button id="next-tip-button" type="button" class="ghost-button" data-i18n="nextTipButton">Nächster Tipp</button>
-                <button id="hide-tips-button" type="button" class="ghost-button" data-i18n="hideTipsButton">Keine Tipps mehr anzeigen</button>
+            <div class="split-actions-wrap">
+              <p id="publish-warning" class="publish-warning" hidden data-i18n="publishAltTextWarning">
+                Bitte die ALT-Texte vollständig ausfüllen.
+              </p>
+              <div class="primary-actions split-actions">
+                <button id="publish-button" type="button" data-i18n="publishButton">Auf Bluesky posten</button>
               </div>
-            </section>
-          </section>
-
-          <section class="hashtags-pane">
-            <p class="eyebrow" data-i18n="hashtagsEyebrow">Hashtags</p>
-            <p class="tips-title" data-i18n="hashtagsTitle">Hashtag-Verwalter</p>
-            <form id="hashtag-form" class="hashtag-form">
-              <input id="hashtag-input" type="text" placeholder="#deinTag" autocomplete="off">
-              <button id="hashtag-add-button" type="submit" class="ghost-button" data-i18n="addHashtagButton">Hinzufügen</button>
-            </form>
-            <label class="hashtag-placement-label">
-              <span data-i18n="hashtagPlacementLabel">Ausgewählte Hashtags platzieren</span>
-              <select id="hashtag-placement-select">
-                <option value="first">Im ersten Abschnitt</option>
-                <option value="last">Im letzten Abschnitt</option>
-              </select>
-            </label>
-            <div id="hashtag-cloud" class="hashtag-cloud"></div>
-            <p id="hashtag-selection-note" class="tips-text"></p>
+            </div>
           </section>
         </div>
 
-        <section class="segments-pane" id="segments-pane" hidden>
-          <div class="section-heading">
+        <section id="archive-workspace" class="archive-workspace workspace-view" hidden>
+          <div class="archive-header-panel">
             <div>
-              <p class="eyebrow" data-i18n="splitEyebrow">Auto-Split</p>
-              <h2 data-i18n="splitTitle">Thread-Abschnitte</h2>
-              <p class="section-note" data-i18n="splitHint">Feinschliff möglich! Das Editieren in den Abschnitten ist erlaubt. Änderungen im Composer überschreiben das aber!</p>
+              <p class="eyebrow" data-i18n="archiveHeaderEyebrow">Account-Archiv</p>
+              <h2 data-i18n="archiveHeaderTitle">Beiträge, Bilder und PDF-Bände sichern</h2>
+              <p class="archive-warning" data-i18n="archiveMobileWarning">
+                Dieses Archiv sollte nach Möglichkeit nicht auf mobilen Geräten erzeugt werden, sondern auf einem PC oder Laptop mit viel freiem Speicher.
+              </p>
+              <p class="section-note" data-i18n="archiveHeaderNote">
+                Sichere deinen eigenen Bluesky-Account als ZIP-Archiv und erzeuge daraus mehrbändige PDF-Ausgaben.
+              </p>
             </div>
+            <button type="button" class="ghost-button" id="archive-back-button" data-i18n="archiveBackButton">Zurück zum Composer</button>
           </div>
 
-          <div id="segments-list" class="segments-list"></div>
+          <div class="archive-grid">
+            <section class="archive-card">
+              <p class="eyebrow" data-i18n="archiveScopeEyebrow">Umfang</p>
+              <h3 data-i18n="archiveScopeTitle">Welche Posts sollen ins Archiv?</h3>
+              <label>
+                <span data-i18n="archiveScopeLabel">Auswahl</span>
+                <select id="archive-scope-select">
+                  <option value="all" data-i18n="archiveScopeAll">Kompletter Account</option>
+                  <option value="year" data-i18n="archiveScopeYear">Ein Jahr</option>
+                  <option value="range" data-i18n="archiveScopeRange">Benutzerdefinierter Zeitraum</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="archiveContentModeLabel">Archivtyp</span>
+                <select id="archive-content-mode-select">
+                  <option value="posts" data-i18n="archiveContentModePosts">Nur eigene Postings</option>
+                  <option value="full" data-i18n="archiveContentModeFull">Voll-Archiv</option>
+                  <option value="threads" data-i18n="archiveContentModeThreads">Eigene Threads komplett</option>
+                </select>
+              </label>
+              <div class="archive-range-grid">
+                <label id="archive-year-wrap">
+                  <span data-i18n="archiveYearLabel">Jahr</span>
+                  <input id="archive-year-input" type="number" min="2010" max="2100" step="1" placeholder="2026">
+                </label>
+                <label id="archive-from-wrap" hidden>
+                  <span data-i18n="archiveFromLabel">Von</span>
+                  <input id="archive-from-input" type="date">
+                </label>
+                <label id="archive-to-wrap" hidden>
+                  <span data-i18n="archiveToLabel">Bis</span>
+                  <input id="archive-to-input" type="date">
+                </label>
+              </div>
+              <p class="settings-note" data-i18n="archiveScopeHelp">
+                Der Export liest deine eigenen Posts seitenweise und filtert sie danach lokal.
+              </p>
+              <label>
+                <span data-i18n="archiveWaveSizeLabel">Posts pro Exportwelle</span>
+                <select id="archive-wave-size-select">
+                  <option value="100">100</option>
+                  <option value="250">250</option>
+                  <option value="500" selected>500</option>
+                  <option value="1000">1000</option>
+                </select>
+              </label>
+            </section>
 
-          <div class="split-actions-wrap">
-            <p id="publish-warning" class="publish-warning" hidden data-i18n="publishAltTextWarning">
-              Bitte die ALT-Texte vollständig ausfüllen.
-            </p>
-            <div class="primary-actions split-actions">
-              <button id="publish-button" type="button" data-i18n="publishButton">Auf Bluesky posten</button>
-            </div>
+            <section class="archive-card">
+              <p class="eyebrow" data-i18n="archivePdfEyebrow">PDF</p>
+              <h3 data-i18n="archivePdfTitle">PDF-Bände konfigurieren</h3>
+              <label>
+                <span data-i18n="archiveBandSizeLabel">Posts pro Band</span>
+                <select id="archive-band-size-select">
+                  <option value="100">100</option>
+                  <option value="200" selected>200</option>
+                  <option value="300">300</option>
+                  <option value="500">500</option>
+                  <option value="750">750</option>
+                  <option value="1000">1000</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="archiveImageSizeLabel">Bildgröße im PDF</span>
+                <select id="archive-image-size-select">
+                  <option value="small" data-i18n="archiveImageSizeSmall">Klein</option>
+                  <option value="medium" selected data-i18n="archiveImageSizeMedium">Mittel</option>
+                  <option value="large" data-i18n="archiveImageSizeLarge">Groß</option>
+                </select>
+              </label>
+              <label class="settings-check">
+                <input id="archive-metrics-toggle" type="checkbox" checked>
+                <span data-i18n="archiveMetricsToggle">Likes, Replies, Reposts und Quotes anzeigen</span>
+              </label>
+              <label class="settings-check">
+                <input id="archive-threads-toggle" type="checkbox" checked>
+                <span data-i18n="archiveThreadsToggle">Threads möglichst zusammenhalten</span>
+              </label>
+            </section>
+
+            <section class="archive-card archive-actions-card">
+              <p class="eyebrow" data-i18n="archiveActionsEyebrow">Aktionen</p>
+              <h3 data-i18n="archiveActionsTitle">Archiv erzeugen oder laden</h3>
+              <p id="archive-start-hint" class="archive-start-hint settings-note" data-i18n="archiveStartHintFresh">
+                Der nächste Start beginnt als Neustart bei Welle 1.
+              </p>
+              <div class="archive-actions">
+                <button type="button" class="ghost-button" id="archive-next-wave-button" data-i18n="archiveNextWaveButton">Nächste Welle laden</button>
+                <button type="button" id="archive-export-zip-button" data-i18n="archiveExportZipButton">Archiv als ZIP sichern</button>
+                <button type="button" class="ghost-button" id="archive-export-html-button" data-i18n="archiveExportHtmlButton">HTML-Archiv erzeugen</button>
+                <button type="button" class="ghost-button" id="archive-export-pdf-button" data-i18n="archiveExportPdfButton">PDF-Bände erzeugen</button>
+                <button type="button" class="ghost-button" id="archive-import-button" data-i18n="archiveImportButton">Archiv laden</button>
+                <button type="button" class="ghost-button" id="archive-reset-button" data-i18n="archiveResetButton">Archivlauf zurücksetzen</button>
+              </div>
+              <p class="settings-note" data-i18n="archiveActionsNote">
+                PDF-Bände werden immer aus dem geladenen Archivmodell erzeugt. Wenn noch keins vorliegt, wird es zuerst vom Account gelesen.
+              </p>
+            </section>
+
+            <section class="archive-card archive-progress-card">
+              <p class="eyebrow" data-i18n="archiveProgressEyebrow">Fortschritt</p>
+              <h3 data-i18n="archiveProgressTitle">Laufender Export</h3>
+              <label class="settings-check">
+                <input id="archive-live-preview-toggle" type="checkbox" checked>
+                <span data-i18n="archiveLivePreviewToggle">Live-Vorschau anzeigen</span>
+              </label>
+              <div class="archive-progress-shell" aria-live="polite">
+                <div class="archive-progress-meta">
+                  <strong id="archive-progress-title" data-i18n="archiveProgressIdleTitle">Bereit</strong>
+                  <span id="archive-progress-step" class="settings-note" data-i18n="archiveProgressIdleStep">Noch kein Archiv geladen.</span>
+                </div>
+                <p id="archive-run-status-line" class="archive-run-status-line" data-i18n="archiveRunStatusIdle">
+                  Noch kein Archivlauf aktiv.
+                </p>
+                <div class="archive-progress-bar">
+                  <span id="archive-progress-fill"></span>
+                </div>
+                <p id="archive-progress-detail" class="settings-note"></p>
+              </div>
+              <div class="archive-run-controls">
+                <button type="button" class="ghost-button" id="archive-pause-button" data-i18n="archivePauseButton" disabled>Pausieren</button>
+                <button type="button" class="ghost-button" id="archive-resume-button" data-i18n="archiveResumeButton" disabled>Fortsetzen</button>
+                <button type="button" class="ghost-button" id="archive-cancel-button" data-i18n="archiveCancelButton" disabled>Abbrechen</button>
+              </div>
+              <div id="archive-preview-panel" class="archive-preview-panel">
+                <p class="archive-preview-kicker" data-i18n="archivePreviewTitle">Live-Vorschau</p>
+                <div id="archive-preview-card" class="archive-preview-card">
+                  <p id="archive-preview-empty" class="settings-note" data-i18n="archivePreviewEmpty">Noch keine Vorschau verfügbar.</p>
+                </div>
+              </div>
+              <div id="archive-summary" class="archive-summary">
+                <div class="archive-summary-item">
+                  <span class="archive-summary-label" data-i18n="archiveSummaryPosts">Posts</span>
+                  <strong id="archive-summary-posts">0</strong>
+                </div>
+                <div class="archive-summary-item">
+                  <span class="archive-summary-label" data-i18n="archiveSummaryImages">Bilder</span>
+                  <strong id="archive-summary-images">0</strong>
+                </div>
+                <div class="archive-summary-item">
+                  <span class="archive-summary-label" data-i18n="archiveSummaryBands">PDF-Bände</span>
+                  <strong id="archive-summary-bands">0</strong>
+                </div>
+              </div>
+              <div id="archive-results" class="archive-results"></div>
+            </section>
+
+            <section class="archive-card archive-spec-card">
+              <p class="eyebrow" data-i18n="archiveSpecEyebrow">Ablauf</p>
+              <h3 data-i18n="archiveSpecTitle">So funktioniert das Archiv</h3>
+              <div id="archive-spec-content" class="archive-spec-content"></div>
+            </section>
           </div>
         </section>
       </main>
@@ -188,6 +370,16 @@
             <option value="fr">Français</option>
           </select>
         </label>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="appearanceEyebrow">Darstellung</p>
+          <div class="settings-actions">
+            <button type="button" id="theme-toggle-button" class="ghost-button" data-i18n="darkModeButton">Dark Mode</button>
+          </div>
+          <p class="settings-note" id="theme-status-note" data-i18n="themeLightActive">
+            Aktuell ist der helle Modus aktiv.
+          </p>
+        </section>
 
         <section class="settings-block">
           <p class="eyebrow" data-i18n="tipsSettingsEyebrow">Tipps</p>
@@ -231,6 +423,24 @@
             <button type="button" id="reload-app-button" class="ghost-button" data-i18n="reloadButton" hidden>Neu laden</button>
           </div>
           <p id="update-status" class="settings-note" hidden></p>
+        </section>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="supportEyebrow">Support</p>
+          <p class="settings-note" data-i18n="supportNote">
+            Wenn dir Threadline hilft und du die Weiterentwicklung unterstützen möchtest, freue ich mich über einen Kaffee.
+          </p>
+          <div class="support-actions">
+            <a href="https://ko-fi.com/U7U01OC260" target="_blank" rel="noreferrer noopener">
+              <img
+                height="36"
+                style="border:0px;height:36px;"
+                src="./icons/kofi-button.svg"
+                border="0"
+                alt="Buy Me a Coffee at ko-fi.com"
+              >
+            </a>
+          </div>
         </section>
       </form>
     </dialog>
@@ -437,6 +647,7 @@
     </dialog>
 
     <input id="thread-import-input" class="is-hidden" type="file" accept="application/json,application/gzip,.json,.gz,.threadline,.threadline.gz">
+    <input id="archive-import-input" class="is-hidden" type="file" accept="application/json,application/gzip,application/zip,.json,.gz,.zip,.threadline-archive">
 
     <template id="segment-template">
       <article class="segment-card">

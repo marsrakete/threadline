@@ -1,4 +1,4 @@
-const APP_VERSION = "v40";
+const APP_VERSION = "v42";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -13,6 +13,7 @@ const APP_SHELL = [
   "./og-image.jpg",
   "./icons/icon.svg",
   "./icons/maskable-icon.svg",
+  "./icons/kofi-button.svg",
 ];
 
 const DB_NAME = "threadline-db";
@@ -21,7 +22,9 @@ const AUTH_KEY = "auth";
 const DRAFT_KEY = "draft";
 const LOCALE_KEY = "locale";
 const SETTINGS_KEY = "ui-settings";
+const ARCHIVE_SESSION_KEY = "archive-session";
 const API_BASE = "https://bsky.social/xrpc";
+const archiveRunControls = new Map();
 
 function parseHashtagValue(value) {
   const cleaned = String(value || "")
@@ -431,10 +434,20 @@ async function handleMessage(message, port) {
       return saveDraft(message.payload);
     case "SAVE_SETTINGS":
       return saveSettings(message.payload);
+    case "GET_ARCHIVE_SESSION":
+      return getArchiveSession();
+    case "SAVE_ARCHIVE_SESSION":
+      return saveArchiveSession(message.payload);
+    case "CLEAR_ARCHIVE_SESSION":
+      return clearArchiveSession();
+    case "SET_ARCHIVE_RUN_CONTROL":
+      return setArchiveRunControl(message.payload);
     case "LOGOUT":
       return logout();
     case "PUBLISH_THREAD":
       return publishThread(message.payload, (progress) => port.postMessage({ progress }));
+    case "EXPORT_ACCOUNT_ARCHIVE_WAVE":
+      return exportAccountArchiveWave(message.payload, (progress) => port.postMessage({ progress }));
     default:
       throw new Error("Unbekannter Service-Worker-Befehl.");
   }
@@ -573,6 +586,25 @@ async function bskyFetch(endpoint, options = {}) {
   return data;
 }
 
+async function bskyGet(endpoint, query = {}, options = {}) {
+  const search = new URLSearchParams();
+  Object.entries(query || {}).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.filter(Boolean).forEach((entry) => search.append(key, entry));
+      return;
+    }
+    if (value !== undefined && value !== null && value !== "") {
+      search.set(key, value);
+    }
+  });
+
+  const suffix = search.toString() ? `?${search.toString()}` : "";
+  return bskyFetch(`${endpoint}${suffix}`, {
+    method: "GET",
+    headers: options.headers || {},
+  });
+}
+
 async function uploadBlob(auth, file) {
   const response = await fetch(`${API_BASE}/com.atproto.repo.uploadBlob`, {
     method: "POST",
@@ -596,6 +628,24 @@ async function uploadBlob(auth, file) {
     throw new Error(data.message || data.error || `Bluesky-Fehler: ${response.status}`);
   }
   return data.blob;
+}
+
+async function downloadBlob(auth, did, cid) {
+  const response = await fetch(`${API_BASE}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, {
+    method: "GET",
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Blob konnte nicht geladen werden (${response.status}).`);
+  }
+
+  return {
+    type: response.headers.get("content-type") || "application/octet-stream",
+    bytes: new Uint8Array(await response.arrayBuffer()),
+  };
 }
 
 async function login({ identifier, appPassword }) {
@@ -662,6 +712,7 @@ async function getAppState({ browserLocale } = {}) {
     localePreference: localePreference || "auto",
     tipsVisible: storedSettings?.tipsVisible !== false,
     altTextRequired: storedSettings?.altTextRequired !== false,
+    themeMode: storedSettings?.themeMode === "dark" ? "dark" : "light",
     appendThreadEmoji: storedSettings?.appendThreadEmoji === true,
     hashtags,
     selectedHashtags,
@@ -695,6 +746,9 @@ async function saveSettings(settings = {}) {
     localePreference: settings.localePreference || existing.localePreference || "auto",
     tipsVisible: settings.tipsVisible !== undefined ? settings.tipsVisible : (existing.tipsVisible !== false),
     altTextRequired: settings.altTextRequired !== false,
+    themeMode: settings.themeMode === "dark"
+      ? "dark"
+      : (settings.themeMode === "light" ? "light" : (existing.themeMode === "dark" ? "dark" : "light")),
     appendThreadEmoji: settings.appendThreadEmoji === true,
     hashtags,
     selectedHashtags,
@@ -711,8 +765,40 @@ async function saveSettings(settings = {}) {
   return { ok: true };
 }
 
+async function getArchiveSession() {
+  return await readStoredValue(ARCHIVE_SESSION_KEY) || null;
+}
+
+async function saveArchiveSession({ session } = {}) {
+  await writeStoredValue(ARCHIVE_SESSION_KEY, session || null);
+  return { ok: true };
+}
+
+async function clearArchiveSession() {
+  await writeStoredValue(ARCHIVE_SESSION_KEY, null);
+  return { ok: true };
+}
+
+function setArchiveRunControl({ runId, action } = {}) {
+  if (!runId) {
+    return { ok: false };
+  }
+
+  const current = archiveRunControls.get(runId) || { state: "running" };
+  if (action === "pause") {
+    current.state = "paused";
+  } else if (action === "resume") {
+    current.state = "running";
+  } else if (action === "cancel") {
+    current.state = "cancelled";
+  }
+  archiveRunControls.set(runId, current);
+  return { ok: true, state: current.state };
+}
+
 async function logout() {
   await clearStoredAuth();
+  await clearArchiveSession();
   return { authenticated: false };
 }
 
@@ -807,6 +893,545 @@ async function checkConnectivity() {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function parseAtUri(uri = "") {
+  const match = /^at:\/\/([^/]+)\/([^/]+)\/(.+)$/.exec(String(uri || ""));
+  if (!match) {
+    return { did: "", collection: "", rkey: "" };
+  }
+  return {
+    did: match[1],
+    collection: match[2],
+    rkey: match[3],
+  };
+}
+
+function getBlobCidFromRef(image = {}) {
+  return image?.image?.ref?.$link
+    || image?.image?.cid
+    || image?.cid
+    || image?.ref?.$link
+    || "";
+}
+
+function normalizeArchiveFilters(filters = {}) {
+  return {
+    scope: filters.scope === "year" || filters.scope === "range" ? filters.scope : "all",
+    contentMode: filters.contentMode === "full" || filters.contentMode === "threads" ? filters.contentMode : "posts",
+    year: String(filters.year || "").trim(),
+    from: String(filters.from || "").trim(),
+    to: String(filters.to || "").trim(),
+  };
+}
+
+function postMatchesArchiveFilters(record, filters) {
+  const createdAt = typeof record?.createdAt === "string" ? record.createdAt : "";
+  if (!createdAt) {
+    return true;
+  }
+
+  if (filters.scope === "year" && filters.year) {
+    return createdAt.startsWith(`${filters.year}-`);
+  }
+
+  if (filters.scope === "range") {
+    const timestamp = Date.parse(createdAt);
+    if (Number.isNaN(timestamp)) {
+      return false;
+    }
+    if (filters.from && timestamp < Date.parse(`${filters.from}T00:00:00.000Z`)) {
+      return false;
+    }
+    if (filters.to && timestamp > Date.parse(`${filters.to}T23:59:59.999Z`)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getArchiveRootUri(record = {}, fallbackUri = "") {
+  return record?.reply?.root?.uri || (record?.reply ? "" : fallbackUri);
+}
+
+function getArchiveParentUri(record = {}) {
+  return record?.reply?.parent?.uri || "";
+}
+
+function recordBelongsToOwnThread(record = {}, ownDid = "", fallbackUri = "") {
+  const rootUri = getArchiveRootUri(record, fallbackUri);
+  if (!rootUri) {
+    return true;
+  }
+  return parseAtUri(rootUri).did === ownDid;
+}
+
+function postMatchesArchiveSelection(record, filters, ownDid, fallbackUri = "") {
+  if (!postMatchesArchiveFilters(record, filters)) {
+    return false;
+  }
+
+  if (filters.contentMode === "full") {
+    return true;
+  }
+
+  if (!record?.reply) {
+    return true;
+  }
+
+  return recordBelongsToOwnThread(record, ownDid, fallbackUri);
+}
+
+function extractArchiveEmbedImages(record = {}) {
+  return Array.isArray(record?.embed?.images) ? record.embed.images.slice(0, 4) : [];
+}
+
+function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", authorDid = "", counts = null }) {
+  const parsed = parseAtUri(uri);
+  return {
+    uri,
+    cid: cid || "",
+    rkey: parsed.rkey,
+    createdAt: record?.createdAt || "",
+    text: record?.text || "",
+    langs: Array.isArray(record?.langs) ? record.langs : [],
+    facets: Array.isArray(record?.facets) ? record.facets : [],
+    reply: record?.reply || null,
+    thread: {
+      rootUri: getArchiveRootUri(record, uri),
+      parentUri: getArchiveParentUri(record),
+    },
+    counts: counts || {
+      likeCount: 0,
+      replyCount: 0,
+      repostCount: 0,
+      quoteCount: 0,
+    },
+    permalink: parsed.rkey
+      ? `https://bsky.app/profile/${authorHandle || authorDid || "unknown"}/post/${parsed.rkey}`
+      : "",
+    authorHandle,
+    authorDid,
+    images: [],
+  };
+}
+
+function mergeArchivePostEntity(existing, incoming) {
+  existing.cid = incoming.cid || existing.cid;
+  existing.rkey = incoming.rkey || existing.rkey;
+  existing.createdAt = incoming.createdAt || existing.createdAt;
+  existing.text = incoming.text || existing.text;
+  existing.langs = incoming.langs?.length ? incoming.langs : existing.langs;
+  existing.facets = incoming.facets?.length ? incoming.facets : existing.facets;
+  existing.reply = incoming.reply || existing.reply;
+  existing.thread = {
+    rootUri: incoming.thread?.rootUri || existing.thread?.rootUri || "",
+    parentUri: incoming.thread?.parentUri || existing.thread?.parentUri || "",
+  };
+  existing.counts = incoming.counts || existing.counts;
+  existing.permalink = incoming.permalink || existing.permalink;
+  existing.authorHandle = incoming.authorHandle || existing.authorHandle;
+  existing.authorDid = incoming.authorDid || existing.authorDid;
+  if ((!existing.images || existing.images.length === 0) && incoming.images?.length) {
+    existing.images = incoming.images;
+  }
+  return existing;
+}
+
+function collectThreadViewPosts(node, result = []) {
+  if (!node || typeof node !== "object") {
+    return result;
+  }
+
+  const postView = node.post && node.post.uri
+    ? node.post
+    : (node.uri && node.record ? node : null);
+
+  if (postView?.uri) {
+    result.push(postView);
+  }
+
+  const replies = Array.isArray(node.replies)
+    ? node.replies
+    : (Array.isArray(postView?.replies) ? postView.replies : []);
+  replies.forEach((reply) => collectThreadViewPosts(reply, result));
+  return result;
+}
+
+function chunkEntries(items, size) {
+  const result = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+function bytesToDataUrl(bytes, mimeType = "image/jpeg") {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const slice = bytes.subarray(index, Math.min(bytes.length, index + chunkSize));
+    binary += String.fromCharCode(...slice);
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+async function waitForArchiveRunControl(runId, notifyProgress = () => {}) {
+  if (!runId) {
+    return "running";
+  }
+
+  while (true) {
+    const state = archiveRunControls.get(runId)?.state || "running";
+    if (state === "cancelled") {
+      return "cancelled";
+    }
+    if (state === "paused") {
+      notifyProgress({
+        title: "Archiv pausiert",
+        step: "Der Export ist pausiert und kann fortgesetzt werden …",
+        state: "paused",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      continue;
+    }
+    if (state === "running") {
+      notifyProgress({ state: "running" });
+    }
+    return "running";
+  }
+}
+
+async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor = "", maxPosts = 500, waveIndex = 1 } = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const normalizedFilters = normalizeArchiveFilters(filters);
+  const ownDid = auth.session.did;
+  const records = [];
+  const rawRecordsByUri = new Map();
+  const postsByUri = new Map();
+  let cursor = String(initialCursor || "");
+  let pageCount = 0;
+  const waveLimit = Math.max(100, Math.min(1000, Number(maxPosts) || 500));
+  let imageCount = 0;
+  let orderedPosts = [];
+  const assets = [];
+  const seenAssetPaths = new Set();
+  let previewCounter = 0;
+  let cancelled = false;
+
+  archiveRunControls.set(runId, { state: "running" });
+
+  const buildResult = (status = "completed") => ({
+    manifest: {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: APP_VERSION,
+      account: {
+        handle: auth.session.handle,
+        did: auth.session.did,
+      },
+      filters: normalizedFilters,
+      postCount: orderedPosts.length,
+      imageCount,
+    },
+    posts: orderedPosts,
+    assets,
+    session: {
+      waveIndex,
+      nextCursor: cursor,
+      hasMore: Boolean(cursor),
+      exportedPosts: orderedPosts.length,
+      exportedImages: imageCount,
+      status,
+    },
+  });
+
+  notifyProgress({
+    title: "Archiv wird gelesen",
+    step: "Eigene Posts werden aus dem Repo geladen …",
+    percent: 5,
+    detail: auth.session.handle,
+    checkpoint: `Welle ${waveIndex} · Start`,
+    state: "running",
+  });
+
+  while (true) {
+    if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
+      cancelled = true;
+      break;
+    }
+
+    const remaining = Math.max(1, Math.min(100, waveLimit - records.length));
+    const page = await bskyGet("com.atproto.repo.listRecords", {
+      repo: auth.session.did,
+      collection: "app.bsky.feed.post",
+      limit: remaining,
+      cursor,
+    }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+    });
+
+    const pageRecords = (page.records || [])
+      .map((entry) => ({
+        uri: entry.uri,
+        cid: entry.cid,
+        value: entry.value || {},
+      }))
+      .filter((entry) => postMatchesArchiveSelection(entry.value, normalizedFilters, ownDid, entry.uri));
+
+    records.push(...pageRecords);
+    cursor = page.cursor || "";
+    pageCount += 1;
+    notifyProgress({
+      title: "Archiv wird gelesen",
+      step: `Post-Seite ${pageCount} geladen`,
+      percent: Math.min(45, 5 + (pageCount * 3)),
+      detail: `${records.length} passende eigene Posts in Welle ${waveIndex} gesammelt`,
+      checkpoint: `Welle ${waveIndex} · Post ${records.length}`,
+      state: "running",
+    });
+
+    if (records.length > 0) {
+      previewCounter += 1;
+      if (previewCounter % 10 === 0) {
+        const latest = records[Math.max(0, records.length - 1)];
+        notifyProgress({
+          preview: {
+            meta: `Welle ${waveIndex} · Post ${records.length}`,
+            text: String(latest?.value?.text || "").slice(0, 280),
+          },
+          checkpoint: `Welle ${waveIndex} · Post ${records.length}`,
+          state: "running",
+        });
+      }
+    }
+
+    if (records.length >= waveLimit || !cursor) {
+      break;
+    }
+  }
+
+  records.sort((left, right) => Date.parse(right.value?.createdAt || 0) - Date.parse(left.value?.createdAt || 0));
+
+  const upsertArchivePost = (post, rawRecord = null) => {
+    const existing = postsByUri.get(post.uri);
+    if (existing) {
+      mergeArchivePostEntity(existing, post);
+    } else {
+      postsByUri.set(post.uri, post);
+    }
+    if (rawRecord) {
+      rawRecordsByUri.set(post.uri, rawRecord);
+    }
+  };
+
+  records.forEach((entry) => {
+    upsertArchivePost(
+      buildArchivePostEntity({
+        uri: entry.uri,
+        cid: entry.cid,
+        record: entry.value,
+        authorHandle: auth.session.handle,
+        authorDid: ownDid,
+      }),
+      entry.value,
+    );
+  });
+
+  if (normalizedFilters.contentMode === "threads" && records.length > 0) {
+    const threadRootUris = [...new Set(records
+      .map((entry) => getArchiveRootUri(entry.value, entry.uri) || entry.uri)
+      .filter((uri) => parseAtUri(uri).did === ownDid))];
+
+    for (const [threadIndex, rootUri] of threadRootUris.entries()) {
+      if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
+        orderedPosts = Array.from(postsByUri.values())
+          .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+        archiveRunControls.delete(runId);
+        return buildResult("cancelled");
+      }
+
+      notifyProgress({
+        title: "Archiv wird gelesen",
+        step: `Thread ${threadIndex + 1}/${threadRootUris.length} wird erweitert`,
+        percent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
+        detail: "Antworten in eigenen Threads werden nachgeladen",
+        checkpoint: `Welle ${waveIndex} · Thread ${threadIndex + 1}`,
+        state: "running",
+      });
+
+      const threadResponse = await bskyGet("app.bsky.feed.getPostThread", {
+        uri: rootUri,
+        depth: 100,
+        parentHeight: 0,
+      }, {
+        headers: {
+          authorization: `Bearer ${auth.session.accessJwt}`,
+        },
+      });
+
+      collectThreadViewPosts(threadResponse.thread || threadResponse.post || threadResponse).forEach((postView) => {
+        const record = postView?.record || {};
+        const rootCandidate = getArchiveRootUri(record, postView.uri) || postView.uri;
+        if (parseAtUri(rootCandidate).did !== ownDid) {
+          return;
+        }
+        if (!postMatchesArchiveFilters(record, normalizedFilters)) {
+          return;
+        }
+        upsertArchivePost(
+          buildArchivePostEntity({
+            uri: postView.uri,
+            cid: postView.cid,
+            record,
+            authorHandle: postView.author?.handle || "",
+            authorDid: postView.author?.did || "",
+            counts: {
+              likeCount: Number(postView.likeCount) || 0,
+              replyCount: Number(postView.replyCount) || 0,
+              repostCount: Number(postView.repostCount) || 0,
+              quoteCount: Number(postView.quoteCount) || 0,
+            },
+          }),
+          record,
+        );
+      });
+    }
+  }
+
+  orderedPosts = Array.from(postsByUri.values())
+    .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+
+  const metricBatches = chunkEntries(orderedPosts.map((entry) => entry.uri), 25);
+  for (const [batchIndex, batch] of metricBatches.entries()) {
+    if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
+      orderedPosts = Array.from(postsByUri.values())
+        .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+      archiveRunControls.delete(runId);
+      return buildResult("cancelled");
+    }
+
+    const response = await bskyGet("app.bsky.feed.getPosts", { uris: batch }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+    });
+    (response.posts || []).forEach((postView) => {
+      const target = postsByUri.get(postView?.uri);
+      if (!target) {
+        return;
+      }
+      target.counts = {
+        likeCount: Number(postView.likeCount) || 0,
+        replyCount: Number(postView.replyCount) || 0,
+        repostCount: Number(postView.repostCount) || 0,
+        quoteCount: Number(postView.quoteCount) || 0,
+      };
+    });
+    if ((batchIndex + 1) % 2 === 0 && batch.length > 0) {
+      const previewPost = postsByUri.get(batch[0]);
+      if (previewPost) {
+        notifyProgress({
+          preview: {
+            meta: `Metriken aktualisiert · Batch ${batchIndex + 1}/${metricBatches.length}`,
+            text: String(previewPost.text || "").slice(0, 220),
+            metric: `Likes ${previewPost.counts.likeCount} · Replies ${previewPost.counts.replyCount} · Reposts ${previewPost.counts.repostCount} · Quotes ${previewPost.counts.quoteCount}`,
+          },
+          checkpoint: `Welle ${waveIndex} · Metrik-Batch ${batchIndex + 1}`,
+          state: "running",
+        });
+      }
+    }
+    notifyProgress({
+      title: "Archiv wird gelesen",
+      step: `Metriken ${batchIndex + 1}/${metricBatches.length} geladen`,
+      percent: 55 + Math.round(((batchIndex + 1) / Math.max(1, metricBatches.length)) * 10),
+      detail: "Likes, Replies, Reposts und Quotes werden ergänzt",
+      checkpoint: `Welle ${waveIndex} · Metrik-Batch ${batchIndex + 1}`,
+      state: "running",
+    });
+  }
+
+  for (const [postIndex, post] of orderedPosts.entries()) {
+    if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
+      archiveRunControls.delete(runId);
+      return buildResult("cancelled");
+    }
+
+    const record = rawRecordsByUri.get(post.uri) || {};
+    const images = extractArchiveEmbedImages(record);
+    const blobDid = post.authorDid || ownDid;
+
+    for (const [imageIndex, image] of images.entries()) {
+      if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
+        archiveRunControls.delete(runId);
+        return buildResult("cancelled");
+      }
+
+      const cid = getBlobCidFromRef(image);
+      if (!cid) {
+        continue;
+      }
+      const blob = await downloadBlob(auth, blobDid, cid);
+      const extension = blob.type.includes("png")
+        ? "png"
+        : (blob.type.includes("webp") ? "webp" : "jpg");
+      const authorSlug = String(post.authorHandle || post.authorDid || "author")
+        .replace(/[^\w.-]+/g, "-")
+        .slice(0, 60) || "author";
+      const path = `images/${String(post.createdAt || "unknown").slice(0, 4) || "misc"}/${authorSlug}-${post.rkey || `post-${postIndex + 1}`}-${imageIndex + 1}.${extension}`;
+
+      post.images.push({
+        path,
+        alt: String(image.alt || "").slice(0, 1000),
+        width: Number(image.aspectRatio?.width) || 0,
+        height: Number(image.aspectRatio?.height) || 0,
+        mimeType: blob.type,
+        sizeBytes: blob.bytes.length,
+      });
+
+      if (!seenAssetPaths.has(path)) {
+        seenAssetPaths.add(path);
+        assets.push({
+          path,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          bytes: blob.bytes,
+        });
+        imageCount += 1;
+        if (imageCount % 10 === 0) {
+          notifyProgress({
+            preview: {
+              meta: `Bild ${imageCount} heruntergeladen`,
+              text: String(post.text || "").slice(0, 180),
+              imageDataUrl: bytesToDataUrl(blob.bytes, blob.type),
+              metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
+              alt: image.alt || "Archivbild",
+            },
+            checkpoint: `Welle ${waveIndex} · Bild ${imageCount}`,
+            state: "running",
+          });
+        }
+      }
+    }
+
+    if (orderedPosts.length > 0) {
+      notifyProgress({
+        title: "Archiv wird gelesen",
+        step: `Bilder ${postIndex + 1}/${orderedPosts.length} verarbeitet`,
+        percent: 65 + Math.round(((postIndex + 1) / orderedPosts.length) * 30),
+        detail: `${imageCount} Bilder im Archiv`,
+        checkpoint: `Welle ${waveIndex} · Bild ${Math.max(imageCount, 1)}`,
+        state: "running",
+      });
+    }
+  }
+
+  archiveRunControls.delete(runId);
+  return buildResult(cancelled ? "cancelled" : "completed");
 }
 
 async function publishThread({ segments }, notifyProgress = () => {}) {

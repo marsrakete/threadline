@@ -123,6 +123,40 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Dubletten werden nicht doppelt importiert
 - Wichtig: Das Backup enthält ausdrücklich **kein** Bluesky-Konto und **kein** Passwort
 
+### Account-Archiv
+
+- Über den eigenen Bereich `Account-Archiv` können die eigenen Bluesky-Posts samt Bildern als Archiv gesichert werden
+- Beim Laden kann zusätzlich der `Archivtyp` gewählt werden:
+- `Voll-Archiv`: lädt alle eigenen Posts und alle eigenen Replies, auch in fremden Threads
+- `Nur eigene Postings`: lädt eigene Top-Level-Posts und eigene Replies nur in eigenen Threads, aber keine eigenen Replies in fremden Threads
+- `Eigene Threads komplett`: lädt eigene Posts, eigene Replies in diesen Threads und zusätzlich Antworten fremder Accounts innerhalb dieser eigenen Threads
+- Der Ablauf für normale Nutzung ist:
+1. Zeitraum festlegen: alles, ein Jahr oder ein eigener Datumsbereich
+2. Archivtyp festlegen: Voll-Archiv, Nur eigene Postings oder Eigene Threads komplett
+3. Mit `Nächste Welle laden` die nächsten Posts und Bilder in die aktuelle Archiv-Sitzung holen
+4. Bei Bedarf pausieren oder abbrechen und später an derselben Stelle fortsetzen
+5. Mit `Archiv als ZIP sichern` ein technisches Backup aus Posts, Metadaten und Bildern speichern
+6. Mit `HTML-Archiv erzeugen` eine offline-fähige Lesefassung mit Suche, Filtern und aufklappbaren Threads erzeugen
+7. Mit `PDF-Bände erzeugen` daraus zusätzlich eine paginierte PDF-Fassung erzeugen
+- Für große Accounts sollte der Export am besten auf einem Desktop-Gerät mit viel freiem Speicher in mehreren Wellen durchgeführt werden
+
+### Account-Archiv Für Techies
+
+- Der Export läuft vollständig in der bestehenden PWA ohne eigenes Backend
+- Posts werden über `com.atproto.repo.listRecords` für `app.bsky.feed.post` seitenweise geladen
+- Phase 1 des Filters arbeitet direkt auf den eigenen Repo-Records:
+- `Voll-Archiv` übernimmt alle eigenen Posts
+- `Nur eigene Postings` verwirft eigene Replies in fremden Threads
+- Phase 2 erweitert bei `Eigene Threads komplett` zusätzlich die eigenen Thread-Wurzeln über `app.bsky.feed.getPostThread`
+- Dabei werden auch Antworten fremder Accounts in eigenen Threads ins Archiv übernommen
+- Metriken werden in Batches über `app.bsky.feed.getPosts` nachhydratisiert
+- Bilder werden über `com.atproto.sync.getBlob` geladen und mit stabilen Pfaden ins Archiv übernommen
+- Große Exporte laufen in Wellen; im Browser werden dafür nur kleine Resume-Metadaten gehalten
+- Das ZIP enthält `manifest.json`, `posts.json` und alle geladenen Bilddateien
+- Das HTML-Archiv ist eine einzelne Datei mit eingebetteten Bildern, Suchfeld, Datumsfiltern sowie Optionen für `nur Posts mit Bildern` und `nur Threads`
+- PDF-Bände werden aus dem geladenen Archivmodell erzeugt, nicht direkt aus Live-Responses
+- Die Bandgröße für PDFs ist bewusst bis `1000` Posts konfigurierbar
+
 ## Posting Auf Bluesky
 
 - Ein einzelner kurzer Text kann als normaler Post gesendet werden
