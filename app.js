@@ -13,9 +13,9 @@ const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.37",
-  cacheVersion: "v54",
-  label: "HTML archive search highlights",
+  appVersion: "0.4.38",
+  cacheVersion: "v55",
+  label: "Archive toggle guard",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -5668,9 +5668,11 @@ archiveThreadsToggle.addEventListener("change", () => {
   void persistArchivePreferences();
 });
 
-archivePdfIndentToggle.addEventListener("change", () => {
-  void persistArchivePreferences();
-});
+if (archivePdfIndentToggle) {
+  archivePdfIndentToggle.addEventListener("change", () => {
+    void persistArchivePreferences();
+  });
+}
 
 archiveLivePreviewToggle.addEventListener("change", () => {
   renderArchivePreview();
