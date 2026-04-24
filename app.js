@@ -13,9 +13,9 @@ const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.33",
-  cacheVersion: "v50",
-  label: "AT thread ordering",
+  appVersion: "0.4.37",
+  cacheVersion: "v54",
+  label: "HTML archive search highlights",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -1863,8 +1863,9 @@ async function importThreadFile(file) {
   setStatus(t("threadLoaded"));
 }
 
-async function shareOrDownloadFile(file, fallbackName) {
-  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+async function shareOrDownloadFile(file, fallbackName, options = {}) {
+  const preferDownload = options.preferDownload === true;
+  if (!preferDownload && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({
         title: fallbackName,
@@ -2177,7 +2178,7 @@ async function exportArchiveZipFromCatalog(catalog = archiveCatalog) {
   const zipBytes = buildStoredZip(entries);
   const fileName = `${makeArchiveFileBaseName(catalog)}.zip`;
   const file = new File([zipBytes], fileName, { type: "application/zip" });
-  await shareOrDownloadFile(file, fileName);
+  await shareOrDownloadFile(file, fileName, { preferDownload: true });
   setArchiveProgress({
     title: t("archiveProgressDoneTitle"),
     step: t("archiveProgressDoneStep"),
@@ -2347,6 +2348,10 @@ function buildArchiveHtmlI18n() {
     "archiveHtmlIndentThreads",
     "archiveHtmlExpandThreads",
     "archiveHtmlCollapseThreads",
+    "archiveHtmlExpandSingles",
+    "archiveHtmlCollapseSingles",
+    "archiveHtmlToggleAllOpen",
+    "archiveHtmlToggleAllClose",
     "archiveHtmlHashtagsLabel",
     "archiveHtmlHashtagsEmpty",
     "archiveHtmlVisibleStatus",
@@ -2508,7 +2513,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
             <span>Reposts ${metrics.repostCount || 0}</span>
             <span>Quotes ${metrics.quoteCount || 0}</span>
           </div>
-          <div class="archive-html-text">${post.text ? renderArchiveHtmlRichText(post.text) : `<span class="archive-html-empty">${escapeHtml(t("archiveHtmlNoText"))}</span>`}</div>
+          <div class="archive-html-text" data-archive-richtext="true">${post.text ? renderArchiveHtmlRichText(post.text) : `<span class="archive-html-empty">${escapeHtml(t("archiveHtmlNoText"))}</span>`}</div>
           ${imagesMarkup ? `<div class="archive-html-gallery">${imagesMarkup}</div>` : ""}
           <div class="archive-html-footer">
             ${post.permalink ? `<a class="archive-html-link" href="${escapeHtmlAttribute(post.permalink)}" target="_blank" rel="noreferrer noopener">${escapeHtml(t("archiveHtmlOpenPost"))}</a>` : ""}
@@ -2520,7 +2525,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
 
     if (group.isThread) {
       return `
-        <details class="archive-html-entry archive-html-thread" data-archive-entry data-is-thread="true" open>
+        <details class="archive-html-entry archive-html-thread" data-archive-entry data-is-thread="true" data-entry-kind="thread">
           <summary>
             <div>
               <strong>${escapeHtml(summaryLabel)}</strong>
@@ -2528,7 +2533,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
             </div>
             <span>${escapeHtml(t("archiveSummaryPosts"))}: ${group.posts.length}</span>
           </summary>
-          <div class="archive-html-thread-posts">
+          <div class="archive-html-entry-body archive-html-thread-posts">
             ${postsMarkup}
           </div>
         </details>
@@ -2536,13 +2541,15 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
     }
 
     return `
-      <section class="archive-html-entry archive-html-single" data-archive-entry data-is-thread="false">
-        <header class="archive-html-entry-head">
+      <details class="archive-html-entry archive-html-single" data-archive-entry data-is-thread="false" data-entry-kind="single">
+        <summary class="archive-html-entry-head">
           <strong>${escapeHtml(summaryLabel)}</strong>
           <span>${escapeHtml(formatHistoryTimestamp(group.posts[0]?.createdAt))}</span>
-        </header>
-        ${postsMarkup}
-      </section>
+        </summary>
+        <div class="archive-html-entry-body">
+          ${postsMarkup}
+        </div>
+      </details>
     `;
   }).join("");
 
@@ -2739,6 +2746,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         color: var(--text);
         margin-bottom: 4px;
       }
+      .archive-html-entry-body,
       .archive-html-thread-posts {
         display: grid;
         gap: 14px;
@@ -2809,6 +2817,13 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         line-height: 1.68;
         font-size: 1rem;
         word-break: break-word;
+      }
+      .archive-html-text mark {
+        background: rgba(255, 216, 102, 0.92);
+        color: #10233e;
+        border-radius: 0.25em;
+        padding: 0 0.08em;
+        box-decoration-break: clone;
       }
       .archive-html-empty {
         color: var(--muted);
@@ -2980,8 +2995,9 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         <div class="archive-html-toolbar-actions">
           <button id="archive-reset-filters" type="button" class="secondary" data-i18n-key="archiveHtmlResetFilters">${escapeHtml(t("archiveHtmlResetFilters"))}</button>
           <button id="archive-toggle-indent" type="button" class="secondary" data-i18n-key="archiveHtmlIndentThreads">${escapeHtml(t("archiveHtmlIndentThreads"))}</button>
-          <button id="archive-expand-threads" type="button" class="secondary" data-i18n-key="archiveHtmlExpandThreads">${escapeHtml(t("archiveHtmlExpandThreads"))}</button>
-          <button id="archive-collapse-threads" type="button" class="secondary" data-i18n-key="archiveHtmlCollapseThreads">${escapeHtml(t("archiveHtmlCollapseThreads"))}</button>
+          <button id="archive-toggle-all" type="button" class="secondary" data-i18n-key="archiveHtmlToggleAllOpen">${escapeHtml(t("archiveHtmlToggleAllOpen"))}</button>
+          <button id="archive-toggle-threads" type="button" class="secondary" data-i18n-key="archiveHtmlExpandThreads">${escapeHtml(t("archiveHtmlExpandThreads"))}</button>
+          <button id="archive-toggle-singles" type="button" class="secondary" data-i18n-key="archiveHtmlExpandSingles">${escapeHtml(t("archiveHtmlExpandSingles"))}</button>
         </div>
         <div>
           <label data-i18n-key="archiveHtmlHashtagsLabel">${escapeHtml(t("archiveHtmlHashtagsLabel"))}</label>
@@ -3038,8 +3054,9 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       const onlyImagesInput = document.querySelector("#archive-only-images");
       const onlyThreadsInput = document.querySelector("#archive-only-threads");
       const resetButton = document.querySelector("#archive-reset-filters");
-      const expandButton = document.querySelector("#archive-expand-threads");
-      const collapseButton = document.querySelector("#archive-collapse-threads");
+      const toggleAllButton = document.querySelector("#archive-toggle-all");
+      const toggleThreadsButton = document.querySelector("#archive-toggle-threads");
+      const toggleSinglesButton = document.querySelector("#archive-toggle-singles");
       const indentButton = document.querySelector("#archive-toggle-indent");
       const statusLine = document.querySelector("#archive-filter-status");
       const hashtagButtons = Array.from(document.querySelectorAll("[data-archive-hashtag]"));
@@ -3048,7 +3065,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       const lightboxCaption = document.querySelector("#archive-lightbox-caption");
       const lightboxTitle = document.querySelector("#archive-lightbox-title");
       const lightboxClose = document.querySelector("#archive-lightbox-close");
-      let indentThreads = false;
+      let indentThreads = true;
 
       function formatArchiveTemplate(template, values) {
         return String(template || "").replace(/\\{(\\w+)\\}/g, (_, key) => values[key] ?? "");
@@ -3107,6 +3124,107 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         }
         document.querySelectorAll("time[datetime]").forEach((element) => {
           element.textContent = formatArchiveDateTime(element.getAttribute("datetime"));
+        });
+        syncToggleAllButton();
+      }
+
+      function getAllEntries() {
+        return Array.from(document.querySelectorAll("details[data-archive-entry]"));
+      }
+
+      function getThreadEntries() {
+        return Array.from(document.querySelectorAll("details[data-entry-kind='thread']"));
+      }
+
+      function getSingleEntries() {
+        return Array.from(document.querySelectorAll("details[data-entry-kind='single']"));
+      }
+
+      function syncToggleAllButton() {
+        if (!toggleAllButton) {
+          return;
+        }
+        const entries = getAllEntries();
+        const allOpen = entries.length > 0 && entries.every((entry) => entry.open);
+        const key = allOpen ? "archiveHtmlToggleAllClose" : "archiveHtmlToggleAllOpen";
+        toggleAllButton.dataset.i18nKey = key;
+        toggleAllButton.textContent = archiveStrings[key] || key;
+      }
+
+      function syncSectionToggleButtons() {
+        const threadEntries = getThreadEntries();
+        const singleEntries = getSingleEntries();
+        const allThreadsOpen = threadEntries.length > 0 && threadEntries.every((entry) => entry.open);
+        const allSinglesOpen = singleEntries.length > 0 && singleEntries.every((entry) => entry.open);
+        const threadKey = allThreadsOpen ? "archiveHtmlCollapseThreads" : "archiveHtmlExpandThreads";
+        const singleKey = allSinglesOpen ? "archiveHtmlCollapseSingles" : "archiveHtmlExpandSingles";
+        if (toggleThreadsButton) {
+          toggleThreadsButton.dataset.i18nKey = threadKey;
+          toggleThreadsButton.textContent = archiveStrings[threadKey] || threadKey;
+        }
+        if (toggleSinglesButton) {
+          toggleSinglesButton.dataset.i18nKey = singleKey;
+          toggleSinglesButton.textContent = archiveStrings[singleKey] || singleKey;
+        }
+      }
+
+      function clearArchiveHighlights(element) {
+        element.querySelectorAll("mark[data-archive-highlight='true']").forEach((mark) => {
+          const parent = mark.parentNode;
+          if (!parent) {
+            return;
+          }
+          parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
+          parent.normalize();
+        });
+      }
+
+      function highlightArchiveQueryInElement(element, query) {
+        clearArchiveHighlights(element);
+        if (!query) {
+          return;
+        }
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            if (!node.nodeValue || !node.nodeValue.trim()) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            const parentTag = node.parentElement?.tagName || "";
+            if (parentTag === "MARK" || parentTag === "SCRIPT" || parentTag === "STYLE") {
+              return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        });
+        const textNodes = [];
+        while (walker.nextNode()) {
+          textNodes.push(walker.currentNode);
+        }
+        textNodes.forEach((node) => {
+          const source = node.nodeValue || "";
+          const lower = source.toLowerCase();
+          const lowerQuery = query.toLowerCase();
+          let startIndex = 0;
+          let matchIndex = lower.indexOf(lowerQuery, startIndex);
+          if (matchIndex === -1) {
+            return;
+          }
+          const fragment = document.createDocumentFragment();
+          while (matchIndex !== -1) {
+            if (matchIndex > startIndex) {
+              fragment.appendChild(document.createTextNode(source.slice(startIndex, matchIndex)));
+            }
+            const mark = document.createElement("mark");
+            mark.dataset.archiveHighlight = "true";
+            mark.textContent = source.slice(matchIndex, matchIndex + lowerQuery.length);
+            fragment.appendChild(mark);
+            startIndex = matchIndex + lowerQuery.length;
+            matchIndex = lower.indexOf(lowerQuery, startIndex);
+          }
+          if (startIndex < source.length) {
+            fragment.appendChild(document.createTextNode(source.slice(startIndex)));
+          }
+          node.parentNode?.replaceChild(fragment, node);
         });
       }
 
@@ -3171,7 +3289,12 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         statusLine.textContent = visiblePosts > 0
           ? formatArchiveTemplate(archiveStrings.visibleStatus, { entries: visibleEntries, posts: visiblePosts })
           : archiveStrings.noMatches;
+        document.querySelectorAll("[data-archive-richtext='true']").forEach((element) => {
+          highlightArchiveQueryInElement(element, query);
+        });
         syncHashtagState();
+        syncToggleAllButton();
+        syncSectionToggleButtons();
       }
 
       function syncIndentButton() {
@@ -3193,21 +3316,45 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         applyArchiveFilters();
       });
 
-      expandButton.addEventListener("click", () => {
-        document.querySelectorAll("details[data-is-thread='true']").forEach((item) => {
-          item.open = true;
+      toggleThreadsButton.addEventListener("click", () => {
+        const threadEntries = getThreadEntries();
+        const shouldOpen = threadEntries.some((entry) => !entry.open);
+        threadEntries.forEach((item) => {
+          item.open = shouldOpen;
         });
+        syncToggleAllButton();
+        syncSectionToggleButtons();
       });
 
-      collapseButton.addEventListener("click", () => {
-        document.querySelectorAll("details[data-is-thread='true']").forEach((item) => {
-          item.open = false;
+      toggleSinglesButton.addEventListener("click", () => {
+        const singleEntries = getSingleEntries();
+        const shouldOpen = singleEntries.some((entry) => !entry.open);
+        singleEntries.forEach((item) => {
+          item.open = shouldOpen;
         });
+        syncToggleAllButton();
+        syncSectionToggleButtons();
+      });
+
+      toggleAllButton.addEventListener("click", () => {
+        const entries = getAllEntries();
+        const shouldOpen = entries.some((entry) => !entry.open);
+        entries.forEach((entry) => {
+          entry.open = shouldOpen;
+        });
+        syncToggleAllButton();
       });
 
       indentButton.addEventListener("click", () => {
         indentThreads = !indentThreads;
         syncIndentButton();
+      });
+
+      getAllEntries().forEach((entry) => {
+        entry.addEventListener("toggle", () => {
+          syncToggleAllButton();
+          syncSectionToggleButtons();
+        });
       });
 
       hashtagButtons.forEach((button) => {
@@ -3283,7 +3430,7 @@ async function exportArchiveHtmlFromCatalog(catalog = archiveCatalog) {
   const html = buildArchiveHtmlDocument(catalog, assetUris);
   const fileName = `${makeArchiveFileBaseName(catalog)}.html`;
   const file = new File([html], fileName, { type: "text/html" });
-  await shareOrDownloadFile(file, fileName);
+  await shareOrDownloadFile(file, fileName, { preferDownload: true });
   setArchiveProgress({
     title: t("archiveProgressDoneTitle"),
     step: t("archiveProgressDoneStep"),
@@ -4156,7 +4303,7 @@ async function exportArchivePdfBandsFromCatalog(catalog = archiveCatalog) {
     const blob = await buildArchivePdfBand(catalog, posts, bandIndex, bands.length, options);
     const fileName = `${baseName}-band-${String(bandIndex + 1).padStart(3, "0")}.pdf`;
     const file = new File([blob], fileName, { type: "application/pdf" });
-    await shareOrDownloadFile(file, fileName);
+    await shareOrDownloadFile(file, fileName, { preferDownload: true });
   }
 
   setArchiveProgress({
