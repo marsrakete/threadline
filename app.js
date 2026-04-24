@@ -13,9 +13,9 @@ const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.38",
-  cacheVersion: "v55",
-  label: "Archive toggle guard",
+  appVersion: "0.4.40",
+  cacheVersion: "v57",
+  label: "Archive import guards",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -346,7 +346,7 @@ function getArchivePdfOptions() {
     imageSize: archiveImageSizeSelect.value || "medium",
     includeMetrics: archiveMetricsToggle.checked,
     keepThreadsTogether: archiveThreadsToggle.checked,
-    indentThreads: archivePdfIndentToggle.checked,
+    indentThreads: archivePdfIndentToggle ? archivePdfIndentToggle.checked : true,
   };
 }
 
@@ -361,7 +361,7 @@ function getArchivePreferences() {
     filters,
     waveSize: getArchiveWaveSize(),
     pdfOptions: options,
-    livePreview: archiveLivePreviewToggle.checked,
+    livePreview: archiveLivePreviewToggle ? archiveLivePreviewToggle.checked : true,
   };
 }
 
@@ -386,11 +386,21 @@ function applyArchivePreferences(preferences = {}) {
   if ([...archiveBandSizeSelect.options].some((option) => option.value === bandSize)) {
     archiveBandSizeSelect.value = bandSize;
   }
-  archiveImageSizeSelect.value = pdfOptions.imageSize === "small" || pdfOptions.imageSize === "large" ? pdfOptions.imageSize : "medium";
-  archiveMetricsToggle.checked = pdfOptions.includeMetrics !== false;
-  archiveThreadsToggle.checked = pdfOptions.keepThreadsTogether !== false;
-  archivePdfIndentToggle.checked = pdfOptions.indentThreads !== false;
-  archiveLivePreviewToggle.checked = preferences.livePreview !== false;
+  if (archiveImageSizeSelect) {
+    archiveImageSizeSelect.value = pdfOptions.imageSize === "small" || pdfOptions.imageSize === "large" ? pdfOptions.imageSize : "medium";
+  }
+  if (archiveMetricsToggle) {
+    archiveMetricsToggle.checked = pdfOptions.includeMetrics !== false;
+  }
+  if (archiveThreadsToggle) {
+    archiveThreadsToggle.checked = pdfOptions.keepThreadsTogether !== false;
+  }
+  if (archivePdfIndentToggle) {
+    archivePdfIndentToggle.checked = pdfOptions.indentThreads !== false;
+  }
+  if (archiveLivePreviewToggle) {
+    archiveLivePreviewToggle.checked = preferences.livePreview !== false;
+  }
   updateArchiveScopeFields();
 }
 
