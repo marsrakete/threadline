@@ -13,9 +13,9 @@ const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.40",
-  cacheVersion: "v57",
-  label: "Archive import guards",
+  appVersion: "0.4.41",
+  cacheVersion: "v58",
+  label: "HTML archive links",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -2367,6 +2367,9 @@ function buildArchiveHtmlI18n() {
     "archiveHtmlVisibleStatus",
     "archiveHtmlNoMatches",
     "archiveHtmlOpenPost",
+    "archiveHtmlLinksSummary",
+    "archiveHtmlLinksEmpty",
+    "archiveHtmlLinksPostLabel",
     "archiveHtmlThreadSummary",
     "archiveHtmlSingleSummary",
     "archiveHtmlNoText",
@@ -2429,6 +2432,48 @@ function formatArchiveHtmlDateInputValue(value) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
+function shortenArchiveUrlForDisplay(url) {
+  const value = String(url || "").trim();
+  if (!value) {
+    return "";
+  }
+  try {
+    const parsed = new URL(value);
+    const compact = `${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}${parsed.search}${parsed.hash}`;
+    return compact.length > 72 ? `${compact.slice(0, 69)}...` : compact;
+  } catch {
+    return value.length > 72 ? `${value.slice(0, 69)}...` : value;
+  }
+}
+
+function collectArchiveHtmlLinks(posts = []) {
+  const items = [];
+  posts.forEach((post) => {
+    extractPdfLinkRuns(post.text || "").forEach((run) => {
+      if (!run.url) {
+        return;
+      }
+      items.push({
+        postUri: post.uri || "",
+        postPermalink: post.permalink || "",
+        url: run.url,
+        displayUrl: shortenArchiveUrlForDisplay(run.url),
+        authorHandle: post.authorHandle || "",
+        authorDisplayName: post.authorDisplayName || "",
+        createdAt: post.createdAt || "",
+      });
+    });
+  });
+  return items.sort((left, right) => {
+    const leftTime = Date.parse(left.createdAt || 0) || 0;
+    const rightTime = Date.parse(right.createdAt || 0) || 0;
+    if (leftTime !== rightTime) {
+      return leftTime - rightTime;
+    }
+    return String(left.url || "").localeCompare(String(right.url || ""));
+  });
+}
+
 function buildArchiveThreadDepthMap(posts = []) {
   const byUri = new Map(posts.map((post) => [post.uri, post]));
   const depthCache = new Map();
@@ -2461,6 +2506,7 @@ function buildArchiveThreadDepthMap(posts = []) {
 function buildArchiveHtmlDocument(catalog, assetUris) {
   const groups = buildArchiveThreadGroups(catalog.posts || []);
   const archiveHashtags = collectArchiveHtmlHashtags(catalog.posts || []);
+  const archiveLinks = collectArchiveHtmlLinks(catalog.posts || []);
   const toolbarStrings = buildArchiveHtmlToolbarStrings();
   const htmlI18n = buildArchiveHtmlI18n();
   const handle = catalog?.manifest?.account?.handle || authAccount || "Bluesky";
@@ -2481,6 +2527,8 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         post.permalink || "",
         post.uri || "",
         post.authorHandle || handle,
+        post.authorDisplayName || "",
+        extractPdfLinkRuns(post.text || "").map((run) => run.url || "").filter(Boolean).join(" "),
       ].join(" ").replace(/\s+/g, " ").trim().toLowerCase();
       const imagesMarkup = (post.images || []).map((image) => {
         const assetUri = assetUris.get(image.path) || "";
@@ -2562,6 +2610,42 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       </details>
     `;
   }).join("");
+
+  const linksMarkup = archiveLinks.length > 0 ? `
+        <details class="archive-html-entry archive-html-links">
+          <summary>
+            <div>
+              <strong>${escapeHtml(t("archiveHtmlLinksSummary", { count: archiveLinks.length }))}</strong>
+              <span>${escapeHtml(formatHistoryTimestamp(archiveLinks[0]?.createdAt))} – ${escapeHtml(formatHistoryTimestamp(archiveLinks[archiveLinks.length - 1]?.createdAt))}</span>
+            </div>
+            <span>${archiveLinks.length}</span>
+          </summary>
+          <div class="archive-html-entry-body">
+            <div class="archive-html-links-list">
+              ${archiveLinks.map((entry) => `
+                <div class="archive-html-links-row">
+                  ${entry.postPermalink
+                    ? `<a class="archive-html-link" href="${escapeHtmlAttribute(entry.postPermalink)}" target="_blank" rel="noreferrer noopener">${escapeHtml(t("archiveHtmlLinksPostLabel"))}</a>`
+                    : `<span class="archive-html-link archive-html-link-passive">${escapeHtml(t("archiveHtmlLinksPostLabel"))}</span>`}
+                  <a class="archive-html-links-target" href="${escapeHtmlAttribute(entry.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(entry.displayUrl)}</a>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        </details>
+  ` : `
+        <details class="archive-html-entry archive-html-links">
+          <summary>
+            <div>
+              <strong>${escapeHtml(t("archiveHtmlLinksSummary", { count: 0 }))}</strong>
+            </div>
+            <span>0</span>
+          </summary>
+          <div class="archive-html-entry-body">
+            <p class="archive-html-hashtags-empty">${escapeHtml(t("archiveHtmlLinksEmpty"))}</p>
+          </div>
+        </details>
+  `;
 
   return `<!doctype html>
 <html lang="en">
@@ -2738,6 +2822,35 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       }
       .archive-html-entry {
         padding: 16px;
+      }
+      .archive-html-links-list {
+        display: grid;
+        gap: 10px;
+      }
+      .archive-html-links-row {
+        display: grid;
+        grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(237, 244, 255, 0.62);
+        border: 1px solid rgba(102, 133, 178, 0.12);
+      }
+      .archive-html-link-passive {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: rgba(21, 40, 70, 0.12);
+        color: var(--muted);
+        padding: 10px 14px;
+      }
+      .archive-html-links-target {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .archive-html-entry summary,
       .archive-html-entry-head {
@@ -3027,6 +3140,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       </section>
 
       <main id="archive-feed" class="archive-html-feed">
+        ${linksMarkup}
         ${groupsMarkup}
       </main>
     </div>
