@@ -1,4 +1,4 @@
-const APP_VERSION = "v42";
+const APP_VERSION = "v50";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -23,6 +23,7 @@ const DRAFT_KEY = "draft";
 const LOCALE_KEY = "locale";
 const SETTINGS_KEY = "ui-settings";
 const ARCHIVE_SESSION_KEY = "archive-session";
+const ARCHIVE_CATALOG_KEY = "archive-catalog";
 const API_BASE = "https://bsky.social/xrpc";
 const archiveRunControls = new Map();
 
@@ -436,10 +437,16 @@ async function handleMessage(message, port) {
       return saveSettings(message.payload);
     case "GET_ARCHIVE_SESSION":
       return getArchiveSession();
+    case "GET_ARCHIVE_CATALOG":
+      return getArchiveCatalog();
     case "SAVE_ARCHIVE_SESSION":
       return saveArchiveSession(message.payload);
+    case "SAVE_ARCHIVE_CATALOG":
+      return saveArchiveCatalog(message.payload);
     case "CLEAR_ARCHIVE_SESSION":
       return clearArchiveSession();
+    case "CLEAR_ARCHIVE_CATALOG":
+      return clearArchiveCatalog();
     case "SET_ARCHIVE_RUN_CONTROL":
       return setArchiveRunControl(message.payload);
     case "LOGOUT":
@@ -720,6 +727,9 @@ async function getAppState({ browserLocale } = {}) {
     segmentImages: normalizeSegmentImages(storedSettings?.segmentImages || draft?.segmentImages),
     segmentOverrides: normalizeSegmentOverrides(draft?.segmentOverrides),
     postingHistory: normalizePostingHistory(storedSettings?.postingHistory),
+    archivePreferences: storedSettings?.archivePreferences && typeof storedSettings.archivePreferences === "object"
+      ? storedSettings.archivePreferences
+      : null,
   };
 }
 
@@ -759,6 +769,9 @@ async function saveSettings(settings = {}) {
     postingHistory: Array.isArray(settings.postingHistory)
       ? normalizePostingHistory(settings.postingHistory)
       : normalizePostingHistory(existing.postingHistory),
+    archivePreferences: settings.archivePreferences && typeof settings.archivePreferences === "object"
+      ? settings.archivePreferences
+      : (existing.archivePreferences && typeof existing.archivePreferences === "object" ? existing.archivePreferences : null),
   };
   await writeStoredValue(SETTINGS_KEY, nextSettings);
   await writeStoredValue(LOCALE_KEY, nextSettings.localePreference);
@@ -769,13 +782,27 @@ async function getArchiveSession() {
   return await readStoredValue(ARCHIVE_SESSION_KEY) || null;
 }
 
+async function getArchiveCatalog() {
+  return await readStoredValue(ARCHIVE_CATALOG_KEY) || null;
+}
+
 async function saveArchiveSession({ session } = {}) {
   await writeStoredValue(ARCHIVE_SESSION_KEY, session || null);
   return { ok: true };
 }
 
+async function saveArchiveCatalog({ catalog } = {}) {
+  await writeStoredValue(ARCHIVE_CATALOG_KEY, catalog || null);
+  return { ok: true };
+}
+
 async function clearArchiveSession() {
   await writeStoredValue(ARCHIVE_SESSION_KEY, null);
+  return { ok: true };
+}
+
+async function clearArchiveCatalog() {
+  await writeStoredValue(ARCHIVE_CATALOG_KEY, null);
   return { ok: true };
 }
 
@@ -799,6 +826,7 @@ function setArchiveRunControl({ runId, action } = {}) {
 async function logout() {
   await clearStoredAuth();
   await clearArchiveSession();
+  await clearArchiveCatalog();
   return { authenticated: false };
 }
 
@@ -987,7 +1015,7 @@ function extractArchiveEmbedImages(record = {}) {
   return Array.isArray(record?.embed?.images) ? record.embed.images.slice(0, 4) : [];
 }
 
-function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", authorDid = "", counts = null }) {
+function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", authorDid = "", authorDisplayName = "", counts = null }) {
   const parsed = parseAtUri(uri);
   return {
     uri,
@@ -1012,6 +1040,7 @@ function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", auth
       ? `https://bsky.app/profile/${authorHandle || authorDid || "unknown"}/post/${parsed.rkey}`
       : "",
     authorHandle,
+    authorDisplayName,
     authorDid,
     images: [],
   };
@@ -1032,6 +1061,7 @@ function mergeArchivePostEntity(existing, incoming) {
   existing.counts = incoming.counts || existing.counts;
   existing.permalink = incoming.permalink || existing.permalink;
   existing.authorHandle = incoming.authorHandle || existing.authorHandle;
+  existing.authorDisplayName = incoming.authorDisplayName || existing.authorDisplayName;
   existing.authorDid = incoming.authorDid || existing.authorDid;
   if ((!existing.images || existing.images.length === 0) && incoming.images?.length) {
     existing.images = incoming.images;
@@ -1114,6 +1144,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   let pageCount = 0;
   const waveLimit = Math.max(100, Math.min(1000, Number(maxPosts) || 500));
   let imageCount = 0;
+  let skippedImageCount = 0;
   let orderedPosts = [];
   const assets = [];
   const seenAssetPaths = new Set();
@@ -1134,6 +1165,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       filters: normalizedFilters,
       postCount: orderedPosts.length,
       imageCount,
+      skippedImageCount,
     },
     posts: orderedPosts,
     assets,
@@ -1143,6 +1175,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       hasMore: Boolean(cursor),
       exportedPosts: orderedPosts.length,
       exportedImages: imageCount,
+      skippedImages: skippedImageCount,
       status,
     },
   });
@@ -1151,7 +1184,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
     title: "Archiv wird gelesen",
     step: "Eigene Posts werden aus dem Repo geladen …",
     percent: 5,
-    detail: auth.session.handle,
+    detail: `Konto: ${auth.session.handle}`,
     checkpoint: `Welle ${waveIndex} · Start`,
     state: "running",
   });
@@ -1187,10 +1220,10 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
     pageCount += 1;
     notifyProgress({
       title: "Archiv wird gelesen",
-      step: `Post-Seite ${pageCount} geladen`,
+      step: `Abruf ${pageCount} abgeschlossen · ${records.length} Posts im gewählten Umfang gefunden`,
       percent: Math.min(45, 5 + (pageCount * 3)),
-      detail: `${records.length} passende eigene Posts in Welle ${waveIndex} gesammelt`,
-      checkpoint: `Welle ${waveIndex} · Post ${records.length}`,
+      detail: `${records.length} Posts für Welle ${waveIndex} vorgemerkt`,
+      checkpoint: `Welle ${waveIndex} · ${records.length} Posts gefunden`,
       state: "running",
     });
 
@@ -1200,10 +1233,10 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         const latest = records[Math.max(0, records.length - 1)];
         notifyProgress({
           preview: {
-            meta: `Welle ${waveIndex} · Post ${records.length}`,
+            meta: `Welle ${waveIndex} · ${records.length} Posts gefunden`,
             text: String(latest?.value?.text || "").slice(0, 280),
           },
-          checkpoint: `Welle ${waveIndex} · Post ${records.length}`,
+          checkpoint: `Welle ${waveIndex} · ${records.length} Posts gefunden`,
           state: "running",
         });
       }
@@ -1235,6 +1268,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         cid: entry.cid,
         record: entry.value,
         authorHandle: auth.session.handle,
+        authorDisplayName: auth.session.handle,
         authorDid: ownDid,
       }),
       entry.value,
@@ -1259,7 +1293,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         step: `Thread ${threadIndex + 1}/${threadRootUris.length} wird erweitert`,
         percent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
         detail: "Antworten in eigenen Threads werden nachgeladen",
-        checkpoint: `Welle ${waveIndex} · Thread ${threadIndex + 1}`,
+        checkpoint: `Eigene Threads werden erweitert (${threadIndex + 1}/${threadRootUris.length})`,
         state: "running",
       });
 
@@ -1288,6 +1322,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
             cid: postView.cid,
             record,
             authorHandle: postView.author?.handle || "",
+            authorDisplayName: postView.author?.displayName || postView.author?.handle || "",
             authorDid: postView.author?.did || "",
             counts: {
               likeCount: Number(postView.likeCount) || 0,
@@ -1340,7 +1375,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
             text: String(previewPost.text || "").slice(0, 220),
             metric: `Likes ${previewPost.counts.likeCount} · Replies ${previewPost.counts.replyCount} · Reposts ${previewPost.counts.repostCount} · Quotes ${previewPost.counts.quoteCount}`,
           },
-          checkpoint: `Welle ${waveIndex} · Metrik-Batch ${batchIndex + 1}`,
+          checkpoint: `Metriken geladen (${batchIndex + 1}/${metricBatches.length})`,
           state: "running",
         });
       }
@@ -1350,7 +1385,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       step: `Metriken ${batchIndex + 1}/${metricBatches.length} geladen`,
       percent: 55 + Math.round(((batchIndex + 1) / Math.max(1, metricBatches.length)) * 10),
       detail: "Likes, Replies, Reposts und Quotes werden ergänzt",
-      checkpoint: `Welle ${waveIndex} · Metrik-Batch ${batchIndex + 1}`,
+      checkpoint: `Metriken geladen (${batchIndex + 1}/${metricBatches.length})`,
       state: "running",
     });
   }
@@ -1375,7 +1410,44 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       if (!cid) {
         continue;
       }
-      const blob = await downloadBlob(auth, blobDid, cid);
+      notifyProgress({
+        title: "Archiv wird gelesen",
+        step: `Bild ${imageIndex + 1}/${images.length} für Post ${postIndex + 1}/${orderedPosts.length} wird geladen`,
+        percent: 65 + Math.round(((postIndex + 1) / orderedPosts.length) * 30),
+        detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
+        checkpoint: `Bild ${imageIndex + 1} von ${images.length} für Post ${postIndex + 1} wird geladen`,
+        state: "running",
+      });
+      let blob = null;
+      let lastBlobError = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          blob = await downloadBlob(auth, blobDid, cid);
+          break;
+        } catch (error) {
+          lastBlobError = error;
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          }
+        }
+      }
+      if (!blob) {
+        skippedImageCount += 1;
+        notifyProgress({
+          title: "Archiv wird gelesen",
+          step: "Ein Bild konnte nicht geladen werden und wird uebersprungen",
+          percent: 65 + Math.round(((postIndex + 1) / orderedPosts.length) * 30),
+          detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
+          checkpoint: `Ein Bild wurde uebersprungen (${skippedImageCount} insgesamt)`,
+          preview: {
+            meta: `Bild uebersprungen (${lastBlobError?.message || "unbekannter Fehler"})`,
+            text: String(post.text || "").slice(0, 180),
+            metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
+          },
+          state: "running",
+        });
+        continue;
+      }
       const extension = blob.type.includes("png")
         ? "png"
         : (blob.type.includes("webp") ? "webp" : "jpg");
@@ -1405,13 +1477,13 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         if (imageCount % 10 === 0) {
           notifyProgress({
             preview: {
-              meta: `Bild ${imageCount} heruntergeladen`,
+            meta: `Bild ${imageCount} heruntergeladen`,
               text: String(post.text || "").slice(0, 180),
               imageDataUrl: bytesToDataUrl(blob.bytes, blob.type),
               metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
               alt: image.alt || "Archivbild",
             },
-            checkpoint: `Welle ${waveIndex} · Bild ${imageCount}`,
+            checkpoint: `Bild ${imageCount} gespeichert`,
             state: "running",
           });
         }
@@ -1423,8 +1495,8 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         title: "Archiv wird gelesen",
         step: `Bilder ${postIndex + 1}/${orderedPosts.length} verarbeitet`,
         percent: 65 + Math.round(((postIndex + 1) / orderedPosts.length) * 30),
-        detail: `${imageCount} Bilder im Archiv`,
-        checkpoint: `Welle ${waveIndex} · Bild ${Math.max(imageCount, 1)}`,
+        detail: `${imageCount} Bilder im Archiv · ${skippedImageCount} Bilder ausgelassen`,
+        checkpoint: `${postIndex + 1} von ${orderedPosts.length} Posts bildseitig verarbeitet`,
         state: "running",
       });
     }

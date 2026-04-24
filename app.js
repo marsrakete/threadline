@@ -5,6 +5,7 @@ const MANUAL_SPLIT_MARKER = "%%";
 const MAX_IMAGES_PER_SEGMENT = 4;
 const MAX_ALT_TEXT_LENGTH = 1000;
 const IMAGE_BLOB_LIMIT = 2_000_000;
+const IMAGE_MAX_DIMENSION = 4_000;
 const IMAGE_EDITOR_CANVAS_WIDTH = 560;
 const IMAGE_EDITOR_CANVAS_HEIGHT = 360;
 const IMAGE_EXPORT_WIDTH = 1400;
@@ -12,9 +13,9 @@ const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.25",
-  cacheVersion: "v42",
-  label: "Archive mode filters",
+  appVersion: "0.4.33",
+  cacheVersion: "v50",
+  label: "AT thread ordering",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -128,6 +129,7 @@ const archiveBandSizeSelect = document.querySelector("#archive-band-size-select"
 const archiveImageSizeSelect = document.querySelector("#archive-image-size-select");
 const archiveMetricsToggle = document.querySelector("#archive-metrics-toggle");
 const archiveThreadsToggle = document.querySelector("#archive-threads-toggle");
+const archivePdfIndentToggle = document.querySelector("#archive-pdf-indent-toggle");
 const archiveNextWaveButton = document.querySelector("#archive-next-wave-button");
 const archiveExportZipButton = document.querySelector("#archive-export-zip-button");
 const archiveExportHtmlButton = document.querySelector("#archive-export-html-button");
@@ -196,6 +198,7 @@ let activeArchiveRunId = null;
 let activeArchiveRunState = "idle";
 let archivePreviewState = null;
 let archiveLastCheckpoint = "";
+let archiveTransientNotice = "";
 
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) {
@@ -327,8 +330,9 @@ function showComposerWorkspace() {
 }
 
 function getArchiveFilters() {
+  const hasExplicitRange = Boolean(archiveFromInput.value || archiveToInput.value);
   return {
-    scope: archiveScopeSelect.value,
+    scope: hasExplicitRange ? "range" : archiveScopeSelect.value,
     contentMode: archiveContentModeSelect.value || "posts",
     year: archiveYearInput.value.trim(),
     from: archiveFromInput.value || "",
@@ -342,6 +346,7 @@ function getArchivePdfOptions() {
     imageSize: archiveImageSizeSelect.value || "medium",
     includeMetrics: archiveMetricsToggle.checked,
     keepThreadsTogether: archiveThreadsToggle.checked,
+    indentThreads: archivePdfIndentToggle.checked,
   };
 }
 
@@ -349,15 +354,68 @@ function getArchiveWaveSize() {
   return Math.max(100, Math.min(1000, Number(archiveWaveSizeSelect.value) || 500));
 }
 
+function getArchivePreferences() {
+  const filters = getArchiveFilters();
+  const options = getArchivePdfOptions();
+  return {
+    filters,
+    waveSize: getArchiveWaveSize(),
+    pdfOptions: options,
+    livePreview: archiveLivePreviewToggle.checked,
+  };
+}
+
+function applyArchivePreferences(preferences = {}) {
+  const filters = preferences.filters || {};
+  archiveScopeSelect.value = filters.scope === "year" || filters.scope === "range" ? filters.scope : "all";
+  archiveContentModeSelect.value = filters.contentMode === "full" || filters.contentMode === "threads" ? filters.contentMode : "posts";
+  archiveYearInput.value = String(filters.year || "");
+  archiveFromInput.value = String(filters.from || "");
+  archiveToInput.value = String(filters.to || "");
+  if (archiveFromInput.value || archiveToInput.value) {
+    archiveScopeSelect.value = "range";
+  }
+
+  const waveSize = String(preferences.waveSize || "");
+  if ([...archiveWaveSizeSelect.options].some((option) => option.value === waveSize)) {
+    archiveWaveSizeSelect.value = waveSize;
+  }
+
+  const pdfOptions = preferences.pdfOptions || {};
+  const bandSize = String(pdfOptions.bandSize || "");
+  if ([...archiveBandSizeSelect.options].some((option) => option.value === bandSize)) {
+    archiveBandSizeSelect.value = bandSize;
+  }
+  archiveImageSizeSelect.value = pdfOptions.imageSize === "small" || pdfOptions.imageSize === "large" ? pdfOptions.imageSize : "medium";
+  archiveMetricsToggle.checked = pdfOptions.includeMetrics !== false;
+  archiveThreadsToggle.checked = pdfOptions.keepThreadsTogether !== false;
+  archivePdfIndentToggle.checked = pdfOptions.indentThreads !== false;
+  archiveLivePreviewToggle.checked = preferences.livePreview !== false;
+  updateArchiveScopeFields();
+}
+
 function serializeArchiveFilters(filters = getArchiveFilters()) {
   return JSON.stringify(filters);
 }
 
+async function persistArchivePreferences() {
+  await persistSettings();
+}
+
 async function saveArchiveSession(nextSession) {
   archiveSession = nextSession || null;
-  await sendToServiceWorker("SAVE_ARCHIVE_SESSION", { session: archiveSession }, { timeoutMs: 30000 });
+  await sendToServiceWorker("SAVE_ARCHIVE_SESSION", { session: archiveSession }, { timeoutMs: 120000 });
   renderArchiveStartHint();
   renderArchiveStatusLine();
+}
+
+async function saveArchiveCatalogState(nextCatalog = archiveCatalog) {
+  archiveCatalog = nextCatalog || null;
+  try {
+    await sendToServiceWorker("SAVE_ARCHIVE_CATALOG", { catalog: archiveCatalog }, { timeoutMs: 120000 });
+  } catch (error) {
+    console.warn("Archivkatalog konnte nicht dauerhaft gespeichert werden.", error);
+  }
 }
 
 async function clearArchiveSession() {
@@ -367,7 +425,11 @@ async function clearArchiveSession() {
   activeArchiveRunId = null;
   activeArchiveRunState = "idle";
   archiveLastCheckpoint = "";
+  archiveTransientNotice = "";
   await sendToServiceWorker("CLEAR_ARCHIVE_SESSION", {}, { timeoutMs: 30000 });
+  await sendToServiceWorker("CLEAR_ARCHIVE_CATALOG", {}, { timeoutMs: 30000 }).catch((error) => {
+    console.warn("Archivkatalog konnte nicht geleert werden.", error);
+  });
 }
 
 function updateArchiveScopeFields() {
@@ -433,6 +495,11 @@ function getArchiveCurrentWave() {
 }
 
 function renderArchiveStatusLine() {
+  if (archiveTransientNotice) {
+    archiveRunStatusLine.textContent = archiveTransientNotice;
+    return;
+  }
+
   if (!archiveSession && activeArchiveRunState === "idle" && !archiveLastCheckpoint) {
     archiveRunStatusLine.textContent = t("archiveRunStatusIdle");
     return;
@@ -496,6 +563,15 @@ function renderArchiveStartHint() {
   archiveStartHint.textContent = t("archiveStartHintFresh");
 }
 
+function syncArchiveTransientNoticeFromCatalog() {
+  archiveTransientNotice = archiveCatalog
+    ? t("archiveImportedNotice", {
+        posts: archiveCatalog.posts.length,
+        images: archiveCatalog.summary.imageCount,
+      })
+    : "";
+}
+
 function updateArchiveRunControls() {
   const isRunning = activeArchiveRunState === "running";
   const isPaused = activeArchiveRunState === "paused";
@@ -503,6 +579,9 @@ function updateArchiveRunControls() {
   archivePauseButton.disabled = !isRunning;
   archiveResumeButton.disabled = !isPaused;
   archiveCancelButton.disabled = !hasRun || activeArchiveRunState === "idle" || activeArchiveRunState === "cancelled";
+  archivePauseButton.hidden = !isRunning;
+  archiveResumeButton.hidden = !isPaused;
+  archiveCancelButton.hidden = !isRunning && !isPaused;
 }
 
 async function setArchiveRunControl(action) {
@@ -646,7 +725,15 @@ function renderArchiveWorkspace() {
 function invalidateArchiveCatalog() {
   archiveCatalog = null;
   archiveSession = null;
+  archivePreviewState = null;
+  activeArchiveRunId = null;
+  activeArchiveRunState = "idle";
+  archiveLastCheckpoint = "";
+  archiveTransientNotice = "";
   void sendToServiceWorker("CLEAR_ARCHIVE_SESSION", {}, { timeoutMs: 30000 }).catch((error) => {
+    console.error(error);
+  });
+  void sendToServiceWorker("CLEAR_ARCHIVE_CATALOG", {}, { timeoutMs: 30000 }).catch((error) => {
     console.error(error);
   });
   renderArchiveWorkspace();
@@ -740,6 +827,7 @@ function applyTheme() {
 
 function applyTranslations() {
   document.documentElement.lang = currentLocale;
+  syncArchiveTransientNoticeFromCatalog();
 
   document.querySelectorAll("[data-i18n]").forEach((element) => {
     const key = element.dataset.i18n;
@@ -1116,9 +1204,12 @@ function normalizeThreadImage(entry = {}) {
     validation: entry.validation && typeof entry.validation === "object"
       ? {
           sizeBytes: Number(entry.validation.sizeBytes) || 0,
+          width: Number(entry.validation.width) || 0,
+          height: Number(entry.validation.height) || 0,
+          exceedsDimensions: Boolean(entry.validation.exceedsDimensions),
           tooBig: Boolean(entry.validation.tooBig),
         }
-      : { sizeBytes: 0, tooBig: false },
+      : { sizeBytes: 0, width: 0, height: 0, exceedsDimensions: false, tooBig: false },
   };
 }
 
@@ -1299,7 +1390,8 @@ async function renderImageToCanvas(image, canvas, options = {}) {
 async function renderImageToBlob(image) {
   if (isImageUsingDefaultEdit(image)) {
     const canvas = document.createElement("canvas");
-    const exportScale = Math.min(1, Math.max(0.35, Number(image.exportScale) || 1));
+    const dimensionScale = Math.min(1, IMAGE_MAX_DIMENSION / Math.max(1, image.width || 1, image.height || 1));
+    const exportScale = Math.min(1, dimensionScale, Math.max(0.35, Number(image.exportScale) || 1));
     canvas.width = Math.max(1, Math.round((image.width || 1) * exportScale));
     canvas.height = Math.max(1, Math.round((image.height || 1) * exportScale));
     await renderImageToCanvas(image, canvas, {
@@ -1348,7 +1440,10 @@ async function validateThreadImage(image) {
   const rendered = await renderImageToBlob(image);
   image.validation = {
     sizeBytes: rendered.blob.size,
-    tooBig: rendered.blob.size > IMAGE_BLOB_LIMIT,
+    width: rendered.width,
+    height: rendered.height,
+    exceedsDimensions: rendered.width > IMAGE_MAX_DIMENSION || rendered.height > IMAGE_MAX_DIMENSION,
+    tooBig: rendered.blob.size > IMAGE_BLOB_LIMIT || rendered.width > IMAGE_MAX_DIMENSION || rendered.height > IMAGE_MAX_DIMENSION,
   };
   return image.validation;
 }
@@ -1977,6 +2072,28 @@ function normalizeImportedArchiveCatalog(rawCatalog) {
     },
   }));
 
+  const postsByUri = new Map(posts.map((post) => [post.uri, post]));
+  const depthCache = new Map();
+  const getThreadDepth = (post) => {
+    if (!post?.uri) {
+      return 0;
+    }
+    if (depthCache.has(post.uri)) {
+      return depthCache.get(post.uri);
+    }
+    const parentUri = post?.thread?.parentUri || "";
+    if (!parentUri || !postsByUri.has(parentUri)) {
+      depthCache.set(post.uri, 0);
+      return 0;
+    }
+    const depth = Math.min(8, getThreadDepth(postsByUri.get(parentUri)) + 1);
+    depthCache.set(post.uri, depth);
+    return depth;
+  };
+  posts.forEach((post) => {
+    post.threadDepth = getThreadDepth(post);
+  });
+
   return {
     manifest: rawCatalog.manifest || {},
     posts,
@@ -2118,16 +2235,18 @@ function buildArchiveThreadGroups(posts = []) {
   });
 
   return groups.map((group) => {
+    const orderedThreadPosts = orderArchiveGroupPostsByThread(group.posts);
     const createdValues = group.posts
       .map((post) => Date.parse(post.createdAt || 0))
       .filter((value) => Number.isFinite(value));
     const minCreated = createdValues.length > 0 ? Math.min(...createdValues) : 0;
     const maxCreated = createdValues.length > 0 ? Math.max(...createdValues) : 0;
-    const imageCount = group.posts.reduce((total, post) => total + ((post.images || []).length), 0);
-    const hasReplies = group.posts.some((post) => Boolean(post?.thread?.parentUri));
+    const imageCount = orderedThreadPosts.reduce((total, post) => total + ((post.images || []).length), 0);
+    const hasReplies = orderedThreadPosts.some((post) => Boolean(post?.thread?.parentUri));
     return {
       ...group,
-      isThread: group.posts.length > 1 || hasReplies,
+      posts: orderedThreadPosts,
+      isThread: orderedThreadPosts.length > 1 || hasReplies,
       hasImages: imageCount > 0,
       imageCount,
       minCreated,
@@ -2136,11 +2255,114 @@ function buildArchiveThreadGroups(posts = []) {
   });
 }
 
+function orderArchiveGroupPostsByThread(posts = []) {
+  const byUri = new Map();
+  const childrenByParent = new Map();
+  const rootCandidates = [];
+
+  const chronological = [...posts].sort((left, right) => {
+    const leftTime = Date.parse(left.createdAt || 0) || 0;
+    const rightTime = Date.parse(right.createdAt || 0) || 0;
+    if (leftTime !== rightTime) {
+      return leftTime - rightTime;
+    }
+    return String(left.uri || "").localeCompare(String(right.uri || ""));
+  });
+
+  chronological.forEach((post) => {
+    if (post?.uri) {
+      byUri.set(post.uri, post);
+    }
+  });
+
+  chronological.forEach((post) => {
+    const parentUri = post?.thread?.parentUri || "";
+    if (parentUri && byUri.has(parentUri)) {
+      if (!childrenByParent.has(parentUri)) {
+        childrenByParent.set(parentUri, []);
+      }
+      childrenByParent.get(parentUri).push(post);
+      return;
+    }
+    rootCandidates.push(post);
+  });
+
+  const ordered = [];
+  const seen = new Set();
+
+  function visit(post) {
+    if (!post?.uri || seen.has(post.uri)) {
+      return;
+    }
+    seen.add(post.uri);
+    ordered.push(post);
+    const children = childrenByParent.get(post.uri) || [];
+    children.forEach((child) => visit(child));
+  }
+
+  const explicitRoots = rootCandidates.sort((left, right) => {
+    const leftRoot = left?.thread?.rootUri || left?.uri || "";
+    const rightRoot = right?.thread?.rootUri || right?.uri || "";
+    const leftIsRoot = leftRoot === (left?.uri || "");
+    const rightIsRoot = rightRoot === (right?.uri || "");
+    if (leftIsRoot !== rightIsRoot) {
+      return leftIsRoot ? -1 : 1;
+    }
+    const leftTime = Date.parse(left.createdAt || 0) || 0;
+    const rightTime = Date.parse(right.createdAt || 0) || 0;
+    if (leftTime !== rightTime) {
+      return leftTime - rightTime;
+    }
+    return String(left.uri || "").localeCompare(String(right.uri || ""));
+  });
+
+  explicitRoots.forEach((post) => visit(post));
+  chronological.forEach((post) => visit(post));
+  return ordered;
+}
+
 function buildArchiveHtmlToolbarStrings() {
   return {
     visibleStatus: t("archiveHtmlVisibleStatus"),
     noMatches: t("archiveHtmlNoMatches"),
+    imageModalClose: t("closeButton"),
   };
+}
+
+function buildArchiveHtmlI18n() {
+  const keys = [
+    "archiveHeaderEyebrow",
+    "archiveHtmlTitle",
+    "archiveHtmlGenerated",
+    "archiveSummaryPosts",
+    "archiveSummaryImages",
+    "archiveHtmlArchiveRangeLabel",
+    "archiveHtmlArchiveRangeValue",
+    "archiveHtmlSearchLabel",
+    "archiveFromLabel",
+    "archiveToLabel",
+    "archiveHtmlOnlyImages",
+    "archiveHtmlOnlyThreads",
+    "archiveHtmlResetFilters",
+    "archiveHtmlIndentThreads",
+    "archiveHtmlExpandThreads",
+    "archiveHtmlCollapseThreads",
+    "archiveHtmlHashtagsLabel",
+    "archiveHtmlHashtagsEmpty",
+    "archiveHtmlVisibleStatus",
+    "archiveHtmlNoMatches",
+    "archiveHtmlOpenPost",
+    "archiveHtmlThreadSummary",
+    "archiveHtmlSingleSummary",
+    "archiveHtmlNoText",
+    "archivePdfAltPrefix",
+    "closeButton",
+  ];
+
+  return Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [
+    locale,
+    Object.fromEntries(keys.map((key) => [key, translations[locale]?.[key] || translations[DEFAULT_LOCALE]?.[key] || key])),
+  ]));
 }
 
 function extractArchiveHashtagsFromText(text) {
@@ -2192,21 +2414,47 @@ function formatArchiveHtmlDateInputValue(value) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
+function buildArchiveThreadDepthMap(posts = []) {
+  const byUri = new Map(posts.map((post) => [post.uri, post]));
+  const depthCache = new Map();
+
+  function resolveDepth(post) {
+    if (!post?.uri) {
+      return 0;
+    }
+    if (depthCache.has(post.uri)) {
+      return depthCache.get(post.uri);
+    }
+
+    const parentUri = post?.thread?.parentUri || "";
+    if (!parentUri || !byUri.has(parentUri)) {
+      depthCache.set(post.uri, 0);
+      return 0;
+    }
+
+    const depth = Math.min(8, resolveDepth(byUri.get(parentUri)) + 1);
+    depthCache.set(post.uri, depth);
+    return depth;
+  }
+
+  posts.forEach((post) => {
+    resolveDepth(post);
+  });
+  return depthCache;
+}
+
 function buildArchiveHtmlDocument(catalog, assetUris) {
   const groups = buildArchiveThreadGroups(catalog.posts || []);
   const archiveHashtags = collectArchiveHtmlHashtags(catalog.posts || []);
   const toolbarStrings = buildArchiveHtmlToolbarStrings();
+  const htmlI18n = buildArchiveHtmlI18n();
   const handle = catalog?.manifest?.account?.handle || authAccount || "Bluesky";
-  const exportedAt = formatHistoryTimestamp(catalog?.manifest?.exportedAt || new Date().toISOString());
   const fromValue = formatArchiveHtmlDateInputValue(catalog?.summary?.from);
   const toValue = formatArchiveHtmlDateInputValue(catalog?.summary?.to);
+  const exportedAtIso = catalog?.manifest?.exportedAt || new Date().toISOString();
   const title = t("archiveHtmlTitle", { handle });
-  const summaryRange = t("archiveResultsMeta", {
-    from: catalog.summary?.from || "—",
-    to: catalog.summary?.to || "—",
-    images: catalog.summary?.imageCount || 0,
-  });
   const groupsMarkup = groups.map((group, groupIndex) => {
+    const depthMap = buildArchiveThreadDepthMap(group.posts);
     const summaryLabel = group.isThread
       ? t("archiveHtmlThreadSummary", { count: group.posts.length, images: group.imageCount })
       : t("archiveHtmlSingleSummary");
@@ -2232,6 +2480,10 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         `;
       }).join("");
       const metrics = post.counts || {};
+      const depth = depthMap.get(post.uri) || 0;
+      const authorDisplay = post.authorDisplayName && post.authorDisplayName !== post.authorHandle
+        ? post.authorDisplayName
+        : "";
       return `
         <article
           class="archive-html-post"
@@ -2239,11 +2491,14 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
           data-created="${createdTimestamp}"
           data-has-images="${hasImages ? "true" : "false"}"
           data-search="${escapeHtmlAttribute(searchValue)}"
+          data-depth="${depth}"
+          style="--thread-depth:${depth}"
         >
           <div class="archive-html-post-head">
             <div>
               <p class="archive-html-kicker">${group.isThread ? `#${groupIndex + 1}.${postIndex + 1}` : `#${groupIndex + 1}`}</p>
-              <h2>@${escapeHtml(post.authorHandle || handle)}</h2>
+              <h2>${escapeHtml(authorDisplay || `@${post.authorHandle || handle}`)}</h2>
+              <p class="archive-html-author-handle">@${escapeHtml(post.authorHandle || handle)}</p>
             </div>
             <time datetime="${escapeHtmlAttribute(post.createdAt || "")}">${escapeHtml(formatHistoryTimestamp(post.createdAt))}</time>
           </div>
@@ -2292,7 +2547,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
   }).join("");
 
   return `<!doctype html>
-<html lang="${escapeHtmlAttribute(currentLocale)}">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -2308,6 +2563,8 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         --line: rgba(84, 115, 160, 0.16);
         --accent: #2d72f6;
         --accent-soft: rgba(45, 114, 246, 0.12);
+        --thread-accent: #e0614a;
+        --thread-rail: rgba(224, 97, 74, 0.26);
         --shadow: 0 24px 44px rgba(24, 41, 75, 0.12);
       }
       * { box-sizing: border-box; }
@@ -2426,6 +2683,10 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         background: rgba(45, 114, 246, 0.1);
         color: var(--accent);
       }
+      .archive-html-toolbar-actions button.is-active {
+        background: #152846;
+        color: #fff;
+      }
       .archive-html-filter-status {
         margin: 14px 0 0;
         color: var(--muted);
@@ -2484,10 +2745,31 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         margin-top: 14px;
       }
       .archive-html-post {
+        position: relative;
         padding: 18px;
         border-radius: 22px;
         background: var(--panel-strong);
         border: 1px solid var(--line);
+        margin-left: 0;
+        transition: margin-left 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+      }
+      body.archive-html-indent .archive-html-post[data-depth] {
+        margin-left: calc(var(--thread-depth, 0) * 26px);
+        border-color: rgba(224, 97, 74, 0.24);
+      }
+      body.archive-html-indent .archive-html-post[data-depth]::before {
+        content: "";
+        position: absolute;
+        top: 14px;
+        bottom: 14px;
+        left: -14px;
+        width: 4px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, var(--thread-accent), var(--thread-rail));
+        opacity: min(1, calc(var(--thread-depth, 0) * 0.28));
+      }
+      body.archive-html-indent .archive-html-post[data-depth="0"]::before {
+        opacity: 0;
       }
       .archive-html-post-head {
         display: flex;
@@ -2499,6 +2781,11 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       .archive-html-post-head h2 {
         margin: 0;
         font-size: 1.12rem;
+      }
+      .archive-html-author-handle {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 0.88rem;
       }
       .archive-html-post-head time {
         color: var(--muted);
@@ -2546,6 +2833,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         max-height: 420px;
         object-fit: contain;
         background: rgba(209, 224, 246, 0.55);
+        cursor: zoom-in;
       }
       .archive-html-image figcaption {
         margin-top: 8px;
@@ -2577,6 +2865,59 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         font-size: 0.84rem;
         word-break: break-all;
       }
+      .archive-html-lightbox[hidden] {
+        display: none !important;
+      }
+      .archive-html-lightbox {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(8, 15, 28, 0.82);
+        display: grid;
+        place-items: center;
+        padding: 12px;
+      }
+      .archive-html-lightbox-inner {
+        width: min(96vw, 1400px);
+        max-width: 96vw;
+        max-height: 96vh;
+        background: rgba(19, 30, 49, 0.96);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 24px;
+        padding: 18px;
+        box-shadow: 0 28px 60px rgba(0, 0, 0, 0.35);
+        display: grid;
+        gap: 12px;
+      }
+      .archive-html-lightbox-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        color: rgba(255, 255, 255, 0.86);
+      }
+      .archive-html-lightbox-head button {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 14px;
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+        cursor: pointer;
+      }
+      .archive-html-lightbox img {
+        width: auto;
+        height: auto;
+        max-width: 100%;
+        max-height: calc(96vh - 160px);
+        object-fit: contain;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.04);
+        justify-self: center;
+      }
+      .archive-html-lightbox-caption {
+        color: rgba(255, 255, 255, 0.72);
+        line-height: 1.55;
+      }
       [hidden] { display: none !important; }
       @media (max-width: 860px) {
         .archive-html-shell { width: min(100vw - 18px, 100%); padding-top: 18px; }
@@ -2591,25 +2932,28 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
   <body>
     <div class="archive-html-shell">
       <header class="archive-html-hero">
-        <p class="archive-html-kicker">${escapeHtml(t("archiveHeaderEyebrow"))}</p>
-        <h1>${escapeHtml(title)}</h1>
-        <p>${escapeHtml(t("archiveHtmlGenerated", { exportedAt }))}</p>
+        <p class="archive-html-kicker" data-i18n-key="archiveHeaderEyebrow">${escapeHtml(t("archiveHeaderEyebrow"))}</p>
+        <h1 id="archive-page-title">${escapeHtml(title)}</h1>
+        <p id="archive-generated-copy">${escapeHtml(t("archiveHtmlGenerated", { exportedAt: formatHistoryTimestamp(exportedAtIso) }))}</p>
         <div class="archive-html-meta">
           <div class="archive-html-meta-item">
-            <span>${escapeHtml(t("archiveSummaryPosts"))}</span>
+            <span data-i18n-key="archiveSummaryPosts">${escapeHtml(t("archiveSummaryPosts"))}</span>
             <strong>${catalog.posts.length}</strong>
           </div>
           <div class="archive-html-meta-item">
-            <span>${escapeHtml(t("archiveSummaryImages"))}</span>
+            <span data-i18n-key="archiveSummaryImages">${escapeHtml(t("archiveSummaryImages"))}</span>
             <strong>${catalog.summary?.imageCount || 0}</strong>
           </div>
           <div class="archive-html-meta-item">
-            <span>${escapeHtml(t("archiveSummaryBands"))}</span>
-            <strong>${estimateArchiveBandCount(catalog.posts.length)}</strong>
-          </div>
-          <div class="archive-html-meta-item">
-            <span>${escapeHtml(t("archiveScopeTitle"))}</span>
-            <strong>${escapeHtml(summaryRange)}</strong>
+            <span data-i18n-key="archiveHtmlArchiveRangeLabel">${escapeHtml(t("archiveHtmlArchiveRangeLabel"))}</span>
+            <strong
+              id="archive-range-copy"
+              data-range-from="${escapeHtmlAttribute(catalog.summary?.from || "")}"
+              data-range-to="${escapeHtmlAttribute(catalog.summary?.to || "")}"
+            >${escapeHtml(t("archiveHtmlArchiveRangeValue", {
+              from: formatHistoryTimestamp(catalog.summary?.from),
+              to: formatHistoryTimestamp(catalog.summary?.to),
+            }))}</strong>
           </div>
         </div>
       </header>
@@ -2617,29 +2961,30 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       <section class="archive-html-toolbar">
         <div class="archive-html-toolbar-grid">
           <label>
-            <span>${escapeHtml(t("archiveHtmlSearchLabel"))}</span>
-            <input id="archive-search" type="search" placeholder="${escapeHtmlAttribute(t("archiveHtmlSearchLabel"))}">
+            <span data-i18n-key="archiveHtmlSearchLabel">${escapeHtml(t("archiveHtmlSearchLabel"))}</span>
+            <input id="archive-search" type="search" data-i18n-placeholder="archiveHtmlSearchLabel" placeholder="${escapeHtmlAttribute(t("archiveHtmlSearchLabel"))}">
           </label>
           <label>
-            <span>${escapeHtml(t("archiveFromLabel"))}</span>
+            <span data-i18n-key="archiveFromLabel">${escapeHtml(t("archiveFromLabel"))}</span>
             <input id="archive-filter-from" type="date" value="${escapeHtmlAttribute(fromValue)}">
           </label>
           <label>
-            <span>${escapeHtml(t("archiveToLabel"))}</span>
+            <span data-i18n-key="archiveToLabel">${escapeHtml(t("archiveToLabel"))}</span>
             <input id="archive-filter-to" type="date" value="${escapeHtmlAttribute(toValue)}">
           </label>
         </div>
         <div class="archive-html-checks">
-          <label><input id="archive-only-images" type="checkbox"> <span>${escapeHtml(t("archiveHtmlOnlyImages"))}</span></label>
-          <label><input id="archive-only-threads" type="checkbox"> <span>${escapeHtml(t("archiveHtmlOnlyThreads"))}</span></label>
+          <label><input id="archive-only-images" type="checkbox"> <span data-i18n-key="archiveHtmlOnlyImages">${escapeHtml(t("archiveHtmlOnlyImages"))}</span></label>
+          <label><input id="archive-only-threads" type="checkbox"> <span data-i18n-key="archiveHtmlOnlyThreads">${escapeHtml(t("archiveHtmlOnlyThreads"))}</span></label>
         </div>
         <div class="archive-html-toolbar-actions">
-          <button id="archive-reset-filters" type="button" class="secondary">${escapeHtml(t("archiveHtmlResetFilters"))}</button>
-          <button id="archive-expand-threads" type="button" class="secondary">${escapeHtml(t("archiveHtmlExpandThreads"))}</button>
-          <button id="archive-collapse-threads" type="button" class="secondary">${escapeHtml(t("archiveHtmlCollapseThreads"))}</button>
+          <button id="archive-reset-filters" type="button" class="secondary" data-i18n-key="archiveHtmlResetFilters">${escapeHtml(t("archiveHtmlResetFilters"))}</button>
+          <button id="archive-toggle-indent" type="button" class="secondary" data-i18n-key="archiveHtmlIndentThreads">${escapeHtml(t("archiveHtmlIndentThreads"))}</button>
+          <button id="archive-expand-threads" type="button" class="secondary" data-i18n-key="archiveHtmlExpandThreads">${escapeHtml(t("archiveHtmlExpandThreads"))}</button>
+          <button id="archive-collapse-threads" type="button" class="secondary" data-i18n-key="archiveHtmlCollapseThreads">${escapeHtml(t("archiveHtmlCollapseThreads"))}</button>
         </div>
         <div>
-          <label>${escapeHtml(t("archiveHtmlHashtagsLabel"))}</label>
+          <label data-i18n-key="archiveHtmlHashtagsLabel">${escapeHtml(t("archiveHtmlHashtagsLabel"))}</label>
           ${archiveHashtags.length > 0 ? `
             <div class="archive-html-hashtags">
               ${archiveHashtags.map((tag) => `
@@ -2650,7 +2995,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
                 >${escapeHtml(tag.value)}</button>
               `).join("")}
             </div>
-          ` : `<p class="archive-html-hashtags-empty">${escapeHtml(t("archiveHtmlHashtagsEmpty"))}</p>`}
+          ` : `<p class="archive-html-hashtags-empty" data-i18n-key="archiveHtmlHashtagsEmpty">${escapeHtml(t("archiveHtmlHashtagsEmpty"))}</p>`}
         </div>
         <p id="archive-filter-status" class="archive-html-filter-status"></p>
       </section>
@@ -2660,9 +3005,33 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       </main>
     </div>
 
+    <div id="archive-lightbox" class="archive-html-lightbox" hidden>
+      <div class="archive-html-lightbox-inner" role="dialog" aria-modal="true">
+        <div class="archive-html-lightbox-head">
+          <strong id="archive-lightbox-title">${escapeHtml(title)}</strong>
+          <button id="archive-lightbox-close" type="button" data-i18n-key="closeButton">${escapeHtml(toolbarStrings.imageModalClose)}</button>
+        </div>
+        <img id="archive-lightbox-image" alt="">
+        <p id="archive-lightbox-caption" class="archive-html-lightbox-caption"></p>
+      </div>
+    </div>
+
     <script>
-      const archiveStrings = ${JSON.stringify(toolbarStrings)};
+      const archiveHtmlI18n = ${JSON.stringify(htmlI18n)};
+      const archiveRuntimeData = ${JSON.stringify({
+        handle,
+        exportedAtIso,
+        title,
+      })};
       const groups = Array.from(document.querySelectorAll("[data-archive-entry]"));
+      const browserLocales = Array.isArray(navigator.languages) && navigator.languages.length > 0
+        ? navigator.languages
+        : [navigator.language || "en"];
+      const archiveLocale = browserLocales
+        .map((value) => String(value || "").toLowerCase())
+        .map((value) => value.split("-")[0])
+        .find((value) => Object.prototype.hasOwnProperty.call(archiveHtmlI18n, value)) || "en";
+      const archiveStrings = archiveHtmlI18n[archiveLocale] || archiveHtmlI18n.en;
       const searchInput = document.querySelector("#archive-search");
       const fromInput = document.querySelector("#archive-filter-from");
       const toInput = document.querySelector("#archive-filter-to");
@@ -2671,18 +3040,81 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       const resetButton = document.querySelector("#archive-reset-filters");
       const expandButton = document.querySelector("#archive-expand-threads");
       const collapseButton = document.querySelector("#archive-collapse-threads");
+      const indentButton = document.querySelector("#archive-toggle-indent");
       const statusLine = document.querySelector("#archive-filter-status");
       const hashtagButtons = Array.from(document.querySelectorAll("[data-archive-hashtag]"));
+      const lightbox = document.querySelector("#archive-lightbox");
+      const lightboxImage = document.querySelector("#archive-lightbox-image");
+      const lightboxCaption = document.querySelector("#archive-lightbox-caption");
+      const lightboxTitle = document.querySelector("#archive-lightbox-title");
+      const lightboxClose = document.querySelector("#archive-lightbox-close");
+      let indentThreads = false;
+
+      function formatArchiveTemplate(template, values) {
+        return String(template || "").replace(/\\{(\\w+)\\}/g, (_, key) => values[key] ?? "");
+      }
+
+      function formatArchiveDateTime(value) {
+        if (!value) {
+          return "—";
+        }
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return "—";
+        }
+        return new Intl.DateTimeFormat(archiveLocale, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(date);
+      }
+
+      function applyArchiveLanguage() {
+        document.documentElement.lang = archiveLocale;
+        document.querySelectorAll("[data-i18n-key]").forEach((element) => {
+          const key = element.dataset.i18nKey;
+          if (!key || !archiveStrings[key]) {
+            return;
+          }
+          element.textContent = archiveStrings[key];
+        });
+        document.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
+          const key = element.dataset.i18nPlaceholder;
+          if (!key || !archiveStrings[key]) {
+            return;
+          }
+          element.setAttribute("placeholder", archiveStrings[key]);
+        });
+
+        document.title = formatArchiveTemplate(archiveStrings.archiveHtmlTitle, {
+          handle: archiveRuntimeData.handle,
+        });
+        const pageTitle = document.querySelector("#archive-page-title");
+        if (pageTitle) {
+          pageTitle.textContent = document.title;
+        }
+        const generatedCopy = document.querySelector("#archive-generated-copy");
+        if (generatedCopy) {
+          generatedCopy.textContent = formatArchiveTemplate(archiveStrings.archiveHtmlGenerated, {
+            exportedAt: formatArchiveDateTime(archiveRuntimeData.exportedAtIso),
+          });
+        }
+        const rangeCopy = document.querySelector("#archive-range-copy");
+        if (rangeCopy) {
+          rangeCopy.textContent = formatArchiveTemplate(archiveStrings.archiveHtmlArchiveRangeValue, {
+            from: formatArchiveDateTime(rangeCopy.dataset.rangeFrom),
+            to: formatArchiveDateTime(rangeCopy.dataset.rangeTo),
+          });
+        }
+        document.querySelectorAll("time[datetime]").forEach((element) => {
+          element.textContent = formatArchiveDateTime(element.getAttribute("datetime"));
+        });
+      }
 
       function syncHashtagState() {
         const query = String(searchInput.value || "").trim().toLowerCase();
         hashtagButtons.forEach((button) => {
           button.classList.toggle("is-active", query === String(button.dataset.archiveHashtag || "").trim().toLowerCase());
         });
-      }
-
-      function formatArchiveTemplate(template, values) {
-        return String(template || "").replace(/\\{(\\w+)\\}/g, (_, key) => values[key] ?? "");
       }
 
       function applyArchiveFilters() {
@@ -2696,26 +3128,31 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
 
         groups.forEach((group) => {
           const isThread = group.dataset.isThread === "true";
+          const posts = Array.from(group.querySelectorAll("[data-archive-post]"));
+          const groupMatchesQuery = query
+            ? posts.some((post) => String(post.dataset.search || "").includes(query))
+            : false;
           let groupVisiblePosts = 0;
 
-          group.querySelectorAll("[data-archive-post]").forEach((post) => {
+          posts.forEach((post) => {
             const created = Number(post.dataset.created || 0);
             const hasImages = post.dataset.hasImages === "true";
             const haystack = String(post.dataset.search || "");
-            let visible = true;
+            let visibleBase = true;
 
             if (fromValue && created < fromValue) {
-              visible = false;
+              visibleBase = false;
             }
             if (toValue && created > toValue) {
-              visible = false;
+              visibleBase = false;
             }
             if (onlyImages && !hasImages) {
-              visible = false;
+              visibleBase = false;
             }
-            if (query && !haystack.includes(query)) {
-              visible = false;
-            }
+            const queryMatch = !query || haystack.includes(query);
+            const visible = query
+              ? (isThread && groupMatchesQuery ? visibleBase : (visibleBase && queryMatch))
+              : visibleBase;
 
             post.hidden = !visible;
             if (visible) {
@@ -2735,6 +3172,11 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
           ? formatArchiveTemplate(archiveStrings.visibleStatus, { entries: visibleEntries, posts: visiblePosts })
           : archiveStrings.noMatches;
         syncHashtagState();
+      }
+
+      function syncIndentButton() {
+        indentButton.classList.toggle("is-active", indentThreads);
+        document.body.classList.toggle("archive-html-indent", indentThreads);
       }
 
       [searchInput, fromInput, toInput, onlyImagesInput, onlyThreadsInput].forEach((element) => {
@@ -2763,15 +3205,51 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         });
       });
 
+      indentButton.addEventListener("click", () => {
+        indentThreads = !indentThreads;
+        syncIndentButton();
+      });
+
       hashtagButtons.forEach((button) => {
         button.addEventListener("click", () => {
           const tag = String(button.dataset.archiveHashtag || "").trim();
-          searchInput.value = tag;
+          searchInput.value = String(searchInput.value || "").trim().toLowerCase() === tag.toLowerCase() ? "" : tag;
           applyArchiveFilters();
         });
       });
 
+      document.querySelectorAll(".archive-html-image img").forEach((image) => {
+        image.addEventListener("click", () => {
+          lightbox.hidden = false;
+          lightboxImage.src = image.src;
+          lightboxImage.alt = image.alt || "";
+          lightboxTitle.textContent = image.closest("[data-archive-post]")?.querySelector(".archive-html-author-handle")?.textContent || ${JSON.stringify(title)};
+          lightboxCaption.textContent = image.alt || "";
+        });
+      });
+
+      function closeLightbox() {
+        lightbox.hidden = true;
+        lightboxImage.src = "";
+        lightboxImage.alt = "";
+        lightboxCaption.textContent = "";
+      }
+
+      lightboxClose.addEventListener("click", closeLightbox);
+      lightbox.addEventListener("click", (event) => {
+        if (event.target === lightbox) {
+          closeLightbox();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !lightbox.hidden) {
+          closeLightbox();
+        }
+      });
+
+      applyArchiveLanguage();
       applyArchiveFilters();
+      syncIndentButton();
     </script>
   </body>
 </html>`;
@@ -3043,14 +3521,24 @@ function getArchivePdfImageFrames(post, contentWidth, options, scale) {
 
   const preset = getArchivePdfImagePreset(options);
   const gap = preset.gap * scale;
+  const captionLineHeight = 12 * scale;
 
   if (images.length === 1) {
     const image = images[0];
     const ratio = image.width && image.height ? image.width / image.height : (16 / 9);
     const height = Math.min(preset.singleMaxHeight * scale, contentWidth / Math.max(ratio, 0.5));
+    const captionLines = image.alt ? 2 : 0;
     return {
-      frames: [{ image, x: 0, y: 0, width: contentWidth, height }],
-      totalHeight: height,
+      frames: [{
+        image,
+        x: 0,
+        y: 0,
+        width: contentWidth,
+        height,
+        captionLines,
+        captionHeight: captionLines * captionLineHeight,
+      }],
+      totalHeight: height + (captionLines * captionLineHeight),
     };
   }
 
@@ -3065,6 +3553,8 @@ function getArchivePdfImageFrames(post, contentWidth, options, scale) {
       return Math.min(preset.gridCellMaxHeight * scale, cellWidth / Math.max(ratio, 0.66));
     });
     const rowHeight = Math.max(...rowHeights, 72 * scale);
+    const captionHeights = rowImages.map((image) => image.alt ? (2 * captionLineHeight) : 0);
+    const rowCaptionHeight = Math.max(0, ...captionHeights);
 
     rowImages.forEach((image, column) => {
       frames.push({
@@ -3073,10 +3563,12 @@ function getArchivePdfImageFrames(post, contentWidth, options, scale) {
         y: cursorY,
         width: cellWidth,
         height: rowHeight,
+        captionLines: image.alt ? 2 : 0,
+        captionHeight: image.alt ? (2 * captionLineHeight) : 0,
       });
     });
 
-    cursorY += rowHeight;
+    cursorY += rowHeight + rowCaptionHeight;
     if (index + 2 < images.length) {
       cursorY += gap;
     }
@@ -3109,9 +3601,12 @@ function buildArchivePostMetricLabels(post) {
   ];
 }
 
-function estimateArchivePostCardHeight(context, post, options, scale, cardWidth) {
+function estimateArchivePostCardHeight(context, post, options, scale, cardWidth, layoutMode = "standalone") {
   const innerPadding = 16 * scale;
-  const contentWidth = cardWidth - (innerPadding * 2);
+  const depthIndent = layoutMode === "standalone" && options.indentThreads
+    ? Math.min(4, Number(post?.threadDepth) || 0) * (18 * scale)
+    : 0;
+  const contentWidth = cardWidth - (innerPadding * 2) - depthIndent;
   const headerHeight = 42 * scale;
   const metricsHeight = options.includeMetrics ? (28 * scale) : 0;
   const textLineHeight = 15 * scale;
@@ -3123,11 +3618,6 @@ function estimateArchivePostCardHeight(context, post, options, scale, cardWidth)
   const imageLayout = getArchivePdfImageFrames(post, contentWidth, options, scale);
   if (imageLayout.totalHeight > 0) {
     totalHeight += imageLayout.totalHeight + (12 * scale);
-    const altCount = imageLayout.frames.filter((frame) => frame.image.alt).length;
-    if (altCount > 0) {
-      context.font = `${9 * scale}px "Segoe UI", Aptos, sans-serif`;
-      totalHeight += altCount * (16 * scale);
-    }
   }
 
   totalHeight += 28 * scale;
@@ -3183,39 +3673,98 @@ function canvasRectToPdfRect(rect, canvasWidth, canvasHeight) {
   ];
 }
 
-async function drawArchivePdfPostCard(context, assetMap, post, x, y, width, options, scale, canvasWidth, canvasHeight) {
-  const innerPadding = 16 * scale;
-  const contentWidth = width - (innerPadding * 2);
-  const annotations = [];
-  const cardHeight = estimateArchivePostCardHeight(context, post, options, scale, width);
+function getArchiveThreadGroupKey(post) {
+  return post?.thread?.rootUri || post?.uri || "";
+}
 
-  context.save();
-  context.shadowColor = "rgba(20, 35, 60, 0.08)";
-  context.shadowBlur = 18 * scale;
-  context.shadowOffsetY = 7 * scale;
-  fillRoundedRect(context, x, y, width, cardHeight, 18 * scale, "#ffffff");
-  context.restore();
-  strokeRoundedRect(context, x, y, width, cardHeight, 18 * scale, "#d7e3f5", 1.2 * scale);
-  fillRoundedRect(context, x + (10 * scale), y + (14 * scale), 4 * scale, cardHeight - (28 * scale), 3 * scale, "#4e8cff");
+function getArchivePdfThreadBlockFrame(baseX, baseWidth, post, options, scale) {
+  const depth = options.indentThreads ? Math.min(4, Number(post?.threadDepth) || 0) : 0;
+  const indent = depth * (18 * scale);
+  return {
+    depth,
+    indent,
+    x: baseX + indent,
+    width: Math.max(220 * scale, baseWidth - indent),
+  };
+}
+
+async function drawArchivePdfPostCard(
+  context,
+  assetMap,
+  post,
+  x,
+  y,
+  width,
+  options,
+  scale,
+  canvasWidth,
+  canvasHeight,
+  layout = {},
+) {
+  const innerPadding = 16 * scale;
+  const annotations = [];
+  const integrated = layout.mode === "integrated";
+  const cardHeight = estimateArchivePostCardHeight(
+    context,
+    post,
+    options,
+    scale,
+    width,
+    integrated ? "integrated" : "standalone",
+  );
+  const isReply = integrated ? (layout.depth || 0) > 0 : false;
+  const cardRadius = integrated ? (14 * scale) : (18 * scale);
+  const cardFill = integrated
+    ? (isReply ? "#f8fbff" : "#ffffff")
+    : "#ffffff";
+  const cardStroke = integrated
+    ? (isReply ? "#d9e5f5" : "#d2deef")
+    : "#d7e3f5";
+
+  if (!integrated) {
+    context.save();
+    context.shadowColor = "rgba(20, 35, 60, 0.08)";
+    context.shadowBlur = 18 * scale;
+    context.shadowOffsetY = 7 * scale;
+    fillRoundedRect(context, x, y, width, cardHeight, cardRadius, cardFill);
+    context.restore();
+  } else {
+    fillRoundedRect(context, x, y, width, cardHeight, cardRadius, cardFill);
+  }
+  strokeRoundedRect(context, x, y, width, cardHeight, cardRadius, cardStroke, integrated ? (1 * scale) : (1.2 * scale));
+  if (!integrated) {
+    fillRoundedRect(context, x + (10 * scale), y + (14 * scale), 4 * scale, cardHeight - (28 * scale), 3 * scale, "#4e8cff");
+  }
 
   let cursorY = y + innerPadding;
-  const textStartX = x + innerPadding + (8 * scale);
+  const textStartX = x + innerPadding + (integrated ? 0 : (8 * scale));
+  const depthIndent = 0;
+  const cardContentX = textStartX + depthIndent;
+  const contentWidth = width - (innerPadding * 2) - depthIndent;
+
+  if (integrated && isReply) {
+    fillRoundedRect(context, x + (10 * scale), y + (12 * scale), 3 * scale, cardHeight - (24 * scale), 2 * scale, "#d95f4b");
+  } else if (!integrated && (Number(post?.threadDepth) || 0) > 0) {
+    fillRoundedRect(context, cardContentX - (12 * scale), y + (14 * scale), 4 * scale, cardHeight - (28 * scale), 3 * scale, "#d95f4b");
+  }
 
   context.textBaseline = "top";
   context.fillStyle = "#13213c";
   context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(post.authorHandle || authAccount || "Bluesky", textStartX, cursorY);
+  const pdfAuthorTitle = post.authorDisplayName || post.authorHandle || authAccount || "Bluesky";
+  context.fillText(pdfAuthorTitle, cardContentX, cursorY);
 
   context.fillStyle = "#577194";
   context.font = `${9.5 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(`@${post.authorHandle || authAccount || "bluesky"}`, cardContentX, cursorY + (16 * scale));
   const dateText = formatHistoryTimestamp(post.createdAt);
   const dateWidth = context.measureText(dateText).width;
   context.fillText(dateText, x + width - innerPadding - dateWidth, cursorY + (2 * scale));
-  cursorY += 22 * scale;
+  cursorY += 32 * scale;
 
   if (options.includeMetrics) {
     context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-    let pillX = textStartX;
+    let pillX = cardContentX;
     const pillY = cursorY;
     for (const label of buildArchivePostMetricLabels(post)) {
       pillX += drawArchivePdfMetricPill(context, label, pillX, pillY, scale) + (6 * scale);
@@ -3226,7 +3775,7 @@ async function drawArchivePdfPostCard(context, assetMap, post, x, y, width, opti
   context.fillStyle = "#17233a";
   context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
   const textLines = buildWrappedPdfLines(context, post.text || "", contentWidth);
-  const textBlock = drawArchivePdfTextBlock(context, textLines, textStartX, cursorY, 15 * scale);
+  const textBlock = drawArchivePdfTextBlock(context, textLines, cardContentX, cursorY, 15 * scale);
   annotations.push(...textBlock.annotations.map((annotation) => ({
     rect: canvasRectToPdfRect(annotation, canvasWidth, canvasHeight),
     url: annotation.url,
@@ -3236,7 +3785,7 @@ async function drawArchivePdfPostCard(context, assetMap, post, x, y, width, opti
   const imageLayout = getArchivePdfImageFrames(post, contentWidth, options, scale);
   for (const frame of imageLayout.frames) {
     const asset = assetMap.get(frame.image.path);
-    const frameX = textStartX + frame.x;
+    const frameX = cardContentX + frame.x;
     const frameY = cursorY + frame.y;
 
     if (asset) {
@@ -3247,23 +3796,17 @@ async function drawArchivePdfPostCard(context, assetMap, post, x, y, width, opti
       fillRoundedRect(context, frameX, frameY, frame.width, frame.height, 12 * scale, "#eaf1fb");
     }
     strokeRoundedRect(context, frameX, frameY, frame.width, frame.height, 12 * scale, "#d5e0f2", 1 * scale);
+
+    if (frame.image.alt) {
+      context.fillStyle = "#5d7394";
+      context.font = `${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+      const altLines = buildWrappedPdfLines(context, `${t("archivePdfAltPrefix")} ${frame.image.alt}`, frame.width);
+      drawArchivePdfTextBlock(context, altLines.slice(0, frame.captionLines || 2), frameX, frameY + frame.height + (4 * scale), 12 * scale);
+    }
   }
 
   if (imageLayout.totalHeight > 0) {
     cursorY += imageLayout.totalHeight + (10 * scale);
-  }
-
-  context.fillStyle = "#5d7394";
-  context.font = `${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-  for (const frame of imageLayout.frames) {
-    if (!frame.image.alt) {
-      continue;
-    }
-    const altLines = buildWrappedPdfLines(context, `${t("archivePdfAltPrefix")} ${frame.image.alt}`, contentWidth);
-    const altHeight = Math.min(2, altLines.length) * (12 * scale);
-    const clippedAltLines = altLines.slice(0, 2);
-    drawArchivePdfTextBlock(context, clippedAltLines, textStartX, cursorY, 12 * scale);
-    cursorY += altHeight + (4 * scale);
   }
 
   const footerY = y + cardHeight - innerPadding - (18 * scale);
@@ -3272,12 +3815,12 @@ async function drawArchivePdfPostCard(context, assetMap, post, x, y, width, opti
   if (buttonLabel) {
     context.font = `700 ${9 * scale}px "Segoe UI", Aptos, sans-serif`;
     const buttonWidth = context.measureText(buttonLabel).width + (22 * scale);
-    fillRoundedRect(context, textStartX, footerY, buttonWidth, 20 * scale, 10 * scale, "#122642");
+    fillRoundedRect(context, cardContentX, footerY, buttonWidth, 20 * scale, 10 * scale, "#122642");
     context.fillStyle = "#ffffff";
-    context.fillText(buttonLabel, textStartX + (11 * scale), footerY + (4.5 * scale));
+    context.fillText(buttonLabel, cardContentX + (11 * scale), footerY + (4.5 * scale));
     annotations.push({
       rect: canvasRectToPdfRect({
-        x: textStartX,
+        x: cardContentX,
         y: footerY,
         width: buttonWidth,
         height: 20 * scale,
@@ -3337,22 +3880,79 @@ async function renderArchivePdfCanvasPage(catalog, posts, pageIndex, pageCount, 
   const pageCounterWidth = context.measureText(pageCounter).width;
   context.fillText(pageCounter, margin + pageWidth - (18 * scale) - pageCounterWidth, margin + (24 * scale));
 
-  const cardWidth = pageWidth - (36 * scale);
+  const baseCardX = margin + (18 * scale);
+  const baseCardWidth = pageWidth - (36 * scale);
+  const laidOutPosts = [];
   for (const post of posts) {
+    const frame = getArchivePdfThreadBlockFrame(baseCardX, baseCardWidth, post, options, scale);
+    const cardHeight = estimateArchivePostCardHeight(
+      context,
+      post,
+      options,
+      scale,
+      frame.width,
+      "integrated",
+    );
+    laidOutPosts.push({
+      post,
+      y: cursorY,
+      cardHeight,
+      x: frame.x,
+      width: frame.width,
+      depth: frame.depth,
+      groupKey: getArchiveThreadGroupKey(post),
+    });
+    cursorY += cardHeight + cardGap;
+  }
+
+  const pageGroups = [];
+  laidOutPosts.forEach((entry) => {
+    const currentGroup = pageGroups[pageGroups.length - 1];
+    if (!currentGroup || currentGroup.groupKey !== entry.groupKey) {
+      pageGroups.push({
+        groupKey: entry.groupKey,
+        entries: [entry],
+      });
+    } else {
+      currentGroup.entries.push(entry);
+    }
+  });
+
+  pageGroups.forEach((group) => {
+    if (group.entries.length <= 1 && !(group.entries[0]?.post?.threadDepth > 0)) {
+      return;
+    }
+    const first = group.entries[0];
+    const last = group.entries[group.entries.length - 1];
+    const groupX = baseCardX - (6 * scale);
+    const groupY = first.y - (10 * scale);
+    const groupWidth = baseCardWidth + (12 * scale);
+    const groupHeight = (last.y + last.cardHeight) - first.y + (20 * scale);
+    fillRoundedRect(context, groupX, groupY, groupWidth, groupHeight, 22 * scale, "rgba(255,255,255,0.72)");
+    strokeRoundedRect(context, groupX, groupY, groupWidth, groupHeight, 22 * scale, "#d7e3f5", 1 * scale);
+    fillRoundedRect(context, groupX + (10 * scale), groupY + (14 * scale), 4 * scale, groupHeight - (28 * scale), 3 * scale, "#d95f4b");
+  });
+
+  for (const entry of laidOutPosts) {
+    const inThreadGroup = (entry.depth || 0) > 0
+      || pageGroups.some((group) => group.groupKey === entry.groupKey && group.entries.length > 1);
     const card = await drawArchivePdfPostCard(
       context,
       assetMap,
-      post,
-      margin + (18 * scale),
-      cursorY,
-      cardWidth,
+      entry.post,
+      entry.x,
+      entry.y,
+      entry.width,
       options,
       scale,
       canvas.width,
       canvas.height,
+      inThreadGroup ? {
+        mode: "integrated",
+        depth: entry.depth,
+      } : {},
     );
     annotations.push(...card.annotations);
-    cursorY += card.height + cardGap;
   }
 
   const jpegBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
@@ -3375,14 +3975,15 @@ function paginateArchivePdfPosts(posts, options) {
   const pageHeight = canvas.height - (margin * 2);
   const headerHeight = 42 * scale;
   const cardGap = 16 * scale;
-  const cardWidth = canvas.width - (margin * 2) - (36 * scale);
+  const baseCardWidth = canvas.width - (margin * 2) - (36 * scale);
   const usableHeight = pageHeight - headerHeight - (18 * scale);
   const pages = [];
   let currentPage = [];
   let currentHeight = 0;
 
   for (const post of posts) {
-    const cardHeight = estimateArchivePostCardHeight(context, post, options, scale, cardWidth);
+    const frame = getArchivePdfThreadBlockFrame(0, baseCardWidth, post, options, scale);
+    const cardHeight = estimateArchivePostCardHeight(context, post, options, scale, frame.width, "integrated");
     const nextHeight = currentPage.length === 0 ? cardHeight : currentHeight + cardGap + cardHeight;
 
     if (currentPage.length > 0 && nextHeight > usableHeight) {
@@ -3508,10 +4109,11 @@ async function buildArchivePdfBand(catalog, posts, bandIndex, bandCount, options
 
 function splitArchiveIntoBands(posts, options) {
   const size = Math.max(100, Math.min(1000, Number(options.bandSize) || 200));
+  const orderedPosts = buildArchiveThreadGroups(posts).flatMap((group) => group.posts);
   const bands = [];
   let current = [];
 
-  for (const post of posts) {
+  for (const post of orderedPosts) {
     const currentGroup = current[current.length - 1]?.thread?.rootUri || current[current.length - 1]?.uri || "";
     const nextGroup = post?.thread?.rootUri || post?.uri || "";
     const canOverflowForThread = options.keepThreadsTogether
@@ -3540,7 +4142,7 @@ async function exportArchivePdfBandsFromCatalog(catalog = archiveCatalog) {
   }
 
   const options = getArchivePdfOptions();
-  const orderedPosts = [...catalog.posts].reverse();
+  const orderedPosts = buildArchiveThreadGroups([...catalog.posts].reverse()).flatMap((group) => group.posts);
   const bands = splitArchiveIntoBands(orderedPosts, options);
   const baseName = makeArchiveFileBaseName(catalog);
 
@@ -3584,10 +4186,12 @@ async function ensureArchiveCatalogLoaded(forceRefresh = false) {
     detail: t("archiveProgressFetchIntro"),
   });
   archivePreviewState = null;
+  archiveTransientNotice = "";
   activeArchiveRunId = crypto.randomUUID();
   activeArchiveRunState = "running";
   updateArchiveRunControls();
   renderArchivePreview();
+  renderArchiveStatusLine();
 
   let catalog;
   try {
@@ -3598,13 +4202,18 @@ async function ensureArchiveCatalogLoaded(forceRefresh = false) {
       maxPosts: getArchiveWaveSize(),
       waveIndex: forceRefresh ? 1 : ((currentSession?.waveIndex || 0) + 1),
     }, {
-      timeoutMs: 120000,
+      timeoutMs: 600000,
       onProgress(progress) {
+        const progressDetail = [
+          progress.detail || "",
+          progress.preview?.metric || "",
+          progress.preview?.meta || "",
+        ].filter(Boolean).join(" \u2022 ");
         setArchiveProgress({
-          title: progress.title || t("archiveProgressFetchTitle"),
-          step: progress.step || t("archiveProgressFetchStep"),
-          percent: progress.percent || 0,
-          detail: progress.detail || "",
+          title: progress.title || archiveJobState?.title || t("archiveProgressFetchTitle"),
+          step: progress.step || archiveJobState?.step || t("archiveProgressFetchStep"),
+          percent: Number.isFinite(progress.percent) ? progress.percent : (archiveJobState?.percent || 0),
+          detail: progressDetail || archiveJobState?.detail || t("archiveProgressFetchIntro"),
         });
         if (progress.checkpoint) {
           archiveLastCheckpoint = progress.checkpoint;
@@ -3650,11 +4259,27 @@ async function ensureArchiveCatalogLoaded(forceRefresh = false) {
     updatedAt: new Date().toISOString(),
   };
   await saveArchiveSession(archiveSession);
+  await saveArchiveCatalogState(archiveCatalog);
   activeArchiveRunState = catalog.session?.status === "cancelled" ? "cancelled" : "idle";
   if (activeArchiveRunState === "idle") {
     activeArchiveRunId = null;
   }
+  archiveTransientNotice = catalog.session?.status === "cancelled"
+    ? t("archiveWaveCancelledNotice", { wave: archiveSession.waveIndex || 1 })
+    : t("archiveWaveLoadedNotice", {
+        wave: archiveSession.waveIndex || 1,
+        posts: archiveCatalog.posts.length,
+        images: archiveCatalog.summary.imageCount,
+      });
+  setArchiveProgress({
+    title: t("archiveProgressDoneTitle"),
+    step: t("archiveWaveLoadedStep", { wave: archiveSession.waveIndex || 1 }),
+    percent: 100,
+    detail: archiveTransientNotice,
+  });
   updateArchiveRunControls();
+  renderArchiveStatusLine();
+  renderArchiveStartHint();
   updateArchiveSummary(archiveCatalog);
   renderArchiveResults(archiveCatalog);
   return archiveCatalog;
@@ -3759,6 +4384,7 @@ async function persistSettings() {
       hashtagPlacement,
       segmentImages,
       postingHistory,
+      archivePreferences: getArchivePreferences(),
     });
   } catch (error) {
     console.error(error);
@@ -3784,6 +4410,7 @@ function createSettingsBackupPayload() {
       hashtags,
       selectedHashtags,
       postingHistory,
+      archivePreferences: getArchivePreferences(),
     },
   };
 }
@@ -3836,6 +4463,7 @@ async function importSettingsBackup(file) {
     : localePreference;
   currentLocale = localePreference === "auto" ? detectBrowserLocale() : localePreference;
   languageSelect.value = localePreference;
+  applyArchivePreferences(imported.archivePreferences || {});
 
   await persistSettings();
   applyTranslations();
@@ -4461,7 +5089,15 @@ function renderSegmentImages(container, segmentIndex) {
     if (image.validation?.tooBig) {
       exportSize.classList.add("is-too-large");
     }
-    meta.append(name, altState, originalSize, exportSize);
+    const exportDimensions = document.createElement("span");
+    exportDimensions.textContent = t("exportDimensionsLabel", {
+      width: image.validation?.width || image.width || 0,
+      height: image.validation?.height || image.height || 0,
+    });
+    if (image.validation?.exceedsDimensions) {
+      exportDimensions.classList.add("is-too-large");
+    }
+    meta.append(name, altState, originalSize, exportSize, exportDimensions);
 
     const tools = document.createElement("div");
     tools.className = "segment-image-tools";
@@ -4593,9 +5229,10 @@ function renderSegments(options = {}) {
 async function hydrateAppState() {
   try {
     const browserLocale = detectBrowserLocale();
-    const [state, savedArchiveSession] = await Promise.all([
+    const [state, savedArchiveSession, savedArchiveCatalog] = await Promise.all([
       sendToServiceWorker("GET_APP_STATE", { browserLocale }),
       sendToServiceWorker("GET_ARCHIVE_SESSION", {}, { timeoutMs: 30000 }).catch(() => null),
+      sendToServiceWorker("GET_ARCHIVE_CATALOG", {}, { timeoutMs: 120000 }).catch(() => null),
     ]);
     localePreference = state.localePreference || "auto";
     tipsVisible = state.tipsVisible !== false;
@@ -4610,6 +5247,7 @@ async function hydrateAppState() {
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
     archiveSession = savedArchiveSession || null;
+    archiveCatalog = savedArchiveCatalog ? normalizeImportedArchiveCatalog(savedArchiveCatalog) : null;
     currentLocale = localePreference === "auto"
       ? (browserLocale || DEFAULT_LOCALE)
       : state.locale || browserLocale || DEFAULT_LOCALE;
@@ -4620,6 +5258,8 @@ async function hydrateAppState() {
     logoutButton.hidden = !state.authenticated;
     hashtagPlacementSelect.value = hashtagPlacement;
     threadEmojiToggle.checked = appendThreadEmoji;
+    applyArchivePreferences(state.archivePreferences || {});
+    syncArchiveTransientNoticeFromCatalog();
     applyTranslations();
     if (segmentImages.some((images) => (images || []).length > 0)) {
       scheduleImageValidation();
@@ -4855,34 +5495,67 @@ archiveBackButton.addEventListener("click", () => {
 archiveScopeSelect.addEventListener("change", () => {
   updateArchiveScopeFields();
   invalidateArchiveCatalog();
+  void persistArchivePreferences();
 });
 
 archiveContentModeSelect.addEventListener("change", () => {
   invalidateArchiveCatalog();
+  void persistArchivePreferences();
 });
 
 archiveBandSizeSelect.addEventListener("change", () => {
   updateArchiveSummary();
+  void persistArchivePreferences();
+});
+
+archiveImageSizeSelect.addEventListener("change", () => {
+  void persistArchivePreferences();
+});
+
+archiveMetricsToggle.addEventListener("change", () => {
+  void persistArchivePreferences();
+});
+
+archiveThreadsToggle.addEventListener("change", () => {
+  updateArchiveSummary();
+  void persistArchivePreferences();
+});
+
+archivePdfIndentToggle.addEventListener("change", () => {
+  void persistArchivePreferences();
 });
 
 archiveLivePreviewToggle.addEventListener("change", () => {
   renderArchivePreview();
+  void persistArchivePreferences();
 });
 
 archiveWaveSizeSelect.addEventListener("change", () => {
   invalidateArchiveCatalog();
+  void persistArchivePreferences();
 });
 
 archiveYearInput.addEventListener("input", () => {
+  if (archiveYearInput.value.trim()) {
+    archiveScopeSelect.value = "year";
+    updateArchiveScopeFields();
+  }
   invalidateArchiveCatalog();
+  void persistArchivePreferences();
 });
 
 archiveFromInput.addEventListener("change", () => {
+  archiveScopeSelect.value = "range";
+  updateArchiveScopeFields();
   invalidateArchiveCatalog();
+  void persistArchivePreferences();
 });
 
 archiveToInput.addEventListener("change", () => {
+  archiveScopeSelect.value = "range";
+  updateArchiveScopeFields();
   invalidateArchiveCatalog();
+  void persistArchivePreferences();
 });
 
 archiveNextWaveButton.addEventListener("click", async () => {
@@ -4893,7 +5566,7 @@ archiveNextWaveButton.addEventListener("click", async () => {
     renderArchiveWorkspace();
   } catch (error) {
     console.error(error);
-    showErrorDialog(error.message || t("archiveExportFailed"));
+    showErrorDialog(error.message || t("archiveExportFailed"), t("archiveErrorTitle"));
   } finally {
     setBusy(archiveNextWaveButton, false, t("archiveWorkingButton"), t("archiveNextWaveButton"));
   }
@@ -4919,12 +5592,12 @@ archiveExportZipButton.addEventListener("click", async () => {
   } catch (error) {
     console.error(error);
     setArchiveProgress({
-      title: t("errorTitle"),
+      title: t("archiveErrorTitle"),
       step: error.message || t("archiveExportFailed"),
       percent: 0,
       detail: "",
     });
-    showErrorDialog(error.message || t("archiveExportFailed"));
+    showErrorDialog(error.message || t("archiveExportFailed"), t("archiveErrorTitle"));
   } finally {
     setBusy(archiveExportZipButton, false, t("archiveWorkingButton"), t("archiveExportZipButton"));
   }
@@ -4938,12 +5611,12 @@ archiveExportHtmlButton.addEventListener("click", async () => {
   } catch (error) {
     console.error(error);
     setArchiveProgress({
-      title: t("errorTitle"),
+      title: t("archiveErrorTitle"),
       step: error.message || t("archiveHtmlFailed"),
       percent: 0,
       detail: "",
     });
-    showErrorDialog(error.message || t("archiveHtmlFailed"));
+    showErrorDialog(error.message || t("archiveHtmlFailed"), t("archiveErrorTitle"));
   } finally {
     setBusy(archiveExportHtmlButton, false, t("archiveWorkingButton"), t("archiveExportHtmlButton"));
   }
@@ -4957,12 +5630,12 @@ archiveExportPdfButton.addEventListener("click", async () => {
   } catch (error) {
     console.error(error);
     setArchiveProgress({
-      title: t("errorTitle"),
+      title: t("archiveErrorTitle"),
       step: error.message || t("archivePdfFailed"),
       percent: 0,
       detail: "",
     });
-    showErrorDialog(error.message || t("archivePdfFailed"));
+    showErrorDialog(error.message || t("archivePdfFailed"), t("archiveErrorTitle"));
   } finally {
     setBusy(archiveExportPdfButton, false, t("archiveWorkingButton"), t("archiveExportPdfButton"));
   }
@@ -4984,7 +5657,7 @@ archiveResetButton.addEventListener("click", async () => {
     });
   } catch (error) {
     console.error(error);
-    showErrorDialog(error.message || t("archiveResetFailed"));
+    showErrorDialog(error.message || t("archiveResetFailed"), t("archiveErrorTitle"));
   }
 });
 
@@ -5003,6 +5676,9 @@ archiveImportInput.addEventListener("change", async (event) => {
       detail: file.name,
     });
     archivePreviewState = null;
+    activeArchiveRunId = null;
+    activeArchiveRunState = "idle";
+    archiveLastCheckpoint = "";
     archiveCatalog = await loadArchiveCatalogFromFile(file);
     archiveSession = {
       filterKey: "import",
@@ -5015,22 +5691,27 @@ archiveImportInput.addEventListener("change", async (event) => {
       updatedAt: new Date().toISOString(),
     };
     await saveArchiveSession(archiveSession);
+    await saveArchiveCatalogState(archiveCatalog);
+    archiveTransientNotice = t("archiveImportedNotice", {
+      posts: archiveCatalog.posts.length,
+      images: archiveCatalog.summary.imageCount,
+    });
     renderArchiveWorkspace();
     setArchiveProgress({
       title: t("archiveProgressDoneTitle"),
       step: t("archiveImported"),
       percent: 100,
-      detail: file.name,
+      detail: archiveTransientNotice,
     });
   } catch (error) {
     console.error(error);
     setArchiveProgress({
-      title: t("errorTitle"),
+      title: t("archiveErrorTitle"),
       step: error.message || t("archiveImportFailed"),
       percent: 0,
       detail: "",
     });
-    showErrorDialog(error.message || t("archiveImportFailed"));
+    showErrorDialog(error.message || t("archiveImportFailed"), t("archiveErrorTitle"));
   }
 });
 
