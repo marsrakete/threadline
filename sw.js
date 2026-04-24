@@ -1,4 +1,4 @@
-const APP_VERSION = "v58";
+const APP_VERSION = "v59";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",

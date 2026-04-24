@@ -13,9 +13,9 @@ const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.41",
-  cacheVersion: "v58",
-  label: "HTML archive links",
+  appVersion: "0.4.42",
+  cacheVersion: "v59",
+  label: "HTML author highlights",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -2560,8 +2560,8 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
           <div class="archive-html-post-head">
             <div>
               <p class="archive-html-kicker">${group.isThread ? `#${groupIndex + 1}.${postIndex + 1}` : `#${groupIndex + 1}`}</p>
-              <h2>${escapeHtml(authorDisplay || `@${post.authorHandle || handle}`)}</h2>
-              <p class="archive-html-author-handle">@${escapeHtml(post.authorHandle || handle)}</p>
+              <h2 data-archive-searchable="true">${escapeHtml(authorDisplay || `@${post.authorHandle || handle}`)}</h2>
+              <p class="archive-html-author-handle" data-archive-searchable="true">@${escapeHtml(post.authorHandle || handle)}</p>
             </div>
             <time datetime="${escapeHtmlAttribute(post.createdAt || "")}">${escapeHtml(formatHistoryTimestamp(post.createdAt))}</time>
           </div>
@@ -3414,6 +3414,9 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
           ? formatArchiveTemplate(archiveStrings.visibleStatus, { entries: visibleEntries, posts: visiblePosts })
           : archiveStrings.noMatches;
         document.querySelectorAll("[data-archive-richtext='true']").forEach((element) => {
+          highlightArchiveQueryInElement(element, query);
+        });
+        document.querySelectorAll("[data-archive-searchable='true']").forEach((element) => {
           highlightArchiveQueryInElement(element, query);
         });
         syncHashtagState();
