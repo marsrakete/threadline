@@ -10,7 +10,12 @@
   Eine Progressive Web App zum Schreiben, Aufteilen, Speichern und Veröffentlichen von Bluesky-Threads inklusive Bildern, Hashtags und lokaler Backup-Funktion.
 </p>
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U7U01OC260)
+<p align="center">
+  <a href="https://ko-fi.com/U7U01OC260">Unterst&uuml;tze mich auf Ko-Fi<br />
+    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Unterst&uuml;tze mich auf Ko-Fi" width="140">   
+  </a>
+</p>
+
 
 ## Live-App
 
