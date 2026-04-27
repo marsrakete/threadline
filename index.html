@@ -4,17 +4,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0d1321">
-    <meta name="description" content="PWA zum Entwerfen und Veröffentlichen von Bluesky-Posts und Threads.">
+    <meta name="description" content="PWA zum Entwerfen und Veröffentlichen von Bluesky-Posts und Threads mit Bildern, Hashtags und Archivfunktion.">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Threadline">
     <meta property="og:title" content="Threadline">
-    <meta property="og:description" content="PWA zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Link-Karten.">
+    <meta property="og:description" content="PWA zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archivfunktion.">
     <meta property="og:url" content="https://marsrakete.github.io/threadline/">
     <meta property="og:image" content="https://marsrakete.github.io/threadline/og-image.jpg">
     <meta property="og:image:alt" content="Threadline Vorschau">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Threadline">
-    <meta name="twitter:description" content="PWA zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Link-Karten.">
+    <meta name="twitter:description" content="PWA zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archivfunktion.">
     <meta name="twitter:image" content="https://marsrakete.github.io/threadline/og-image.jpg">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -45,6 +45,20 @@
 
         <form id="login-form" class="login-form">
           <label>
+            <span data-i18n="serverPresetLabel">Anmeldeserver</span>
+            <select id="server-preset" name="server-preset">
+              <option value="bsky.social" data-i18n="serviceBluesky">Bluesky</option>
+              <option value="eurosky.social" data-i18n="serviceEurosky">Eurosky</option>
+              <option value="custom" data-i18n="serviceCustom">Eigener Server</option>
+            </select>
+          </label>
+
+          <label id="custom-server-wrap" hidden>
+            <span data-i18n="customServerLabel">Eigener Server</span>
+            <input id="custom-server" name="custom-server" type="url" placeholder="https://example.com" inputmode="url">
+          </label>
+
+          <label>
             <span data-i18n="identifierLabel">Handle oder E-Mail</span>
             <input id="identifier" name="identifier" type="text" placeholder="z. B. name.bsky.social" autocomplete="username" required>
           </label>
@@ -58,6 +72,11 @@
           <div class="login-actions">
             <button type="submit" id="login-button" data-i18n="loginButton">Verbinden</button>
             <button type="button" class="ghost-button danger-button" id="logout-button" data-i18n="logoutButton" hidden>Abmelden</button>
+          </div>
+
+          <div id="account-switcher-panel" class="account-switcher-panel" hidden>
+            <p class="eyebrow" data-i18n="accountsEyebrow">Konten</p>
+            <div id="account-switcher-list" class="account-switcher-list"></div>
           </div>
         </form>
 
@@ -81,6 +100,24 @@
             Zum Sichern bitte zuerst verbinden.
           </p>
         </div>
+
+        <div class="support-panel">
+          <p class="eyebrow" data-i18n="supportEyebrow">Support</p>
+          <p class="support-note" data-i18n="supportNote">
+            Wenn dir Threadline hilft und du die Weiterentwicklung unterstützen möchtest, freue ich mich über einen Kaffee.
+          </p>
+          <div class="support-actions">
+            <a href="https://ko-fi.com/U7U01OC260" target="_blank" rel="noreferrer noopener">
+              <img
+                height="36"
+                style="border:0px;height:36px;"
+                src="./icons/kofi-button.svg"
+                border="0"
+                alt="Buy Me a Coffee at ko-fi.com"
+              >
+            </a>
+          </div>
+        </div>
       </aside>
 
       <main class="workspace">
@@ -100,10 +137,22 @@
                   </label>
 
                   <label class="toggle">
+                    <input id="thread-intro-toggle" type="checkbox">
+                    <span data-i18n="threadIntroToggle">Hinweis "Ein Thread 🧵" anhängen</span>
+                  </label>
+
+                  <label class="toggle">
                     <input id="thread-emoji-toggle" type="checkbox">
                     <span data-i18n="threadEmojiToggle">Thread-Emoji anhängen</span>
                   </label>
                 </div>
+              </div>
+
+              <div class="composer-language-row">
+                <button id="post-languages-button" type="button" class="ghost-button composer-language-button" data-i18n="postLanguagesButton">
+                  Post-Sprachen
+                </button>
+                <p id="post-languages-summary" class="composer-language-summary"></p>
               </div>
 
               <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
@@ -231,6 +280,9 @@
               <p class="settings-note" data-i18n="archiveScopeHelp">
                 Der Export liest deine eigenen Posts seitenweise und filtert sie danach lokal.
               </p>
+              <p class="settings-note" data-i18n="archiveRestartHint">
+                Änderungen an Umfang, Archivtyp oder Wellen-Größe starten den Archivlauf wieder bei Welle 1.
+              </p>
               <label>
                 <span data-i18n="archiveWaveSizeLabel">Posts pro Exportwelle</span>
                 <select id="archive-wave-size-select">
@@ -271,6 +323,10 @@
               <label class="settings-check">
                 <input id="archive-threads-toggle" type="checkbox" checked>
                 <span data-i18n="archiveThreadsToggle">Threads möglichst zusammenhalten</span>
+              </label>
+              <label class="settings-check">
+                <input id="archive-pdf-indent-toggle" type="checkbox" checked>
+                <span data-i18n="archivePdfIndentToggle">Threads im PDF einrücken</span>
               </label>
             </section>
 
@@ -425,23 +481,6 @@
           <p id="update-status" class="settings-note" hidden></p>
         </section>
 
-        <section class="settings-block">
-          <p class="eyebrow" data-i18n="supportEyebrow">Support</p>
-          <p class="settings-note" data-i18n="supportNote">
-            Wenn dir Threadline hilft und du die Weiterentwicklung unterstützen möchtest, freue ich mich über einen Kaffee.
-          </p>
-          <div class="support-actions">
-            <a href="https://ko-fi.com/U7U01OC260" target="_blank" rel="noreferrer noopener">
-              <img
-                height="36"
-                style="border:0px;height:36px;"
-                src="./icons/kofi-button.svg"
-                border="0"
-                alt="Buy Me a Coffee at ko-fi.com"
-              >
-            </a>
-          </div>
-        </section>
       </form>
     </dialog>
 
@@ -535,6 +574,34 @@
           <li data-i18n="installIosStep2">Auf "Zum Home-Bildschirm" tippen.</li>
           <li data-i18n="installIosStep3">Den Namen bestätigen und hinzufügen.</li>
         </ol>
+      </form>
+    </dialog>
+
+    <dialog id="post-languages-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet post-languages-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="postLanguagesEyebrow">Posting</p>
+            <h2 data-i18n="postLanguagesDialogTitle">Post-Sprachen auswählen</h2>
+          </div>
+          <button type="button" id="post-languages-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <p class="settings-note" data-i18n="postLanguagesDialogDescription">
+          Wähle bis zu 3 Sprachen aus, die in diesem Posting und Thread verwendet werden.
+        </p>
+
+        <label for="post-languages-search">
+          <span data-i18n="postLanguagesSearchLabel">Sprachen suchen</span>
+          <input id="post-languages-search" type="search" autocomplete="off" placeholder="Sprachen suchen">
+        </label>
+
+        <p id="post-languages-selection-note" class="settings-note"></p>
+        <div id="post-languages-list" class="post-languages-list"></div>
+
+        <div class="settings-actions">
+          <button type="button" id="post-languages-close-button" class="ghost-button" data-i18n="closeButton">Schließen</button>
+        </div>
       </form>
     </dialog>
 

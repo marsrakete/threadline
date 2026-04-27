@@ -1,3 +1,4 @@
+import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags, resolveThreadIntroLocale } from "./post-languages.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./translations.js";
 
 const MAX_POST_LENGTH = 300;
@@ -12,10 +13,11 @@ const IMAGE_EXPORT_WIDTH = 1400;
 const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH) * IMAGE_EDITOR_CANVAS_HEIGHT);
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
+const AUTO_UPDATE_CHECK_INTERVAL_MS = 3 * 60 * 1000;
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.42",
-  cacheVersion: "v59",
-  label: "HTML author highlights",
+  appVersion: "0.4.48",
+  cacheVersion: "v65",
+  label: "Post languages and thread intro",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -111,6 +113,15 @@ const publishWarning = document.querySelector("#publish-warning");
 const segmentsPane = document.querySelector("#segments-pane");
 const segmentsList = document.querySelector("#segments-list");
 const segmentTemplate = document.querySelector("#segment-template");
+const threadIntroToggle = document.querySelector("#thread-intro-toggle");
+const postLanguagesButton = document.querySelector("#post-languages-button");
+const postLanguagesSummary = document.querySelector("#post-languages-summary");
+const postLanguagesDialog = document.querySelector("#post-languages-dialog");
+const postLanguagesCloseTop = document.querySelector("#post-languages-close-top");
+const postLanguagesCloseButton = document.querySelector("#post-languages-close-button");
+const postLanguagesSearch = document.querySelector("#post-languages-search");
+const postLanguagesSelectionNote = document.querySelector("#post-languages-selection-note");
+const postLanguagesList = document.querySelector("#post-languages-list");
 const identifierField = document.querySelector("#identifier");
 const passwordField = document.querySelector("#password");
 const composerWorkspace = document.querySelector("#composer-workspace");
@@ -153,15 +164,24 @@ const archiveSummaryImages = document.querySelector("#archive-summary-images");
 const archiveSummaryBands = document.querySelector("#archive-summary-bands");
 const archiveResults = document.querySelector("#archive-results");
 const archiveSpecContent = document.querySelector("#archive-spec-content");
+const serverPresetField = document.querySelector("#server-preset");
+const customServerWrap = document.querySelector("#custom-server-wrap");
+const customServerField = document.querySelector("#custom-server");
+const accountSwitcherPanel = document.querySelector("#account-switcher-panel");
+const accountSwitcherList = document.querySelector("#account-switcher-list");
 
 let activeSegments = [];
 let currentLocale = DEFAULT_LOCALE;
 let localePreference = "auto";
 let authAccount = null;
+let authAccountService = "https://bsky.social";
+let authAccountDid = "";
+let savedAccounts = [];
 let draftSaveTimer = null;
 let serviceWorkerRegistration = null;
 let updateInProgress = false;
 let sessionCheckTimer = null;
+let lastAutoUpdateCheckAt = 0;
 let deferredInstallPrompt = null;
 let helpCache = {
   path: "",
@@ -176,6 +196,8 @@ let selectedHashtags = [];
 let hashtagPlacement = "first";
 let postingHistory = [];
 let currentComposedText = "";
+let selectedPostLanguages = [];
+let appendThreadIntro = false;
 let appendThreadEmoji = false;
 let segmentOverrides = null;
 let composerLocked = false;
@@ -199,6 +221,10 @@ let activeArchiveRunState = "idle";
 let archivePreviewState = null;
 let archiveLastCheckpoint = "";
 let archiveTransientNotice = "";
+const LOGIN_SERVICE_PRESETS = {
+  "bsky.social": "https://bsky.social",
+  "eurosky.social": "https://eurosky.social",
+};
 
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) {
@@ -290,17 +316,206 @@ function setBusy(button, isBusy, busyLabel, idleLabel) {
   button.textContent = isBusy ? busyLabel : idleLabel;
 }
 
+function normalizeServiceUrl(value) {
+  const preset = LOGIN_SERVICE_PRESETS[String(value || "").trim()];
+  let url = preset || String(value || "").trim();
+
+  if (!url) {
+    return LOGIN_SERVICE_PRESETS["bsky.social"];
+  }
+
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+
+  try {
+    const normalized = new URL(url);
+    normalized.pathname = normalized.pathname.replace(/\/+$/, "");
+    if (normalized.pathname.endsWith("/xrpc")) {
+      normalized.pathname = normalized.pathname.slice(0, -5);
+    }
+    normalized.search = "";
+    normalized.hash = "";
+    return normalized.toString().replace(/\/$/, "");
+  } catch {
+    return url.replace(/\/+$/, "");
+  }
+}
+
+function getSelectedLoginService() {
+  if (serverPresetField.value === "custom") {
+    return normalizeServiceUrl(customServerField.value);
+  }
+
+  return normalizeServiceUrl(serverPresetField.value);
+}
+
+function applyLoginServiceSelection(serviceUrl = LOGIN_SERVICE_PRESETS["bsky.social"]) {
+  const normalized = normalizeServiceUrl(serviceUrl);
+  const presetEntry = Object.entries(LOGIN_SERVICE_PRESETS).find(([, url]) => normalizeServiceUrl(url) === normalized);
+
+  if (presetEntry) {
+    serverPresetField.value = presetEntry[0];
+    customServerWrap.hidden = true;
+    customServerField.value = "";
+    return;
+  }
+
+  serverPresetField.value = "custom";
+  customServerWrap.hidden = false;
+  customServerField.value = normalized;
+}
+
+function getAccountInitials(account) {
+  const source = String(account?.handle || account?.identifier || "?").replace(/^@/, "");
+  return source.slice(0, 2).toUpperCase();
+}
+
+function getAccountVisualState(account) {
+  if (account.did && account.did === authAccountDid && account.hasSession) {
+    return "active";
+  }
+
+  if (account.hasSession) {
+    return "available";
+  }
+
+  return "signed-out";
+}
+
+function renderAccountSwitcher() {
+  accountSwitcherList.innerHTML = "";
+
+  if (!savedAccounts.length) {
+    accountSwitcherPanel.hidden = true;
+    return;
+  }
+
+  accountSwitcherPanel.hidden = false;
+
+  savedAccounts.forEach((account) => {
+    const state = getAccountVisualState(account);
+    const item = document.createElement("div");
+    item.className = `account-chip-wrap is-${state}`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "account-chip";
+    button.disabled = !account.did;
+    button.classList.add(`is-${state}`);
+    if (!account.hasStoredPassword && !account.hasSession) {
+      button.classList.add("is-needs-login");
+    }
+
+    const avatar = document.createElement(account.avatar ? "img" : "span");
+    avatar.className = "account-chip-avatar";
+    if (account.avatar) {
+      avatar.src = account.avatar;
+      avatar.alt = account.handle || account.identifier || "account";
+      avatar.loading = "lazy";
+    } else {
+      avatar.textContent = getAccountInitials(account);
+    }
+
+    const label = document.createElement("span");
+    label.className = "account-chip-label";
+    label.textContent = account.handle || account.identifier || "account";
+
+    button.title = [
+      account.handle || account.identifier || "",
+      account.service || "",
+      state === "active" ? t("accountStateActive") : "",
+      state === "available" ? t("accountStateAvailable") : "",
+      state === "signed-out" ? t("accountStateSignedOut") : "",
+      !account.hasStoredPassword && !account.hasSession ? t("accountNeedsLoginShort") : "",
+    ].filter(Boolean).join(" · ");
+
+    button.append(avatar, label);
+    button.addEventListener("click", async () => {
+      try {
+        const result = await sendToServiceWorker("SWITCH_ACCOUNT", { did: account.did });
+        savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+        renderAccountSwitcher();
+
+        if (!result.authenticated) {
+          authAccount = null;
+          authAccountDid = "";
+          authAccountService = account.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+          identifierField.value = account.identifier || account.handle || "";
+          applyLoginServiceSelection(authAccountService);
+          passwordField.value = "";
+          updateStatusForAuth();
+          setStatus(t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" }), "error");
+          return;
+        }
+
+        authAccount = result.handle || result.identifier || null;
+        authAccountDid = result.did || "";
+        authAccountService = result.service || account.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+        identifierField.value = result.identifier || "";
+        applyLoginServiceSelection(authAccountService);
+        passwordField.value = "";
+        updateStatusForAuth();
+        await verifySession({ silent: true });
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message, "error");
+      }
+    });
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "account-chip-remove";
+    removeButton.setAttribute("aria-label", t("removeAccountButton", { account: account.handle || account.identifier || "account" }));
+    removeButton.title = t("removeAccountButton", { account: account.handle || account.identifier || "account" });
+    removeButton.innerHTML = createIconSvg("M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z");
+    removeButton.addEventListener("click", async () => {
+      const confirmed = await openConfirmDialog({
+        title: t("removeAccountConfirmTitle"),
+        message: t("removeAccountConfirmText", { account: account.handle || account.identifier || "account" }),
+        confirmLabel: t("removeAccountConfirmButton"),
+        cancelLabel: t("cancelButton"),
+      });
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        const result = await sendToServiceWorker("REMOVE_ACCOUNT", { did: account.did });
+        savedAccounts = Array.isArray(result.accounts) ? result.accounts : [];
+        authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
+        authAccountDid = result.authenticated ? (result.did || "") : "";
+        authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+        identifierField.value = result.identifier || "";
+        applyLoginServiceSelection(authAccountService);
+        updateStatusForAuth();
+        setStatus(t("accountRemovedStatus", { account: account.handle || account.identifier || "account" }));
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message, "error");
+      }
+    });
+
+    item.append(button, removeButton);
+    accountSwitcherList.appendChild(item);
+  });
+}
+
 function updateAuthButtons() {
   const isAuthenticated = Boolean(authAccount);
-  loginButton.hidden = isAuthenticated;
+  loginButton.hidden = false;
   loginButton.classList.toggle("ghost-button", isAuthenticated);
-  loginButton.classList.toggle("is-muted", isAuthenticated);
+  loginButton.classList.toggle("is-muted", false);
+  loginButton.textContent = isAuthenticated ? t("addAccountButton") : t("loginButton");
   archiveButton.disabled = !isAuthenticated;
   archiveLaunchNote.textContent = isAuthenticated ? t("archiveLaunchEnabledNote") : t("archiveLaunchDisabledNote");
+  renderAccountSwitcher();
 }
 
 function applyDisconnectedState(showStatus = true) {
   authAccount = null;
+  authAccountDid = "";
   logoutButton.hidden = true;
   updateAuthButtons();
   if (currentWorkspace === "archive") {
@@ -778,7 +993,9 @@ function updatePublishAvailability() {
 function updateComposerLockState() {
   sourceText.disabled = composerLocked;
   counterToggle.disabled = composerLocked;
+  threadIntroToggle.disabled = composerLocked;
   threadEmojiToggle.disabled = composerLocked;
+  postLanguagesButton.disabled = composerLocked && appendThreadIntro;
   clearButton.disabled = composerLocked;
   composerLockNote.hidden = !composerLocked;
 }
@@ -835,6 +1052,88 @@ function applyTheme() {
   }
 }
 
+function getThreadIntroText() {
+  const introLocale = resolveThreadIntroLocale(selectedPostLanguages, currentLocale);
+  if (introLocale === "de") {
+    return "Ein Thread 🧵";
+  }
+  if (introLocale === "fr") {
+    return "Un fil 🧵";
+  }
+  return "A thread 🧵";
+}
+
+function getNormalizedPostLanguagesOrDefault() {
+  const normalized = normalizePostLanguageTags(selectedPostLanguages);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return inferDefaultPostLanguages(currentLocale);
+}
+
+function renderPostLanguageSummary() {
+  selectedPostLanguages = getNormalizedPostLanguagesOrDefault();
+  const labels = selectedPostLanguages.map((tag) => getPostLanguageDisplayName(tag, currentLocale));
+
+  if (labels.length === 1) {
+    postLanguagesSummary.textContent = t("postLanguagesSummarySingle", { language: labels[0] });
+    return;
+  }
+
+  postLanguagesSummary.textContent = t("postLanguagesSummaryMany", {
+    count: labels.length,
+    languages: labels.join(", "),
+  });
+}
+
+function renderPostLanguageDialog() {
+  selectedPostLanguages = getNormalizedPostLanguagesOrDefault();
+  const options = getPostLanguageOptions(currentLocale, postLanguagesSearch.value);
+  postLanguagesList.innerHTML = "";
+
+  if (options.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "settings-note";
+    empty.textContent = t("postLanguagesNoResults");
+    postLanguagesList.appendChild(empty);
+  } else {
+    options.forEach((option) => {
+      const checked = selectedPostLanguages.includes(option.code);
+      const disabled = !checked && selectedPostLanguages.length >= 3;
+      const label = document.createElement("label");
+      label.className = `post-language-option${checked ? " is-selected" : ""}${disabled ? " is-disabled" : ""}`;
+
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = checked;
+      input.disabled = disabled;
+      input.addEventListener("change", async () => {
+        const nextValues = input.checked
+          ? [...selectedPostLanguages, option.code]
+          : selectedPostLanguages.filter((entry) => entry !== option.code);
+        selectedPostLanguages = normalizePostLanguageTags(nextValues);
+        renderPostLanguageSummary();
+        renderPostLanguageDialog();
+        if (!composerLocked) {
+          renderSegments({ preserveOverrides: false });
+        }
+        await persistSettings();
+      });
+
+      const text = document.createElement("span");
+      text.textContent = option.name;
+
+      label.append(input, text);
+      postLanguagesList.appendChild(label);
+    });
+  }
+
+  postLanguagesSelectionNote.textContent = t("postLanguagesSelectionNote", {
+    count: selectedPostLanguages.length,
+    max: 3,
+  });
+}
+
 function applyTranslations() {
   document.documentElement.lang = currentLocale;
   syncArchiveTransientNoticeFromCatalog();
@@ -846,9 +1145,10 @@ function applyTranslations() {
 
   identifierField.placeholder = "z. B. name.bsky.social";
   passwordField.placeholder = "xxxx-xxxx-xxxx-xxxx";
+  customServerField.placeholder = "https://example.com";
   sourceText.placeholder = t("sourcePlaceholder");
   hashtagInput.placeholder = t("hashtagInputPlaceholder");
-  loginButton.textContent = t("loginButton");
+  loginButton.textContent = authAccount ? t("addAccountButton") : t("loginButton");
   logoutButton.textContent = t("logoutButton");
   publishButton.textContent = t("publishButton");
   clearButton.textContent = t("clearButton");
@@ -866,6 +1166,8 @@ function applyTranslations() {
   archiveExportHtmlButton.textContent = t("archiveExportHtmlButton");
   archiveExportPdfButton.textContent = t("archiveExportPdfButton");
   archiveImportButton.textContent = t("archiveImportButton");
+  updateAuthButtons();
+  renderAccountSwitcher();
   archiveResetButton.textContent = t("archiveResetButton");
   archivePauseButton.textContent = t("archivePauseButton");
   archiveResumeButton.textContent = t("archiveResumeButton");
@@ -896,6 +1198,8 @@ function applyTranslations() {
   hashtagAddButton.textContent = t("addHashtagButton");
   nextTipButton.textContent = t("nextTipButton");
   hideTipsButton.textContent = t("hideTipsButton");
+  postLanguagesButton.textContent = t("postLanguagesButton");
+  postLanguagesSearch.placeholder = t("postLanguagesSearchPlaceholder");
   Array.from(hashtagPlacementSelect.options).forEach((option) => {
     option.textContent = option.value === "last" ? t("hashtagPlacementLast") : t("hashtagPlacementFirst");
   });
@@ -939,6 +1243,8 @@ function applyTranslations() {
     option.textContent = languageNames[option.value] || option.value;
   });
   languageSelect.value = localePreference;
+  renderPostLanguageSummary();
+  renderPostLanguageDialog();
 
   renderSegments();
   updateStatusForAuth();
@@ -1247,6 +1553,7 @@ function normalizePostingHistory(entries) {
   for (const entry of Array.isArray(entries) ? entries : []) {
     const url = typeof entry?.url === "string" ? entry.url.trim() : "";
     const createdAt = typeof entry?.createdAt === "string" ? entry.createdAt : "";
+    const account = typeof entry?.account === "string" ? entry.account.trim() : "";
 
     if (!url || !createdAt) {
       continue;
@@ -1262,6 +1569,7 @@ function normalizePostingHistory(entries) {
       id: typeof entry.id === "string" && entry.id ? entry.id : key,
       url,
       createdAt,
+      account,
       threadCount: Math.max(1, Number(entry.threadCount) || 1),
       imageCount: Math.max(0, Number(entry.imageCount) || 0),
     });
@@ -1783,7 +2091,9 @@ function buildThreadExportPayload() {
     thread: {
       sourceText: sourceText.value,
       useCounters: counterToggle.checked,
+      appendThreadIntro,
       appendThreadEmoji,
+      postLanguages: getNormalizedPostLanguagesOrDefault(),
       localePreference,
       hashtagPlacement,
       hashtags,
@@ -1844,8 +2154,11 @@ async function importThreadFile(file) {
   const thread = parsed.thread;
   sourceText.value = thread.sourceText || "";
   counterToggle.checked = thread.useCounters !== false;
+  appendThreadIntro = thread.appendThreadIntro === true;
+  threadIntroToggle.checked = appendThreadIntro;
   appendThreadEmoji = thread.appendThreadEmoji === true;
   threadEmojiToggle.checked = appendThreadEmoji;
+  selectedPostLanguages = normalizePostLanguageTags(thread.postLanguages);
   localePreference = SUPPORTED_LOCALES.includes(thread.localePreference) || thread.localePreference === "auto"
     ? thread.localePreference
     : localePreference;
@@ -4652,6 +4965,8 @@ async function persistSettings() {
       tipsVisible,
       altTextRequired,
       themeMode,
+      postLanguages: getNormalizedPostLanguagesOrDefault(),
+      appendThreadIntro,
       appendThreadEmoji,
       hashtags,
       selectedHashtags,
@@ -4679,7 +4994,16 @@ function createSettingsBackupPayload() {
       tipsVisible,
       altTextRequired,
       themeMode,
+      postLanguages: getNormalizedPostLanguagesOrDefault(),
+      appendThreadIntro,
       appendThreadEmoji,
+      savedAccounts: savedAccounts.map((account) => ({
+        did: account.did || "",
+        handle: account.handle || "",
+        identifier: account.identifier || "",
+        service: account.service || "",
+        avatar: account.avatar || "",
+      })),
       hashtagPlacement,
       hashtags,
       selectedHashtags,
@@ -4730,6 +5054,9 @@ async function importSettingsBackup(file) {
   tipsVisible = imported.tipsVisible !== false;
   altTextRequired = imported.altTextRequired === true;
   themeMode = imported.themeMode === "dark" ? "dark" : "light";
+  selectedPostLanguages = normalizePostLanguageTags(imported.postLanguages);
+  appendThreadIntro = imported.appendThreadIntro === true;
+  threadIntroToggle.checked = appendThreadIntro;
   appendThreadEmoji = imported.appendThreadEmoji === true;
   threadEmojiToggle.checked = appendThreadEmoji;
   localePreference = SUPPORTED_LOCALES.includes(imported.localePreference) || imported.localePreference === "auto"
@@ -4739,8 +5066,14 @@ async function importSettingsBackup(file) {
   languageSelect.value = localePreference;
   applyArchivePreferences(imported.archivePreferences || {});
 
+  if (Array.isArray(imported.savedAccounts) && imported.savedAccounts.length > 0) {
+    const accountResult = await sendToServiceWorker("IMPORT_ACCOUNT_METADATA", { accounts: imported.savedAccounts });
+    savedAccounts = Array.isArray(accountResult.accounts) ? accountResult.accounts : savedAccounts;
+  }
+
   await persistSettings();
   applyTranslations();
+  renderAccountSwitcher();
   segmentOverrides = null;
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
@@ -4829,6 +5162,26 @@ async function checkForUpdates(options = {}) {
   }
 }
 
+function shouldRunAutoUpdateCheck() {
+  const now = Date.now();
+  if (now - lastAutoUpdateCheckAt < AUTO_UPDATE_CHECK_INTERVAL_MS) {
+    return false;
+  }
+  lastAutoUpdateCheckAt = now;
+  return true;
+}
+
+function scheduleSilentUpdateCheck() {
+  if (!shouldRunAutoUpdateCheck()) {
+    return;
+  }
+  void checkForUpdates({
+    showChecking: false,
+    silentNoChange: true,
+    silentError: true,
+  });
+}
+
 function updateStatusForAuth() {
   updateAuthButtons();
 
@@ -4843,12 +5196,14 @@ function updateStatusForAuth() {
 async function verifySession(options = {}) {
   const { silent = false } = options;
 
-  if (!authAccount) {
+  if (!authAccountDid) {
     return false;
   }
 
   try {
     const result = await sendToServiceWorker("VERIFY_SESSION");
+    savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+    renderAccountSwitcher();
 
     if (!result.authenticated) {
       applyDisconnectedState(!silent);
@@ -4856,6 +5211,8 @@ async function verifySession(options = {}) {
     }
 
     authAccount = result.handle || result.identifier || authAccount;
+    authAccountDid = result.did || authAccountDid;
+    authAccountService = result.service || authAccountService;
     logoutButton.hidden = false;
 
     if (silent) {
@@ -4947,7 +5304,13 @@ function renderHistoryList() {
       images: entry.imageCount,
     });
 
-    meta.append(timestamp, counts);
+    const accountLine = document.createElement("p");
+    accountLine.className = "history-meta";
+    accountLine.textContent = t("historyAccountMeta", {
+      account: entry.account || t("historyUnknownAccount"),
+    });
+
+    meta.append(timestamp, counts, accountLine);
 
     const actions = document.createElement("div");
     actions.className = "history-item-actions";
@@ -4992,6 +5355,7 @@ async function recordPublishedThread(result, preparedSegments) {
       id: crypto.randomUUID(),
       url,
       createdAt: new Date().toISOString(),
+      account: handle || authAccount || "",
       threadCount: result.posts?.length || preparedSegments.length || 1,
       imageCount: preparedSegments.reduce((total, segment) => total + (segment.images?.length || 0), 0),
     },
@@ -5021,6 +5385,8 @@ function escapeHtml(value) {
 
 function renderInlineMarkdown(text) {
   let html = escapeHtml(text);
+  html = html.replace(/\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)/g, '<a href="$3" target="_blank" rel="noreferrer noopener"><img src="$2" alt="$1"></a>');
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
@@ -5175,6 +5541,10 @@ function reserveForThreadEmoji() {
   return "\n⤵️".length;
 }
 
+function reserveForThreadIntro() {
+  return `\n${getThreadIntroText()}`.length;
+}
+
 function splitByManualMarkers(text) {
   return String(text || "")
     .replace(/\r\n/g, "\n")
@@ -5184,13 +5554,22 @@ function splitByManualMarkers(text) {
 }
 
 function splitChunksGreedy(chunks, limitFactory) {
-  return chunks.flatMap((chunk) => greedySplit(chunk, limitFactory));
+  let globalOffset = 0;
+  return chunks.flatMap((chunk) => {
+    const split = greedySplit(chunk, (chunkIndex) => limitFactory(globalOffset + chunkIndex));
+    globalOffset += split.length;
+    return split;
+  });
 }
 
-function decorateSegments(segments, withCounters, withThreadEmoji) {
+function decorateSegments(segments, withCounters, withThreadIntro, withThreadEmoji) {
   return segments.map((segment, segmentIndex) => {
     let suffix = "";
     const isLastSegment = segmentIndex === segments.length - 1;
+
+    if (withThreadIntro && segmentIndex === 0) {
+      suffix += `\n${getThreadIntroText()}`;
+    }
 
     if (withThreadEmoji && !isLastSegment) {
       suffix += "\n⤵️";
@@ -5204,19 +5583,20 @@ function decorateSegments(segments, withCounters, withThreadEmoji) {
   });
 }
 
-function splitIntoSegments(text, withCounters, withThreadEmoji) {
+function splitIntoSegments(text, withCounters, withThreadIntro, withThreadEmoji) {
   const manualChunks = splitByManualMarkers(text);
 
   if (manualChunks.length === 0) {
     return [];
   }
 
-  const reserveForSuffix = (segmentCount) => (
-    (withThreadEmoji ? reserveForThreadEmoji() : 0)
+  const reserveForSuffix = (segmentIndex, segmentCount) => (
+    (withThreadIntro && segmentIndex === 0 ? reserveForThreadIntro() : 0)
+    + (withThreadEmoji && segmentIndex < segmentCount - 1 ? reserveForThreadEmoji() : 0)
     + (withCounters ? reserveForCounters(segmentCount) : 0)
   );
 
-  if (!withCounters && !withThreadEmoji) {
+  if (!withCounters && !withThreadIntro && !withThreadEmoji) {
     return splitChunksGreedy(manualChunks, () => MAX_POST_LENGTH);
   }
 
@@ -5224,19 +5604,17 @@ function splitIntoSegments(text, withCounters, withThreadEmoji) {
   let guess = Math.max(1, Math.ceil(estimatedLength / MAX_POST_LENGTH), manualChunks.length);
 
   for (let index = 0; index < 12; index += 1) {
-    const reserve = reserveForSuffix(guess);
-    const segments = splitChunksGreedy(manualChunks, () => MAX_POST_LENGTH - reserve);
+    const segments = splitChunksGreedy(manualChunks, (segmentIndex) => MAX_POST_LENGTH - reserveForSuffix(segmentIndex, guess));
 
     if (segments.length === guess) {
-      return decorateSegments(segments, withCounters, withThreadEmoji);
+      return decorateSegments(segments, withCounters, withThreadIntro, withThreadEmoji);
     }
 
     guess = segments.length;
   }
 
-  const fallbackReserve = reserveForSuffix(guess);
-  const fallbackSegments = splitChunksGreedy(manualChunks, () => MAX_POST_LENGTH - fallbackReserve);
-  return decorateSegments(fallbackSegments, withCounters, withThreadEmoji);
+  const fallbackSegments = splitChunksGreedy(manualChunks, (segmentIndex) => MAX_POST_LENGTH - reserveForSuffix(segmentIndex, guess));
+  return decorateSegments(fallbackSegments, withCounters, withThreadIntro, withThreadEmoji);
 }
 
 function normalizeInput(text) {
@@ -5429,9 +5807,10 @@ function renderSegments(options = {}) {
   const { preserveOverrides = Boolean(segmentOverrides) } = options;
   const text = sourceText.value;
   const useCounters = counterToggle.checked;
+  appendThreadIntro = threadIntroToggle.checked;
   appendThreadEmoji = threadEmojiToggle.checked;
   currentComposedText = buildComposedText(text);
-  const generatedSegments = currentComposedText.trim() ? splitIntoSegments(currentComposedText, useCounters, appendThreadEmoji) : [];
+  const generatedSegments = currentComposedText.trim() ? splitIntoSegments(currentComposedText, useCounters, appendThreadIntro, appendThreadEmoji) : [];
   activeSegments = preserveOverrides ? (normalizeSegmentOverrides(segmentOverrides) || generatedSegments) : generatedSegments;
   segmentOverrides = preserveOverrides ? normalizeSegmentOverrides(activeSegments) : null;
   syncSegmentImages(activeSegments.length);
@@ -5517,6 +5896,8 @@ async function hydrateAppState() {
     hashtagPlacement = state.hashtagPlacement === "last" ? "last" : "first";
     segmentImages = normalizeSegmentImages(state.segmentImages);
     segmentOverrides = normalizeSegmentOverrides(state.segmentOverrides);
+    selectedPostLanguages = normalizePostLanguageTags(state.postLanguages);
+    appendThreadIntro = state.appendThreadIntro === true;
     appendThreadEmoji = state.appendThreadEmoji === true;
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
@@ -5525,12 +5906,17 @@ async function hydrateAppState() {
     currentLocale = localePreference === "auto"
       ? (browserLocale || DEFAULT_LOCALE)
       : state.locale || browserLocale || DEFAULT_LOCALE;
+    savedAccounts = Array.isArray(state.accounts) ? state.accounts : [];
     identifierField.value = state.identifier || "";
     sourceText.value = state.draft || "";
     authAccount = state.handle || state.identifier || null;
+    authAccountDid = state.did || "";
+    authAccountService = state.service || LOGIN_SERVICE_PRESETS["bsky.social"];
     passwordField.value = "";
     logoutButton.hidden = !state.authenticated;
+    applyLoginServiceSelection(authAccountService);
     hashtagPlacementSelect.value = hashtagPlacement;
+    threadIntroToggle.checked = appendThreadIntro;
     threadEmojiToggle.checked = appendThreadEmoji;
     applyArchivePreferences(state.archivePreferences || {});
     syncArchiveTransientNoticeFromCatalog();
@@ -5571,40 +5957,50 @@ async function persistLocale(locale) {
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  if (authAccount) {
-    return;
-  }
-
   try {
-    setBusy(loginButton, true, t("loginBusy"), t("loginButton"));
+    setBusy(loginButton, true, t("loginBusy"), authAccount ? t("addAccountButton") : t("loginButton"));
     const identifier = identifierField.value.trim();
     const appPassword = passwordField.value.trim();
+    const service = getSelectedLoginService();
 
     const result = await sendToServiceWorker("LOGIN", {
       identifier,
       appPassword,
+      service,
     });
 
     passwordField.value = "";
     logoutButton.hidden = false;
     authAccount = result.handle || result.identifier;
+    authAccountDid = result.did || "";
+    authAccountService = result.service || service;
+    savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+    identifierField.value = result.identifier || identifier;
+    applyLoginServiceSelection(authAccountService);
     updateStatusForAuth();
   } catch (error) {
     console.error(error);
     setStatus(error.message, "error");
   } finally {
-    setBusy(loginButton, false, t("loginBusy"), t("loginButton"));
+    setBusy(loginButton, false, t("loginBusy"), authAccount ? t("addAccountButton") : t("loginButton"));
   }
 });
 
 logoutButton.addEventListener("click", async () => {
   try {
-    await sendToServiceWorker("LOGOUT");
+    const result = await sendToServiceWorker("LOGOUT");
     await clearArchiveSession().catch(() => {});
-    logoutButton.hidden = true;
-    authAccount = null;
-    updateAuthButtons();
-    setStatus(t("statusLoggedOut"));
+    savedAccounts = Array.isArray(result.accounts) ? result.accounts : [];
+    authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
+    authAccountDid = result.authenticated ? (result.did || "") : "";
+    authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+    logoutButton.hidden = !result.authenticated;
+    identifierField.value = result.identifier || "";
+    applyLoginServiceSelection(authAccountService);
+    updateStatusForAuth();
+    setStatus(result.authenticated
+      ? t("statusConnected", { account: result.handle || result.identifier || "" })
+      : t("statusLoggedOut"));
   } catch (error) {
     console.error(error);
     setStatus(error.message, "error");
@@ -5687,7 +6083,10 @@ publishButton.addEventListener("click", async () => {
         images: preparedImages,
       });
     }
-    const result = await sendToServiceWorker("PUBLISH_THREAD", { segments: preparedSegments }, {
+    const result = await sendToServiceWorker("PUBLISH_THREAD", {
+      segments: preparedSegments,
+      langs: getNormalizedPostLanguagesOrDefault(),
+    }, {
       onProgress(progress) {
         showProgressDialog(t("progressTitle"), progress.message || t("progressUploading"));
       },
@@ -5718,6 +6117,15 @@ counterToggle.addEventListener("change", () => {
   segmentOverrides = null;
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
+  void persistSettings();
+  queueDraftSave();
+});
+threadIntroToggle.addEventListener("change", () => {
+  appendThreadIntro = threadIntroToggle.checked;
+  segmentOverrides = null;
+  setComposerLocked(false);
+  renderSegments({ preserveOverrides: false });
+  void persistSettings();
   queueDraftSave();
 });
 threadEmojiToggle.addEventListener("change", () => {
@@ -5727,6 +6135,13 @@ threadEmojiToggle.addEventListener("change", () => {
   renderSegments({ preserveOverrides: false });
   void persistSettings();
   queueDraftSave();
+});
+
+serverPresetField.addEventListener("change", () => {
+  customServerWrap.hidden = serverPresetField.value !== "custom";
+  if (serverPresetField.value !== "custom") {
+    customServerField.value = "";
+  }
 });
 
 clearButton.addEventListener("click", async () => {
@@ -5995,6 +6410,24 @@ composerUnlockButton.addEventListener("click", () => {
   segmentOverrides = null;
   setComposerLocked(false);
   sourceText.focus();
+});
+
+postLanguagesButton.addEventListener("click", () => {
+  renderPostLanguageDialog();
+  postLanguagesDialog.showModal();
+  window.setTimeout(() => postLanguagesSearch.focus(), 0);
+});
+
+postLanguagesSearch.addEventListener("input", () => {
+  renderPostLanguageDialog();
+});
+
+postLanguagesCloseTop.addEventListener("click", () => {
+  postLanguagesDialog.close();
+});
+
+postLanguagesCloseButton.addEventListener("click", () => {
+  postLanguagesDialog.close();
 });
 
 helpButton.addEventListener("click", () => {
@@ -6280,6 +6713,11 @@ confirmDialog.addEventListener("close", () => {
   }
 });
 
+postLanguagesDialog.addEventListener("close", () => {
+  postLanguagesSearch.value = "";
+  renderPostLanguageDialog();
+});
+
 checkUpdatesButton.addEventListener("click", async () => {
   await checkForUpdates();
 });
@@ -6291,6 +6729,7 @@ reloadAppButton.addEventListener("click", async () => {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     void verifySession({ silent: true });
+    scheduleSilentUpdateCheck();
   }
 });
 
@@ -6319,8 +6758,10 @@ currentTipIndex = pickRandomTipIndex();
 tipsVisible = true;
 hashtagPlacement = "first";
 languageSelect.value = localePreference;
-  applyTranslations();
-  updateInstallButtonVisibility();
-  setStatus(t("statusPreparing"));
-  registerServiceWorker();
-  renderSegments();
+applyLoginServiceSelection(LOGIN_SERVICE_PRESETS["bsky.social"]);
+renderAccountSwitcher();
+applyTranslations();
+updateInstallButtonVisibility();
+setStatus(t("statusPreparing"));
+registerServiceWorker();
+renderSegments();

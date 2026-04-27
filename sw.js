@@ -1,10 +1,11 @@
-const APP_VERSION = "v59";
+const APP_VERSION = "v65";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./post-languages.js",
   "./translations.js",
   "./manifest.webmanifest",
   "./version.json",
@@ -25,7 +26,40 @@ const SETTINGS_KEY = "ui-settings";
 const ARCHIVE_SESSION_KEY = "archive-session";
 const ARCHIVE_CATALOG_KEY = "archive-catalog";
 const API_BASE = "https://bsky.social/xrpc";
+const DEFAULT_LOGIN_SERVICE = "https://bsky.social";
 const archiveRunControls = new Map();
+
+function normalizePostLanguageTags(tags, max = 3) {
+  const values = Array.isArray(tags) ? tags : [tags];
+  const normalized = [];
+  const seen = new Set();
+
+  for (const value of values) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+      continue;
+    }
+
+    let tag = raw.toLowerCase();
+    try {
+      tag = new Intl.Locale(raw).language || raw.toLowerCase();
+    } catch {
+      tag = raw.toLowerCase();
+    }
+
+    if (seen.has(tag)) {
+      continue;
+    }
+
+    seen.add(tag);
+    normalized.push(tag);
+    if (normalized.length >= max) {
+      break;
+    }
+  }
+
+  return normalized;
+}
 
 function parseHashtagValue(value) {
   const cleaned = String(value || "")
@@ -146,6 +180,7 @@ function normalizePostingHistory(entries) {
   for (const entry of Array.isArray(entries) ? entries : []) {
     const url = typeof entry?.url === "string" ? entry.url.trim() : "";
     const createdAt = typeof entry?.createdAt === "string" ? entry.createdAt : "";
+    const account = typeof entry?.account === "string" ? entry.account.trim() : "";
 
     if (!url || !createdAt) {
       continue;
@@ -161,6 +196,7 @@ function normalizePostingHistory(entries) {
       id: typeof entry.id === "string" && entry.id ? entry.id : key,
       url,
       createdAt,
+      account,
       threadCount: Math.max(1, Number(entry.threadCount) || 1),
       imageCount: Math.max(0, Number(entry.imageCount) || 0),
     });
@@ -449,6 +485,12 @@ async function handleMessage(message, port) {
       return clearArchiveCatalog();
     case "SET_ARCHIVE_RUN_CONTROL":
       return setArchiveRunControl(message.payload);
+    case "SWITCH_ACCOUNT":
+      return switchAccount(message.payload);
+    case "IMPORT_ACCOUNT_METADATA":
+      return importAccountMetadata(message.payload);
+    case "REMOVE_ACCOUNT":
+      return removeAccount(message.payload);
     case "LOGOUT":
       return logout();
     case "PUBLISH_THREAD":
@@ -472,6 +514,113 @@ function openDatabase() {
   });
 }
 
+function normalizeServiceUrl(value) {
+  let url = String(value || "").trim();
+
+  if (!url) {
+    return DEFAULT_LOGIN_SERVICE;
+  }
+
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+
+  try {
+    const normalized = new URL(url);
+    normalized.pathname = normalized.pathname.replace(/\/+$/, "");
+    if (normalized.pathname.endsWith("/xrpc")) {
+      normalized.pathname = normalized.pathname.slice(0, -5);
+    }
+    normalized.search = "";
+    normalized.hash = "";
+    return normalized.toString().replace(/\/$/, "");
+  } catch {
+    return url.replace(/\/+$/, "");
+  }
+}
+
+function xrpcBaseForService(service) {
+  return `${normalizeServiceUrl(service)}/xrpc`;
+}
+
+function normalizeAuthAccount(entry = {}) {
+  const did = entry.session?.did || entry.did || "";
+  const handle = entry.session?.handle || entry.handle || entry.identifier || "";
+  return {
+    did,
+    identifier: String(entry.identifier || handle || ""),
+    handle: String(handle || ""),
+    service: normalizeServiceUrl(entry.service || entry.pdsUrl || DEFAULT_LOGIN_SERVICE),
+    pdsUrl: normalizeServiceUrl(entry.pdsUrl || entry.service || DEFAULT_LOGIN_SERVICE),
+    avatar: String(entry.avatar || ""),
+    appPassword: entry.appPassword ? String(entry.appPassword) : "",
+    session: entry.session && typeof entry.session === "object" ? entry.session : null,
+    updatedAt: entry.updatedAt || new Date().toISOString(),
+  };
+}
+
+function normalizeAuthState(value) {
+  if (!value) {
+    return { activeDid: "", accounts: [] };
+  }
+
+  if (Array.isArray(value.accounts)) {
+    const accounts = value.accounts
+      .map((entry) => normalizeAuthAccount(entry))
+      .filter((entry) => entry.did || entry.identifier);
+    const activeDid = accounts.some((entry) => entry.did && entry.did === value.activeDid)
+      ? value.activeDid
+      : "";
+    return { activeDid, accounts };
+  }
+
+  if (value.session?.did || value.identifier) {
+    const account = normalizeAuthAccount(value);
+    return {
+      activeDid: account.did || "",
+      accounts: account.did || account.identifier ? [account] : [],
+    };
+  }
+
+  return { activeDid: "", accounts: [] };
+}
+
+function getAccountPublicMeta(account) {
+  return {
+    did: account.did || "",
+    identifier: account.identifier || "",
+    handle: account.handle || account.identifier || "",
+    service: normalizeServiceUrl(account.service || account.pdsUrl || DEFAULT_LOGIN_SERVICE),
+    avatar: account.avatar || "",
+    hasStoredPassword: Boolean(account.appPassword),
+    hasSession: Boolean(account.session?.did),
+    updatedAt: account.updatedAt || "",
+  };
+}
+
+function buildAuthResponse(state, account = null) {
+  const activeAccount = account || state.accounts.find((entry) => entry.did && entry.did === state.activeDid) || null;
+  return {
+    authenticated: Boolean(activeAccount?.session?.did),
+    identifier: activeAccount?.identifier || "",
+    handle: activeAccount?.handle || "",
+    did: activeAccount?.did || "",
+    service: activeAccount?.service || "",
+    accounts: state.accounts.map((entry) => getAccountPublicMeta(entry)),
+  };
+}
+
+function upsertAccount(state, account) {
+  const normalized = normalizeAuthAccount(account);
+  const accounts = state.accounts.filter((entry) =>
+    !((normalized.did && entry.did === normalized.did) || (!normalized.did && entry.identifier === normalized.identifier)));
+  accounts.unshift(normalized);
+  return {
+    activeDid: state.activeDid,
+    accounts,
+  };
+}
+
 async function readStoredAuth() {
   const database = await openDatabase();
 
@@ -480,20 +629,21 @@ async function readStoredAuth() {
     const store = transaction.objectStore(STORE_NAME);
     const request = store.get(AUTH_KEY);
 
-    request.onsuccess = () => resolve(request.result || null);
+    request.onsuccess = () => resolve(normalizeAuthState(request.result || null));
     request.onerror = () => reject(request.error || new Error("Gespeicherte Daten konnten nicht gelesen werden."));
   });
 }
 
 async function writeStoredAuth(value) {
   const database = await openDatabase();
+  const normalizedValue = normalizeAuthState(value);
 
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, "readwrite");
     const store = transaction.objectStore(STORE_NAME);
-    const request = store.put(value, AUTH_KEY);
+    const request = store.put(normalizedValue, AUTH_KEY);
 
-    request.onsuccess = () => resolve(value);
+    request.onsuccess = () => resolve(normalizedValue);
     request.onerror = () => reject(request.error || new Error("Gespeicherte Daten konnten nicht geschrieben werden."));
   });
 }
@@ -567,7 +717,8 @@ function isJwtValid(accessJwt) {
 }
 
 async function bskyFetch(endpoint, options = {}) {
-  const response = await fetch(`${API_BASE}/${endpoint}`, {
+  const base = options.base || API_BASE;
+  const response = await fetch(`${base}/${endpoint}`, {
     ...options,
     headers: {
       "content-type": "application/json",
@@ -593,6 +744,54 @@ async function bskyFetch(endpoint, options = {}) {
   return data;
 }
 
+async function fetchDidDocument(did) {
+  if (!did) {
+    throw new Error("DID fehlt.");
+  }
+
+  if (did.startsWith("did:plc:")) {
+    const response = await fetch(`https://plc.directory/${encodeURIComponent(did)}`, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`DID-Dokument konnte nicht geladen werden (${response.status}).`);
+    }
+    return response.json();
+  }
+
+  if (did.startsWith("did:web:")) {
+    const host = did.slice("did:web:".length).replace(/:/g, "/");
+    const response = await fetch(`https://${host}/.well-known/did.json`, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`DID-Dokument konnte nicht geladen werden (${response.status}).`);
+    }
+    return response.json();
+  }
+
+  throw new Error(`Nicht unterstütztes DID-Format: ${did}`);
+}
+
+function extractPdsServiceFromDidDocument(documentNode, fallbackService) {
+  const services = Array.isArray(documentNode?.service) ? documentNode.service : [];
+  const pds = services.find((entry) =>
+    entry?.type === "AtprotoPersonalDataServer"
+    || String(entry?.id || "").endsWith("#atproto_pds"));
+
+  return normalizeServiceUrl(pds?.serviceEndpoint || fallbackService || DEFAULT_LOGIN_SERVICE);
+}
+
+async function fetchAccountAvatar(did, auth = null) {
+  try {
+    const profile = await bskyFetch(`app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`, {
+      method: "GET",
+      headers: auth?.session?.accessJwt
+        ? { authorization: `Bearer ${auth.session.accessJwt}` }
+        : undefined,
+    });
+    return typeof profile?.avatar === "string" ? profile.avatar : "";
+  } catch {
+    return "";
+  }
+}
+
 async function bskyGet(endpoint, query = {}, options = {}) {
   const search = new URLSearchParams();
   Object.entries(query || {}).forEach(([key, value]) => {
@@ -613,7 +812,7 @@ async function bskyGet(endpoint, query = {}, options = {}) {
 }
 
 async function uploadBlob(auth, file) {
-  const response = await fetch(`${API_BASE}/com.atproto.repo.uploadBlob`, {
+  const response = await fetch(`${xrpcBaseForService(auth.pdsUrl || auth.service)}/com.atproto.repo.uploadBlob`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${auth.session.accessJwt}`,
@@ -638,7 +837,7 @@ async function uploadBlob(auth, file) {
 }
 
 async function downloadBlob(auth, did, cid) {
-  const response = await fetch(`${API_BASE}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, {
+  const response = await fetch(`${xrpcBaseForService(auth.pdsUrl || auth.service)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, {
     method: "GET",
     headers: {
       authorization: `Bearer ${auth.session.accessJwt}`,
@@ -655,53 +854,52 @@ async function downloadBlob(auth, did, cid) {
   };
 }
 
-async function login({ identifier, appPassword }) {
+async function login({ identifier, appPassword, service } = {}) {
   if (!identifier || !appPassword) {
     throw new Error("Handle und App-Passwort sind erforderlich.");
   }
 
+  const normalizedService = normalizeServiceUrl(service || DEFAULT_LOGIN_SERVICE);
   const session = await bskyFetch("com.atproto.server.createSession", {
     method: "POST",
     body: JSON.stringify({
       identifier,
       password: appPassword,
     }),
+    base: xrpcBaseForService(normalizedService),
   });
 
-  const auth = {
+  const didDocument = await fetchDidDocument(session.did).catch(() => null);
+  const pdsUrl = extractPdsServiceFromDidDocument(didDocument, normalizedService);
+  const avatar = await fetchAccountAvatar(session.did, { session });
+  const nextState = upsertAccount(await readStoredAuth(), {
+    did: session.did,
     identifier,
+    handle: session.handle,
+    service: normalizedService,
+    pdsUrl,
+    avatar,
     appPassword,
     session,
     updatedAt: new Date().toISOString(),
-  };
-
-  await writeStoredAuth(auth);
-
-  return {
-    authenticated: true,
-    identifier,
-    handle: session.handle,
-    did: session.did,
-  };
+  });
+  nextState.activeDid = session.did;
+  const storedState = await writeStoredAuth(nextState);
+  return buildAuthResponse(storedState, storedState.accounts.find((entry) => entry.did === session.did));
 }
 
 async function authStatus() {
-  const auth = await readStoredAuth();
-
-  if (!auth?.session?.did) {
+  const state = await readStoredAuth();
+  const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid);
+  if (!activeAccount?.session?.did) {
     return { authenticated: false };
   }
-
-  return {
-    authenticated: true,
-    identifier: auth.identifier,
-    handle: auth.session.handle,
-    did: auth.session.did,
-  };
+  return buildAuthResponse(state, activeAccount);
 }
 
 async function getAppState({ browserLocale } = {}) {
-  const auth = await readStoredAuth();
+  const state = await readStoredAuth();
+  const auth = state.accounts.find((entry) => entry.did && entry.did === state.activeDid) || null;
   const draft = await readStoredValue(DRAFT_KEY);
   const storedSettings = await readStoredValue(SETTINGS_KEY);
   const legacyLocalePreference = await readStoredValue(LOCALE_KEY);
@@ -714,12 +912,17 @@ async function getAppState({ browserLocale } = {}) {
     authenticated: Boolean(auth?.session?.did),
     identifier: auth?.identifier || "",
     handle: auth?.session?.handle || "",
+    did: auth?.did || "",
+    service: auth?.service || DEFAULT_LOGIN_SERVICE,
+    accounts: state.accounts.map((entry) => getAccountPublicMeta(entry)),
     draft: typeof draft === "string" ? draft : (draft?.sourceText || ""),
     locale,
     localePreference: localePreference || "auto",
     tipsVisible: storedSettings?.tipsVisible !== false,
     altTextRequired: storedSettings?.altTextRequired !== false,
     themeMode: storedSettings?.themeMode === "dark" ? "dark" : "light",
+    postLanguages: normalizePostLanguageTags(storedSettings?.postLanguages),
+    appendThreadIntro: storedSettings?.appendThreadIntro === true,
     appendThreadEmoji: storedSettings?.appendThreadEmoji === true,
     hashtags,
     selectedHashtags,
@@ -759,6 +962,10 @@ async function saveSettings(settings = {}) {
     themeMode: settings.themeMode === "dark"
       ? "dark"
       : (settings.themeMode === "light" ? "light" : (existing.themeMode === "dark" ? "dark" : "light")),
+    postLanguages: Array.isArray(settings.postLanguages)
+      ? normalizePostLanguageTags(settings.postLanguages)
+      : normalizePostLanguageTags(existing.postLanguages),
+    appendThreadIntro: settings.appendThreadIntro === true,
     appendThreadEmoji: settings.appendThreadEmoji === true,
     hashtags,
     selectedHashtags,
@@ -823,58 +1030,152 @@ function setArchiveRunControl({ runId, action } = {}) {
   return { ok: true, state: current.state };
 }
 
+async function switchAccount({ did } = {}) {
+  const state = await readStoredAuth();
+  const account = state.accounts.find((entry) => entry.did && entry.did === did);
+
+  if (!account) {
+    throw new Error("Das gewählte Konto ist nicht gespeichert.");
+  }
+
+  try {
+    const verified = await ensureSession(did);
+    const refreshedState = await readStoredAuth();
+    refreshedState.activeDid = verified.did || did;
+    const storedState = await writeStoredAuth(refreshedState);
+    return buildAuthResponse(storedState, storedState.accounts.find((entry) => entry.did === (verified.did || did)));
+  } catch {
+    return {
+      authenticated: false,
+      did: account.did || "",
+      identifier: account.identifier || "",
+      handle: account.handle || "",
+      service: account.service || DEFAULT_LOGIN_SERVICE,
+      accounts: state.accounts.map((entry) => getAccountPublicMeta(entry)),
+    };
+  }
+}
+
+async function importAccountMetadata({ accounts } = {}) {
+  const state = await readStoredAuth();
+  let nextState = { ...state, accounts: [...state.accounts] };
+
+  for (const entry of Array.isArray(accounts) ? accounts : []) {
+    if (!(entry?.did || entry?.identifier)) {
+      continue;
+    }
+
+    nextState = upsertAccount(nextState, {
+      did: entry.did || "",
+      identifier: entry.identifier || entry.handle || "",
+      handle: entry.handle || entry.identifier || "",
+      service: entry.service || DEFAULT_LOGIN_SERVICE,
+      pdsUrl: entry.service || DEFAULT_LOGIN_SERVICE,
+      avatar: entry.avatar || "",
+      session: null,
+      appPassword: "",
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  if (nextState.accounts.length > 0 && !nextState.activeDid) {
+    nextState.activeDid = nextState.accounts.find((entry) => entry.session?.did)?.did || "";
+  }
+
+  const storedState = await writeStoredAuth(nextState);
+  return {
+    accounts: storedState.accounts.map((entry) => getAccountPublicMeta(entry)),
+  };
+}
+
+async function removeAccount({ did } = {}) {
+  const state = await readStoredAuth();
+  const nextAccounts = state.accounts.filter((entry) => !(entry.did && entry.did === did));
+  const nextActive = nextAccounts.find((entry) => entry.session?.did) || null;
+
+  if (nextAccounts.length === 0) {
+    await clearStoredAuth();
+  } else {
+    await writeStoredAuth({
+      activeDid: nextActive?.did || "",
+      accounts: nextAccounts,
+    });
+  }
+
+  const nextState = await readStoredAuth();
+  const activeAccount = nextState.accounts.find((entry) => entry.did && entry.did === nextState.activeDid) || null;
+  return buildAuthResponse(nextState, activeAccount);
+}
+
 async function logout() {
-  await clearStoredAuth();
+  const state = await readStoredAuth();
+  const nextAccounts = state.accounts.map((entry) => {
+    if (!(state.activeDid && entry.did === state.activeDid)) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      session: null,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+  const nextActiveAccount = nextAccounts.find((entry) => entry.did !== state.activeDid && entry.session?.did) || null;
+  await writeStoredAuth({
+    activeDid: nextActiveAccount?.did || "",
+    accounts: nextAccounts,
+  });
   await clearArchiveSession();
   await clearArchiveCatalog();
-  return { authenticated: false };
+  const nextState = await readStoredAuth();
+  const nextActive = nextState.accounts.find((entry) => entry.did && entry.did === nextState.activeDid) || null;
+  return buildAuthResponse(nextState, nextActive);
 }
 
 async function verifySession() {
   try {
     const auth = await ensureSession();
-    return {
-      authenticated: true,
-      identifier: auth.identifier,
-      handle: auth.session?.handle || auth.identifier,
-      did: auth.session?.did || "",
-    };
+    const state = await readStoredAuth();
+    return buildAuthResponse(state, auth);
   } catch {
-    await clearStoredAuth().catch(() => {});
-    return {
-      authenticated: false,
-    };
+    const state = await readStoredAuth().catch(() => ({ activeDid: "", accounts: [] }));
+    return buildAuthResponse({ ...state, activeDid: "" }, null);
   }
 }
 
-async function ensureSession() {
-  const auth = await readStoredAuth();
+async function ensureSession(targetDid = null) {
+  const state = await readStoredAuth();
+  const desiredDid = targetDid || state.activeDid;
+  const auth = state.accounts.find((entry) => entry.did && entry.did === desiredDid);
 
-  if (!auth?.session?.did) {
+  if (!auth?.did) {
     throw new Error("Keine gespeicherte Bluesky-Session gefunden.");
   }
 
-  if (isJwtValid(auth.session.accessJwt)) {
+  if (auth.session?.accessJwt && isJwtValid(auth.session.accessJwt)) {
     return auth;
   }
 
-  if (auth.session.refreshJwt) {
+  if (auth.session?.refreshJwt) {
     try {
       const refreshedSession = await bskyFetch("com.atproto.server.refreshSession", {
         method: "POST",
         headers: {
           authorization: `Bearer ${auth.session.refreshJwt}`,
         },
+        base: xrpcBaseForService(auth.pdsUrl || auth.service),
       });
 
-      const updatedAuth = {
+      const avatar = auth.avatar || await fetchAccountAvatar(auth.did, { session: refreshedSession });
+      const nextState = upsertAccount(state, {
         ...auth,
         session: refreshedSession,
+        avatar,
         updatedAt: new Date().toISOString(),
-      };
-
-      await writeStoredAuth(updatedAuth);
-      return updatedAuth;
+      });
+      nextState.activeDid = auth.did;
+      const storedState = await writeStoredAuth(nextState);
+      return storedState.accounts.find((entry) => entry.did === auth.did);
     } catch (error) {
       console.warn("refreshSession fehlgeschlagen, versuche createSession erneut", error);
     }
@@ -887,8 +1188,10 @@ async function ensureSession() {
   return login({
     identifier: auth.identifier,
     appPassword: auth.appPassword,
+    service: auth.service,
   }).then(async () => {
-    const refreshedAuth = await readStoredAuth();
+    const refreshedState = await readStoredAuth();
+    const refreshedAuth = refreshedState.accounts.find((entry) => entry.did === auth.did);
     if (!refreshedAuth) {
       throw new Error("Session konnte nicht erneuert werden.");
     }
@@ -901,7 +1204,10 @@ async function checkConnectivity() {
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
   try {
-    const response = await fetch(`${API_BASE}/com.atproto.server.describeServer`, {
+    const state = await readStoredAuth();
+    const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid);
+    const serviceBase = xrpcBaseForService(activeAccount?.pdsUrl || activeAccount?.service || DEFAULT_LOGIN_SERVICE);
+    const response = await fetch(`${serviceBase}/com.atproto.server.describeServer`, {
       method: "GET",
       cache: "no-store",
       signal: controller.signal,
@@ -1506,12 +1812,13 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   return buildResult(cancelled ? "cancelled" : "completed");
 }
 
-async function publishThread({ segments }, notifyProgress = () => {}) {
+async function publishThread({ segments, langs }, notifyProgress = () => {}) {
   if (!Array.isArray(segments) || segments.length === 0) {
     throw new Error("Es gibt keine Segmente zum Posten.");
   }
 
   const auth = await ensureSession();
+  const normalizedLangs = normalizePostLanguageTags(langs);
   const resolveCache = new Map();
   const posts = [];
   let root = null;
@@ -1527,6 +1834,9 @@ async function publishThread({ segments }, notifyProgress = () => {}) {
         text: typeof segment === "string" ? segment : segment.text,
         createdAt: new Date().toISOString(),
       };
+      if (normalizedLangs.length > 0) {
+        record.langs = normalizedLangs;
+      }
       const facets = await buildRichTextFacets(record.text, auth, resolveCache);
       if (facets) {
         record.facets = facets;
@@ -1563,6 +1873,7 @@ async function publishThread({ segments }, notifyProgress = () => {}) {
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },
+        base: xrpcBaseForService(auth.pdsUrl || auth.service),
         body: JSON.stringify({
           repo: auth.session.did,
           collection: "app.bsky.feed.post",
