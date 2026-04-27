@@ -10,12 +10,7 @@
   Eine Progressive Web App zum Schreiben, Aufteilen, Speichern und Veröffentlichen von Bluesky-Threads inklusive Bildern, Hashtags und lokaler Backup-Funktion.
 </p>
 
-<p align="center">
-  <a href="https://ko-fi.com/U7U01OC260">Unterst&uuml;tze mich auf Ko-Fi<br />
-    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Unterst&uuml;tze mich auf Ko-Fi" width="140">   
-  </a>
-</p>
-
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U7U01OC260)
 
 ## Live-App
 
@@ -29,6 +24,8 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 ## Funktionsumfang
 
 - Bluesky-Anmeldung mit App-Passwort
+- Presets für `bsky.social`, `eurosky.social` und eigene PDS-Server
+- Mehrere gespeicherte Logins mit schnellem Kontowechsel
 - Lokale Session-Erneuerung ohne eigenes Backend
 - Mehrsprachige Oberfläche: Deutsch, Englisch, Französisch
 - Automatische Sprachwahl anhand der Browser-Sprache mit Fallback auf Englisch
@@ -118,6 +115,7 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Spracheinstellung
 - Sichtbarkeit der Tipps
 - Einstellung zur ALT-Text-Pflicht
+- gespeicherte Login-Einträge mit Handle, Server und Avatar
 - Hashtags
 - ausgewählte Hashtags
 - Hashtag-Platzierung
@@ -126,7 +124,8 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Vorhandene Hashtags bleiben erhalten
 - Neue Hashtags werden ergänzt
 - Dubletten werden nicht doppelt importiert
-- Wichtig: Das Backup enthält ausdrücklich **kein** Bluesky-Konto und **kein** Passwort
+- Wichtig: Das Backup enthält gespeicherte Login-Einträge, aber ausdrücklich **keine** App-Passwörter
+- Nach einem Import können diese Konten deshalb erneut nach dem App-Passwort fragen
 
 ### Account-Archiv
 
@@ -167,6 +166,8 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Ein einzelner kurzer Text kann als normaler Post gesendet werden
 - Längere Texte werden als Thread veröffentlicht
 - Bilder werden gemeinsam mit den jeweiligen Segmenten hochgeladen
+- Für Bilder berücksichtigt Threadline das aktuelle Bluesky-Limit von `2.000.000` Bytes und `4000 × 4000` Pixeln pro Bild
+- Zu große Bilder werden im Composer markiert und müssen vor dem Posten im Bildeditor verkleinert werden
 - Nach erfolgreichem Post erscheint ein Dialog mit Link zum erstellten Posting
 - Fortschritt und Fehler werden in UI-Popups angezeigt
 - Hashtags, Mentions und Links werden beim Posten als Rich-Text-Facets übertragen, damit sie in Bluesky anklickbar sind
@@ -266,7 +267,8 @@ Hinweis: Unter iOS kann die Installation nicht automatisch ausgelöst werden. In
 
 ## Hinweise Zu Zugangsdaten Und Speicherung
 
-- Das Bluesky-App-Passwort wird lokal gespeichert, damit die Session erneuert werden kann
+- Bluesky-App-Passwörter werden lokal gespeichert, damit Sessions erneuert und mehrere Logins reload-sicher gehalten werden können
+- Backups enthalten diese Login-Einträge, aber keine App-Passwörter
 - Session-Daten, Entwurf und App-Zustand liegen lokal in IndexedDB
 - Für diese App ist kein eigenes Backend nötig
 

@@ -10,12 +10,7 @@
   A progressive web app for writing, splitting, saving, and publishing Bluesky threads with images, hashtags, and local backup support.
 </p>
 
-<p align="center">
-  <a href="https://ko-fi.com/U7U01OC260">Support me on Ko-Fi<br />
-    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-Fi" width="140">   
-  </a>
-</p>
-
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U7U01OC260)
 
 ## Live App
 
@@ -29,6 +24,8 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 ## Feature Set
 
 - Bluesky sign-in with app password
+- Presets for `bsky.social`, `eurosky.social`, and custom PDS servers
+- Multiple saved logins with quick account switching
 - Local session renewal without a custom backend
 - Multilingual UI: German, English, French
 - Automatic browser-language detection with English fallback
@@ -118,6 +115,7 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - language preference
 - tips visibility
 - ALT-text requirement
+- saved login entries with handle, server, and avatar
 - hashtags
 - selected hashtags
 - hashtag placement
@@ -126,7 +124,8 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Existing hashtags stay
 - New hashtags are added
 - Duplicates are ignored
-- Important: the backup explicitly does **not** include the Bluesky account or password
+- Important: the backup includes saved login entries, but explicitly does **not** include app passwords
+- After an import, those accounts may therefore ask for the app password again
 
 ### Account Archive
 
@@ -167,6 +166,8 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Short text can be sent as a single post
 - Longer text is published as a thread
 - Images are uploaded together with their assigned segment
+- Threadline now enforces the current Bluesky image limit of `2,000,000` bytes and `4000 x 4000` pixels per image
+- Oversized images are highlighted in the composer and must be reduced in the image editor before publishing
 - After a successful publish, a dialog shows a link to the created post
 - Progress and errors are shown in UI popups
 - Hashtags, mentions, and links are posted as rich-text facets so they become clickable in Bluesky
@@ -266,7 +267,8 @@ Note: on iOS the installation cannot be triggered automatically. The app include
 
 ## Credentials And Storage Notes
 
-- The Bluesky app password is stored locally so the session can be renewed
+- Bluesky app passwords are stored locally so sessions can be renewed and multiple logins remain available after reloads
+- Backups include those saved login entries, but not app passwords
 - Session data, drafts, and app state are stored locally in IndexedDB
 - No custom backend is required
 

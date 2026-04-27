@@ -131,27 +131,13 @@
                 </div>
 
                 <div class="toggle-stack">
-                  <label class="toggle">
-                    <input id="counter-toggle" type="checkbox" checked>
-                    <span data-i18n="counterToggle">Zähler anhängen</span>
-                  </label>
-
-                  <label class="toggle">
-                    <input id="thread-intro-toggle" type="checkbox">
-                    <span data-i18n="threadIntroToggle">Hinweis "Ein Thread 🧵" anhängen</span>
-                  </label>
-
-                  <label class="toggle">
-                    <input id="thread-emoji-toggle" type="checkbox">
-                    <span data-i18n="threadEmojiToggle">Thread-Emoji anhängen</span>
-                  </label>
+                  <button id="post-settings-button" type="button" class="ghost-button composer-language-button" data-i18n="postSettingsButton">
+                    Post-Einstellungen
+                  </button>
                 </div>
               </div>
 
               <div class="composer-language-row">
-                <button id="post-languages-button" type="button" class="ghost-button composer-language-button" data-i18n="postLanguagesButton">
-                  Post-Sprachen
-                </button>
                 <p id="post-languages-summary" class="composer-language-summary"></p>
               </div>
 
@@ -582,22 +568,106 @@
         <div class="section-heading settings-heading">
           <div>
             <p class="eyebrow" data-i18n="postLanguagesEyebrow">Posting</p>
-            <h2 data-i18n="postLanguagesDialogTitle">Post-Sprachen auswählen</h2>
+            <h2 data-i18n="postSettingsDialogTitle">Einstellungen für den Post</h2>
           </div>
           <button type="button" id="post-languages-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
 
-        <p class="settings-note" data-i18n="postLanguagesDialogDescription">
-          Wähle bis zu 3 Sprachen aus, die in diesem Posting und Thread verwendet werden.
+        <p class="settings-note" data-i18n="postSettingsDialogDescription">
+          Diese Einstellungen beeinflussen die Segmentierung und das spätere Posting auf Bluesky.
         </p>
 
-        <label for="post-languages-search">
-          <span data-i18n="postLanguagesSearchLabel">Sprachen suchen</span>
-          <input id="post-languages-search" type="search" autocomplete="off" placeholder="Sprachen suchen">
-        </label>
+        <div class="post-settings-toggle-list">
+          <label class="toggle">
+            <input id="counter-toggle" type="checkbox" checked>
+            <span data-i18n="counterToggle">Zähler anhängen</span>
+          </label>
 
-        <p id="post-languages-selection-note" class="settings-note"></p>
-        <div id="post-languages-list" class="post-languages-list"></div>
+          <label class="toggle">
+            <input id="thread-intro-toggle" type="checkbox">
+            <span data-i18n="threadIntroToggle">Hinweis "Ein Thread 🧵" anhängen</span>
+          </label>
+
+          <label class="toggle">
+            <input id="thread-emoji-toggle" type="checkbox">
+            <span data-i18n="threadEmojiToggle">Thread-Emoji anhängen</span>
+          </label>
+        </div>
+
+        <details id="post-interaction-disclosure" class="settings-block post-settings-disclosure">
+          <summary class="post-settings-disclosure-summary">
+            <span class="post-settings-disclosure-title" data-i18n="postInteractionSectionTitle">Post-Interaktionen</span>
+            <span id="post-interaction-disclosure-meta" class="post-settings-disclosure-meta"></span>
+          </summary>
+
+          <div class="post-settings-disclosure-body">
+            <p class="settings-note" data-i18n="postInteractionSectionDescription">
+              Lege fest, wer antworten darf und ob Zitate dieses Posts erlaubt sind.
+            </p>
+
+            <div class="reply-mode-grid" role="radiogroup" aria-labelledby="reply-mode-heading">
+              <p id="reply-mode-heading" class="reply-mode-label" data-i18n="replyModeLabel">Wer kann antworten?</p>
+
+              <label class="reply-mode-option">
+                <input id="reply-mode-everyone" type="radio" name="reply-mode" value="everyone" checked>
+                <span data-i18n="replyModeEveryone">Jeder</span>
+              </label>
+
+              <label class="reply-mode-option">
+                <input id="reply-mode-nobody" type="radio" name="reply-mode" value="nobody">
+                <span data-i18n="replyModeNobody">Niemand</span>
+              </label>
+
+              <label class="reply-mode-option">
+                <input id="reply-mode-custom" type="radio" name="reply-mode" value="custom">
+                <span data-i18n="replyModeCustom">Auswahl</span>
+              </label>
+            </div>
+
+            <div class="post-settings-toggle-list interaction-rule-list">
+              <label class="toggle">
+                <input id="reply-allow-followers" type="checkbox">
+                <span data-i18n="replyRuleFollowers">Deine Follower</span>
+              </label>
+
+              <label class="toggle">
+                <input id="reply-allow-following" type="checkbox">
+                <span data-i18n="replyRuleFollowing">Personen, denen du folgst</span>
+              </label>
+
+              <label class="toggle">
+                <input id="reply-allow-mentioned" type="checkbox">
+                <span data-i18n="replyRuleMentioned">Personen, die du erwähnst</span>
+              </label>
+            </div>
+
+            <label class="toggle post-quote-toggle">
+              <input id="quote-posts-toggle" type="checkbox" checked>
+              <span data-i18n="quotePostsAllowedToggle">Zitieren dieses Posts erlauben</span>
+            </label>
+          </div>
+        </details>
+
+        <details id="post-languages-disclosure" class="settings-block post-settings-disclosure">
+          <summary class="post-settings-disclosure-summary">
+            <span class="post-settings-disclosure-title" data-i18n="postLanguagesSectionTitle">Post-Sprachen</span>
+            <span id="post-languages-disclosure-meta" class="post-settings-disclosure-meta"></span>
+          </summary>
+
+          <div class="post-settings-disclosure-body">
+            <p class="settings-note" data-i18n="postLanguagesDialogDescription">
+              Wähle bis zu 3 Sprachen aus, die in diesem Posting und Thread verwendet werden.
+            </p>
+
+            <label for="post-languages-search">
+              <span data-i18n="postLanguagesSearchLabel">Sprachen suchen</span>
+              <input id="post-languages-search" type="search" autocomplete="off" placeholder="Sprachen suchen">
+            </label>
+
+            <p id="post-languages-selection-note" class="settings-note"></p>
+            <div id="post-languages-list" class="post-languages-list"></div>
+          </div>
+        </details>
 
         <div class="settings-actions">
           <button type="button" id="post-languages-close-button" class="ghost-button" data-i18n="closeButton">Schließen</button>

@@ -14,10 +14,17 @@ const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 3 * 60 * 1000;
+const DEFAULT_POST_INTERACTION_SETTINGS = {
+  replyMode: "everyone",
+  allowFollowers: false,
+  allowFollowing: false,
+  allowMentioned: false,
+  quotePostsAllowed: true,
+};
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.48",
-  cacheVersion: "v65",
-  label: "Post languages and thread intro",
+  appVersion: "0.4.50",
+  cacheVersion: "v70",
+  label: "Post settings summary refresh fix",
 };
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -114,7 +121,7 @@ const segmentsPane = document.querySelector("#segments-pane");
 const segmentsList = document.querySelector("#segments-list");
 const segmentTemplate = document.querySelector("#segment-template");
 const threadIntroToggle = document.querySelector("#thread-intro-toggle");
-const postLanguagesButton = document.querySelector("#post-languages-button");
+const postSettingsButton = document.querySelector("#post-settings-button");
 const postLanguagesSummary = document.querySelector("#post-languages-summary");
 const postLanguagesDialog = document.querySelector("#post-languages-dialog");
 const postLanguagesCloseTop = document.querySelector("#post-languages-close-top");
@@ -122,6 +129,18 @@ const postLanguagesCloseButton = document.querySelector("#post-languages-close-b
 const postLanguagesSearch = document.querySelector("#post-languages-search");
 const postLanguagesSelectionNote = document.querySelector("#post-languages-selection-note");
 const postLanguagesList = document.querySelector("#post-languages-list");
+const postLanguagesDisclosure = document.querySelector("#post-languages-disclosure");
+const postLanguagesDisclosureMeta = document.querySelector("#post-languages-disclosure-meta");
+const postInteractionDisclosure = document.querySelector("#post-interaction-disclosure");
+const postInteractionDisclosureMeta = document.querySelector("#post-interaction-disclosure-meta");
+const replyModeEveryoneInput = document.querySelector("#reply-mode-everyone");
+const replyModeNobodyInput = document.querySelector("#reply-mode-nobody");
+const replyModeCustomInput = document.querySelector("#reply-mode-custom");
+const replyModeInputs = [replyModeEveryoneInput, replyModeNobodyInput, replyModeCustomInput];
+const replyAllowFollowersInput = document.querySelector("#reply-allow-followers");
+const replyAllowFollowingInput = document.querySelector("#reply-allow-following");
+const replyAllowMentionedInput = document.querySelector("#reply-allow-mentioned");
+const quotePostsToggle = document.querySelector("#quote-posts-toggle");
 const identifierField = document.querySelector("#identifier");
 const passwordField = document.querySelector("#password");
 const composerWorkspace = document.querySelector("#composer-workspace");
@@ -199,6 +218,11 @@ let currentComposedText = "";
 let selectedPostLanguages = [];
 let appendThreadIntro = false;
 let appendThreadEmoji = false;
+let replyMode = DEFAULT_POST_INTERACTION_SETTINGS.replyMode;
+let replyAllowFollowers = DEFAULT_POST_INTERACTION_SETTINGS.allowFollowers;
+let replyAllowFollowing = DEFAULT_POST_INTERACTION_SETTINGS.allowFollowing;
+let replyAllowMentioned = DEFAULT_POST_INTERACTION_SETTINGS.allowMentioned;
+let quotePostsAllowed = DEFAULT_POST_INTERACTION_SETTINGS.quotePostsAllowed;
 let segmentOverrides = null;
 let composerLocked = false;
 let backupStatusTimer = null;
@@ -995,7 +1019,7 @@ function updateComposerLockState() {
   counterToggle.disabled = composerLocked;
   threadIntroToggle.disabled = composerLocked;
   threadEmojiToggle.disabled = composerLocked;
-  postLanguagesButton.disabled = composerLocked && appendThreadIntro;
+  postSettingsButton.disabled = composerLocked;
   clearButton.disabled = composerLocked;
   composerLockNote.hidden = !composerLocked;
 }
@@ -1071,19 +1095,117 @@ function getNormalizedPostLanguagesOrDefault() {
   return inferDefaultPostLanguages(currentLocale);
 }
 
+function normalizePostInteractionSettings(value = {}) {
+  const normalizedMode = ["everyone", "nobody", "custom"].includes(value.replyMode)
+    ? value.replyMode
+    : DEFAULT_POST_INTERACTION_SETTINGS.replyMode;
+
+  return {
+    replyMode: normalizedMode,
+    allowFollowers: value.allowFollowers === true,
+    allowFollowing: value.allowFollowing === true,
+    allowMentioned: value.allowMentioned === true,
+    quotePostsAllowed: value.quotePostsAllowed !== false,
+  };
+}
+
+function getCurrentPostInteractionSettings() {
+  return normalizePostInteractionSettings({
+    replyMode,
+    allowFollowers: replyAllowFollowers,
+    allowFollowing: replyAllowFollowing,
+    allowMentioned: replyAllowMentioned,
+    quotePostsAllowed,
+  });
+}
+
+function applyPostInteractionSettings(value = {}) {
+  const normalized = normalizePostInteractionSettings(value);
+  replyMode = normalized.replyMode;
+  replyAllowFollowers = normalized.allowFollowers;
+  replyAllowFollowing = normalized.allowFollowing;
+  replyAllowMentioned = normalized.allowMentioned;
+  quotePostsAllowed = normalized.quotePostsAllowed;
+
+  replyModeEveryoneInput.checked = replyMode === "everyone";
+  replyModeNobodyInput.checked = replyMode === "nobody";
+  replyModeCustomInput.checked = replyMode === "custom";
+  replyAllowFollowersInput.checked = replyAllowFollowers;
+  replyAllowFollowingInput.checked = replyAllowFollowing;
+  replyAllowMentionedInput.checked = replyAllowMentioned;
+  quotePostsToggle.checked = quotePostsAllowed;
+  renderPostInteractionControls();
+}
+
+function renderPostInteractionControls() {
+  const isCustom = replyMode === "custom";
+  [replyAllowFollowersInput, replyAllowFollowingInput, replyAllowMentionedInput].forEach((input) => {
+    input.disabled = !isCustom;
+    input.closest(".toggle")?.classList.toggle("is-disabled", !isCustom);
+  });
+}
+
+function getReplyModeSummary() {
+  if (replyMode === "nobody") {
+    return t("replyModeNobody");
+  }
+
+  if (replyMode === "custom") {
+    const labels = [];
+    if (replyAllowFollowers) {
+      labels.push(t("replyRuleFollowers"));
+    }
+    if (replyAllowFollowing) {
+      labels.push(t("replyRuleFollowing"));
+    }
+    if (replyAllowMentioned) {
+      labels.push(t("replyRuleMentioned"));
+    }
+    return labels.length > 0
+      ? t("replyModeCustomSummary", { rules: labels.join(", ") })
+      : t("replyModeNobody");
+  }
+
+  return t("replyModeEveryone");
+}
+
+function renderPostSettingsDisclosureMeta() {
+  postLanguagesDisclosureMeta.textContent = t("postLanguagesDisclosureSummary", {
+    count: getNormalizedPostLanguagesOrDefault().length,
+  });
+  postInteractionDisclosureMeta.textContent = t("postInteractionDisclosureSummary", {
+    replyMode: getReplyModeSummary(),
+    quotes: quotePostsAllowed ? t("quotesAllowedShort") : t("quotesBlockedShort"),
+  });
+}
+
 function renderPostLanguageSummary() {
   selectedPostLanguages = getNormalizedPostLanguagesOrDefault();
   const labels = selectedPostLanguages.map((tag) => getPostLanguageDisplayName(tag, currentLocale));
+  const summaryParts = [];
+  summaryParts.push(labels.length === 1
+    ? t("postLanguagesSummarySingle", { language: labels[0] })
+    : t("postLanguagesSummaryMany", {
+      count: labels.length,
+      languages: labels.join(", "),
+    }));
 
-  if (labels.length === 1) {
-    postLanguagesSummary.textContent = t("postLanguagesSummarySingle", { language: labels[0] });
-    return;
+  if (counterToggle.checked) {
+    summaryParts.push(t("counterToggle"));
+  }
+  if (threadIntroToggle.checked) {
+    summaryParts.push(t("threadIntroToggle"));
+  }
+  if (threadEmojiToggle.checked) {
+    summaryParts.push(t("threadEmojiToggle"));
+  }
+  summaryParts.push(t("postInteractionSummary", { replyMode: getReplyModeSummary() }));
+  if (!quotePostsAllowed) {
+    summaryParts.push(t("quotePostsBlockedSummary"));
   }
 
-  postLanguagesSummary.textContent = t("postLanguagesSummaryMany", {
-    count: labels.length,
-    languages: labels.join(", "),
-  });
+  postLanguagesSummary.textContent = summaryParts.join(" · ");
+  renderPostSettingsDisclosureMeta();
 }
 
 function renderPostLanguageDialog() {
@@ -1198,7 +1320,7 @@ function applyTranslations() {
   hashtagAddButton.textContent = t("addHashtagButton");
   nextTipButton.textContent = t("nextTipButton");
   hideTipsButton.textContent = t("hideTipsButton");
-  postLanguagesButton.textContent = t("postLanguagesButton");
+  postSettingsButton.textContent = t("postSettingsButton");
   postLanguagesSearch.placeholder = t("postLanguagesSearchPlaceholder");
   Array.from(hashtagPlacementSelect.options).forEach((option) => {
     option.textContent = option.value === "last" ? t("hashtagPlacementLast") : t("hashtagPlacementFirst");
@@ -1244,6 +1366,7 @@ function applyTranslations() {
   });
   languageSelect.value = localePreference;
   renderPostLanguageSummary();
+  renderPostInteractionControls();
   renderPostLanguageDialog();
 
   renderSegments();
@@ -2093,6 +2216,7 @@ function buildThreadExportPayload() {
       useCounters: counterToggle.checked,
       appendThreadIntro,
       appendThreadEmoji,
+      postInteraction: getCurrentPostInteractionSettings(),
       postLanguages: getNormalizedPostLanguagesOrDefault(),
       localePreference,
       hashtagPlacement,
@@ -2158,6 +2282,7 @@ async function importThreadFile(file) {
   threadIntroToggle.checked = appendThreadIntro;
   appendThreadEmoji = thread.appendThreadEmoji === true;
   threadEmojiToggle.checked = appendThreadEmoji;
+  applyPostInteractionSettings(thread.postInteraction || {});
   selectedPostLanguages = normalizePostLanguageTags(thread.postLanguages);
   localePreference = SUPPORTED_LOCALES.includes(thread.localePreference) || thread.localePreference === "auto"
     ? thread.localePreference
@@ -4968,6 +5093,7 @@ async function persistSettings() {
       postLanguages: getNormalizedPostLanguagesOrDefault(),
       appendThreadIntro,
       appendThreadEmoji,
+      postInteraction: getCurrentPostInteractionSettings(),
       hashtags,
       selectedHashtags,
       hashtagPlacement,
@@ -4997,6 +5123,7 @@ function createSettingsBackupPayload() {
       postLanguages: getNormalizedPostLanguagesOrDefault(),
       appendThreadIntro,
       appendThreadEmoji,
+      postInteraction: getCurrentPostInteractionSettings(),
       savedAccounts: savedAccounts.map((account) => ({
         did: account.did || "",
         handle: account.handle || "",
@@ -5059,6 +5186,7 @@ async function importSettingsBackup(file) {
   threadIntroToggle.checked = appendThreadIntro;
   appendThreadEmoji = imported.appendThreadEmoji === true;
   threadEmojiToggle.checked = appendThreadEmoji;
+  applyPostInteractionSettings(imported.postInteraction || {});
   localePreference = SUPPORTED_LOCALES.includes(imported.localePreference) || imported.localePreference === "auto"
     ? imported.localePreference
     : localePreference;
@@ -5899,6 +6027,7 @@ async function hydrateAppState() {
     selectedPostLanguages = normalizePostLanguageTags(state.postLanguages);
     appendThreadIntro = state.appendThreadIntro === true;
     appendThreadEmoji = state.appendThreadEmoji === true;
+    applyPostInteractionSettings(state.postInteraction || {});
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
     archiveSession = savedArchiveSession || null;
@@ -6044,6 +6173,17 @@ publishButton.addEventListener("click", async () => {
     return;
   }
 
+  const publishAccount = authAccount || identifierField.value.trim();
+  const confirmed = await openConfirmDialog({
+    title: t("publishConfirmTitle"),
+    message: t("publishConfirmText", { account: publishAccount || "?" }),
+    confirmLabel: t("confirmYes"),
+    cancelLabel: t("cancelButton"),
+  });
+  if (!confirmed) {
+    return;
+  }
+
   try {
     setBusy(publishButton, true, t("publishBusy"), t("publishButton"));
     showProgressDialog(t("progressTitle"), t("progressCheckingConnectivity"));
@@ -6086,6 +6226,7 @@ publishButton.addEventListener("click", async () => {
     const result = await sendToServiceWorker("PUBLISH_THREAD", {
       segments: preparedSegments,
       langs: getNormalizedPostLanguagesOrDefault(),
+      postInteraction: getCurrentPostInteractionSettings(),
     }, {
       onProgress(progress) {
         showProgressDialog(t("progressTitle"), progress.message || t("progressUploading"));
@@ -6117,6 +6258,7 @@ counterToggle.addEventListener("change", () => {
   segmentOverrides = null;
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
+  renderPostLanguageSummary();
   void persistSettings();
   queueDraftSave();
 });
@@ -6125,6 +6267,7 @@ threadIntroToggle.addEventListener("change", () => {
   segmentOverrides = null;
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
+  renderPostLanguageSummary();
   void persistSettings();
   queueDraftSave();
 });
@@ -6133,8 +6276,40 @@ threadEmojiToggle.addEventListener("change", () => {
   segmentOverrides = null;
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
+  renderPostLanguageSummary();
   void persistSettings();
   queueDraftSave();
+});
+replyModeInputs.forEach((input) => {
+  input.addEventListener("change", async () => {
+    if (!input.checked) {
+      return;
+    }
+    replyMode = input.value;
+    renderPostInteractionControls();
+    renderPostLanguageSummary();
+    await persistSettings();
+  });
+});
+replyAllowFollowersInput.addEventListener("change", async () => {
+  replyAllowFollowers = replyAllowFollowersInput.checked;
+  renderPostLanguageSummary();
+  await persistSettings();
+});
+replyAllowFollowingInput.addEventListener("change", async () => {
+  replyAllowFollowing = replyAllowFollowingInput.checked;
+  renderPostLanguageSummary();
+  await persistSettings();
+});
+replyAllowMentionedInput.addEventListener("change", async () => {
+  replyAllowMentioned = replyAllowMentionedInput.checked;
+  renderPostLanguageSummary();
+  await persistSettings();
+});
+quotePostsToggle.addEventListener("change", async () => {
+  quotePostsAllowed = quotePostsToggle.checked;
+  renderPostLanguageSummary();
+  await persistSettings();
 });
 
 serverPresetField.addEventListener("change", () => {
@@ -6412,14 +6587,22 @@ composerUnlockButton.addEventListener("click", () => {
   sourceText.focus();
 });
 
-postLanguagesButton.addEventListener("click", () => {
+postSettingsButton.addEventListener("click", () => {
   renderPostLanguageDialog();
   postLanguagesDialog.showModal();
-  window.setTimeout(() => postLanguagesSearch.focus(), 0);
+  if (postLanguagesDisclosure.open) {
+    window.setTimeout(() => postLanguagesSearch.focus(), 0);
+  }
 });
 
 postLanguagesSearch.addEventListener("input", () => {
   renderPostLanguageDialog();
+});
+
+postLanguagesDisclosure.addEventListener("toggle", () => {
+  if (postLanguagesDisclosure.open) {
+    window.setTimeout(() => postLanguagesSearch.focus(), 0);
+  }
 });
 
 postLanguagesCloseTop.addEventListener("click", () => {
@@ -6715,6 +6898,8 @@ confirmDialog.addEventListener("close", () => {
 
 postLanguagesDialog.addEventListener("close", () => {
   postLanguagesSearch.value = "";
+  postLanguagesDisclosure.open = false;
+  postInteractionDisclosure.open = false;
   renderPostLanguageDialog();
 });
 

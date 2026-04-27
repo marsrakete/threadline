@@ -571,6 +571,59 @@ body.theme-dark .support-actions img {
   justify-items: start;
 }
 
+.post-settings-toggle-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.post-settings-toggle-list .toggle.is-disabled {
+  opacity: 0.56;
+}
+
+.reply-mode-grid {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.reply-mode-label {
+  margin: 0;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.reply-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(106, 145, 201, 0.18);
+  background: rgba(241, 247, 255, 0.88);
+  cursor: pointer;
+}
+
+.reply-mode-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.reply-mode-option:has(input:checked) {
+  border-color: rgba(20, 102, 214, 0.28);
+  background: rgba(232, 242, 255, 0.96);
+  box-shadow: 0 10px 20px rgba(20, 102, 214, 0.08);
+}
+
+.interaction-rule-list {
+  margin-top: 14px;
+}
+
+.post-quote-toggle {
+  margin-top: 14px;
+}
+
 .composer-language-row {
   margin-bottom: 16px;
   display: grid;
@@ -1221,10 +1274,62 @@ body.theme-dark .support-actions img {
   max-height: 84vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.post-settings-disclosure {
+  overflow: hidden;
+}
+
+.post-settings-disclosure-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.post-settings-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.post-settings-disclosure-title {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.post-settings-disclosure-meta {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  text-align: right;
+  padding-right: 20px;
+  position: relative;
+}
+
+.post-settings-disclosure-meta::after {
+  content: "▾";
+  position: absolute;
+  right: 0;
+  top: 0;
+  color: var(--muted);
+  transition: transform 160ms ease;
+}
+
+.post-settings-disclosure[open] .post-settings-disclosure-meta::after {
+  transform: rotate(180deg);
+}
+
+.post-settings-disclosure-body {
+  margin-top: 14px;
 }
 
 .post-languages-list {
   margin-top: 14px;
+  max-height: min(28vh, 220px);
+  min-height: 0;
   overflow: auto;
   display: grid;
   gap: 10px;

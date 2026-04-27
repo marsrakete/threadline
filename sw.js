@@ -1,4 +1,4 @@
-const APP_VERSION = "v65";
+const APP_VERSION = "v70";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -59,6 +59,48 @@ function normalizePostLanguageTags(tags, max = 3) {
   }
 
   return normalized;
+}
+
+function normalizePostInteractionSettings(value = {}) {
+  const replyMode = ["everyone", "nobody", "custom"].includes(value.replyMode) ? value.replyMode : "everyone";
+  return {
+    replyMode,
+    allowFollowers: value.allowFollowers === true,
+    allowFollowing: value.allowFollowing === true,
+    allowMentioned: value.allowMentioned === true,
+    quotePostsAllowed: value.quotePostsAllowed !== false,
+  };
+}
+
+function extractRecordKeyFromAtUri(uri) {
+  const raw = String(uri || "").trim();
+  if (!raw.startsWith("at://")) {
+    return "";
+  }
+  const parts = raw.split("/");
+  return parts[parts.length - 1] || "";
+}
+
+function buildThreadGateAllowRules(settings) {
+  if (settings.replyMode === "everyone") {
+    return null;
+  }
+
+  if (settings.replyMode === "nobody") {
+    return [];
+  }
+
+  const rules = [];
+  if (settings.allowFollowers) {
+    rules.push({ $type: "app.bsky.feed.threadgate#followerRule" });
+  }
+  if (settings.allowFollowing) {
+    rules.push({ $type: "app.bsky.feed.threadgate#followingRule" });
+  }
+  if (settings.allowMentioned) {
+    rules.push({ $type: "app.bsky.feed.threadgate#mentionRule" });
+  }
+  return rules;
 }
 
 function parseHashtagValue(value) {
@@ -924,6 +966,7 @@ async function getAppState({ browserLocale } = {}) {
     postLanguages: normalizePostLanguageTags(storedSettings?.postLanguages),
     appendThreadIntro: storedSettings?.appendThreadIntro === true,
     appendThreadEmoji: storedSettings?.appendThreadEmoji === true,
+    postInteraction: normalizePostInteractionSettings(storedSettings?.postInteraction),
     hashtags,
     selectedHashtags,
     hashtagPlacement: storedSettings?.hashtagPlacement === "last" ? "last" : "first",
@@ -967,6 +1010,7 @@ async function saveSettings(settings = {}) {
       : normalizePostLanguageTags(existing.postLanguages),
     appendThreadIntro: settings.appendThreadIntro === true,
     appendThreadEmoji: settings.appendThreadEmoji === true,
+    postInteraction: normalizePostInteractionSettings(settings.postInteraction || existing.postInteraction),
     hashtags,
     selectedHashtags,
     hashtagPlacement: settings.hashtagPlacement === "last" ? "last" : (existing.hashtagPlacement === "last" ? "last" : "first"),
@@ -1812,13 +1856,68 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   return buildResult(cancelled ? "cancelled" : "completed");
 }
 
-async function publishThread({ segments, langs }, notifyProgress = () => {}) {
+async function applyPostInteractionGates(auth, postRef, settings) {
+  const normalizedSettings = normalizePostInteractionSettings(settings);
+  const recordKey = extractRecordKeyFromAtUri(postRef?.uri);
+  if (!recordKey) {
+    return;
+  }
+
+  const base = xrpcBaseForService(auth.pdsUrl || auth.service);
+  const headers = {
+    authorization: `Bearer ${auth.session.accessJwt}`,
+  };
+  const threadGateAllow = buildThreadGateAllowRules(normalizedSettings);
+
+  if (threadGateAllow !== null) {
+    await bskyFetch("com.atproto.repo.createRecord", {
+      method: "POST",
+      headers,
+      base,
+      body: JSON.stringify({
+        repo: auth.session.did,
+        collection: "app.bsky.feed.threadgate",
+        rkey: recordKey,
+        record: {
+          $type: "app.bsky.feed.threadgate",
+          createdAt: new Date().toISOString(),
+          post: postRef.uri,
+          allow: threadGateAllow,
+        },
+      }),
+    });
+  }
+
+  if (!normalizedSettings.quotePostsAllowed) {
+    await bskyFetch("com.atproto.repo.createRecord", {
+      method: "POST",
+      headers,
+      base,
+      body: JSON.stringify({
+        repo: auth.session.did,
+        collection: "app.bsky.feed.postgate",
+        rkey: recordKey,
+        record: {
+          $type: "app.bsky.feed.postgate",
+          createdAt: new Date().toISOString(),
+          post: postRef.uri,
+          embeddingRules: [
+            { $type: "app.bsky.feed.postgate#disableRule" },
+          ],
+        },
+      }),
+    });
+  }
+}
+
+async function publishThread({ segments, langs, postInteraction }, notifyProgress = () => {}) {
   if (!Array.isArray(segments) || segments.length === 0) {
     throw new Error("Es gibt keine Segmente zum Posten.");
   }
 
   const auth = await ensureSession();
   const normalizedLangs = normalizePostLanguageTags(langs);
+  const normalizedPostInteraction = normalizePostInteractionSettings(postInteraction);
   const resolveCache = new Map();
   const posts = [];
   let root = null;
@@ -1885,6 +1984,9 @@ async function publishThread({ segments, langs }, notifyProgress = () => {}) {
         uri: created.uri,
         cid: created.cid,
       };
+
+      notifyProgress({ message: `Interaktionseinstellungen fuer Abschnitt ${segmentIndex + 1}/${segments.length} werden gesetzt …` });
+      await applyPostInteractionGates(auth, ref, normalizedPostInteraction);
 
       if (!root) {
         root = ref;
