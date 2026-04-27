@@ -10,6 +10,13 @@
   A progressive web app for writing, splitting, saving, and publishing Bluesky threads with images, hashtags, and local backup support.
 </p>
 
+<p align="center">
+  <a href="https://ko-fi.com/U7U01OC260">Support me on Ko-Fi<br />
+    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-Fi" width="140">   
+  </a>
+</p>
+
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U7U01OC260)
 
 ## Live App
