@@ -39,9 +39,9 @@ const DEFAULT_POST_INTERACTION_SETTINGS = {
   quotePostsAllowed: true,
 };
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.69",
-  cacheVersion: "v88",
-  label: "Stabilize sidebar button layout",
+  appVersion: "0.4.72",
+  cacheVersion: "v91",
+  label: "Disable clear button when empty",
 };
 
 function clamp(value, min, max) {
@@ -1227,6 +1227,10 @@ function updatePublishAvailability() {
   publishWarning.textContent = publishWarnings.join("\n");
 }
 
+function updateClearButtonState() {
+  clearButton.disabled = composerLocked || !sourceText.value.trim();
+}
+
 function updateComposerLockState() {
   sourceText.disabled = composerLocked;
   counterToggle.disabled = composerLocked;
@@ -1234,7 +1238,7 @@ function updateComposerLockState() {
   threadEmojiToggle.disabled = composerLocked;
   markerSpacingToggle.disabled = composerLocked;
   postSettingsButton.disabled = composerLocked;
-  clearButton.disabled = composerLocked;
+  updateClearButtonState();
   composerLockNote.hidden = !composerLocked;
 }
 
@@ -6917,6 +6921,17 @@ serverPresetField.addEventListener("change", () => {
 });
 
 clearButton.addEventListener("click", async () => {
+  const confirmed = await openConfirmDialog({
+    title: t("clearTextConfirmTitle"),
+    message: t("clearTextConfirmText"),
+    confirmLabel: t("confirmYes"),
+    cancelLabel: t("confirmNo"),
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
   sourceText.value = "";
   activeSegments = [];
   segmentImages = [];

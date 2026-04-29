@@ -402,7 +402,7 @@
         <div class="section-heading settings-heading">
           <div>
             <p class="eyebrow" data-i18n="settingsEyebrow">Einstellungen</p>
-            <h2 data-i18n="settingsTitle">Sprache wählen</h2>
+            <h2 data-i18n="settingsTitle">App anpassen</h2>
           </div>
           <button type="submit" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
@@ -417,15 +417,18 @@
           <p id="update-status" class="settings-note" hidden></p>
         </section>
 
-        <label>
-          <span data-i18n="languageLabel">Sprache</span>
-          <select id="language-select">
-            <option value="auto">Automatisch</option>
-            <option value="de">Deutsch</option>
-            <option value="en">English</option>
-            <option value="fr">Français</option>
-          </select>
-        </label>
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="languageEyebrow">Sprache</p>
+          <label>
+            <span data-i18n="languageLabel">Sprache</span>
+            <select id="language-select">
+              <option value="auto">Automatisch</option>
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+              <option value="fr">Français</option>
+            </select>
+          </label>
+        </section>
 
         <section class="settings-block">
           <p class="eyebrow" data-i18n="appearanceEyebrow">Darstellung</p>
