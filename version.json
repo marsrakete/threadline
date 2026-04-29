@@ -1,5 +1,5 @@
 {
-  "appVersion": "0.4.50",
-  "cacheVersion": "v70",
-  "label": "Post settings summary refresh fix"
+  "appVersion": "0.4.64",
+  "cacheVersion": "v83",
+  "label": "Thread intro follows app locale"
 }

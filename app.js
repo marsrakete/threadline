@@ -1,4 +1,4 @@
-import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags, resolveThreadIntroLocale } from "./post-languages.js";
+import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./post-languages.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./translations.js";
 
 const MAX_POST_LENGTH = 300;
@@ -7,13 +7,25 @@ const MAX_IMAGES_PER_SEGMENT = 4;
 const MAX_ALT_TEXT_LENGTH = 1000;
 const IMAGE_BLOB_LIMIT = 2_000_000;
 const IMAGE_MAX_DIMENSION = 4_000;
-const IMAGE_EDITOR_CANVAS_WIDTH = 560;
-const IMAGE_EDITOR_CANVAS_HEIGHT = 360;
+const IMAGE_EDITOR_CANVAS_WIDTH = 980;
+const IMAGE_EDITOR_CANVAS_HEIGHT = 630;
 const IMAGE_EXPORT_WIDTH = 1400;
 const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH) * IMAGE_EDITOR_CANVAS_HEIGHT);
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 3 * 60 * 1000;
+const DEFAULT_SIDEBAR_WIDTH_DESKTOP = 388;
+const DEFAULT_COMPOSER_WIDTH_DESKTOP = 430;
+const MIN_SIDEBAR_WIDTH_DESKTOP = 280;
+const MAX_SIDEBAR_WIDTH_DESKTOP = 520;
+const MIN_COMPOSER_WIDTH_DESKTOP = 320;
+const MAX_COMPOSER_WIDTH_DESKTOP = 1120;
+const DEFAULT_POST_WEB_APP = "https://bsky.app";
+const POST_WEB_FRONTENDS = {
+  "bsky.social": DEFAULT_POST_WEB_APP,
+  "eurosky.social": DEFAULT_POST_WEB_APP,
+  "bsky.app": DEFAULT_POST_WEB_APP,
+};
 const DEFAULT_POST_INTERACTION_SETTINGS = {
   replyMode: "everyone",
   allowFollowers: false,
@@ -22,20 +34,32 @@ const DEFAULT_POST_INTERACTION_SETTINGS = {
   quotePostsAllowed: true,
 };
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.50",
-  cacheVersion: "v70",
-  label: "Post settings summary refresh fix",
+  appVersion: "0.4.64",
+  cacheVersion: "v83",
+  label: "Thread intro follows app locale",
 };
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
 const loginButton = document.querySelector("#login-button");
-const logoutButton = document.querySelector("#logout-button");
+const addAccountButton = document.querySelector("#add-account-button");
+const loginDialog = document.querySelector("#login-dialog");
+const loginDialogCloseTop = document.querySelector("#login-dialog-close-top");
+const loginDialogCancelButton = document.querySelector("#login-dialog-cancel-button");
+const loginDialogNote = document.querySelector("#login-dialog-note");
 const publishButton = document.querySelector("#publish-button");
 const clearButton = document.querySelector("#clear-button");
 const settingsButton = document.querySelector("#settings-button");
 const loadThreadButton = document.querySelector("#load-thread-button");
 const helpButton = document.querySelector("#help-button");
 const installButton = document.querySelector("#install-button");
+const sidebarToggleButton = document.querySelector("#sidebar-toggle-button");
+const sidebarToggleGlyph = document.querySelector("#sidebar-toggle-glyph");
+const sidebarResizeHandle = document.querySelector("#sidebar-resize-handle");
+const composerResizeHandle = document.querySelector("#composer-resize-handle");
 const historyButton = document.querySelector("#history-button");
 const archiveButton = document.querySelector("#archive-button");
 const archiveLaunchNote = document.querySelector("#archive-launch-note");
@@ -82,6 +106,8 @@ const hashtagEditCancelButton = document.querySelector("#hashtag-edit-cancel-but
 const hashtagEditCancelTop = document.querySelector("#hashtag-edit-cancel-top");
 const altTextInput = document.querySelector("#alt-text-input");
 const altTextCount = document.querySelector("#alt-text-count");
+const altTextPreviewWrap = document.querySelector("#alt-text-preview-wrap");
+const altTextPreviewCanvas = document.querySelector("#alt-text-preview-canvas");
 const altTextSaveButton = document.querySelector("#alt-text-save-button");
 const altTextCancelButton = document.querySelector("#alt-text-cancel-button");
 const altTextCloseTop = document.querySelector("#alt-text-close-top");
@@ -114,6 +140,7 @@ const composerLockNote = document.querySelector("#composer-lock-note");
 const composerUnlockButton = document.querySelector("#composer-unlock-button");
 const counterToggle = document.querySelector("#counter-toggle");
 const threadEmojiToggle = document.querySelector("#thread-emoji-toggle");
+const markerSpacingToggle = document.querySelector("#marker-spacing-toggle");
 const characterCount = document.querySelector("#character-count");
 const segmentSummary = document.querySelector("#segment-summary");
 const publishWarning = document.querySelector("#publish-warning");
@@ -210,6 +237,9 @@ let currentTipIndex = 0;
 let tipsVisible = true;
 let altTextRequired = true;
 let themeMode = "light";
+let sidebarCollapsedDesktop = false;
+let sidebarWidthDesktop = DEFAULT_SIDEBAR_WIDTH_DESKTOP;
+let composerWidthDesktop = DEFAULT_COMPOSER_WIDTH_DESKTOP;
 let hashtags = [];
 let selectedHashtags = [];
 let hashtagPlacement = "first";
@@ -218,6 +248,7 @@ let currentComposedText = "";
 let selectedPostLanguages = [];
 let appendThreadIntro = false;
 let appendThreadEmoji = false;
+let addMarkerSpacing = false;
 let replyMode = DEFAULT_POST_INTERACTION_SETTINGS.replyMode;
 let replyAllowFollowers = DEFAULT_POST_INTERACTION_SETTINGS.allowFollowers;
 let replyAllowFollowing = DEFAULT_POST_INTERACTION_SETTINGS.allowFollowing;
@@ -249,6 +280,11 @@ const LOGIN_SERVICE_PRESETS = {
   "bsky.social": "https://bsky.social",
   "eurosky.social": "https://eurosky.social",
 };
+const DESKTOP_LAYOUT_MEDIA = window.matchMedia("(min-width: 981px)");
+const VALID_HASHTAG_PLACEMENTS = new Set(["first", "last", "all-top", "all-bottom"]);
+
+applyDesktopLayoutState();
+applySidebarState();
 
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) {
@@ -330,6 +366,41 @@ function buildPublishErrorMessage(error) {
   return error?.message || t("errorTitle");
 }
 
+function localizeLoginErrorMessage(error) {
+  const raw = String(error?.message || "").trim();
+  const normalized = raw.toLowerCase();
+
+  if (!normalized) {
+    return t("statusLoginFailedGeneric");
+  }
+
+  if (
+    normalized.includes("invalid identifier or password")
+    || normalized.includes("invalid login credentials")
+    || normalized.includes("authentication required")
+  ) {
+    return t("statusLoginFailedInvalidCredentials");
+  }
+
+  if (
+    normalized.includes("handle und app-passwort sind erforderlich")
+    || normalized.includes("app-password are required")
+    || normalized.includes("identifier and app password are required")
+  ) {
+    return t("statusLoginFailedMissingCredentials");
+  }
+
+  if (normalized.includes("keine verbindung zu bluesky möglich") || normalized.includes("could not connect to bluesky")) {
+    return t("statusLoginFailedConnection");
+  }
+
+  if (normalized.includes("bluesky-fehler: 401") || normalized.includes("bluesky error: 401")) {
+    return t("statusLoginFailedInvalidCredentials");
+  }
+
+  return raw;
+}
+
 function setStatus(message, tone = "neutral") {
   statusText.textContent = message;
   statusText.style.color = tone === "error" ? "var(--danger)" : "var(--text)";
@@ -388,6 +459,38 @@ function applyLoginServiceSelection(serviceUrl = LOGIN_SERVICE_PRESETS["bsky.soc
   serverPresetField.value = "custom";
   customServerWrap.hidden = false;
   customServerField.value = normalized;
+}
+
+function setLoginDialogNote(message = "", tone = "neutral") {
+  loginDialogNote.hidden = !message;
+  loginDialogNote.textContent = message;
+  loginDialogNote.style.color = tone === "error" ? "var(--danger)" : "var(--muted)";
+}
+
+function openLoginDialog(options = {}) {
+  const account = options.account || null;
+  identifierField.value = options.identifier ?? account?.identifier ?? account?.handle ?? "";
+  passwordField.value = "";
+  applyLoginServiceSelection(options.service || account?.service || LOGIN_SERVICE_PRESETS["bsky.social"]);
+  setLoginDialogNote(options.note || "", options.tone || "neutral");
+  if (!loginDialog.open) {
+    loginDialog.showModal();
+  }
+  window.setTimeout(() => {
+    if (identifierField.value) {
+      passwordField.focus();
+    } else {
+      identifierField.focus();
+    }
+  }, 0);
+}
+
+function closeLoginDialog() {
+  setLoginDialogNote("");
+  passwordField.value = "";
+  if (loginDialog.open) {
+    loginDialog.close();
+  }
 }
 
 function getAccountInitials(account) {
@@ -469,7 +572,19 @@ function renderAccountSwitcher() {
           applyLoginServiceSelection(authAccountService);
           passwordField.value = "";
           updateStatusForAuth();
-          setStatus(t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" }), "error");
+          const needsPassword = result.reason === "missing_password" || result.reason === "invalid_password";
+          const message = result.reason === "invalid_password"
+            ? t("statusAccountPasswordRejected", { account: account.handle || account.identifier || "" })
+            : t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" });
+          setStatus(message, "error");
+          if (needsPassword) {
+            openLoginDialog({
+              account,
+              mode: "repair",
+              note: message,
+              tone: "error",
+            });
+          }
           return;
         }
 
@@ -481,6 +596,68 @@ function renderAccountSwitcher() {
         passwordField.value = "";
         updateStatusForAuth();
         await verifySession({ silent: true });
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message, "error");
+      }
+    });
+
+    const authActionButton = document.createElement("button");
+    authActionButton.type = "button";
+    authActionButton.className = `account-chip-action${state === "signed-out" ? " is-login" : " is-logout"}`;
+    authActionButton.setAttribute("aria-label", state === "signed-out"
+      ? t("accountSignInButton", { account: account.handle || account.identifier || "account" })
+      : t("accountSignOutButton", { account: account.handle || account.identifier || "account" }));
+    authActionButton.title = state === "signed-out"
+      ? t("accountSignInButton", { account: account.handle || account.identifier || "account" })
+      : t("accountSignOutButton", { account: account.handle || account.identifier || "account" });
+    authActionButton.innerHTML = state === "signed-out"
+      ? createIconSvg("M10 17l1.4-1.4L8.8 13H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zm-6 7h8v-2H4V2h8V0H4C2.9 0 2 .9 2 2v20c0 1.1.9 2 2 2z")
+      : createIconSvg("M14 17l-1.4-1.4 2.6-2.6H4v-2h11.2l-2.6-2.6L14 7l5 5-5 5zM20 24h-8v-2h8V2h-8V0h8c1.1 0 2 .9 2 2v20c0 1.1-.9 2-2 2z");
+    authActionButton.addEventListener("click", async () => {
+      try {
+        if (state === "signed-out") {
+          if (account.hasStoredPassword) {
+            const result = await sendToServiceWorker("SWITCH_ACCOUNT", { did: account.did });
+            savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+            renderAccountSwitcher();
+            if (result.authenticated) {
+              authAccount = result.handle || result.identifier || null;
+              authAccountDid = result.did || "";
+              authAccountService = result.service || account.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+              updateStatusForAuth();
+              await verifySession({ silent: true });
+              return;
+            }
+            const message = result.reason === "invalid_password"
+              ? t("statusAccountPasswordRejected", { account: account.handle || account.identifier || "" })
+              : t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" });
+            setStatus(message, "error");
+            openLoginDialog({
+              account,
+              mode: "repair",
+              note: message,
+              tone: "error",
+            });
+            return;
+          }
+
+          openLoginDialog({
+            account,
+            mode: "repair",
+            note: t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" }),
+            tone: "error",
+          });
+          return;
+        }
+
+        const result = await sendToServiceWorker("LOGOUT", { did: account.did });
+        savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+        authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
+        authAccountDid = result.authenticated ? (result.did || "") : "";
+        authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+        updateStatusForAuth();
+        setStatus(t("accountSignedOutStatus", { account: account.handle || account.identifier || "account" }));
       } catch (error) {
         console.error(error);
         setStatus(error.message, "error");
@@ -521,17 +698,14 @@ function renderAccountSwitcher() {
       }
     });
 
-    item.append(button, removeButton);
+    item.append(button, authActionButton, removeButton);
     accountSwitcherList.appendChild(item);
   });
 }
 
 function updateAuthButtons() {
   const isAuthenticated = Boolean(authAccount);
-  loginButton.hidden = false;
-  loginButton.classList.toggle("ghost-button", isAuthenticated);
-  loginButton.classList.toggle("is-muted", false);
-  loginButton.textContent = isAuthenticated ? t("addAccountButton") : t("loginButton");
+  addAccountButton.textContent = t("addAccountButton");
   archiveButton.disabled = !isAuthenticated;
   archiveLaunchNote.textContent = isAuthenticated ? t("archiveLaunchEnabledNote") : t("archiveLaunchDisabledNote");
   renderAccountSwitcher();
@@ -540,7 +714,6 @@ function updateAuthButtons() {
 function applyDisconnectedState(showStatus = true) {
   authAccount = null;
   authAccountDid = "";
-  logoutButton.hidden = true;
   updateAuthButtons();
   if (currentWorkspace === "archive") {
     showComposerWorkspace();
@@ -1019,6 +1192,7 @@ function updateComposerLockState() {
   counterToggle.disabled = composerLocked;
   threadIntroToggle.disabled = composerLocked;
   threadEmojiToggle.disabled = composerLocked;
+  markerSpacingToggle.disabled = composerLocked;
   postSettingsButton.disabled = composerLocked;
   clearButton.disabled = composerLocked;
   composerLockNote.hidden = !composerLocked;
@@ -1077,7 +1251,7 @@ function applyTheme() {
 }
 
 function getThreadIntroText() {
-  const introLocale = resolveThreadIntroLocale(selectedPostLanguages, currentLocale);
+  const introLocale = currentLocale === "de" || currentLocale === "fr" ? currentLocale : "en";
   if (introLocale === "de") {
     return "Ein Thread 🧵";
   }
@@ -1179,6 +1353,97 @@ function renderPostSettingsDisclosureMeta() {
   });
 }
 
+function clampDesktopWidth(value, min, max, fallback) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(numericValue)));
+}
+
+function applyDesktopLayoutState() {
+  const resolvedSidebarWidth = clampDesktopWidth(
+    sidebarWidthDesktop,
+    MIN_SIDEBAR_WIDTH_DESKTOP,
+    MAX_SIDEBAR_WIDTH_DESKTOP,
+    DEFAULT_SIDEBAR_WIDTH_DESKTOP,
+  );
+  const resolvedComposerWidth = clampDesktopWidth(
+    composerWidthDesktop,
+    MIN_COMPOSER_WIDTH_DESKTOP,
+    MAX_COMPOSER_WIDTH_DESKTOP,
+    DEFAULT_COMPOSER_WIDTH_DESKTOP,
+  );
+
+  sidebarWidthDesktop = resolvedSidebarWidth;
+  composerWidthDesktop = resolvedComposerWidth;
+  document.documentElement.style.setProperty("--desktop-sidebar-width", `${resolvedSidebarWidth}px`);
+  document.documentElement.style.setProperty("--desktop-composer-width", `${resolvedComposerWidth}px`);
+}
+
+function applySidebarState() {
+  const isDesktop = DESKTOP_LAYOUT_MEDIA.matches;
+  const shouldCollapse = sidebarCollapsedDesktop;
+  document.body.classList.toggle("desktop-sidebar-collapsed", isDesktop && shouldCollapse);
+  document.body.classList.toggle("mobile-sidebar-collapsed", !isDesktop && shouldCollapse);
+  sidebarToggleButton.setAttribute("aria-expanded", shouldCollapse ? "false" : "true");
+  sidebarToggleButton.setAttribute("aria-label", shouldCollapse ? t("sidebarExpandButton") : t("sidebarCollapseButton"));
+  sidebarToggleButton.title = shouldCollapse ? t("sidebarExpandButton") : t("sidebarCollapseButton");
+  sidebarResizeHandle.setAttribute("aria-label", t("sidebarResizeHandleLabel"));
+  composerResizeHandle.setAttribute("aria-label", t("composerResizeHandleLabel"));
+  sidebarToggleGlyph.textContent = isDesktop
+    ? (shouldCollapse ? "▶" : "◀")
+    : (shouldCollapse ? "▼" : "▲");
+}
+
+function startDesktopColumnResize(target) {
+  if (!DESKTOP_LAYOUT_MEDIA.matches) {
+    return;
+  }
+
+  const resizeTarget = target === "sidebar" ? "sidebar" : "composer";
+  const bodyRect = document.body.getBoundingClientRect();
+
+  const handlePointerMove = (event) => {
+    if (resizeTarget === "sidebar") {
+      sidebarWidthDesktop = clampDesktopWidth(
+        event.clientX - bodyRect.left,
+        MIN_SIDEBAR_WIDTH_DESKTOP,
+        MAX_SIDEBAR_WIDTH_DESKTOP,
+        DEFAULT_SIDEBAR_WIDTH_DESKTOP,
+      );
+    } else {
+      const sidebarWidth = sidebarCollapsedDesktop
+        ? DEFAULT_SIDEBAR_WIDTH_DESKTOP
+        : clampDesktopWidth(
+          sidebarWidthDesktop,
+          MIN_SIDEBAR_WIDTH_DESKTOP,
+          MAX_SIDEBAR_WIDTH_DESKTOP,
+          DEFAULT_SIDEBAR_WIDTH_DESKTOP,
+        );
+      const nextComposerWidth = event.clientX - bodyRect.left - sidebarWidth - 14;
+      composerWidthDesktop = clampDesktopWidth(
+        nextComposerWidth,
+        MIN_COMPOSER_WIDTH_DESKTOP,
+        MAX_COMPOSER_WIDTH_DESKTOP,
+        DEFAULT_COMPOSER_WIDTH_DESKTOP,
+      );
+    }
+    applyDesktopLayoutState();
+  };
+
+  const handlePointerUp = async () => {
+    document.body.classList.remove("desktop-resizing");
+    window.removeEventListener("pointermove", handlePointerMove);
+    window.removeEventListener("pointerup", handlePointerUp);
+    await persistSettings();
+  };
+
+  document.body.classList.add("desktop-resizing");
+  window.addEventListener("pointermove", handlePointerMove);
+  window.addEventListener("pointerup", handlePointerUp, { once: true });
+}
+
 function renderPostLanguageSummary() {
   selectedPostLanguages = getNormalizedPostLanguagesOrDefault();
   const labels = selectedPostLanguages.map((tag) => getPostLanguageDisplayName(tag, currentLocale));
@@ -1192,6 +1457,9 @@ function renderPostLanguageSummary() {
 
   if (counterToggle.checked) {
     summaryParts.push(t("counterToggle"));
+  }
+  if (markerSpacingToggle.checked) {
+    summaryParts.push(t("markerSpacingToggle"));
   }
   if (threadIntroToggle.checked) {
     summaryParts.push(t("threadIntroToggle"));
@@ -1270,8 +1538,10 @@ function applyTranslations() {
   customServerField.placeholder = "https://example.com";
   sourceText.placeholder = t("sourcePlaceholder");
   hashtagInput.placeholder = t("hashtagInputPlaceholder");
-  loginButton.textContent = authAccount ? t("addAccountButton") : t("loginButton");
-  logoutButton.textContent = t("logoutButton");
+  loginButton.textContent = t("loginButton");
+  loginDialogCancelButton.textContent = t("cancelButton");
+  loginDialogCloseTop.textContent = t("closeButton");
+  addAccountButton.textContent = t("addAccountButton");
   publishButton.textContent = t("publishButton");
   clearButton.textContent = t("clearButton");
   settingsButton.textContent = t("settingsButton");
@@ -1317,13 +1587,26 @@ function applyTranslations() {
   publishResultLink.textContent = t("openPostLink");
   historyButton.textContent = t("historyButton");
   composerUnlockButton.textContent = t("composerUnlockButton");
+  sidebarToggleButton.setAttribute("aria-label", sidebarCollapsedDesktop ? t("sidebarExpandButton") : t("sidebarCollapseButton"));
+  sidebarToggleButton.title = sidebarCollapsedDesktop ? t("sidebarExpandButton") : t("sidebarCollapseButton");
+  sidebarResizeHandle.setAttribute("aria-label", t("sidebarResizeHandleLabel"));
+  composerResizeHandle.setAttribute("aria-label", t("composerResizeHandleLabel"));
+  altTextPreviewCanvas.setAttribute("aria-label", t("altPreviewLabel"));
   hashtagAddButton.textContent = t("addHashtagButton");
   nextTipButton.textContent = t("nextTipButton");
   hideTipsButton.textContent = t("hideTipsButton");
   postSettingsButton.textContent = t("postSettingsButton");
   postLanguagesSearch.placeholder = t("postLanguagesSearchPlaceholder");
   Array.from(hashtagPlacementSelect.options).forEach((option) => {
-    option.textContent = option.value === "last" ? t("hashtagPlacementLast") : t("hashtagPlacementFirst");
+    if (option.value === "last") {
+      option.textContent = t("hashtagPlacementLast");
+    } else if (option.value === "all-top") {
+      option.textContent = t("hashtagPlacementAllTop");
+    } else if (option.value === "all-bottom") {
+      option.textContent = t("hashtagPlacementAllBottom");
+    } else {
+      option.textContent = t("hashtagPlacementFirst");
+    }
   });
   Array.from(archiveScopeSelect.options).forEach((option) => {
     if (option.value === "year") {
@@ -1368,6 +1651,7 @@ function applyTranslations() {
   renderPostLanguageSummary();
   renderPostInteractionControls();
   renderPostLanguageDialog();
+  applySidebarState();
 
   renderSegments();
   updateStatusForAuth();
@@ -1510,6 +1794,10 @@ function getSelectedHashtagText() {
   return selectedHashtags.map((tag) => formatHashtag(getDisplayHashtag(tag))).join(" ");
 }
 
+function normalizeHashtagPlacement(value) {
+  return VALID_HASHTAG_PLACEMENTS.has(value) ? value : "first";
+}
+
 function setBackupStatus(message, tone = "neutral") {
   window.clearTimeout(backupStatusTimer);
   backupStatus.textContent = message;
@@ -1599,6 +1887,7 @@ function createDefaultImageEdit() {
     flipX: false,
     flipY: false,
     rotation: 0,
+    fitMode: "contain",
   };
 }
 
@@ -1609,17 +1898,32 @@ function isImageUsingDefaultEdit(image) {
     && edit.offsetY === 0
     && edit.flipX === false
     && edit.flipY === false
-    && edit.rotation === 0;
+    && edit.rotation === 0
+    && edit.fitMode === "contain";
 }
 
 function normalizeImageEdit(edit = {}) {
+  const zoom = Math.min(3, Math.max(0.5, Number(edit.zoom) || 1));
+  const offsetX = Number(edit.offsetX) || 0;
+  const offsetY = Number(edit.offsetY) || 0;
+  const flipX = Boolean(edit.flipX);
+  const flipY = Boolean(edit.flipY);
+  const rotation = ((((Number(edit.rotation) || 0) % 360) + 360) % 360);
+  const fitMode = edit.fitMode === "cover"
+    || (
+      !Object.prototype.hasOwnProperty.call(edit, "fitMode")
+      && (zoom !== 1 || offsetX !== 0 || offsetY !== 0 || flipX || flipY || rotation !== 0)
+    )
+    ? "cover"
+    : "contain";
   return {
-    zoom: Math.min(3, Math.max(0.5, Number(edit.zoom) || 1)),
-    offsetX: Number(edit.offsetX) || 0,
-    offsetY: Number(edit.offsetY) || 0,
-    flipX: Boolean(edit.flipX),
-    flipY: Boolean(edit.flipY),
-    rotation: ((((Number(edit.rotation) || 0) % 360) + 360) % 360),
+    zoom,
+    offsetX,
+    offsetY,
+    flipX,
+    flipY,
+    rotation,
+    fitMode,
   };
 }
 
@@ -1677,6 +1981,7 @@ function normalizePostingHistory(entries) {
     const url = typeof entry?.url === "string" ? entry.url.trim() : "";
     const createdAt = typeof entry?.createdAt === "string" ? entry.createdAt : "";
     const account = typeof entry?.account === "string" ? entry.account.trim() : "";
+    const service = typeof entry?.service === "string" ? entry.service.trim() : "";
 
     if (!url || !createdAt) {
       continue;
@@ -1693,6 +1998,7 @@ function normalizePostingHistory(entries) {
       url,
       createdAt,
       account,
+      service,
       threadCount: Math.max(1, Number(entry.threadCount) || 1),
       imageCount: Math.max(0, Number(entry.imageCount) || 0),
     });
@@ -1761,21 +2067,54 @@ async function createThreadImageFromFile(file) {
   });
 }
 
-function getImageMetrics(image, frameWidth, frameHeight, edit = image.edit) {
+function getImageMetrics(image, frameWidth, frameHeight, edit = image.edit, fit = null) {
   const normalizedEdit = normalizeImageEdit(edit);
+  const effectiveFit = fit || normalizedEdit.fitMode || "cover";
   const rotation = normalizedEdit.rotation;
   const quarterTurn = rotation % 180 !== 0;
   const sourceWidth = quarterTurn ? image.height : image.width;
   const sourceHeight = quarterTurn ? image.width : image.height;
-  const baseScale = Math.max(frameWidth / sourceWidth, frameHeight / sourceHeight);
+  const baseScale = effectiveFit === "contain"
+    ? Math.min(frameWidth / sourceWidth, frameHeight / sourceHeight)
+    : Math.max(frameWidth / sourceWidth, frameHeight / sourceHeight);
   const drawWidth = image.width * baseScale * normalizedEdit.zoom;
   const drawHeight = image.height * baseScale * normalizedEdit.zoom;
+  const rotatedDrawWidth = quarterTurn ? drawHeight : drawWidth;
+  const rotatedDrawHeight = quarterTurn ? drawWidth : drawHeight;
+  const maxOffsetX = effectiveFit === "cover"
+    ? Math.max(0, (rotatedDrawWidth - frameWidth) / 2)
+    : 0;
+  const maxOffsetY = effectiveFit === "cover"
+    ? Math.max(0, (rotatedDrawHeight - frameHeight) / 2)
+    : 0;
+  const offsetX = clamp(normalizedEdit.offsetX, -maxOffsetX, maxOffsetX);
+  const offsetY = clamp(normalizedEdit.offsetY, -maxOffsetY, maxOffsetY);
   return {
     ...normalizedEdit,
+    fitMode: effectiveFit,
     drawWidth,
     drawHeight,
-    centerX: frameWidth / 2 + normalizedEdit.offsetX,
-    centerY: frameHeight / 2 + normalizedEdit.offsetY,
+    rotatedDrawWidth,
+    rotatedDrawHeight,
+    maxOffsetX,
+    maxOffsetY,
+    offsetX,
+    offsetY,
+    centerX: frameWidth / 2 + offsetX,
+    centerY: frameHeight / 2 + offsetY,
+  };
+}
+
+function clampImageEditToFrame(image, frameWidth, frameHeight, edit = image.edit, fit = null) {
+  const metrics = getImageMetrics(image, frameWidth, frameHeight, edit, fit);
+  return {
+    zoom: metrics.zoom,
+    offsetX: metrics.offsetX,
+    offsetY: metrics.offsetY,
+    flipX: metrics.flipX,
+    flipY: metrics.flipY,
+    rotation: metrics.rotation,
+    fitMode: metrics.fitMode,
   };
 }
 
@@ -1788,7 +2127,7 @@ async function loadImageBitmapForDataUrl(dataUrl) {
 async function renderImageToCanvas(image, canvas, options = {}) {
   const width = options.width || canvas.width;
   const height = options.height || canvas.height;
-  const fit = options.fit || "cover";
+  const fit = options.fit || normalizeImageEdit(options.edit || image.edit).fitMode || "cover";
   if (!canvas.width) {
     canvas.width = width;
   }
@@ -1796,6 +2135,8 @@ async function renderImageToCanvas(image, canvas, options = {}) {
     canvas.height = height;
   }
   const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const bitmap = await loadImageBitmapForDataUrl(image.dataUrl);
@@ -1804,28 +2145,36 @@ async function renderImageToCanvas(image, canvas, options = {}) {
   ctx.beginPath();
   ctx.rect(0, 0, width, height);
   ctx.clip();
-
-  if (fit === "contain") {
-    const scale = Math.min(width / bitmap.width, height / bitmap.height);
-    const drawWidth = bitmap.width * scale;
-    const drawHeight = bitmap.height * scale;
-    ctx.drawImage(
-      bitmap,
-      (width - drawWidth) / 2,
-      (height - drawHeight) / 2,
-      drawWidth,
-      drawHeight,
-    );
-  } else {
-    const metrics = getImageMetrics(image, width, height, options.edit || image.edit);
-    ctx.translate(metrics.centerX, metrics.centerY);
-    ctx.rotate((metrics.rotation * Math.PI) / 180);
-    ctx.scale(metrics.flipX ? -1 : 1, metrics.flipY ? -1 : 1);
-    ctx.drawImage(bitmap, -metrics.drawWidth / 2, -metrics.drawHeight / 2, metrics.drawWidth, metrics.drawHeight);
-  }
+  const metrics = getImageMetrics(image, width, height, options.edit || image.edit, fit);
+  ctx.translate(metrics.centerX, metrics.centerY);
+  ctx.rotate((metrics.rotation * Math.PI) / 180);
+  ctx.scale(metrics.flipX ? -1 : 1, metrics.flipY ? -1 : 1);
+  ctx.drawImage(bitmap, -metrics.drawWidth / 2, -metrics.drawHeight / 2, metrics.drawWidth, metrics.drawHeight);
 
   ctx.restore();
   bitmap.close?.();
+}
+
+async function renderPreviewCanvas(image, canvas, options = {}) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+  const cssWidth = Math.max(1, Math.round(options.cssWidth || rect.width || canvas.clientWidth || 220));
+  const cssHeight = Math.max(1, Math.round(options.cssHeight || rect.height || canvas.clientHeight || 150));
+  const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
+  const pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
+
+  if (canvas.width !== pixelWidth) {
+    canvas.width = pixelWidth;
+  }
+  if (canvas.height !== pixelHeight) {
+    canvas.height = pixelHeight;
+  }
+
+  await renderImageToCanvas(image, canvas, {
+    width: pixelWidth,
+    height: pixelHeight,
+    fit: normalizeImageEdit(image.edit).fitMode,
+  });
 }
 
 async function renderImageToBlob(image) {
@@ -1941,6 +2290,13 @@ function openAltTextDialog(segmentIndex, imageIndex) {
     return;
   }
   editingAltTarget = { segmentIndex, imageIndex };
+  altTextPreviewWrap.hidden = !image.dataUrl;
+  if (image.dataUrl) {
+    void renderPreviewCanvas(image, altTextPreviewCanvas, {
+      cssWidth: 440,
+      cssHeight: 283,
+    });
+  }
   altTextInput.value = image.alt || "";
   setAltTextCount();
   altTextDialog.showModal();
@@ -1949,6 +2305,9 @@ function openAltTextDialog(segmentIndex, imageIndex) {
 
 function closeAltTextDialog() {
   editingAltTarget = null;
+  altTextPreviewWrap.hidden = true;
+  const context = altTextPreviewCanvas.getContext("2d");
+  context?.clearRect(0, 0, altTextPreviewCanvas.width, altTextPreviewCanvas.height);
   altTextDialog.close();
 }
 
@@ -1983,6 +2342,10 @@ async function openImageEditorDialog(segmentIndex, imageIndex) {
   }
   editingImageTarget = { segmentIndex, imageIndex };
   imageEditorDraft = cloneImageEdit(image.edit);
+  if (imageEditorDraft.fitMode !== "cover") {
+    imageEditorDraft.fitMode = "cover";
+    imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, imageEditorDraft, "cover");
+  }
   imageZoomInput.value = String(imageEditorDraft.zoom);
   imageEditorSourceBitmap = await loadImageBitmapForDataUrl(image.dataUrl);
   imageEditorSuggestion.hidden = !image.validation?.tooBig;
@@ -2022,7 +2385,11 @@ function drawImageEditor() {
     imageEditorCanvas.width,
     imageEditorCanvas.height,
     imageEditorDraft,
+    "cover",
   );
+  imageEditorDraft.offsetX = metrics.offsetX;
+  imageEditorDraft.offsetY = metrics.offsetY;
+  imageEditorDraft.fitMode = "cover";
 
   ctx.save();
   ctx.beginPath();
@@ -2062,8 +2429,17 @@ function updateImageEditorDrag(event) {
   if (!imageEditorDragging || !imageEditorDraft || !imageEditorDragStart) {
     return;
   }
-  imageEditorDraft.offsetX = imageEditorDragStart.offsetX + (event.clientX - imageEditorDragStart.x);
-  imageEditorDraft.offsetY = imageEditorDragStart.offsetY + (event.clientY - imageEditorDragStart.y);
+  const image = getEditedImage();
+  if (!image) {
+    return;
+  }
+  const nextDraft = {
+    ...imageEditorDraft,
+    fitMode: "cover",
+    offsetX: imageEditorDragStart.offsetX + (event.clientX - imageEditorDragStart.x),
+    offsetY: imageEditorDragStart.offsetY + (event.clientY - imageEditorDragStart.y),
+  };
+  imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, nextDraft, "cover");
   drawImageEditor();
 }
 
@@ -2078,7 +2454,10 @@ async function saveImageEditor() {
     closeImageEditorDialog();
     return;
   }
-  image.edit = cloneImageEdit(imageEditorDraft);
+  image.edit = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+    ...imageEditorDraft,
+    fitMode: "cover",
+  }, "cover");
   await validateThreadImage(image);
   await persistSettings();
   preserveScrollPosition(() => {
@@ -2089,8 +2468,15 @@ async function saveImageEditor() {
 }
 
 function resetImageEditor() {
-  imageEditorDraft = createDefaultImageEdit();
-  imageZoomInput.value = "1";
+  const image = getEditedImage();
+  if (!image) {
+    return;
+  }
+  imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+    ...createDefaultImageEdit(),
+    fitMode: "cover",
+  }, "cover");
+  imageZoomInput.value = String(imageEditorDraft.zoom);
   drawImageEditor();
 }
 
@@ -2216,6 +2602,7 @@ function buildThreadExportPayload() {
       useCounters: counterToggle.checked,
       appendThreadIntro,
       appendThreadEmoji,
+      addMarkerSpacing,
       postInteraction: getCurrentPostInteractionSettings(),
       postLanguages: getNormalizedPostLanguagesOrDefault(),
       localePreference,
@@ -2282,6 +2669,8 @@ async function importThreadFile(file) {
   threadIntroToggle.checked = appendThreadIntro;
   appendThreadEmoji = thread.appendThreadEmoji === true;
   threadEmojiToggle.checked = appendThreadEmoji;
+  addMarkerSpacing = thread.addMarkerSpacing === true;
+  markerSpacingToggle.checked = addMarkerSpacing;
   applyPostInteractionSettings(thread.postInteraction || {});
   selectedPostLanguages = normalizePostLanguageTags(thread.postLanguages);
   localePreference = SUPPORTED_LOCALES.includes(thread.localePreference) || thread.localePreference === "auto"
@@ -2291,7 +2680,7 @@ async function importThreadFile(file) {
   languageSelect.value = localePreference;
   hashtags = normalizeHashtagEntries(thread.hashtags);
   selectedHashtags = normalizeSelectedHashtagEntries(thread.selectedHashtags, hashtags);
-  hashtagPlacement = thread.hashtagPlacement === "last" ? "last" : "first";
+  hashtagPlacement = normalizeHashtagPlacement(thread.hashtagPlacement);
   hashtagPlacementSelect.value = hashtagPlacement;
   const importedSegments = Array.isArray(thread.segments) ? thread.segments : [];
   segmentOverrides = normalizeSegmentOverrides(importedSegments.map((segment) => segment?.text || ""));
@@ -5001,7 +5390,7 @@ function buildComposedText(baseText) {
   const trimmedBase = baseText.trim();
   const selectedText = getSelectedHashtagText();
 
-  if (!selectedText) {
+  if (!selectedText || hashtagPlacement === "all-top" || hashtagPlacement === "all-bottom") {
     return trimmedBase;
   }
 
@@ -5090,9 +5479,13 @@ async function persistSettings() {
       tipsVisible,
       altTextRequired,
       themeMode,
+      sidebarCollapsedDesktop,
+      sidebarWidthDesktop,
+      composerWidthDesktop,
       postLanguages: getNormalizedPostLanguagesOrDefault(),
       appendThreadIntro,
       appendThreadEmoji,
+      addMarkerSpacing,
       postInteraction: getCurrentPostInteractionSettings(),
       hashtags,
       selectedHashtags,
@@ -5120,9 +5513,13 @@ function createSettingsBackupPayload() {
       tipsVisible,
       altTextRequired,
       themeMode,
+      sidebarCollapsedDesktop,
+      sidebarWidthDesktop,
+      composerWidthDesktop,
       postLanguages: getNormalizedPostLanguagesOrDefault(),
       appendThreadIntro,
       appendThreadEmoji,
+      addMarkerSpacing,
       postInteraction: getCurrentPostInteractionSettings(),
       savedAccounts: savedAccounts.map((account) => ({
         did: account.did || "",
@@ -5176,16 +5573,31 @@ async function importSettingsBackup(file) {
   hashtags = mergedHashtags;
   selectedHashtags = mergedSelectedHashtags;
   postingHistory = mergePostingHistoryEntries(postingHistory, imported.postingHistory);
-  hashtagPlacement = imported.hashtagPlacement === "last" ? "last" : "first";
+  hashtagPlacement = normalizeHashtagPlacement(imported.hashtagPlacement);
   hashtagPlacementSelect.value = hashtagPlacement;
   tipsVisible = imported.tipsVisible !== false;
   altTextRequired = imported.altTextRequired === true;
   themeMode = imported.themeMode === "dark" ? "dark" : "light";
+  sidebarCollapsedDesktop = imported.sidebarCollapsedDesktop === true;
+  sidebarWidthDesktop = clampDesktopWidth(
+    imported.sidebarWidthDesktop,
+    MIN_SIDEBAR_WIDTH_DESKTOP,
+    MAX_SIDEBAR_WIDTH_DESKTOP,
+    DEFAULT_SIDEBAR_WIDTH_DESKTOP,
+  );
+  composerWidthDesktop = clampDesktopWidth(
+    imported.composerWidthDesktop,
+    MIN_COMPOSER_WIDTH_DESKTOP,
+    MAX_COMPOSER_WIDTH_DESKTOP,
+    DEFAULT_COMPOSER_WIDTH_DESKTOP,
+  );
   selectedPostLanguages = normalizePostLanguageTags(imported.postLanguages);
   appendThreadIntro = imported.appendThreadIntro === true;
   threadIntroToggle.checked = appendThreadIntro;
   appendThreadEmoji = imported.appendThreadEmoji === true;
   threadEmojiToggle.checked = appendThreadEmoji;
+  addMarkerSpacing = imported.addMarkerSpacing === true;
+  markerSpacingToggle.checked = addMarkerSpacing;
   applyPostInteractionSettings(imported.postInteraction || {});
   localePreference = SUPPORTED_LOCALES.includes(imported.localePreference) || imported.localePreference === "auto"
     ? imported.localePreference
@@ -5193,6 +5605,8 @@ async function importSettingsBackup(file) {
   currentLocale = localePreference === "auto" ? detectBrowserLocale() : localePreference;
   languageSelect.value = localePreference;
   applyArchivePreferences(imported.archivePreferences || {});
+  applyDesktopLayoutState();
+  applySidebarState();
 
   if (Array.isArray(imported.savedAccounts) && imported.savedAccounts.length > 0) {
     const accountResult = await sendToServiceWorker("IMPORT_ACCOUNT_METADATA", { accounts: imported.savedAccounts });
@@ -5334,6 +5748,25 @@ async function verifySession(options = {}) {
     renderAccountSwitcher();
 
     if (!result.authenticated) {
+      const activeAccount = savedAccounts.find((entry) => entry.did && entry.did === authAccountDid) || null;
+      const accountLabel = activeAccount?.handle || activeAccount?.identifier || authAccount || "";
+      if (result.reason === "invalid_password" || result.reason === "missing_password") {
+        const message = result.reason === "invalid_password"
+          ? t("statusAccountPasswordRejected", { account: accountLabel })
+          : t("statusAccountNeedsLogin", { account: accountLabel });
+        applyDisconnectedState(false);
+        if (activeAccount) {
+          openLoginDialog({
+            account: activeAccount,
+            mode: "repair",
+            note: message,
+            tone: "error",
+          });
+        }
+        setStatus(message, "error");
+        return false;
+      }
+
       applyDisconnectedState(!silent);
       return false;
     }
@@ -5341,7 +5774,6 @@ async function verifySession(options = {}) {
     authAccount = result.handle || result.identifier || authAccount;
     authAccountDid = result.did || authAccountDid;
     authAccountService = result.service || authAccountService;
-    logoutButton.hidden = false;
 
     if (silent) {
       updateAuthButtons();
@@ -5364,7 +5796,17 @@ function startSessionChecks() {
   }, 5 * 60 * 1000);
 }
 
-function buildBlueskyPostUrl(handle, uri) {
+function resolvePostWebBase(serviceUrl = authAccountService) {
+  try {
+    const normalizedService = normalizeServiceUrl(serviceUrl);
+    const host = new URL(normalizedService).hostname.toLowerCase();
+    return POST_WEB_FRONTENDS[host] || DEFAULT_POST_WEB_APP;
+  } catch {
+    return DEFAULT_POST_WEB_APP;
+  }
+}
+
+function buildBlueskyPostUrl(handle, uri, serviceUrl = authAccountService) {
   const parts = String(uri || "").split("/");
   const recordId = parts[parts.length - 1];
 
@@ -5372,14 +5814,14 @@ function buildBlueskyPostUrl(handle, uri) {
     return "";
   }
 
-  return `https://bsky.app/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordId)}`;
+  return `${resolvePostWebBase(serviceUrl)}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordId)}`;
 }
 
 function showPublishResult(result) {
   const postCount = result.posts?.length || 0;
   const handle = result.handle || authAccount;
   const firstPost = result.posts?.[0];
-  const postUrl = buildBlueskyPostUrl(handle, firstPost?.uri);
+  const postUrl = buildBlueskyPostUrl(handle, firstPost?.uri, result.service || authAccountService);
 
   publishResultText.textContent = postCount > 1 ? t("publishResultMessageMany") : t("publishResultMessageOne");
   publishResultLink.href = postUrl || "#";
@@ -5473,7 +5915,8 @@ function renderHistoryList() {
 async function recordPublishedThread(result, preparedSegments) {
   const handle = result.handle || authAccount;
   const firstPost = result.posts?.[0];
-  const url = buildBlueskyPostUrl(handle, firstPost?.uri);
+  const service = result.service || authAccountService;
+  const url = buildBlueskyPostUrl(handle, firstPost?.uri, service);
   if (!url) {
     return;
   }
@@ -5484,6 +5927,7 @@ async function recordPublishedThread(result, preparedSegments) {
       url,
       createdAt: new Date().toISOString(),
       account: handle || authAccount || "",
+      service,
       threadCount: result.posts?.length || preparedSegments.length || 1,
       imageCount: preparedSegments.reduce((total, segment) => total + (segment.images?.length || 0), 0),
     },
@@ -5673,6 +6117,16 @@ function reserveForThreadIntro() {
   return `\n${getThreadIntroText()}`.length;
 }
 
+function reserveForRepeatedHashtags(selectedText, placementMode) {
+  if (!selectedText) {
+    return 0;
+  }
+
+  return placementMode === "all-bottom"
+    ? `\n\n${selectedText}`.length
+    : `\n${selectedText}`.length;
+}
+
 function splitByManualMarkers(text) {
   return String(text || "")
     .replace(/\r\n/g, "\n")
@@ -5690,28 +6144,43 @@ function splitChunksGreedy(chunks, limitFactory) {
   });
 }
 
-function decorateSegments(segments, withCounters, withThreadIntro, withThreadEmoji) {
+function decorateSegments(segments, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText) {
   return segments.map((segment, segmentIndex) => {
+    let content = segment;
     let suffix = "";
     const isLastSegment = segmentIndex === segments.length - 1;
+    const isThread = segments.length > 1;
+    const hasRepeatedHashtags = selectedHashtagText && (repeatedHashtagMode === "all-top" || repeatedHashtagMode === "all-bottom");
 
-    if (withThreadIntro && segmentIndex === 0) {
+    if (hasRepeatedHashtags && repeatedHashtagMode === "all-top") {
+      content = `${selectedHashtagText}\n${content}`;
+    }
+
+    if (hasRepeatedHashtags && repeatedHashtagMode === "all-bottom") {
+      content = `${content}\n\n${selectedHashtagText}`;
+    }
+
+    if (isThread && withThreadIntro && segmentIndex === 0) {
       suffix += `\n${getThreadIntroText()}`;
     }
 
-    if (withThreadEmoji && !isLastSegment) {
+    if (isThread && withThreadEmoji && !isLastSegment) {
       suffix += "\n⤵️";
     }
 
-    if (withCounters) {
+    if (isThread && withCounters) {
       suffix += `\n${segmentIndex + 1}/${segments.length}`;
     }
 
-    return `${segment}${suffix}`;
+    if (withMarkerSpacing && suffix) {
+      suffix = `\n${suffix}`;
+    }
+
+    return `${content}${suffix}`;
   });
 }
 
-function splitIntoSegments(text, withCounters, withThreadIntro, withThreadEmoji) {
+function splitIntoSegments(text, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText) {
   const manualChunks = splitByManualMarkers(text);
 
   if (manualChunks.length === 0) {
@@ -5719,12 +6188,17 @@ function splitIntoSegments(text, withCounters, withThreadIntro, withThreadEmoji)
   }
 
   const reserveForSuffix = (segmentIndex, segmentCount) => (
-    (withThreadIntro && segmentIndex === 0 ? reserveForThreadIntro() : 0)
-    + (withThreadEmoji && segmentIndex < segmentCount - 1 ? reserveForThreadEmoji() : 0)
-    + (withCounters ? reserveForCounters(segmentCount) : 0)
+    ((selectedHashtagText && (repeatedHashtagMode === "all-top" || repeatedHashtagMode === "all-bottom"))
+      ? reserveForRepeatedHashtags(selectedHashtagText, repeatedHashtagMode)
+      : 0)
+    + (segmentCount > 1 && withThreadIntro && segmentIndex === 0 ? reserveForThreadIntro() : 0)
+    + (segmentCount > 1 && withThreadEmoji && segmentIndex < segmentCount - 1 ? reserveForThreadEmoji() : 0)
+    + (segmentCount > 1 && withCounters ? reserveForCounters(segmentCount) : 0)
+    + ((segmentCount > 1) && (((withThreadIntro && segmentIndex === 0) || (withThreadEmoji && segmentIndex < segmentCount - 1) || withCounters)) && withMarkerSpacing ? 1 : 0)
   );
 
-  if (!withCounters && !withThreadIntro && !withThreadEmoji) {
+  if (!withCounters && !withThreadIntro && !withThreadEmoji
+    && !(selectedHashtagText && (repeatedHashtagMode === "all-top" || repeatedHashtagMode === "all-bottom"))) {
     return splitChunksGreedy(manualChunks, () => MAX_POST_LENGTH);
   }
 
@@ -5735,14 +6209,14 @@ function splitIntoSegments(text, withCounters, withThreadIntro, withThreadEmoji)
     const segments = splitChunksGreedy(manualChunks, (segmentIndex) => MAX_POST_LENGTH - reserveForSuffix(segmentIndex, guess));
 
     if (segments.length === guess) {
-      return decorateSegments(segments, withCounters, withThreadIntro, withThreadEmoji);
+      return decorateSegments(segments, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText);
     }
 
     guess = segments.length;
   }
 
   const fallbackSegments = splitChunksGreedy(manualChunks, (segmentIndex) => MAX_POST_LENGTH - reserveForSuffix(segmentIndex, guess));
-  return decorateSegments(fallbackSegments, withCounters, withThreadIntro, withThreadEmoji);
+  return decorateSegments(fallbackSegments, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText);
 }
 
 function normalizeInput(text) {
@@ -5839,14 +6313,23 @@ function renderSegmentImages(container, segmentIndex) {
     const preview = document.createElement("div");
     preview.className = "segment-image-preview";
     preview.title = image.alt || t("altTextMissing");
+    preview.setAttribute("role", "button");
+    preview.setAttribute("tabindex", "0");
+    preview.setAttribute("aria-label", t("editImageButton"));
     const canvas = document.createElement("canvas");
-    canvas.width = 220;
-    canvas.height = 150;
     preview.appendChild(canvas);
-    void renderImageToCanvas(image, canvas, {
-      width: canvas.width,
-      height: canvas.height,
-      fit: isImageUsingDefaultEdit(image) ? "contain" : "cover",
+    void renderPreviewCanvas(image, canvas, {
+      cssWidth: 320,
+      cssHeight: 206,
+    });
+    preview.addEventListener("click", () => {
+      void openImageEditorDialog(segmentIndex, imageIndex);
+    });
+    preview.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        void openImageEditorDialog(segmentIndex, imageIndex);
+      }
     });
 
     const meta = document.createElement("div");
@@ -5937,8 +6420,20 @@ function renderSegments(options = {}) {
   const useCounters = counterToggle.checked;
   appendThreadIntro = threadIntroToggle.checked;
   appendThreadEmoji = threadEmojiToggle.checked;
+  addMarkerSpacing = markerSpacingToggle.checked;
   currentComposedText = buildComposedText(text);
-  const generatedSegments = currentComposedText.trim() ? splitIntoSegments(currentComposedText, useCounters, appendThreadIntro, appendThreadEmoji) : [];
+  const selectedHashtagText = getSelectedHashtagText();
+  const generatedSegments = currentComposedText.trim()
+    ? splitIntoSegments(
+      currentComposedText,
+      useCounters,
+      appendThreadIntro,
+      appendThreadEmoji,
+      addMarkerSpacing,
+      hashtagPlacement,
+      selectedHashtagText,
+    )
+    : [];
   activeSegments = preserveOverrides ? (normalizeSegmentOverrides(segmentOverrides) || generatedSegments) : generatedSegments;
   segmentOverrides = preserveOverrides ? normalizeSegmentOverrides(activeSegments) : null;
   syncSegmentImages(activeSegments.length);
@@ -6019,14 +6514,28 @@ async function hydrateAppState() {
     tipsVisible = state.tipsVisible !== false;
     altTextRequired = state.altTextRequired !== false;
     themeMode = state.themeMode === "dark" ? "dark" : "light";
+    sidebarCollapsedDesktop = state.sidebarCollapsedDesktop === true;
+    sidebarWidthDesktop = clampDesktopWidth(
+      state.sidebarWidthDesktop,
+      MIN_SIDEBAR_WIDTH_DESKTOP,
+      MAX_SIDEBAR_WIDTH_DESKTOP,
+      DEFAULT_SIDEBAR_WIDTH_DESKTOP,
+    );
+    composerWidthDesktop = clampDesktopWidth(
+      state.composerWidthDesktop,
+      MIN_COMPOSER_WIDTH_DESKTOP,
+      MAX_COMPOSER_WIDTH_DESKTOP,
+      DEFAULT_COMPOSER_WIDTH_DESKTOP,
+    );
     hashtags = normalizeHashtagEntries(state.hashtags);
     selectedHashtags = normalizeSelectedHashtagEntries(state.selectedHashtags, hashtags);
-    hashtagPlacement = state.hashtagPlacement === "last" ? "last" : "first";
+    hashtagPlacement = normalizeHashtagPlacement(state.hashtagPlacement);
     segmentImages = normalizeSegmentImages(state.segmentImages);
     segmentOverrides = normalizeSegmentOverrides(state.segmentOverrides);
     selectedPostLanguages = normalizePostLanguageTags(state.postLanguages);
     appendThreadIntro = state.appendThreadIntro === true;
     appendThreadEmoji = state.appendThreadEmoji === true;
+    addMarkerSpacing = state.addMarkerSpacing === true;
     applyPostInteractionSettings(state.postInteraction || {});
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
@@ -6042,13 +6551,15 @@ async function hydrateAppState() {
     authAccountDid = state.did || "";
     authAccountService = state.service || LOGIN_SERVICE_PRESETS["bsky.social"];
     passwordField.value = "";
-    logoutButton.hidden = !state.authenticated;
     applyLoginServiceSelection(authAccountService);
     hashtagPlacementSelect.value = hashtagPlacement;
     threadIntroToggle.checked = appendThreadIntro;
     threadEmojiToggle.checked = appendThreadEmoji;
+    markerSpacingToggle.checked = addMarkerSpacing;
     applyArchivePreferences(state.archivePreferences || {});
     syncArchiveTransientNoticeFromCatalog();
+    applyDesktopLayoutState();
+    applySidebarState();
     applyTranslations();
     if (segmentImages.some((images) => (images || []).length > 0)) {
       scheduleImageValidation();
@@ -6083,11 +6594,31 @@ async function persistLocale(locale) {
   await persistSettings();
 }
 
+addAccountButton.addEventListener("click", () => {
+  openLoginDialog({
+    mode: "add",
+    service: authAccountService || LOGIN_SERVICE_PRESETS["bsky.social"],
+  });
+});
+
+loginDialogCloseTop.addEventListener("click", () => {
+  closeLoginDialog();
+});
+
+loginDialogCancelButton.addEventListener("click", () => {
+  closeLoginDialog();
+});
+
+loginDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeLoginDialog();
+});
+
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   try {
-    setBusy(loginButton, true, t("loginBusy"), authAccount ? t("addAccountButton") : t("loginButton"));
+    setBusy(loginButton, true, t("loginBusy"), t("loginButton"));
     const identifier = identifierField.value.trim();
     const appPassword = passwordField.value.trim();
     const service = getSelectedLoginService();
@@ -6099,40 +6630,24 @@ loginForm.addEventListener("submit", async (event) => {
     });
 
     passwordField.value = "";
-    logoutButton.hidden = false;
     authAccount = result.handle || result.identifier;
     authAccountDid = result.did || "";
     authAccountService = result.service || service;
     savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
     identifierField.value = result.identifier || identifier;
     applyLoginServiceSelection(authAccountService);
+    closeLoginDialog();
     updateStatusForAuth();
   } catch (error) {
-    console.error(error);
-    setStatus(error.message, "error");
+    const message = localizeLoginErrorMessage(error);
+    const isExpectedLoginError = message !== (error?.message || "");
+    if (!isExpectedLoginError) {
+      console.error(error);
+    }
+    setLoginDialogNote(message, "error");
+    setStatus(message, "error");
   } finally {
-    setBusy(loginButton, false, t("loginBusy"), authAccount ? t("addAccountButton") : t("loginButton"));
-  }
-});
-
-logoutButton.addEventListener("click", async () => {
-  try {
-    const result = await sendToServiceWorker("LOGOUT");
-    await clearArchiveSession().catch(() => {});
-    savedAccounts = Array.isArray(result.accounts) ? result.accounts : [];
-    authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
-    authAccountDid = result.authenticated ? (result.did || "") : "";
-    authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
-    logoutButton.hidden = !result.authenticated;
-    identifierField.value = result.identifier || "";
-    applyLoginServiceSelection(authAccountService);
-    updateStatusForAuth();
-    setStatus(result.authenticated
-      ? t("statusConnected", { account: result.handle || result.identifier || "" })
-      : t("statusLoggedOut"));
-  } catch (error) {
-    console.error(error);
-    setStatus(error.message, "error");
+    setBusy(loginButton, false, t("loginBusy"), t("loginButton"));
   }
 });
 
@@ -6280,6 +6795,15 @@ threadEmojiToggle.addEventListener("change", () => {
   void persistSettings();
   queueDraftSave();
 });
+markerSpacingToggle.addEventListener("change", () => {
+  addMarkerSpacing = markerSpacingToggle.checked;
+  segmentOverrides = null;
+  setComposerLocked(false);
+  renderSegments({ preserveOverrides: false });
+  renderPostLanguageSummary();
+  void persistSettings();
+  queueDraftSave();
+});
 replyModeInputs.forEach((input) => {
   input.addEventListener("change", async () => {
     if (!input.checked) {
@@ -6310,6 +6834,23 @@ quotePostsToggle.addEventListener("change", async () => {
   quotePostsAllowed = quotePostsToggle.checked;
   renderPostLanguageSummary();
   await persistSettings();
+});
+sidebarToggleButton.addEventListener("click", async () => {
+  sidebarCollapsedDesktop = !sidebarCollapsedDesktop;
+  applySidebarState();
+  await persistSettings();
+});
+sidebarResizeHandle.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  startDesktopColumnResize("sidebar");
+});
+composerResizeHandle.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  startDesktopColumnResize("composer");
+});
+DESKTOP_LAYOUT_MEDIA.addEventListener("change", () => {
+  applyDesktopLayoutState();
+  applySidebarState();
 });
 
 serverPresetField.addEventListener("change", () => {
@@ -6711,7 +7252,7 @@ hashtagForm.addEventListener("submit", async (event) => {
 });
 
 hashtagPlacementSelect.addEventListener("change", async () => {
-  hashtagPlacement = hashtagPlacementSelect.value === "last" ? "last" : "first";
+  hashtagPlacement = normalizeHashtagPlacement(hashtagPlacementSelect.value);
   segmentOverrides = null;
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
@@ -6819,7 +7360,15 @@ imageZoomInput.addEventListener("input", () => {
   if (!imageEditorDraft) {
     return;
   }
-  imageEditorDraft.zoom = Number(imageZoomInput.value) || 1;
+  const image = getEditedImage();
+  if (!image) {
+    return;
+  }
+  imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+    ...imageEditorDraft,
+    fitMode: "cover",
+    zoom: Number(imageZoomInput.value) || 1,
+  }, "cover");
   drawImageEditor();
 });
 imageFlipHorizontalButton.addEventListener("click", () => {
@@ -6841,6 +7390,13 @@ imageRotateLeftButton.addEventListener("click", () => {
     return;
   }
   imageEditorDraft.rotation = (imageEditorDraft.rotation + 270) % 360;
+  const image = getEditedImage();
+  if (image) {
+    imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+      ...imageEditorDraft,
+      fitMode: "cover",
+    }, "cover");
+  }
   drawImageEditor();
 });
 imageResetButton.addEventListener("click", () => {
@@ -6879,6 +7435,25 @@ imageEditorCanvas.addEventListener("pointerup", () => {
 imageEditorCanvas.addEventListener("pointercancel", () => {
   stopImageEditorDrag();
 });
+imageEditorCanvas.addEventListener("wheel", (event) => {
+  if (!imageEditorDraft) {
+    return;
+  }
+  const image = getEditedImage();
+  if (!image) {
+    return;
+  }
+  event.preventDefault();
+  const delta = -event.deltaY;
+  const factor = 1 + delta * 0.0015;
+  imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+    ...imageEditorDraft,
+    fitMode: "cover",
+    zoom: (imageEditorDraft.zoom || 1) * factor,
+  }, "cover");
+  imageZoomInput.value = String(imageEditorDraft.zoom);
+  drawImageEditor();
+}, { passive: false });
 
 confirmDialogConfirmButton.addEventListener("click", () => {
   resolveConfirmDialog(true);

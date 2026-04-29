@@ -1,4 +1,4 @@
-const APP_VERSION = "v70";
+const APP_VERSION = "v83";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -27,6 +27,12 @@ const ARCHIVE_SESSION_KEY = "archive-session";
 const ARCHIVE_CATALOG_KEY = "archive-catalog";
 const API_BASE = "https://bsky.social/xrpc";
 const DEFAULT_LOGIN_SERVICE = "https://bsky.social";
+const DEFAULT_POST_WEB_APP = "https://bsky.app";
+const POST_WEB_FRONTENDS = {
+  "bsky.social": DEFAULT_POST_WEB_APP,
+  "eurosky.social": DEFAULT_POST_WEB_APP,
+  "bsky.app": DEFAULT_POST_WEB_APP,
+};
 const archiveRunControls = new Map();
 
 function normalizePostLanguageTags(tags, max = 3) {
@@ -585,6 +591,23 @@ function xrpcBaseForService(service) {
   return `${normalizeServiceUrl(service)}/xrpc`;
 }
 
+function resolvePostWebBase(serviceUrl = DEFAULT_LOGIN_SERVICE) {
+  try {
+    const host = new URL(normalizeServiceUrl(serviceUrl)).hostname.toLowerCase();
+    return POST_WEB_FRONTENDS[host] || DEFAULT_POST_WEB_APP;
+  } catch {
+    return DEFAULT_POST_WEB_APP;
+  }
+}
+
+function buildPostWebUrl(handle, recordKey, serviceUrl = DEFAULT_LOGIN_SERVICE) {
+  if (!handle || !recordKey) {
+    return "";
+  }
+
+  return `${resolvePostWebBase(serviceUrl)}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordKey)}`;
+}
+
 function normalizeAuthAccount(entry = {}) {
   const did = entry.session?.did || entry.did || "";
   const handle = entry.session?.handle || entry.handle || entry.identifier || "";
@@ -963,13 +986,23 @@ async function getAppState({ browserLocale } = {}) {
     tipsVisible: storedSettings?.tipsVisible !== false,
     altTextRequired: storedSettings?.altTextRequired !== false,
     themeMode: storedSettings?.themeMode === "dark" ? "dark" : "light",
+    sidebarCollapsedDesktop: storedSettings?.sidebarCollapsedDesktop === true,
+    sidebarWidthDesktop: Number.isFinite(Number(storedSettings?.sidebarWidthDesktop))
+      ? Number(storedSettings.sidebarWidthDesktop)
+      : null,
+    composerWidthDesktop: Number.isFinite(Number(storedSettings?.composerWidthDesktop))
+      ? Number(storedSettings.composerWidthDesktop)
+      : null,
     postLanguages: normalizePostLanguageTags(storedSettings?.postLanguages),
     appendThreadIntro: storedSettings?.appendThreadIntro === true,
     appendThreadEmoji: storedSettings?.appendThreadEmoji === true,
+    addMarkerSpacing: storedSettings?.addMarkerSpacing === true,
     postInteraction: normalizePostInteractionSettings(storedSettings?.postInteraction),
     hashtags,
     selectedHashtags,
-    hashtagPlacement: storedSettings?.hashtagPlacement === "last" ? "last" : "first",
+    hashtagPlacement: ["first", "last", "all-top", "all-bottom"].includes(storedSettings?.hashtagPlacement)
+      ? storedSettings.hashtagPlacement
+      : "first",
     segmentImages: normalizeSegmentImages(storedSettings?.segmentImages || draft?.segmentImages),
     segmentOverrides: normalizeSegmentOverrides(draft?.segmentOverrides),
     postingHistory: normalizePostingHistory(storedSettings?.postingHistory),
@@ -1005,15 +1038,25 @@ async function saveSettings(settings = {}) {
     themeMode: settings.themeMode === "dark"
       ? "dark"
       : (settings.themeMode === "light" ? "light" : (existing.themeMode === "dark" ? "dark" : "light")),
+    sidebarCollapsedDesktop: settings.sidebarCollapsedDesktop === true,
+    sidebarWidthDesktop: Number.isFinite(Number(settings.sidebarWidthDesktop))
+      ? Number(settings.sidebarWidthDesktop)
+      : (Number.isFinite(Number(existing.sidebarWidthDesktop)) ? Number(existing.sidebarWidthDesktop) : null),
+    composerWidthDesktop: Number.isFinite(Number(settings.composerWidthDesktop))
+      ? Number(settings.composerWidthDesktop)
+      : (Number.isFinite(Number(existing.composerWidthDesktop)) ? Number(existing.composerWidthDesktop) : null),
     postLanguages: Array.isArray(settings.postLanguages)
       ? normalizePostLanguageTags(settings.postLanguages)
       : normalizePostLanguageTags(existing.postLanguages),
     appendThreadIntro: settings.appendThreadIntro === true,
     appendThreadEmoji: settings.appendThreadEmoji === true,
+    addMarkerSpacing: settings.addMarkerSpacing === true,
     postInteraction: normalizePostInteractionSettings(settings.postInteraction || existing.postInteraction),
     hashtags,
     selectedHashtags,
-    hashtagPlacement: settings.hashtagPlacement === "last" ? "last" : (existing.hashtagPlacement === "last" ? "last" : "first"),
+    hashtagPlacement: ["first", "last", "all-top", "all-bottom"].includes(settings.hashtagPlacement)
+      ? settings.hashtagPlacement
+      : (["first", "last", "all-top", "all-bottom"].includes(existing.hashtagPlacement) ? existing.hashtagPlacement : "first"),
     segmentImages: Array.isArray(settings.segmentImages)
       ? normalizeSegmentImages(settings.segmentImages)
       : normalizeSegmentImages(existing.segmentImages),
@@ -1088,9 +1131,19 @@ async function switchAccount({ did } = {}) {
     refreshedState.activeDid = verified.did || did;
     const storedState = await writeStoredAuth(refreshedState);
     return buildAuthResponse(storedState, storedState.accounts.find((entry) => entry.did === (verified.did || did)));
-  } catch {
+  } catch (error) {
+    const normalized = String(error?.message || "").toLowerCase();
+    const reason = !account.appPassword
+      ? "missing_password"
+      : (normalized.includes("invalid identifier or password")
+        || normalized.includes("invalid login credentials")
+        || normalized.includes("bluesky-fehler: 401")
+        || normalized.includes("bluesky error: 401")
+        ? "invalid_password"
+        : "signed_out");
     return {
       authenticated: false,
+      reason,
       did: account.did || "",
       identifier: account.identifier || "",
       handle: account.handle || "",
@@ -1151,10 +1204,11 @@ async function removeAccount({ did } = {}) {
   return buildAuthResponse(nextState, activeAccount);
 }
 
-async function logout() {
+async function logout({ did } = {}) {
   const state = await readStoredAuth();
+  const targetDid = did || state.activeDid;
   const nextAccounts = state.accounts.map((entry) => {
-    if (!(state.activeDid && entry.did === state.activeDid)) {
+    if (!(targetDid && entry.did === targetDid)) {
       return entry;
     }
 
@@ -1164,13 +1218,15 @@ async function logout() {
       updatedAt: new Date().toISOString(),
     };
   });
-  const nextActiveAccount = nextAccounts.find((entry) => entry.did !== state.activeDid && entry.session?.did) || null;
+  const nextActiveAccount = nextAccounts.find((entry) => entry.did !== targetDid && entry.session?.did) || null;
   await writeStoredAuth({
-    activeDid: nextActiveAccount?.did || "",
+    activeDid: state.activeDid === targetDid ? (nextActiveAccount?.did || "") : state.activeDid,
     accounts: nextAccounts,
   });
-  await clearArchiveSession();
-  await clearArchiveCatalog();
+  if (state.activeDid === targetDid) {
+    await clearArchiveSession();
+    await clearArchiveCatalog();
+  }
   const nextState = await readStoredAuth();
   const nextActive = nextState.accounts.find((entry) => entry.did && entry.did === nextState.activeDid) || null;
   return buildAuthResponse(nextState, nextActive);
@@ -1181,9 +1237,20 @@ async function verifySession() {
     const auth = await ensureSession();
     const state = await readStoredAuth();
     return buildAuthResponse(state, auth);
-  } catch {
+  } catch (error) {
     const state = await readStoredAuth().catch(() => ({ activeDid: "", accounts: [] }));
-    return buildAuthResponse({ ...state, activeDid: "" }, null);
+    const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid) || null;
+    const normalized = String(error?.message || "").toLowerCase();
+    const result = buildAuthResponse({ ...state, activeDid: "" }, null);
+    result.reason = !activeAccount?.appPassword
+      ? "missing_password"
+      : (normalized.includes("invalid identifier or password")
+        || normalized.includes("invalid login credentials")
+        || normalized.includes("bluesky-fehler: 401")
+        || normalized.includes("bluesky error: 401")
+        ? "invalid_password"
+        : "signed_out");
+    return result;
   }
 }
 
@@ -1387,7 +1454,7 @@ function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", auth
       quoteCount: 0,
     },
     permalink: parsed.rkey
-      ? `https://bsky.app/profile/${authorHandle || authorDid || "unknown"}/post/${parsed.rkey}`
+      ? buildPostWebUrl(authorHandle || authorDid || "unknown", parsed.rkey)
       : "",
     authorHandle,
     authorDisplayName,
@@ -2012,5 +2079,6 @@ async function publishThread({ segments, langs, postInteraction }, notifyProgres
   return {
     posts,
     handle: auth.session.handle,
+    service: auth.service || DEFAULT_LOGIN_SERVICE,
   };
 }

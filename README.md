@@ -23,14 +23,16 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 
 ## Feature Set
 
-- Bluesky sign-in with app password
+- Bluesky sign-in with app password through a compact `Add account` dialog
 - Presets for `bsky.social`, `eurosky.social`, and custom PDS servers
 - Multiple saved logins with quick account switching
+- Accounts stay visible after sign-out and can be signed in again or removed via icon actions
 - Local session renewal without a custom backend
 - Multilingual UI: German, English, French
 - Automatic browser-language detection with English fallback
 - Manual language selection in settings, including `Automatic`
 - Installable PWA with service worker, offline app shell, and install button
+- On mobile devices, the left column can be collapsed and expanded with a compact toggle
 - In-app help dialog based on the README
 - Update detection via `version.json`, including manual update checks
 - Status area and recent posting history
@@ -41,12 +43,24 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Automatic splitting into thread segments once the text exceeds 300 characters
 - Splits try to break on word boundaries
 - Existing line breaks are preserved as well as possible
+- `Post settings` as a dedicated UI popup for markers, languages, and interaction rules
+- Up to 3 post languages can be selected; the default is the current app language
 - Optional `1/x` counters, always appended on their own line
+- Optional `A thread 🧵` hint at the end of the first segment
 - Optional thread emoji `⤵️` for every segment except the last one, inserted before an active counter
+- Optionally a blank line can be inserted before those markers
+- These markers only appear when the text actually becomes a multi-segment thread
 - Manual hard split marker with `%%`
 - Thread segments can be edited after splitting
 - As soon as a segment is edited manually, the composer is locked to prevent accidental overwrites
 - `Ignore change` only unlocks the composer; it does not rerender the existing thread preview
+
+## Post Interactions
+
+- `Post settings` can control who is allowed to reply
+- Supported modes are `Everyone`, `Nobody`, or a selection of `Followers`, `People you follow`, and `People you mention`
+- You can also control whether quotes of the post are allowed
+- These settings persist across reloads and are sent to Bluesky during publishing
 
 ## Hashtag Manager
 
@@ -55,7 +69,8 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Displayed as a clickable word cloud
 - Individual hashtags can be selected, edited, or deleted
 - Editing happens in a UI popup
-- Selected hashtags are inserted together into the first or last thread segment
+- Selected hashtags are inserted together into the first segment, the last segment, or every segment
+- For `every segment`, there are separate top and bottom placement modes
 - Hashtags are posted as Bluesky rich-text facets so they become clickable
 
 ## Images Per Thread Segment
@@ -72,9 +87,12 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - horizontal flip
 - vertical flip
 - rotating 90 degrees to the left
+- Clicking the image preview also opens the image editor
+- On desktop, the image editor is intentionally larger, and zooming also works with the mouse wheel
 - If an image is too large for Bluesky, it is highlighted and posting is blocked
 - The editor then offers the hint `Zoom in and define a crop` plus `Reduce size (lossy)`
 - Both the original file size and the export size for Bluesky are shown
+- The ALT-text dialog also shows a small preview of the actual crop that will be posted
 
 ## Inclusion And ALT Texts
 
@@ -97,6 +115,7 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 ### Save And Load Thread Files
 
 - A complete thread can be saved as a file
+- When supported, this uses a compressed `*.threadline.gz`; otherwise it falls back to plain JSON
 - The saved thread includes:
 - source text
 - current thread segments
@@ -168,9 +187,11 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Images are uploaded together with their assigned segment
 - Threadline now enforces the current Bluesky image limit of `2,000,000` bytes and `4000 x 4000` pixels per image
 - Oversized images are highlighted in the composer and must be reduced in the image editor before publishing
+- Before publishing, there is a safety confirmation showing the currently selected account
 - After a successful publish, a dialog shows a link to the created post
 - Progress and errors are shown in UI popups
 - Hashtags, mentions, and links are posted as rich-text facets so they become clickable in Bluesky
+- Selected post languages and interaction settings are also sent with the publish request
 
 ## Why There Are No Link Cards
 
@@ -188,6 +209,7 @@ The blocker is cross-origin access in the browser. To read Open Graph data from 
 - Clicking it opens a list with:
 - timestamp
 - Bluesky URL
+- account used for publishing
 - number of thread posts
 - number of attached images
 - Individual history entries can be deleted
@@ -241,7 +263,7 @@ Threadline is a PWA and can be installed on mobile and desktop devices.
 3. Choose `Add to Home Screen`.
 4. Confirm with `Add`.
 
-Note: on iOS the installation cannot be triggered automatically. The app includes an install button that shows the required Safari steps.
+Note: on iOS the installation cannot be triggered automatically. The app includes an install button that shows the required Safari steps. The left sidebar can also be collapsed on mobile to save space.
 
 #### Android (Chrome or Edge)
 

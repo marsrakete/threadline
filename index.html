@@ -31,6 +31,16 @@
             <p class="eyebrow" data-i18n="brandEyebrow">Bluesky AT Proto</p>
             <h1>Threadline</h1>
           </div>
+          <button
+            type="button"
+            id="sidebar-toggle-button"
+            class="ghost-button sidebar-toggle-button"
+            aria-expanded="true"
+            aria-label="Spalte einklappen"
+            title="Spalte einklappen"
+          >
+            <span id="sidebar-toggle-glyph" class="sidebar-toggle-glyph" aria-hidden="true">◀</span>
+          </button>
         </div>
 
         <p class="intro" data-i18n="intro">
@@ -43,42 +53,18 @@
           <button type="button" class="ghost-button" id="install-button" data-i18n="installButton" hidden>App installieren</button>
         </div>
 
-        <form id="login-form" class="login-form">
-          <label>
-            <span data-i18n="serverPresetLabel">Anmeldeserver</span>
-            <select id="server-preset" name="server-preset">
-              <option value="bsky.social" data-i18n="serviceBluesky">Bluesky</option>
-              <option value="eurosky.social" data-i18n="serviceEurosky">Eurosky</option>
-              <option value="custom" data-i18n="serviceCustom">Eigener Server</option>
-            </select>
-          </label>
-
-          <label id="custom-server-wrap" hidden>
-            <span data-i18n="customServerLabel">Eigener Server</span>
-            <input id="custom-server" name="custom-server" type="url" placeholder="https://example.com" inputmode="url">
-          </label>
-
-          <label>
-            <span data-i18n="identifierLabel">Handle oder E-Mail</span>
-            <input id="identifier" name="identifier" type="text" placeholder="z. B. name.bsky.social" autocomplete="username" required>
-          </label>
-
-          <label>
-            <span data-i18n="passwordLabel">App-Passwort</span>
-            <input id="password" name="password" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password" required>
-            <small class="field-hint" data-i18n="passwordHint">Nicht das Bsky-Passwort!</small>
-          </label>
-
-          <div class="login-actions">
-            <button type="submit" id="login-button" data-i18n="loginButton">Verbinden</button>
-            <button type="button" class="ghost-button danger-button" id="logout-button" data-i18n="logoutButton" hidden>Abmelden</button>
+        <div class="login-form account-hub-panel">
+          <div class="section-heading compact-panel-heading">
+            <div>
+              <p class="eyebrow" data-i18n="accountsEyebrow">Konten</p>
+              <p class="account-hub-note" data-i18n="accountsPanelNote">Konten bleiben gespeichert und koennen bei Bedarf wieder verbunden werden.</p>
+            </div>
+            <button type="button" id="add-account-button" class="ghost-button" data-i18n="addAccountButton">Konto hinzufügen</button>
           </div>
-
           <div id="account-switcher-panel" class="account-switcher-panel" hidden>
-            <p class="eyebrow" data-i18n="accountsEyebrow">Konten</p>
             <div id="account-switcher-list" class="account-switcher-list"></div>
           </div>
-        </form>
+        </div>
 
         <div class="status-panel">
           <p class="eyebrow" data-i18n="statusEyebrow">Status</p>
@@ -119,6 +105,14 @@
           </div>
         </div>
       </aside>
+
+      <div
+        id="sidebar-resize-handle"
+        class="column-resize-handle sidebar-resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Breite der linken Spalte anpassen"
+      ></div>
 
       <main class="workspace">
         <div id="composer-workspace" class="workspace-view workspace-view-active">
@@ -185,12 +179,22 @@
                 <select id="hashtag-placement-select">
                   <option value="first">Im ersten Abschnitt</option>
                   <option value="last">Im letzten Abschnitt</option>
+                  <option value="all-top">In jedem Abschnitt oben</option>
+                  <option value="all-bottom">In jedem Abschnitt unten</option>
                 </select>
               </label>
               <div id="hashtag-cloud" class="hashtag-cloud"></div>
               <p id="hashtag-selection-note" class="tips-text"></p>
             </section>
           </div>
+
+          <div
+            id="composer-resize-handle"
+            class="column-resize-handle composer-resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Breite des Composers anpassen"
+          ></div>
 
           <section class="segments-pane" id="segments-pane" hidden>
             <div class="section-heading">
@@ -470,6 +474,50 @@
       </form>
     </dialog>
 
+    <dialog id="login-dialog" class="settings-dialog">
+      <form id="login-form" class="settings-sheet login-dialog-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="accountsEyebrow">Konten</p>
+            <h2 data-i18n="loginDialogTitle">Konto verbinden</h2>
+          </div>
+          <button type="button" id="login-dialog-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <p id="login-dialog-note" class="settings-note" hidden></p>
+
+        <label>
+          <span data-i18n="serverPresetLabel">Anmeldeserver</span>
+          <select id="server-preset" name="server-preset">
+            <option value="bsky.social" data-i18n="serviceBluesky">Bluesky</option>
+            <option value="eurosky.social" data-i18n="serviceEurosky">Eurosky</option>
+            <option value="custom" data-i18n="serviceCustom">Eigener Server</option>
+          </select>
+        </label>
+
+        <label id="custom-server-wrap" hidden>
+          <span data-i18n="customServerLabel">Eigener Server</span>
+          <input id="custom-server" name="custom-server" type="url" placeholder="https://example.com" inputmode="url">
+        </label>
+
+        <label>
+          <span data-i18n="identifierLabel">Handle oder E-Mail</span>
+          <input id="identifier" name="identifier" type="text" placeholder="z. B. name.bsky.social" autocomplete="username" required>
+        </label>
+
+        <label>
+          <span data-i18n="passwordLabel">App-Passwort</span>
+          <input id="password" name="password" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password" required>
+          <small class="field-hint" data-i18n="passwordHint">Nicht das Bsky-Passwort!</small>
+        </label>
+
+        <div class="login-actions">
+          <button type="submit" id="login-button" data-i18n="loginButton">Verbinden</button>
+          <button type="button" id="login-dialog-cancel-button" class="ghost-button" data-i18n="cancelButton">Abbrechen</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="publish-result-dialog" class="settings-dialog">
       <form method="dialog" class="settings-sheet">
         <div class="section-heading settings-heading">
@@ -592,6 +640,11 @@
             <input id="thread-emoji-toggle" type="checkbox">
             <span data-i18n="threadEmojiToggle">Thread-Emoji anhängen</span>
           </label>
+
+          <label class="toggle">
+            <input id="marker-spacing-toggle" type="checkbox">
+            <span data-i18n="markerSpacingToggle">Vor den Zählern Leerzeile einfügen</span>
+          </label>
         </div>
 
         <details id="post-interaction-disclosure" class="settings-block post-settings-disclosure">
@@ -707,6 +760,11 @@
           <button type="button" id="alt-text-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
 
+        <div id="alt-text-preview-wrap" class="alt-text-preview-wrap" hidden>
+          <p class="alt-text-preview-label" data-i18n="altPreviewLabel">Bildvorschau</p>
+          <canvas id="alt-text-preview-canvas" class="alt-text-preview-canvas" aria-label="Bildvorschau"></canvas>
+        </div>
+
         <label for="alt-text-input">
           <span data-i18n="altTextLabel">ALT-Text</span>
           <textarea id="alt-text-input" rows="8" maxlength="1000"></textarea>
@@ -734,7 +792,7 @@
         </div>
 
         <div class="image-editor-stage">
-          <canvas id="image-editor-canvas" width="560" height="360"></canvas>
+          <canvas id="image-editor-canvas" width="980" height="630"></canvas>
         </div>
 
         <label class="zoom-field" for="image-zoom-input">

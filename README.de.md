@@ -23,14 +23,16 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 
 ## Funktionsumfang
 
-- Bluesky-Anmeldung mit App-Passwort
+- Bluesky-Anmeldung mit App-Passwort über einen kompakten `Konto hinzufügen`-Dialog
 - Presets für `bsky.social`, `eurosky.social` und eigene PDS-Server
 - Mehrere gespeicherte Logins mit schnellem Kontowechsel
+- Konten bleiben nach dem Abmelden sichtbar und können per Icon wieder angemeldet oder entfernt werden
 - Lokale Session-Erneuerung ohne eigenes Backend
 - Mehrsprachige Oberfläche: Deutsch, Englisch, Französisch
 - Automatische Sprachwahl anhand der Browser-Sprache mit Fallback auf Englisch
 - Manuelle Sprachwahl in den Einstellungen, inklusive `Automatisch`
 - Installierbare PWA mit Service Worker, Offline-App-Hülle und Install-Button
+- Auf mobilen Geräten lässt sich die linke Spalte über einen Aufklapper ein- und ausblenden
 - Hilfe-Dialog direkt aus dem README in der App
 - Update-Erkennung über `version.json` mit manueller Prüfung in den Einstellungen
 - Statusanzeige und Historie der letzten Postings
@@ -41,12 +43,24 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Automatisches Aufteilen in Thread-Abschnitte ab mehr als 300 Zeichen
 - Umbruch möglichst an Wortgrenzen
 - Vorhandene Zeilenumbrüche werden berücksichtigt
+- `Post-Einstellungen` als eigenes UI-Popup für Marker, Sprachen und Interaktionsregeln
+- Bis zu 3 Post-Sprachen auswählbar; Standard ist die aktuelle App-Sprache
 - Optionaler Zähler `1/x`, immer in einer eigenen Schlusszeile pro Abschnitt
+- Optionaler Hinweis `Ein Thread 🧵` am Ende des ersten Abschnitts
 - Optionales Thread-Emoji `⤵️` für alle Abschnitte außer dem letzten, vor einem aktiven Zähler
+- Optional kann vor diesen Markern eine Leerzeile eingefügt werden
+- Diese Marker erscheinen nur dann, wenn wirklich mehr als ein Thread-Abschnitt entsteht
 - Manueller harter Abschnittswechsel mit `%%`
 - Die Thread-Abschnitte dürfen nachträglich bearbeitet werden
 - Sobald ein Abschnitt manuell verändert wurde, wird der Composer gesperrt, damit die Bearbeitung nicht versehentlich überschrieben wird
 - Mit `Änderung ignorieren` wird nur der Composer wieder freigegeben; die vorhandene Thread-Anzeige bleibt dabei unverändert
+
+## Post-Interaktionen
+
+- In `Post-Einstellungen` lässt sich festlegen, wer antworten darf
+- Unterstützt werden `Jeder`, `Niemand` oder eine Auswahl aus `Follower`, `Personen, denen du folgst` und `Personen, die du erwähnst`
+- Zusätzlich kann gesteuert werden, ob Zitate des Posts erlaubt sind
+- Diese Einstellungen werden reload-sicher gespeichert und beim Posten an Bluesky übergeben
 
 ## Hashtag-Verwalter
 
@@ -55,7 +69,8 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Darstellung als klickbare Word-Cloud
 - Einzelne Hashtags können ausgewählt, bearbeitet oder gelöscht werden
 - Bearbeiten erfolgt über ein UI-Popup
-- Ausgewählte Hashtags werden automatisch gesammelt im ersten oder letzten Thread-Abschnitt eingefügt
+- Ausgewählte Hashtags werden automatisch gesammelt im ersten, letzten oder in jedem Thread-Abschnitt eingefügt
+- Für `in jedem Abschnitt` gibt es Varianten oben und unten
 - Beim Posten werden Hashtags als Bluesky-Rich-Text-Facets übertragen, damit sie anklickbar sind
 
 ## Bilder Pro Thread-Abschnitt
@@ -72,9 +87,12 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - horizontal spiegeln
 - vertikal spiegeln
 - um 90° nach links drehen
+- Ein Klick auf die Bildvorschau öffnet ebenfalls den Bild-Editor
+- Auf dem Desktop ist der Bild-Editor bewusst größer ausgelegt, und Zoomen funktioniert dort auch per Mausrad
 - Wenn ein Bild für Bluesky zu groß ist, wird es markiert und das Posting blockiert
 - Im Editor gibt es dann den Hinweis `Reinzoomen und Ausschnitt festlegen` sowie `Verkleinern (Verlustbehaftet)`
 - Angezeigt werden sowohl die Originalgröße als auch die Exportgröße für Bluesky
+- Die ALT-Text-Eingabe zeigt zusätzlich eine kleine Vorschau des später geposteten Ausschnitts
 
 ## Inklusion Und ALT-Texte
 
@@ -97,6 +115,7 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 ### Thread Speichern Und Laden
 
 - Ein kompletter Thread kann als Datei gespeichert werden
+- Wenn verfügbar, wird dafür ein komprimiertes `*.threadline.gz` verwendet; sonst normales JSON
 - Gespeichert werden dabei:
 - Ausgangstext
 - aktuelle Thread-Abschnitte
@@ -168,9 +187,11 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Bilder werden gemeinsam mit den jeweiligen Segmenten hochgeladen
 - Für Bilder berücksichtigt Threadline das aktuelle Bluesky-Limit von `2.000.000` Bytes und `4000 × 4000` Pixeln pro Bild
 - Zu große Bilder werden im Composer markiert und müssen vor dem Posten im Bildeditor verkleinert werden
+- Vor dem Posten gibt es eine Sicherheitsabfrage mit dem aktuell verwendeten Konto
 - Nach erfolgreichem Post erscheint ein Dialog mit Link zum erstellten Posting
 - Fortschritt und Fehler werden in UI-Popups angezeigt
 - Hashtags, Mentions und Links werden beim Posten als Rich-Text-Facets übertragen, damit sie in Bluesky anklickbar sind
+- Auch die gewählten Post-Sprachen und Interaktionseinstellungen werden an Bluesky übergeben
 
 ## Warum Es Keine Link-Cards Gibt
 
@@ -188,6 +209,7 @@ Das Problem ist Cross-Origin-Zugriff im Browser. Um Open-Graph-Daten einer fremd
 - Ein Klick öffnet eine Liste mit:
 - Zeitstempel
 - Bluesky-URL
+- verwendetes Konto
 - Anzahl der Thread-Posts
 - Anzahl der verwendeten Bilder
 - Einzelne Einträge lassen sich löschen
@@ -241,7 +263,7 @@ Threadline ist eine PWA und kann auf Handy und Desktop installiert werden.
 3. Wähle `Zum Home-Bildschirm`.
 4. Bestätige mit `Hinzufügen`.
 
-Hinweis: Unter iOS kann die Installation nicht automatisch ausgelöst werden. In der App gibt es dafür einen Install-Button mit Anleitung.
+Hinweis: Unter iOS kann die Installation nicht automatisch ausgelöst werden. In der App gibt es dafür einen Install-Button mit Anleitung. Die linke Spalte kann auf mobilen Geräten platzsparend ein- und ausgeklappt werden.
 
 #### Android (Chrome oder Edge)
 
