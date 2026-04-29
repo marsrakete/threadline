@@ -1,4 +1,4 @@
-const APP_VERSION = "v83";
+const APP_VERSION = "v88";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -973,8 +973,8 @@ async function getAppState({ browserLocale } = {}) {
   const localePreference = storedSettings?.localePreference || legacyLocalePreference;
   const locale = localePreference && localePreference !== "auto" ? localePreference : (browserLocale || "en");
 
-  return {
-    authenticated: Boolean(auth?.session?.did),
+    return {
+      authenticated: Boolean(auth?.session?.did),
     identifier: auth?.identifier || "",
     handle: auth?.session?.handle || "",
     did: auth?.did || "",
@@ -984,12 +984,15 @@ async function getAppState({ browserLocale } = {}) {
     locale,
     localePreference: localePreference || "auto",
     tipsVisible: storedSettings?.tipsVisible !== false,
-    altTextRequired: storedSettings?.altTextRequired !== false,
-    themeMode: storedSettings?.themeMode === "dark" ? "dark" : "light",
-    sidebarCollapsedDesktop: storedSettings?.sidebarCollapsedDesktop === true,
-    sidebarWidthDesktop: Number.isFinite(Number(storedSettings?.sidebarWidthDesktop))
-      ? Number(storedSettings.sidebarWidthDesktop)
-      : null,
+      altTextRequired: storedSettings?.altTextRequired !== false,
+      themeMode: storedSettings?.themeMode === "dark" ? "dark" : "light",
+      sidebarCollapsedDesktop: storedSettings?.sidebarCollapsedDesktop === true,
+      desktopLayoutVersion: Number.isFinite(Number(storedSettings?.desktopLayoutVersion))
+        ? Number(storedSettings.desktopLayoutVersion)
+        : null,
+      sidebarWidthDesktop: Number.isFinite(Number(storedSettings?.sidebarWidthDesktop))
+        ? Number(storedSettings.sidebarWidthDesktop)
+        : null,
     composerWidthDesktop: Number.isFinite(Number(storedSettings?.composerWidthDesktop))
       ? Number(storedSettings.composerWidthDesktop)
       : null,
@@ -1035,13 +1038,16 @@ async function saveSettings(settings = {}) {
     localePreference: settings.localePreference || existing.localePreference || "auto",
     tipsVisible: settings.tipsVisible !== undefined ? settings.tipsVisible : (existing.tipsVisible !== false),
     altTextRequired: settings.altTextRequired !== false,
-    themeMode: settings.themeMode === "dark"
-      ? "dark"
-      : (settings.themeMode === "light" ? "light" : (existing.themeMode === "dark" ? "dark" : "light")),
-    sidebarCollapsedDesktop: settings.sidebarCollapsedDesktop === true,
-    sidebarWidthDesktop: Number.isFinite(Number(settings.sidebarWidthDesktop))
-      ? Number(settings.sidebarWidthDesktop)
-      : (Number.isFinite(Number(existing.sidebarWidthDesktop)) ? Number(existing.sidebarWidthDesktop) : null),
+      themeMode: settings.themeMode === "dark"
+        ? "dark"
+        : (settings.themeMode === "light" ? "light" : (existing.themeMode === "dark" ? "dark" : "light")),
+      sidebarCollapsedDesktop: settings.sidebarCollapsedDesktop === true,
+      desktopLayoutVersion: Number.isFinite(Number(settings.desktopLayoutVersion))
+        ? Number(settings.desktopLayoutVersion)
+        : (Number.isFinite(Number(existing.desktopLayoutVersion)) ? Number(existing.desktopLayoutVersion) : null),
+      sidebarWidthDesktop: Number.isFinite(Number(settings.sidebarWidthDesktop))
+        ? Number(settings.sidebarWidthDesktop)
+        : (Number.isFinite(Number(existing.sidebarWidthDesktop)) ? Number(existing.sidebarWidthDesktop) : null),
     composerWidthDesktop: Number.isFinite(Number(settings.composerWidthDesktop))
       ? Number(settings.composerWidthDesktop)
       : (Number.isFinite(Number(existing.composerWidthDesktop)) ? Number(existing.composerWidthDesktop) : null),

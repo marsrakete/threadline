@@ -9,8 +9,8 @@
   --accent-strong: #55dcca;
   --danger: #c84c4c;
   --shadow: 0 24px 80px rgba(60, 94, 148, 0.16);
-  --desktop-sidebar-width: 388px;
-  --desktop-composer-width: 430px;
+  --desktop-sidebar-width: 470px;
+  --desktop-composer-width: 360px;
   --desktop-sidebar-collapsed-width: 96px;
   --desktop-resize-handle-width: 14px;
 }
@@ -75,7 +75,7 @@ body::before {
   position: relative;
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+  grid-template-columns: minmax(360px, 470px) minmax(0, 1fr);
 }
 
 .sidebar-toggle-button {
@@ -198,6 +198,15 @@ h2 {
   flex-wrap: wrap;
 }
 
+.top-actions {
+  width: 100%;
+}
+
+.top-actions .ghost-button {
+  flex: 1 1 calc(50% - 6px);
+  min-width: 0;
+}
+
 .login-form,
 .status-panel,
 .archive-launch-panel,
@@ -233,6 +242,7 @@ h2 {
 
 .compact-panel-heading {
   align-items: flex-start;
+  flex-wrap: wrap;
 }
 
 .account-hub-note {

@@ -407,6 +407,16 @@
           <button type="submit" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
 
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="updatesEyebrow">Updates</p>
+          <p id="version-label" class="settings-note">Version 0.0.0 · Offline-Version v0</p>
+          <div class="settings-actions">
+            <button type="button" id="check-updates-button" class="ghost-button" data-i18n="checkUpdatesButton">Auf Updates prüfen</button>
+            <button type="button" id="reload-app-button" class="ghost-button" data-i18n="reloadButton" hidden>Neu laden</button>
+          </div>
+          <p id="update-status" class="settings-note" hidden></p>
+        </section>
+
         <label>
           <span data-i18n="languageLabel">Sprache</span>
           <select id="language-select">
@@ -460,15 +470,6 @@
           </div>
           <input id="import-settings-input" class="is-hidden" type="file" accept="application/json,.json">
           <p id="backup-status" class="settings-note" hidden></p>
-        </section>
-
-        <section class="settings-block">
-          <p class="eyebrow" data-i18n="updatesEyebrow">Updates</p>
-          <div class="settings-actions">
-            <button type="button" id="check-updates-button" class="ghost-button" data-i18n="checkUpdatesButton">Auf Updates prüfen</button>
-            <button type="button" id="reload-app-button" class="ghost-button" data-i18n="reloadButton" hidden>Neu laden</button>
-          </div>
-          <p id="update-status" class="settings-note" hidden></p>
         </section>
 
       </form>

@@ -14,12 +14,17 @@ const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 3 * 60 * 1000;
-const DEFAULT_SIDEBAR_WIDTH_DESKTOP = 388;
-const DEFAULT_COMPOSER_WIDTH_DESKTOP = 430;
-const MIN_SIDEBAR_WIDTH_DESKTOP = 280;
-const MAX_SIDEBAR_WIDTH_DESKTOP = 520;
+const DESKTOP_LAYOUT_STATE_VERSION = 2;
+const DEFAULT_SIDEBAR_WIDTH_DESKTOP = 470;
+const DEFAULT_COMPOSER_WIDTH_DESKTOP = 360;
+const MIN_SIDEBAR_WIDTH_DESKTOP = 400;
+const MAX_SIDEBAR_WIDTH_DESKTOP = 620;
 const MIN_COMPOSER_WIDTH_DESKTOP = 320;
 const MAX_COMPOSER_WIDTH_DESKTOP = 1120;
+const LEGACY_DESKTOP_LAYOUT_SIGNATURES = new Set([
+  "388|430",
+  "430|388",
+]);
 const DEFAULT_POST_WEB_APP = "https://bsky.app";
 const POST_WEB_FRONTENDS = {
   "bsky.social": DEFAULT_POST_WEB_APP,
@@ -34,13 +39,47 @@ const DEFAULT_POST_INTERACTION_SETTINGS = {
   quotePostsAllowed: true,
 };
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.64",
-  cacheVersion: "v83",
-  label: "Thread intro follows app locale",
+  appVersion: "0.4.69",
+  cacheVersion: "v88",
+  label: "Stabilize sidebar button layout",
 };
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeStoredDesktopLayout(rawSidebarWidth, rawComposerWidth, rawLayoutVersion) {
+  const parsedSidebarWidth = Number.isFinite(Number(rawSidebarWidth)) ? Number(rawSidebarWidth) : null;
+  const parsedComposerWidth = Number.isFinite(Number(rawComposerWidth)) ? Number(rawComposerWidth) : null;
+  const parsedLayoutVersion = Number.isFinite(Number(rawLayoutVersion)) ? Number(rawLayoutVersion) : null;
+  const signature = `${parsedSidebarWidth ?? ""}|${parsedComposerWidth ?? ""}`;
+  const shouldMigrateLegacyDefaults =
+    parsedLayoutVersion == null &&
+    LEGACY_DESKTOP_LAYOUT_SIGNATURES.has(signature);
+
+  if (shouldMigrateLegacyDefaults) {
+    return {
+      sidebarWidthDesktop: DEFAULT_SIDEBAR_WIDTH_DESKTOP,
+      composerWidthDesktop: DEFAULT_COMPOSER_WIDTH_DESKTOP,
+      desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
+    };
+  }
+
+  return {
+    sidebarWidthDesktop: clampDesktopWidth(
+      parsedSidebarWidth,
+      MIN_SIDEBAR_WIDTH_DESKTOP,
+      MAX_SIDEBAR_WIDTH_DESKTOP,
+      DEFAULT_SIDEBAR_WIDTH_DESKTOP,
+    ),
+    composerWidthDesktop: clampDesktopWidth(
+      parsedComposerWidth,
+      MIN_COMPOSER_WIDTH_DESKTOP,
+      MAX_COMPOSER_WIDTH_DESKTOP,
+      DEFAULT_COMPOSER_WIDTH_DESKTOP,
+    ),
+    desktopLayoutVersion: parsedLayoutVersion ?? DESKTOP_LAYOUT_STATE_VERSION,
+  };
 }
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -78,6 +117,7 @@ const confirmDialog = document.querySelector("#confirm-dialog");
 const languageSelect = document.querySelector("#language-select");
 const themeToggleButton = document.querySelector("#theme-toggle-button");
 const themeStatusNote = document.querySelector("#theme-status-note");
+const versionLabel = document.querySelector("#version-label");
 const checkUpdatesButton = document.querySelector("#check-updates-button");
 const reloadAppButton = document.querySelector("#reload-app-button");
 const updateStatus = document.querySelector("#update-status");
@@ -1564,6 +1604,7 @@ function applyTranslations() {
   archivePauseButton.textContent = t("archivePauseButton");
   archiveResumeButton.textContent = t("archiveResumeButton");
   archiveCancelButton.textContent = t("archiveCancelButton");
+  renderVersionLabel();
   checkUpdatesButton.textContent = t("checkUpdatesButton");
   reloadAppButton.textContent = t("reloadButton");
   exportSettingsButton.textContent = t("exportSettingsButton");
@@ -5480,6 +5521,7 @@ async function persistSettings() {
       altTextRequired,
       themeMode,
       sidebarCollapsedDesktop,
+      desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
       sidebarWidthDesktop,
       composerWidthDesktop,
       postLanguages: getNormalizedPostLanguagesOrDefault(),
@@ -5514,6 +5556,7 @@ function createSettingsBackupPayload() {
       altTextRequired,
       themeMode,
       sidebarCollapsedDesktop,
+      desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
       sidebarWidthDesktop,
       composerWidthDesktop,
       postLanguages: getNormalizedPostLanguagesOrDefault(),
@@ -5579,18 +5622,14 @@ async function importSettingsBackup(file) {
   altTextRequired = imported.altTextRequired === true;
   themeMode = imported.themeMode === "dark" ? "dark" : "light";
   sidebarCollapsedDesktop = imported.sidebarCollapsedDesktop === true;
-  sidebarWidthDesktop = clampDesktopWidth(
+  ({
+    sidebarWidthDesktop,
+    composerWidthDesktop,
+  } = normalizeStoredDesktopLayout(
     imported.sidebarWidthDesktop,
-    MIN_SIDEBAR_WIDTH_DESKTOP,
-    MAX_SIDEBAR_WIDTH_DESKTOP,
-    DEFAULT_SIDEBAR_WIDTH_DESKTOP,
-  );
-  composerWidthDesktop = clampDesktopWidth(
     imported.composerWidthDesktop,
-    MIN_COMPOSER_WIDTH_DESKTOP,
-    MAX_COMPOSER_WIDTH_DESKTOP,
-    DEFAULT_COMPOSER_WIDTH_DESKTOP,
-  );
+    imported.desktopLayoutVersion,
+  ));
   selectedPostLanguages = normalizePostLanguageTags(imported.postLanguages);
   appendThreadIntro = imported.appendThreadIntro === true;
   threadIntroToggle.checked = appendThreadIntro;
@@ -5638,6 +5677,23 @@ function setUpdateStatus(message, showReload = false) {
   updateStatus.textContent = message;
   updateStatus.hidden = !message;
   reloadAppButton.hidden = !showReload;
+}
+
+function renderVersionLabel() {
+  if (!versionLabel) {
+    return;
+  }
+
+  const parts = [
+    `${t("versionPrefix")} ${CURRENT_VERSION_INFO.appVersion}`,
+    `${t("offlineVersion")} ${CURRENT_VERSION_INFO.cacheVersion}`,
+  ];
+
+  if (CURRENT_VERSION_INFO.label) {
+    parts.push(CURRENT_VERSION_INFO.label);
+  }
+
+  versionLabel.textContent = parts.join(" · ");
 }
 
 async function fetchVersionInfo() {
@@ -6515,18 +6571,15 @@ async function hydrateAppState() {
     altTextRequired = state.altTextRequired !== false;
     themeMode = state.themeMode === "dark" ? "dark" : "light";
     sidebarCollapsedDesktop = state.sidebarCollapsedDesktop === true;
-    sidebarWidthDesktop = clampDesktopWidth(
+    const needsDesktopLayoutMigration = state.desktopLayoutVersion !== DESKTOP_LAYOUT_STATE_VERSION;
+    ({
+      sidebarWidthDesktop,
+      composerWidthDesktop,
+    } = normalizeStoredDesktopLayout(
       state.sidebarWidthDesktop,
-      MIN_SIDEBAR_WIDTH_DESKTOP,
-      MAX_SIDEBAR_WIDTH_DESKTOP,
-      DEFAULT_SIDEBAR_WIDTH_DESKTOP,
-    );
-    composerWidthDesktop = clampDesktopWidth(
       state.composerWidthDesktop,
-      MIN_COMPOSER_WIDTH_DESKTOP,
-      MAX_COMPOSER_WIDTH_DESKTOP,
-      DEFAULT_COMPOSER_WIDTH_DESKTOP,
-    );
+      state.desktopLayoutVersion,
+    ));
     hashtags = normalizeHashtagEntries(state.hashtags);
     selectedHashtags = normalizeSelectedHashtagEntries(state.selectedHashtags, hashtags);
     hashtagPlacement = normalizeHashtagPlacement(state.hashtagPlacement);
@@ -6563,6 +6616,9 @@ async function hydrateAppState() {
     applyTranslations();
     if (segmentImages.some((images) => (images || []).length > 0)) {
       scheduleImageValidation();
+    }
+    if (needsDesktopLayoutMigration) {
+      await persistSettings();
     }
   } catch (error) {
     console.error(error);
