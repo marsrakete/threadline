@@ -39,9 +39,9 @@ const DEFAULT_POST_INTERACTION_SETTINGS = {
   quotePostsAllowed: true,
 };
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.72",
-  cacheVersion: "v91",
-  label: "Disable clear button when empty",
+  appVersion: "0.4.89",
+  cacheVersion: "v108",
+  label: "Fix textarea resize startup",
 };
 
 function clamp(value, min, max) {
@@ -113,6 +113,7 @@ const installDialog = document.querySelector("#install-dialog");
 const hashtagEditDialog = document.querySelector("#hashtag-edit-dialog");
 const altTextDialog = document.querySelector("#alt-text-dialog");
 const imageEditorDialog = document.querySelector("#image-editor-dialog");
+const imageEditorSheet = imageEditorDialog?.querySelector(".image-editor-sheet");
 const confirmDialog = document.querySelector("#confirm-dialog");
 const languageSelect = document.querySelector("#language-select");
 const themeToggleButton = document.querySelector("#theme-toggle-button");
@@ -169,12 +170,19 @@ const confirmDialogCancelButton = document.querySelector("#confirm-dialog-cancel
 const threadImportInput = document.querySelector("#thread-import-input");
 const archiveImportInput = document.querySelector("#archive-import-input");
 const historyList = document.querySelector("#history-list");
+const composerColumn = document.querySelector(".composer-column");
+const hashtagsPane = document.querySelector("#hashtags-pane");
 const hashtagForm = document.querySelector("#hashtag-form");
 const hashtagInput = document.querySelector("#hashtag-input");
 const hashtagAddButton = document.querySelector("#hashtag-add-button");
+const hashtagPlacementLabel = document.querySelector("#hashtag-placement-label");
 const hashtagPlacementSelect = document.querySelector("#hashtag-placement-select");
+const archiveHashtagSlot = document.querySelector("#archive-hashtag-slot");
+const archiveHashtagScopeWrap = document.querySelector("#archive-hashtag-scope-wrap");
+const archiveHashtagScopeSelect = document.querySelector("#archive-hashtag-scope-select");
 const hashtagCloud = document.querySelector("#hashtag-cloud");
 const hashtagSelectionNote = document.querySelector("#hashtag-selection-note");
+const archiveHashtagNote = document.querySelector("#archive-hashtag-note");
 const sourceText = document.querySelector("#source-text");
 const composerLockNote = document.querySelector("#composer-lock-note");
 const composerUnlockButton = document.querySelector("#composer-unlock-button");
@@ -269,6 +277,7 @@ let updateInProgress = false;
 let sessionCheckTimer = null;
 let lastAutoUpdateCheckAt = 0;
 let deferredInstallPrompt = null;
+let segmentTextareaResizeFrame = 0;
 let helpCache = {
   path: "",
   text: "",
@@ -283,6 +292,8 @@ let composerWidthDesktop = DEFAULT_COMPOSER_WIDTH_DESKTOP;
 let hashtags = [];
 let selectedHashtags = [];
 let hashtagPlacement = "first";
+let archiveSelectedHashtags = [];
+let archiveHashtagScope = "thread";
 let postingHistory = [];
 let currentComposedText = "";
 let selectedPostLanguages = [];
@@ -764,6 +775,32 @@ function applyDisconnectedState(showStatus = true) {
   }
 }
 
+function isArchiveHashtagContext() {
+  return currentWorkspace === "archive";
+}
+
+function applyHashtagPaneContext() {
+  if (!hashtagsPane) {
+    return;
+  }
+
+  if (isArchiveHashtagContext()) {
+    archiveHashtagSlot?.replaceChildren(hashtagsPane);
+    hashtagsPane.classList.add("is-archive-context");
+    hashtagPlacementLabel.hidden = true;
+    archiveHashtagScopeWrap.hidden = false;
+    archiveHashtagNote.hidden = false;
+  } else {
+    composerColumn?.appendChild(hashtagsPane);
+    hashtagsPane.classList.remove("is-archive-context");
+    hashtagPlacementLabel.hidden = false;
+    archiveHashtagScopeWrap.hidden = true;
+    archiveHashtagNote.hidden = true;
+  }
+
+  renderHashtagCloud();
+}
+
 function showArchiveWorkspace() {
   if (!authAccount) {
     return;
@@ -772,6 +809,7 @@ function showArchiveWorkspace() {
   currentWorkspace = "archive";
   composerWorkspace.hidden = true;
   archiveWorkspace.hidden = false;
+  applyHashtagPaneContext();
   renderArchiveWorkspace();
 }
 
@@ -779,6 +817,7 @@ function showComposerWorkspace() {
   currentWorkspace = "composer";
   archiveWorkspace.hidden = true;
   composerWorkspace.hidden = false;
+  applyHashtagPaneContext();
 }
 
 function getArchiveFilters() {
@@ -789,6 +828,8 @@ function getArchiveFilters() {
     year: archiveYearInput.value.trim(),
     from: archiveFromInput.value || "",
     to: archiveToInput.value || "",
+    hashtagTags: normalizeSelectedHashtagEntries(archiveSelectedHashtags, hashtags),
+    hashtagScope: archiveHashtagScope === "startpost" ? "startpost" : "thread",
   };
 }
 
@@ -824,6 +865,9 @@ function applyArchivePreferences(preferences = {}) {
   archiveYearInput.value = String(filters.year || "");
   archiveFromInput.value = String(filters.from || "");
   archiveToInput.value = String(filters.to || "");
+  archiveSelectedHashtags = normalizeSelectedHashtagEntries(filters.hashtagTags, hashtags);
+  archiveHashtagScope = filters.hashtagScope === "startpost" ? "startpost" : "thread";
+  archiveHashtagScopeSelect.value = archiveHashtagScope;
   if (archiveFromInput.value || archiveToInput.value) {
     archiveScopeSelect.value = "range";
   }
@@ -854,6 +898,7 @@ function applyArchivePreferences(preferences = {}) {
     archiveLivePreviewToggle.checked = preferences.livePreview !== false;
   }
   updateArchiveScopeFields();
+  renderHashtagCloud();
 }
 
 function serializeArchiveFilters(filters = getArchiveFilters()) {
@@ -1423,6 +1468,7 @@ function applyDesktopLayoutState() {
   composerWidthDesktop = resolvedComposerWidth;
   document.documentElement.style.setProperty("--desktop-sidebar-width", `${resolvedSidebarWidth}px`);
   document.documentElement.style.setProperty("--desktop-composer-width", `${resolvedComposerWidth}px`);
+  scheduleSegmentTextareaResize();
 }
 
 function applySidebarState() {
@@ -1474,6 +1520,7 @@ function startDesktopColumnResize(target) {
       );
     }
     applyDesktopLayoutState();
+    scheduleSegmentTextareaResize();
   };
 
   const handlePointerUp = async () => {
@@ -2058,6 +2105,17 @@ function mergePostingHistoryEntries(existing, imported) {
   return normalizePostingHistory([...(Array.isArray(imported) ? imported : []), ...(Array.isArray(existing) ? existing : [])]);
 }
 
+function formatHistoryMeta(threadCount, imageCount) {
+  const threadWord = t(threadCount === 1 ? "historySectionSingular" : "historySectionPlural");
+  const imageWord = t(imageCount === 1 ? "historyImageSingular" : "historyImagePlural");
+  return t("historyMeta", {
+    threads: threadCount,
+    threadWord,
+    images: imageCount,
+    imageWord,
+  });
+}
+
 function syncSegmentImages(segmentCount) {
   const next = [];
   for (let index = 0; index < segmentCount; index += 1) {
@@ -2112,18 +2170,81 @@ async function createThreadImageFromFile(file) {
   });
 }
 
-function getImageMetrics(image, frameWidth, frameHeight, edit = image.edit, fit = null) {
+function getSourceDimensions(image, source = null) {
+  return {
+    width: Math.max(1, Number(source?.width) || Number(image?.width) || 1),
+    height: Math.max(1, Number(source?.height) || Number(image?.height) || 1),
+  };
+}
+
+function getOrientedSourceDimensions(image, edit = image.edit, source = null) {
+  const normalizedEdit = normalizeImageEdit(edit);
+  const sourceDimensions = getSourceDimensions(image, source);
+  const quarterTurn = normalizedEdit.rotation % 180 !== 0;
+  return {
+    width: quarterTurn ? sourceDimensions.height : sourceDimensions.width,
+    height: quarterTurn ? sourceDimensions.width : sourceDimensions.height,
+  };
+}
+
+function getImageEditorCanvasDimensions(image, edit = image.edit, source = null) {
+  const oriented = getOrientedSourceDimensions(image, edit, source);
+  const isPortrait = oriented.height > oriented.width;
+  return isPortrait
+    ? {
+        width: IMAGE_EDITOR_CANVAS_HEIGHT,
+        height: IMAGE_EDITOR_CANVAS_WIDTH,
+      }
+    : {
+        width: IMAGE_EDITOR_CANVAS_WIDTH,
+        height: IMAGE_EDITOR_CANVAS_HEIGHT,
+      };
+}
+
+function isPortraitEditorImage(image, edit = image.edit, source = null) {
+  const oriented = getOrientedSourceDimensions(image, edit, source);
+  return oriented.height > oriented.width;
+}
+
+function getEditedImageExportDimensions(image, edit = image.edit, source = null, exportScale = 1) {
+  const frame = getImageEditorCanvasDimensions(image, edit, source);
+  const baseScale = IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH;
+  return {
+    width: Math.max(320, Math.round(frame.width * baseScale * exportScale)),
+    height: Math.max(320, Math.round(frame.height * baseScale * exportScale)),
+  };
+}
+
+function getImagePreviewFrameDimensions(image) {
+  if (isImageUsingDefaultEdit(image)) {
+    return getOrientedSourceDimensions(image, image.edit);
+  }
+  return getEditedImageExportDimensions(image, image.edit);
+}
+
+function getContainedPreviewBox(frameWidth, frameHeight, maxWidth, maxHeight) {
+  const safeWidth = Math.max(1, Number(frameWidth) || 1);
+  const safeHeight = Math.max(1, Number(frameHeight) || 1);
+  const scale = Math.min(maxWidth / safeWidth, maxHeight / safeHeight);
+  return {
+    width: Math.max(1, Math.round(safeWidth * scale)),
+    height: Math.max(1, Math.round(safeHeight * scale)),
+  };
+}
+
+function getImageMetrics(image, frameWidth, frameHeight, edit = image.edit, fit = null, source = null) {
   const normalizedEdit = normalizeImageEdit(edit);
   const effectiveFit = fit || normalizedEdit.fitMode || "cover";
   const rotation = normalizedEdit.rotation;
   const quarterTurn = rotation % 180 !== 0;
-  const sourceWidth = quarterTurn ? image.height : image.width;
-  const sourceHeight = quarterTurn ? image.width : image.height;
+  const sourceDimensions = getSourceDimensions(image, source);
+  const sourceWidth = quarterTurn ? sourceDimensions.height : sourceDimensions.width;
+  const sourceHeight = quarterTurn ? sourceDimensions.width : sourceDimensions.height;
   const baseScale = effectiveFit === "contain"
     ? Math.min(frameWidth / sourceWidth, frameHeight / sourceHeight)
     : Math.max(frameWidth / sourceWidth, frameHeight / sourceHeight);
-  const drawWidth = image.width * baseScale * normalizedEdit.zoom;
-  const drawHeight = image.height * baseScale * normalizedEdit.zoom;
+  const drawWidth = sourceDimensions.width * baseScale * normalizedEdit.zoom;
+  const drawHeight = sourceDimensions.height * baseScale * normalizedEdit.zoom;
   const rotatedDrawWidth = quarterTurn ? drawHeight : drawWidth;
   const rotatedDrawHeight = quarterTurn ? drawWidth : drawHeight;
   const maxOffsetX = effectiveFit === "cover"
@@ -2150,8 +2271,8 @@ function getImageMetrics(image, frameWidth, frameHeight, edit = image.edit, fit 
   };
 }
 
-function clampImageEditToFrame(image, frameWidth, frameHeight, edit = image.edit, fit = null) {
-  const metrics = getImageMetrics(image, frameWidth, frameHeight, edit, fit);
+function clampImageEditToFrame(image, frameWidth, frameHeight, edit = image.edit, fit = null, source = null) {
+  const metrics = getImageMetrics(image, frameWidth, frameHeight, edit, fit, source);
   return {
     zoom: metrics.zoom,
     offsetX: metrics.offsetX,
@@ -2185,12 +2306,13 @@ async function renderImageToCanvas(image, canvas, options = {}) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const bitmap = await loadImageBitmapForDataUrl(image.dataUrl);
+  const source = { width: bitmap.width, height: bitmap.height };
 
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, width, height);
   ctx.clip();
-  const metrics = getImageMetrics(image, width, height, options.edit || image.edit, fit);
+  const metrics = getImageMetrics(image, width, height, options.edit || image.edit, fit, source);
   ctx.translate(metrics.centerX, metrics.centerY);
   ctx.rotate((metrics.rotation * Math.PI) / 180);
   ctx.scale(metrics.flipX ? -1 : 1, metrics.flipY ? -1 : 1);
@@ -2246,15 +2368,17 @@ async function renderImageToBlob(image) {
   }
 
   const canvas = document.createElement("canvas");
-  const scale = IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH;
   const exportScale = Math.min(1, Math.max(0.35, Number(image.exportScale) || 1));
+  const exportDimensions = getEditedImageExportDimensions(image, image.edit, null, exportScale);
+  const currentEditorFrame = getImageEditorCanvasDimensions(image, image.edit);
+  const scale = exportDimensions.width / currentEditorFrame.width;
   const exportEdit = {
     ...normalizeImageEdit(image.edit),
-    offsetX: (Number(image.edit?.offsetX) || 0) * scale * exportScale,
-    offsetY: (Number(image.edit?.offsetY) || 0) * scale * exportScale,
+    offsetX: (Number(image.edit?.offsetX) || 0) * scale,
+    offsetY: (Number(image.edit?.offsetY) || 0) * scale,
   };
-  canvas.width = Math.max(480, Math.round(IMAGE_EXPORT_WIDTH * exportScale));
-  canvas.height = Math.max(320, Math.round(IMAGE_EXPORT_HEIGHT * exportScale));
+  canvas.width = exportDimensions.width;
+  canvas.height = exportDimensions.height;
   await renderImageToCanvas(image, canvas, {
     width: canvas.width,
     height: canvas.height,
@@ -2337,9 +2461,21 @@ function openAltTextDialog(segmentIndex, imageIndex) {
   editingAltTarget = { segmentIndex, imageIndex };
   altTextPreviewWrap.hidden = !image.dataUrl;
   if (image.dataUrl) {
+    const previewFrame = getImagePreviewFrameDimensions(image);
+    const isPortrait = previewFrame.height > previewFrame.width;
+    const previewBox = getContainedPreviewBox(
+      previewFrame.width,
+      previewFrame.height,
+      isPortrait ? 220 : 320,
+      isPortrait ? 300 : 220,
+    );
+    altTextPreviewWrap.classList.toggle("is-portrait", isPortrait);
+    altTextPreviewCanvas.style.width = `${previewBox.width}px`;
+    altTextPreviewCanvas.style.height = `${previewBox.height}px`;
+    altTextPreviewCanvas.style.aspectRatio = `${previewFrame.width} / ${previewFrame.height}`;
     void renderPreviewCanvas(image, altTextPreviewCanvas, {
-      cssWidth: 440,
-      cssHeight: 283,
+      cssWidth: previewBox.width,
+      cssHeight: previewBox.height,
     });
   }
   altTextInput.value = image.alt || "";
@@ -2351,8 +2487,12 @@ function openAltTextDialog(segmentIndex, imageIndex) {
 function closeAltTextDialog() {
   editingAltTarget = null;
   altTextPreviewWrap.hidden = true;
+  altTextPreviewWrap.classList.remove("is-portrait");
   const context = altTextPreviewCanvas.getContext("2d");
   context?.clearRect(0, 0, altTextPreviewCanvas.width, altTextPreviewCanvas.height);
+  altTextPreviewCanvas.style.removeProperty("width");
+  altTextPreviewCanvas.style.removeProperty("height");
+  altTextPreviewCanvas.style.removeProperty("aspect-ratio");
   altTextDialog.close();
 }
 
@@ -2380,19 +2520,38 @@ function cloneImageEdit(edit) {
   return normalizeImageEdit({ ...edit });
 }
 
+function getImageEditorSourceDimensions() {
+  return imageEditorSourceBitmap
+    ? { width: imageEditorSourceBitmap.width, height: imageEditorSourceBitmap.height }
+    : null;
+}
+
+function clampImageEditorDraftToFrame(image, draft = imageEditorDraft) {
+  const canvasDimensions = getImageEditorCanvasDimensions(image, draft, getImageEditorSourceDimensions());
+  return clampImageEditToFrame(
+    image,
+    canvasDimensions.width,
+    canvasDimensions.height,
+    draft,
+    normalizeImageEdit(draft).fitMode,
+    getImageEditorSourceDimensions(),
+  );
+}
+
 async function openImageEditorDialog(segmentIndex, imageIndex) {
   const image = segmentImages[segmentIndex]?.[imageIndex];
   if (!image) {
     return;
   }
   editingImageTarget = { segmentIndex, imageIndex };
-  imageEditorDraft = cloneImageEdit(image.edit);
-  if (imageEditorDraft.fitMode !== "cover") {
-    imageEditorDraft.fitMode = "cover";
-    imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, imageEditorDraft, "cover");
-  }
-  imageZoomInput.value = String(imageEditorDraft.zoom);
   imageEditorSourceBitmap = await loadImageBitmapForDataUrl(image.dataUrl);
+  imageEditorDraft = cloneImageEdit(image.edit);
+  const canvasDimensions = getImageEditorCanvasDimensions(image, imageEditorDraft, getImageEditorSourceDimensions());
+  imageEditorCanvas.width = canvasDimensions.width;
+  imageEditorCanvas.height = canvasDimensions.height;
+  imageEditorSheet?.classList.toggle("is-portrait-image", isPortraitEditorImage(image, imageEditorDraft, getImageEditorSourceDimensions()));
+  imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
+  imageZoomInput.value = String(imageEditorDraft.zoom);
   imageEditorSuggestion.hidden = !image.validation?.tooBig;
   imageLossyResizeButton.hidden = !image.validation?.tooBig;
   drawImageEditor();
@@ -2404,6 +2563,7 @@ function closeImageEditorDialog() {
   imageEditorSourceBitmap?.close?.();
   imageEditorSourceBitmap = null;
   imageEditorDraft = null;
+  imageEditorSheet?.classList.remove("is-portrait-image");
   imageEditorDialog.close();
 }
 
@@ -2430,11 +2590,12 @@ function drawImageEditor() {
     imageEditorCanvas.width,
     imageEditorCanvas.height,
     imageEditorDraft,
-    "cover",
+    normalizeImageEdit(imageEditorDraft).fitMode,
+    getImageEditorSourceDimensions(),
   );
   imageEditorDraft.offsetX = metrics.offsetX;
   imageEditorDraft.offsetY = metrics.offsetY;
-  imageEditorDraft.fitMode = "cover";
+  imageEditorDraft.fitMode = metrics.fitMode;
 
   ctx.save();
   ctx.beginPath();
@@ -2484,7 +2645,7 @@ function updateImageEditorDrag(event) {
     offsetX: imageEditorDragStart.offsetX + (event.clientX - imageEditorDragStart.x),
     offsetY: imageEditorDragStart.offsetY + (event.clientY - imageEditorDragStart.y),
   };
-  imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, nextDraft, "cover");
+  imageEditorDraft = clampImageEditorDraftToFrame(image, nextDraft);
   drawImageEditor();
 }
 
@@ -2499,10 +2660,9 @@ async function saveImageEditor() {
     closeImageEditorDialog();
     return;
   }
-  image.edit = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+  image.edit = clampImageEditorDraftToFrame(image, {
     ...imageEditorDraft,
-    fitMode: "cover",
-  }, "cover");
+  });
   await validateThreadImage(image);
   await persistSettings();
   preserveScrollPosition(() => {
@@ -2517,10 +2677,9 @@ function resetImageEditor() {
   if (!image) {
     return;
   }
-  imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+  imageEditorDraft = clampImageEditorDraftToFrame(image, {
     ...createDefaultImageEdit(),
-    fitMode: "cover",
-  }, "cover");
+  });
   imageZoomInput.value = String(imageEditorDraft.zoom);
   drawImageEditor();
 }
@@ -5450,6 +5609,8 @@ function buildComposedText(baseText) {
 
 function renderHashtagCloud() {
   hashtagCloud.innerHTML = "";
+  const isArchiveContext = isArchiveHashtagContext();
+  const activeSelectedHashtags = isArchiveContext ? archiveSelectedHashtags : selectedHashtags;
 
   hashtags.forEach((tag) => {
     const item = document.createElement("div");
@@ -5458,21 +5619,31 @@ function renderHashtagCloud() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `hashtag-chip ${getHashtagFontClass(tag)}`;
-    if (selectedHashtags.includes(tag.normalized)) {
+    if (activeSelectedHashtags.includes(tag.normalized)) {
       button.classList.add("is-selected");
     }
     button.textContent = formatHashtag(tag.value);
     button.addEventListener("click", () => {
-      if (selectedHashtags.includes(tag.normalized)) {
-        selectedHashtags = selectedHashtags.filter((entry) => entry !== tag.normalized);
+      const currentSelection = isArchiveContext ? archiveSelectedHashtags : selectedHashtags;
+      const nextSelection = currentSelection.includes(tag.normalized)
+        ? currentSelection.filter((entry) => entry !== tag.normalized)
+        : [...currentSelection, tag.normalized];
+      if (isArchiveContext) {
+        archiveSelectedHashtags = normalizeSelectedHashtagEntries(nextSelection, hashtags);
+        if (archiveSelectedHashtags.length > 0 && archiveContentModeSelect.value !== "threads") {
+          archiveContentModeSelect.value = "threads";
+        }
+        renderHashtagCloud();
+        invalidateArchiveCatalog();
+        void persistArchivePreferences();
       } else {
-        selectedHashtags = [...selectedHashtags, tag.normalized];
+        selectedHashtags = normalizeSelectedHashtagEntries(nextSelection, hashtags);
+        renderHashtagCloud();
+        void persistSettings();
+        segmentOverrides = null;
+        setComposerLocked(false);
+        renderSegments({ preserveOverrides: false });
       }
-      renderHashtagCloud();
-      void persistSettings();
-      segmentOverrides = null;
-      setComposerLocked(false);
-      renderSegments({ preserveOverrides: false });
     });
 
     const editButton = document.createElement("button");
@@ -5500,11 +5671,15 @@ function renderHashtagCloud() {
     deleteButton.addEventListener("click", async () => {
       hashtags = hashtags.filter((entry) => entry.normalized !== tag.normalized);
       selectedHashtags = selectedHashtags.filter((entry) => entry !== tag.normalized);
+      archiveSelectedHashtags = archiveSelectedHashtags.filter((entry) => entry !== tag.normalized);
       renderHashtagCloud();
       segmentOverrides = null;
       setComposerLocked(false);
       renderSegments({ preserveOverrides: false });
       await persistSettings();
+      if (isArchiveContext) {
+        invalidateArchiveCatalog();
+      }
       setStatus(t("hashtagDeleted"));
     });
 
@@ -5512,9 +5687,9 @@ function renderHashtagCloud() {
     hashtagCloud.appendChild(item);
   });
 
-  hashtagSelectionNote.textContent = selectedHashtags.length > 0
-    ? t("hashtagSelectionSome", { count: selectedHashtags.length })
-    : t("hashtagSelectionNone");
+  hashtagSelectionNote.textContent = activeSelectedHashtags.length > 0
+    ? t(isArchiveContext ? "archiveHashtagSelectionSome" : "hashtagSelectionSome", { count: activeSelectedHashtags.length })
+    : t(isArchiveContext ? "archiveHashtagSelectionNone" : "hashtagSelectionNone");
 }
 
 async function persistSettings() {
@@ -5927,12 +6102,9 @@ function renderHistoryList() {
     timestamp.className = "history-timestamp";
     timestamp.textContent = formatHistoryTimestamp(entry.createdAt);
 
-    const counts = document.createElement("p");
-    counts.className = "history-meta";
-    counts.textContent = t("historyMeta", {
-      threads: entry.threadCount,
-      images: entry.imageCount,
-    });
+      const counts = document.createElement("p");
+      counts.className = "history-meta";
+      counts.textContent = formatHistoryMeta(entry.threadCount, entry.imageCount);
 
     const accountLine = document.createElement("p");
     accountLine.className = "history-meta";
@@ -6001,6 +6173,22 @@ async function recordPublishedThread(result, preparedSegments) {
 function autoSizeTextarea(textarea) {
   textarea.style.height = "auto";
   textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+function resizeAllSegmentTextareas() {
+  segmentsList.querySelectorAll(".segment-text").forEach((textarea) => {
+    autoSizeTextarea(textarea);
+  });
+}
+
+function scheduleSegmentTextareaResize() {
+  if (segmentTextareaResizeFrame) {
+    cancelAnimationFrame(segmentTextareaResizeFrame);
+  }
+  segmentTextareaResizeFrame = requestAnimationFrame(() => {
+    segmentTextareaResizeFrame = 0;
+    resizeAllSegmentTextareas();
+  });
 }
 
 function getHelpReadmePath() {
@@ -6372,6 +6560,21 @@ function renderSegmentImages(container, segmentIndex) {
 
     const preview = document.createElement("div");
     preview.className = "segment-image-preview";
+    const previewFrame = getImagePreviewFrameDimensions(image);
+    const isPortrait = previewFrame.height > previewFrame.width;
+    const previewBox = getContainedPreviewBox(
+      previewFrame.width,
+      previewFrame.height,
+      140,
+      140,
+    );
+    if (isPortrait) {
+      card.classList.add("is-portrait");
+      preview.classList.add("is-portrait");
+    }
+    preview.style.width = `${previewBox.width}px`;
+    preview.style.height = `${previewBox.height}px`;
+    preview.style.aspectRatio = `${previewFrame.width} / ${previewFrame.height}`;
     preview.title = image.alt || t("altTextMissing");
     preview.setAttribute("role", "button");
     preview.setAttribute("tabindex", "0");
@@ -6379,8 +6582,8 @@ function renderSegmentImages(container, segmentIndex) {
     const canvas = document.createElement("canvas");
     preview.appendChild(canvas);
     void renderPreviewCanvas(image, canvas, {
-      cssWidth: 320,
-      cssHeight: 206,
+      cssWidth: previewBox.width,
+      cssHeight: previewBox.height,
     });
     preview.addEventListener("click", () => {
       void openImageEditorDialog(segmentIndex, imageIndex);
@@ -6559,6 +6762,7 @@ function renderSegments(options = {}) {
     autoSizeTextarea(segmentsList.lastElementChild.querySelector(".segment-text"));
   });
 
+  scheduleSegmentTextareaResize();
   updatePublishAvailability();
 }
 
@@ -7435,11 +7639,11 @@ imageZoomInput.addEventListener("input", () => {
   if (!image) {
     return;
   }
-  imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+  imageEditorDraft = clampImageEditorDraftToFrame(image, {
     ...imageEditorDraft,
     fitMode: "cover",
     zoom: Number(imageZoomInput.value) || 1,
-  }, "cover");
+  });
   drawImageEditor();
 });
 imageFlipHorizontalButton.addEventListener("click", () => {
@@ -7463,10 +7667,10 @@ imageRotateLeftButton.addEventListener("click", () => {
   imageEditorDraft.rotation = (imageEditorDraft.rotation + 270) % 360;
   const image = getEditedImage();
   if (image) {
-    imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+    imageEditorDraft = clampImageEditorDraftToFrame(image, {
       ...imageEditorDraft,
       fitMode: "cover",
-    }, "cover");
+    });
   }
   drawImageEditor();
 });
@@ -7517,11 +7721,11 @@ imageEditorCanvas.addEventListener("wheel", (event) => {
   event.preventDefault();
   const delta = -event.deltaY;
   const factor = 1 + delta * 0.0015;
-  imageEditorDraft = clampImageEditToFrame(image, imageEditorCanvas.width, imageEditorCanvas.height, {
+  imageEditorDraft = clampImageEditorDraftToFrame(image, {
     ...imageEditorDraft,
     fitMode: "cover",
     zoom: (imageEditorDraft.zoom || 1) * factor,
-  }, "cover");
+  });
   imageZoomInput.value = String(imageEditorDraft.zoom);
   drawImageEditor();
 }, { passive: false });
@@ -7566,6 +7770,14 @@ document.addEventListener("visibilitychange", () => {
 
 window.addEventListener("focus", () => {
   void verifySession({ silent: true });
+});
+
+window.addEventListener("resize", () => {
+  scheduleSegmentTextareaResize();
+});
+
+window.visualViewport?.addEventListener("resize", () => {
+  scheduleSegmentTextareaResize();
 });
 
 window.addEventListener("beforeinstallprompt", (event) => {

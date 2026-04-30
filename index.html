@@ -167,14 +167,14 @@
               </section>
             </section>
 
-            <section class="hashtags-pane">
+            <section id="hashtags-pane" class="hashtags-pane">
               <p class="eyebrow" data-i18n="hashtagsEyebrow">Hashtags</p>
               <p class="tips-title" data-i18n="hashtagsTitle">Hashtag-Verwalter</p>
               <form id="hashtag-form" class="hashtag-form">
                 <input id="hashtag-input" type="text" placeholder="#deinTag" autocomplete="off">
                 <button id="hashtag-add-button" type="submit" class="ghost-button" data-i18n="addHashtagButton">Hinzufügen</button>
               </form>
-              <label class="hashtag-placement-label">
+              <label id="hashtag-placement-label" class="hashtag-placement-label">
                 <span data-i18n="hashtagPlacementLabel">Ausgewählte Hashtags platzieren</span>
                 <select id="hashtag-placement-select">
                   <option value="first">Im ersten Abschnitt</option>
@@ -183,8 +183,18 @@
                   <option value="all-bottom">In jedem Abschnitt unten</option>
                 </select>
               </label>
+              <label id="archive-hashtag-scope-wrap" class="hashtag-placement-label" hidden>
+                <span data-i18n="archiveHashtagScopeLabel">Hashtag-Suche im Thread</span>
+                <select id="archive-hashtag-scope-select">
+                  <option value="thread" data-i18n="archiveHashtagScopeThread">Irgendwo im Thread suchen</option>
+                  <option value="startpost" data-i18n="archiveHashtagScopeStartpost">Nur im Startpost suchen</option>
+                </select>
+              </label>
               <div id="hashtag-cloud" class="hashtag-cloud"></div>
               <p id="hashtag-selection-note" class="tips-text"></p>
+              <p id="archive-hashtag-note" class="tips-text" data-i18n="archiveHashtagHelp" hidden>
+                Wähle Hashtags aus, um ganze eigene Threads zu exportieren, in denen diese Hashtags vorkommen.
+              </p>
             </section>
           </div>
 
@@ -283,6 +293,8 @@
                 </select>
               </label>
             </section>
+
+            <div id="archive-hashtag-slot" class="archive-hashtag-slot"></div>
 
             <section class="archive-card">
               <p class="eyebrow" data-i18n="archivePdfEyebrow">PDF</p>
