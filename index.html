@@ -189,12 +189,12 @@
                   <option value="thread" data-i18n="archiveHashtagScopeThread">Irgendwo im Thread suchen</option>
                   <option value="startpost" data-i18n="archiveHashtagScopeStartpost">Nur im Startpost suchen</option>
                 </select>
+                <p id="archive-hashtag-note" class="tips-text" data-i18n="archiveHashtagHelp" hidden>
+                  Wähle Hashtags aus, um ganze eigene Threads zu exportieren, in denen diese Hashtags vorkommen.
+                </p>
               </label>
               <div id="hashtag-cloud" class="hashtag-cloud"></div>
               <p id="hashtag-selection-note" class="tips-text"></p>
-              <p id="archive-hashtag-note" class="tips-text" data-i18n="archiveHashtagHelp" hidden>
-                Wähle Hashtags aus, um ganze eigene Threads zu exportieren, in denen diese Hashtags vorkommen.
-              </p>
             </section>
           </div>
 
@@ -337,6 +337,23 @@
               <h3 data-i18n="archiveActionsTitle">Archiv erzeugen oder laden</h3>
               <p id="archive-start-hint" class="archive-start-hint settings-note" data-i18n="archiveStartHintFresh">
                 Der nächste Start beginnt als Neustart bei Welle 1.
+              </p>
+              <label class="archive-thread-url-field">
+                <span data-i18n="archiveThreadUrlLabel">Posting-URL für Thread-Import</span>
+                <input
+                  id="archive-thread-url-input"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://bsky.app/profile/handle/post/..."
+                >
+              </label>
+              <div class="archive-thread-url-controls">
+                <button type="button" class="ghost-button" id="archive-load-thread-url-button" data-i18n="archiveLoadThreadUrlButton">
+                  Thread aus URL laden
+                </button>
+              </div>
+              <p id="archive-thread-url-note" class="settings-note" data-i18n="archiveThreadUrlHint">
+                Lade einen einzelnen Bluesky-Thread direkt aus einer Posting-URL. Wenn die URL auf eine Antwort zeigt, beginnt der Import automatisch beim Thread-Start.
               </p>
               <div class="archive-actions">
                 <button type="button" class="ghost-button" id="archive-next-wave-button" data-i18n="archiveNextWaveButton">Nächste Welle laden</button>

@@ -1,4 +1,4 @@
-const APP_VERSION = "v108";
+const APP_VERSION = "v116";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -545,6 +545,8 @@ async function handleMessage(message, port) {
       return publishThread(message.payload, (progress) => port.postMessage({ progress }));
     case "EXPORT_ACCOUNT_ARCHIVE_WAVE":
       return exportAccountArchiveWave(message.payload, (progress) => port.postMessage({ progress }));
+    case "IMPORT_ARCHIVE_THREAD_FROM_URL":
+      return importArchiveThreadFromUrl(message.payload, (progress) => port.postMessage({ progress }));
     default:
       throw new Error("Unbekannter Service-Worker-Befehl.");
   }
@@ -904,19 +906,79 @@ async function uploadBlob(auth, file) {
 async function downloadBlob(auth, did, cid) {
   const response = await fetch(`${xrpcBaseForService(auth.pdsUrl || auth.service)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, {
     method: "GET",
-    headers: {
-      authorization: `Bearer ${auth.session.accessJwt}`,
-    },
   });
 
   if (!response.ok) {
-    throw new Error(`Blob konnte nicht geladen werden (${response.status}).`);
+    throw await buildBlobDownloadError(response);
   }
 
   return {
     type: response.headers.get("content-type") || "application/octet-stream",
     bytes: new Uint8Array(await response.arrayBuffer()),
   };
+}
+
+async function resolvePdsForDid(did, fallbackService = DEFAULT_LOGIN_SERVICE, cache = null) {
+  const key = String(did || "").trim();
+  if (!key) {
+    return normalizeServiceUrl(fallbackService || DEFAULT_LOGIN_SERVICE);
+  }
+
+  if (cache?.has(key)) {
+    return cache.get(key);
+  }
+
+  let serviceUrl = normalizeServiceUrl(fallbackService || DEFAULT_LOGIN_SERVICE);
+  try {
+    const didDocument = await fetchDidDocument(key);
+    serviceUrl = extractPdsServiceFromDidDocument(didDocument, serviceUrl);
+  } catch {
+    serviceUrl = normalizeServiceUrl(fallbackService || DEFAULT_LOGIN_SERVICE);
+  }
+
+  cache?.set(key, serviceUrl);
+  return serviceUrl;
+}
+
+async function downloadBlobForDid(auth, did, cid, serviceCache = null) {
+  const serviceUrl = await resolvePdsForDid(did, auth.pdsUrl || auth.service, serviceCache);
+  const response = await fetch(`${xrpcBaseForService(serviceUrl)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    throw await buildBlobDownloadError(response);
+  }
+
+  return {
+    type: response.headers.get("content-type") || "application/octet-stream",
+    bytes: new Uint8Array(await response.arrayBuffer()),
+  };
+}
+
+async function buildBlobDownloadError(response) {
+  const status = Number(response?.status) || 0;
+  let payload = null;
+  try {
+    payload = await response.clone().json();
+  } catch {
+    payload = null;
+  }
+
+  const remoteError = String(payload?.error || "").trim();
+  const remoteMessage = String(payload?.message || "").trim();
+
+  if (status === 401 || status === 403 || remoteError === "InvalidToken") {
+    return new Error("Blob-Zugriff verweigert. Der Host erlaubt den Abruf nicht oder der Account ist eingeschränkt/blockiert.");
+  }
+  if (status === 404 || remoteError === "RepoNotFound") {
+    return new Error("Blob oder Repo nicht gefunden. Das Bild ist auf dem Ursprungshost möglicherweise nicht mehr verfügbar.");
+  }
+  if (status === 400) {
+    return new Error("Blob konnte vom Ursprungshost nicht bereitgestellt werden.");
+  }
+
+  return new Error(remoteMessage || `Blob konnte nicht geladen werden (${status}).`);
 }
 
 async function login({ identifier, appPassword, service } = {}) {
@@ -1530,6 +1592,45 @@ function bytesToDataUrl(bytes, mimeType = "image/jpeg") {
   return `data:${mimeType};base64,${btoa(binary)}`;
 }
 
+function parseArchiveThreadSource(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    throw new Error("Bitte eine Bluesky-Posting-URL eingeben.");
+  }
+
+  if (raw.startsWith("at://")) {
+    const parsed = parseAtUri(raw);
+    if (!parsed.did || parsed.collection !== "app.bsky.feed.post" || !parsed.rkey) {
+      throw new Error("Die Posting-URL ist nicht gueltig.");
+    }
+    return {
+      sourceUrl: raw,
+      actor: parsed.did,
+      rkey: parsed.rkey,
+      entryUri: raw,
+    };
+  }
+
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("Die Posting-URL ist nicht gueltig.");
+  }
+
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments.length < 4 || segments[0] !== "profile" || segments[2] !== "post") {
+    throw new Error("Die Posting-URL ist nicht gueltig.");
+  }
+
+  return {
+    sourceUrl: url.toString(),
+    actor: decodeURIComponent(segments[1] || ""),
+    rkey: decodeURIComponent(segments[3] || ""),
+    entryUri: "",
+  };
+}
+
 async function waitForArchiveRunControl(runId, notifyProgress = () => {}) {
   if (!runId) {
     return "running";
@@ -1560,6 +1661,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   const auth = await ensureSession();
   const normalizedFilters = normalizeArchiveFilters(filters);
   const ownDid = auth.session.did;
+  const pdsServiceCache = new Map();
   const records = [];
   const rawRecordsByUri = new Map();
   const postsByUri = new Map();
@@ -1845,7 +1947,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       let lastBlobError = null;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          blob = await downloadBlob(auth, blobDid, cid);
+          blob = await downloadBlobForDid(auth, blobDid, cid, pdsServiceCache);
           break;
         } catch (error) {
           lastBlobError = error;
@@ -1927,6 +2029,309 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
 
   archiveRunControls.delete(runId);
   return buildResult(cancelled ? "cancelled" : "completed");
+}
+
+async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const parsedSource = parseArchiveThreadSource(url);
+  const resolveCache = new Map();
+  const pdsServiceCache = new Map();
+  const actorDid = parsedSource.actor.startsWith("did:")
+    ? parsedSource.actor
+    : await resolveHandleToDid(parsedSource.actor, auth, resolveCache);
+
+  if (!actorDid) {
+    throw new Error("Die Posting-URL konnte keinem Bluesky-Account zugeordnet werden.");
+  }
+
+  const entryUri = parsedSource.entryUri || `at://${actorDid}/app.bsky.feed.post/${parsedSource.rkey}`;
+  archiveRunControls.set(runId, { state: "running" });
+
+  notifyProgress({
+    title: "Thread wird geladen",
+    step: "Das verlinkte Posting wird geprueft …",
+    percent: 5,
+    detail: parsedSource.sourceUrl,
+    checkpoint: "Posting-URL wird geprueft",
+    state: "running",
+  });
+
+  const entryResponse = await bskyGet("app.bsky.feed.getPosts", {
+    uris: [entryUri],
+  }, {
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+  });
+  const entryPost = Array.isArray(entryResponse.posts) ? entryResponse.posts[0] : null;
+  if (!entryPost?.uri) {
+    archiveRunControls.delete(runId);
+    throw new Error("Das verlinkte Posting konnte nicht geladen werden.");
+  }
+
+  const entryRecord = entryPost.record || {};
+  const rootUri = getArchiveRootUri(entryRecord, entryPost.uri) || entryPost.uri;
+  const entryMode = rootUri && rootUri !== entryPost.uri ? "reply" : "root";
+
+  notifyProgress({
+    title: "Thread wird geladen",
+    step: entryMode === "reply"
+      ? "Das verlinkte Posting ist eine Antwort. Der Thread wird ab dem Start geladen …"
+      : "Das verlinkte Posting ist der Start des Threads. Der ganze Thread wird geladen …",
+    percent: 18,
+    detail: entryPost.author?.handle || parsedSource.actor,
+    checkpoint: entryMode === "reply" ? "Einsprung im Thread erkannt" : "Thread-Start erkannt",
+    preview: {
+      meta: entryMode === "reply" ? "Einsprung mitten im Thread" : "Thread-Start",
+      text: String(entryRecord.text || "").slice(0, 220),
+      metric: `Likes ${Number(entryPost.likeCount) || 0} · Replies ${Number(entryPost.replyCount) || 0} · Reposts ${Number(entryPost.repostCount) || 0} · Quotes ${Number(entryPost.quoteCount) || 0}`,
+    },
+    state: "running",
+  });
+
+  if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
+    archiveRunControls.delete(runId);
+    return {
+      manifest: {
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        appVersion: APP_VERSION,
+        account: {
+          handle: auth.session.handle,
+          did: auth.session.did,
+        },
+        sourceType: "thread-url",
+        threadImport: {
+          sourceUrl: parsedSource.sourceUrl,
+          entryUri: entryPost.uri,
+          rootUri,
+          entryMode,
+        },
+      },
+      posts: [],
+      assets: [],
+      session: {
+        waveIndex: 1,
+        nextCursor: "",
+        hasMore: false,
+        exportedPosts: 0,
+        exportedImages: 0,
+        status: "cancelled",
+      },
+    };
+  }
+
+  const threadResponse = await bskyGet("app.bsky.feed.getPostThread", {
+    uri: rootUri,
+    depth: 100,
+    parentHeight: 0,
+  }, {
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+  });
+
+  const threadViews = collectThreadViewPosts(threadResponse.thread || threadResponse.post || threadResponse);
+  const postsByUri = new Map();
+  const rawRecordsByUri = new Map();
+  const seenAssetPaths = new Set();
+  const assets = [];
+  let imageCount = 0;
+  let skippedImageCount = 0;
+
+  notifyProgress({
+    title: "Thread wird geladen",
+    step: `${threadViews.length} Posts wurden im Thread gefunden`,
+    percent: 38,
+    detail: rootUri,
+    checkpoint: `${threadViews.length} Thread-Posts gefunden`,
+    state: "running",
+  });
+
+  threadViews.forEach((postView) => {
+    const record = postView?.record || {};
+    const post = buildArchivePostEntity({
+      uri: postView.uri,
+      cid: postView.cid,
+      record,
+      authorHandle: postView.author?.handle || "",
+      authorDisplayName: postView.author?.displayName || postView.author?.handle || "",
+      authorDid: postView.author?.did || "",
+      counts: {
+        likeCount: Number(postView.likeCount) || 0,
+        replyCount: Number(postView.replyCount) || 0,
+        repostCount: Number(postView.repostCount) || 0,
+        quoteCount: Number(postView.quoteCount) || 0,
+      },
+    });
+    postsByUri.set(post.uri, post);
+    rawRecordsByUri.set(post.uri, record);
+  });
+
+  const orderedPosts = Array.from(postsByUri.values())
+    .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+
+  for (const [postIndex, post] of orderedPosts.entries()) {
+    if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
+      archiveRunControls.delete(runId);
+      return {
+        manifest: {
+          schemaVersion: 1,
+          exportedAt: new Date().toISOString(),
+          appVersion: APP_VERSION,
+          account: {
+            handle: auth.session.handle,
+            did: auth.session.did,
+          },
+          sourceType: "thread-url",
+          threadImport: {
+            sourceUrl: parsedSource.sourceUrl,
+            entryUri: entryPost.uri,
+            rootUri,
+            entryMode,
+            authorHandle: entryPost.author?.handle || "",
+            authorDisplayName: entryPost.author?.displayName || entryPost.author?.handle || "",
+          },
+          postCount: orderedPosts.length,
+          imageCount,
+          skippedImageCount,
+        },
+        posts: orderedPosts,
+        assets,
+        session: {
+          waveIndex: 1,
+          nextCursor: "",
+          hasMore: false,
+          exportedPosts: orderedPosts.length,
+          exportedImages: imageCount,
+          status: "cancelled",
+        },
+      };
+    }
+
+    const record = rawRecordsByUri.get(post.uri) || {};
+    const images = extractArchiveEmbedImages(record);
+    for (const [imageIndex, image] of images.entries()) {
+      const cid = getBlobCidFromRef(image);
+      if (!cid) {
+        continue;
+      }
+
+      notifyProgress({
+        title: "Thread wird geladen",
+        step: `Bild ${imageIndex + 1}/${images.length} fuer Thread-Post ${postIndex + 1}/${orderedPosts.length} wird geladen`,
+        percent: 45 + Math.round(((postIndex + 1) / Math.max(1, orderedPosts.length)) * 50),
+        detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
+        checkpoint: `Bild ${imageIndex + 1} fuer Thread-Post ${postIndex + 1}`,
+        state: "running",
+      });
+
+      let blob = null;
+      let lastBlobError = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          blob = await downloadBlobForDid(auth, post.authorDid || actorDid, cid, pdsServiceCache);
+          break;
+        } catch (error) {
+          lastBlobError = error;
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          }
+        }
+      }
+
+      if (!blob) {
+        skippedImageCount += 1;
+        notifyProgress({
+          preview: {
+            meta: `Bild uebersprungen (${lastBlobError?.message || "unbekannter Fehler"})`,
+            text: String(post.text || "").slice(0, 180),
+            metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
+          },
+          detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
+          checkpoint: `Ein Thread-Bild wurde uebersprungen`,
+          state: "running",
+        });
+        continue;
+      }
+
+      const extension = blob.type.includes("png")
+        ? "png"
+        : (blob.type.includes("webp") ? "webp" : "jpg");
+      const authorSlug = String(post.authorHandle || post.authorDid || "author")
+        .replace(/[^\w.-]+/g, "-")
+        .slice(0, 60) || "author";
+      const path = `images/${String(post.createdAt || "unknown").slice(0, 4) || "misc"}/${authorSlug}-${post.rkey || `thread-post-${postIndex + 1}`}-${imageIndex + 1}.${extension}`;
+
+      post.images.push({
+        path,
+        alt: String(image.alt || "").slice(0, 1000),
+        width: Number(image.aspectRatio?.width) || 0,
+        height: Number(image.aspectRatio?.height) || 0,
+        mimeType: blob.type,
+        sizeBytes: blob.bytes.length,
+      });
+
+      if (!seenAssetPaths.has(path)) {
+        seenAssetPaths.add(path);
+        assets.push({
+          path,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          bytes: blob.bytes,
+        });
+        imageCount += 1;
+        if (imageCount % 5 === 0) {
+          notifyProgress({
+            preview: {
+              meta: `Thread-Bild ${imageCount} heruntergeladen`,
+              text: String(post.text || "").slice(0, 180),
+              imageDataUrl: bytesToDataUrl(blob.bytes, blob.type),
+              metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
+              alt: image.alt || "Archivbild",
+            },
+            checkpoint: `Thread-Bild ${imageCount} gespeichert`,
+            state: "running",
+          });
+        }
+      }
+    }
+  }
+
+  archiveRunControls.delete(runId);
+  return {
+    manifest: {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: APP_VERSION,
+      account: {
+        handle: auth.session.handle,
+        did: auth.session.did,
+      },
+      sourceType: "thread-url",
+      threadImport: {
+        sourceUrl: parsedSource.sourceUrl,
+        entryUri: entryPost.uri,
+        rootUri,
+        entryMode,
+        authorHandle: entryPost.author?.handle || "",
+        authorDisplayName: entryPost.author?.displayName || entryPost.author?.handle || "",
+      },
+      postCount: orderedPosts.length,
+      imageCount,
+      skippedImageCount,
+    },
+    posts: orderedPosts,
+    assets,
+    session: {
+      waveIndex: 1,
+      nextCursor: "",
+      hasMore: false,
+      exportedPosts: orderedPosts.length,
+      exportedImages: imageCount,
+      status: "completed",
+    },
+  };
 }
 
 async function applyPostInteractionGates(auth, postRef, settings) {

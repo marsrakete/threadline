@@ -1,5 +1,5 @@
 {
-  "appVersion": "0.4.89",
-  "cacheVersion": "v108",
-  "label": "Fix textarea resize startup"
+  "appVersion": "0.4.97",
+  "cacheVersion": "v116",
+  "label": "Archive hashtag hint placement"
 }

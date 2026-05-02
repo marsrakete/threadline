@@ -39,9 +39,9 @@ const DEFAULT_POST_INTERACTION_SETTINGS = {
   quotePostsAllowed: true,
 };
 const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.89",
-  cacheVersion: "v108",
-  label: "Fix textarea resize startup",
+  appVersion: "0.4.97",
+  cacheVersion: "v116",
+  label: "Archive hashtag hint placement",
 };
 
 function clamp(value, min, max) {
@@ -235,6 +235,9 @@ const archiveImageSizeSelect = document.querySelector("#archive-image-size-selec
 const archiveMetricsToggle = document.querySelector("#archive-metrics-toggle");
 const archiveThreadsToggle = document.querySelector("#archive-threads-toggle");
 const archivePdfIndentToggle = document.querySelector("#archive-pdf-indent-toggle");
+const archiveThreadUrlInput = document.querySelector("#archive-thread-url-input");
+const archiveLoadThreadUrlButton = document.querySelector("#archive-load-thread-url-button");
+const archiveThreadUrlNote = document.querySelector("#archive-thread-url-note");
 const archiveNextWaveButton = document.querySelector("#archive-next-wave-button");
 const archiveExportZipButton = document.querySelector("#archive-export-zip-button");
 const archiveExportHtmlButton = document.querySelector("#archive-export-html-button");
@@ -779,6 +782,15 @@ function isArchiveHashtagContext() {
   return currentWorkspace === "archive";
 }
 
+function setElementVisibility(element, isVisible) {
+  if (!element) {
+    return;
+  }
+  element.hidden = !isVisible;
+  element.setAttribute("aria-hidden", isVisible ? "false" : "true");
+  element.style.display = isVisible ? "" : "none";
+}
+
 function applyHashtagPaneContext() {
   if (!hashtagsPane) {
     return;
@@ -787,15 +799,15 @@ function applyHashtagPaneContext() {
   if (isArchiveHashtagContext()) {
     archiveHashtagSlot?.replaceChildren(hashtagsPane);
     hashtagsPane.classList.add("is-archive-context");
-    hashtagPlacementLabel.hidden = true;
-    archiveHashtagScopeWrap.hidden = false;
-    archiveHashtagNote.hidden = false;
+    setElementVisibility(hashtagPlacementLabel, false);
+    setElementVisibility(archiveHashtagScopeWrap, true);
+    setElementVisibility(archiveHashtagNote, true);
   } else {
     composerColumn?.appendChild(hashtagsPane);
     hashtagsPane.classList.remove("is-archive-context");
-    hashtagPlacementLabel.hidden = false;
-    archiveHashtagScopeWrap.hidden = true;
-    archiveHashtagNote.hidden = true;
+    setElementVisibility(hashtagPlacementLabel, true);
+    setElementVisibility(archiveHashtagScopeWrap, false);
+    setElementVisibility(archiveHashtagNote, false);
   }
 
   renderHashtagCloud();
@@ -1071,12 +1083,29 @@ function renderArchiveStartHint() {
 }
 
 function syncArchiveTransientNoticeFromCatalog() {
-  archiveTransientNotice = archiveCatalog
-    ? t("archiveImportedNotice", {
-        posts: archiveCatalog.posts.length,
-        images: archiveCatalog.summary.imageCount,
-      })
-    : "";
+  archiveTransientNotice = buildArchiveCatalogNotice(archiveCatalog);
+}
+
+function buildArchiveCatalogNotice(catalog = archiveCatalog) {
+  if (!catalog) {
+    return "";
+  }
+
+  const values = {
+    posts: catalog.posts.length,
+    images: catalog.summary.imageCount,
+    skipped: catalog.summary.skippedImageCount || 0,
+  };
+  const threadImportMeta = catalog?.manifest?.threadImport || null;
+
+  if (threadImportMeta?.entryMode === "reply") {
+    return t("archiveThreadUrlImportedReplyNotice", values);
+  }
+  if (threadImportMeta?.entryMode === "root") {
+    return t("archiveThreadUrlImportedRootNotice", values);
+  }
+
+  return t("archiveImportedNotice", values);
 }
 
 function updateArchiveRunControls() {
@@ -1172,7 +1201,16 @@ function renderArchiveResults(catalog = archiveCatalog) {
     from: catalog.summary?.from || "—",
     to: catalog.summary?.to || "—",
     images: catalog.summary?.imageCount || 0,
+    skipped: catalog.summary?.skippedImageCount || 0,
   });
+  const threadImportMeta = catalog?.manifest?.threadImport || null;
+  const sourceNote = document.createElement("p");
+  sourceNote.className = "settings-note";
+  if (threadImportMeta?.entryMode === "reply") {
+    sourceNote.textContent = t("archiveThreadUrlImportedReplyShort");
+  } else if (threadImportMeta?.entryMode === "root") {
+    sourceNote.textContent = t("archiveThreadUrlImportedRootShort");
+  }
   const resume = document.createElement("p");
   resume.className = "settings-note";
   resume.textContent = t("archiveSessionMeta", {
@@ -1208,7 +1246,11 @@ function renderArchiveResults(catalog = archiveCatalog) {
   });
 
   actions.append(zipButton, htmlButton, pdfButton);
-  card.append(title, note, resume, actions);
+  card.append(title, note);
+  if (sourceNote.textContent) {
+    card.append(sourceNote);
+  }
+  card.append(resume, actions);
   archiveResults.appendChild(card);
 }
 
@@ -1277,14 +1319,20 @@ function updateClearButtonState() {
 }
 
 function updateComposerLockState() {
+  const composerHashtagLocked = composerLocked && !isArchiveHashtagContext();
   sourceText.disabled = composerLocked;
   counterToggle.disabled = composerLocked;
   threadIntroToggle.disabled = composerLocked;
   threadEmojiToggle.disabled = composerLocked;
   markerSpacingToggle.disabled = composerLocked;
   postSettingsButton.disabled = composerLocked;
+  hashtagInput.disabled = composerHashtagLocked;
+  hashtagAddButton.disabled = composerHashtagLocked;
+  hashtagPlacementSelect.disabled = composerHashtagLocked;
   updateClearButtonState();
   composerLockNote.hidden = !composerLocked;
+  hashtagsPane?.classList.toggle("is-locked", composerHashtagLocked);
+  renderHashtagCloud();
 }
 
 function setComposerLocked(locked) {
@@ -1629,6 +1677,9 @@ function applyTranslations() {
   customServerField.placeholder = "https://example.com";
   sourceText.placeholder = t("sourcePlaceholder");
   hashtagInput.placeholder = t("hashtagInputPlaceholder");
+  if (archiveThreadUrlInput) {
+    archiveThreadUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
+  }
   loginButton.textContent = t("loginButton");
   loginDialogCancelButton.textContent = t("cancelButton");
   loginDialogCloseTop.textContent = t("closeButton");
@@ -1645,6 +1696,9 @@ function applyTranslations() {
   archiveButton.textContent = t("archiveLaunchButton");
   archiveBackButton.textContent = t("archiveBackButton");
   archiveNextWaveButton.textContent = t("archiveNextWaveButton");
+  if (archiveLoadThreadUrlButton) {
+    archiveLoadThreadUrlButton.textContent = t("archiveLoadThreadUrlButton");
+  }
   archiveExportZipButton.textContent = t("archiveExportZipButton");
   archiveExportHtmlButton.textContent = t("archiveExportHtmlButton");
   archiveExportPdfButton.textContent = t("archiveExportPdfButton");
@@ -3142,6 +3196,7 @@ function normalizeImportedArchiveCatalog(rawCatalog) {
     assets,
     summary: {
       imageCount,
+      skippedImageCount: Math.max(0, Number(rawCatalog.manifest?.skippedImageCount) || 0),
       from: posts[posts.length - 1]?.createdAt || "",
       to: posts[0]?.createdAt || "",
     },
@@ -3179,6 +3234,35 @@ async function loadArchiveCatalogFromFile(file) {
 
   const text = /\.gz$/i.test(file.name) ? await gunzipBlob(file) : await file.text();
   return normalizeImportedArchiveCatalog(JSON.parse(text));
+}
+
+async function applyLoadedArchiveCatalog(catalog, sessionOverrides = {}) {
+  archivePreviewState = null;
+  activeArchiveRunId = null;
+  activeArchiveRunState = "idle";
+  archiveLastCheckpoint = "";
+  archiveCatalog = catalog;
+  archiveSession = {
+    filterKey: sessionOverrides.filterKey || "import",
+    filters: sessionOverrides.filters || null,
+    waveIndex: Number(sessionOverrides.waveIndex) || 1,
+    nextCursor: sessionOverrides.nextCursor || "",
+    hasMore: Boolean(sessionOverrides.hasMore),
+    exportedPosts: Number(sessionOverrides.exportedPosts) || archiveCatalog.posts.length,
+    exportedImages: Number(sessionOverrides.exportedImages) || archiveCatalog.summary.imageCount,
+    status: sessionOverrides.status || "completed",
+    updatedAt: new Date().toISOString(),
+  };
+  await saveArchiveSession(archiveSession);
+  await saveArchiveCatalogState(archiveCatalog);
+  archiveTransientNotice = buildArchiveCatalogNotice(archiveCatalog);
+  renderArchiveWorkspace();
+  setArchiveProgress({
+    title: t("archiveProgressDoneTitle"),
+    step: sessionOverrides.step || t("archiveImported"),
+    percent: 100,
+    detail: archiveTransientNotice,
+  });
 }
 
 function makeArchiveFileBaseName(catalog = archiveCatalog) {
@@ -3378,6 +3462,8 @@ function buildArchiveHtmlI18n() {
     "archiveHtmlGenerated",
     "archiveSummaryPosts",
     "archiveSummaryImages",
+    "archiveSkippedImagesLabel",
+    "archiveSkippedImagesNotice",
     "archiveHtmlArchiveRangeLabel",
     "archiveHtmlArchiveRangeValue",
     "archiveHtmlSearchLabel",
@@ -3545,6 +3631,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
   const toValue = formatArchiveHtmlDateInputValue(catalog?.summary?.to);
   const exportedAtIso = catalog?.manifest?.exportedAt || new Date().toISOString();
   const title = t("archiveHtmlTitle", { handle });
+  const skippedImageCount = Number(catalog?.summary?.skippedImageCount) || 0;
   const groupsMarkup = groups.map((group, groupIndex) => {
     const depthMap = buildArchiveThreadDepthMap(group.posts);
     const summaryLabel = group.isThread
@@ -3762,6 +3849,14 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         font-size: 0.82rem;
         color: var(--muted);
         margin-bottom: 4px;
+      }
+      .archive-html-warning {
+        margin: 10px 0 0;
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(217, 95, 75, 0.1);
+        border: 1px solid rgba(217, 95, 75, 0.18);
+        color: #8c2f20;
       }
       .archive-html-toolbar {
         position: sticky;
@@ -4104,6 +4199,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         <p class="archive-html-kicker" data-i18n-key="archiveHeaderEyebrow">${escapeHtml(t("archiveHeaderEyebrow"))}</p>
         <h1 id="archive-page-title">${escapeHtml(title)}</h1>
         <p id="archive-generated-copy">${escapeHtml(t("archiveHtmlGenerated", { exportedAt: formatHistoryTimestamp(exportedAtIso) }))}</p>
+        ${skippedImageCount > 0 ? `<p class="archive-html-warning" id="archive-skipped-copy">${escapeHtml(t("archiveSkippedImagesNotice", { skipped: skippedImageCount }))}</p>` : ""}
         <div class="archive-html-meta">
           <div class="archive-html-meta-item">
             <span data-i18n-key="archiveSummaryPosts">${escapeHtml(t("archiveSummaryPosts"))}</span>
@@ -4113,6 +4209,12 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
             <span data-i18n-key="archiveSummaryImages">${escapeHtml(t("archiveSummaryImages"))}</span>
             <strong>${catalog.summary?.imageCount || 0}</strong>
           </div>
+          ${skippedImageCount > 0 ? `
+            <div class="archive-html-meta-item">
+              <span data-i18n-key="archiveSkippedImagesLabel">${escapeHtml(t("archiveSkippedImagesLabel"))}</span>
+              <strong>${skippedImageCount}</strong>
+            </div>
+          ` : ""}
           <div class="archive-html-meta-item">
             <span data-i18n-key="archiveHtmlArchiveRangeLabel">${escapeHtml(t("archiveHtmlArchiveRangeLabel"))}</span>
             <strong
@@ -4193,6 +4295,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         handle,
         exportedAtIso,
         title,
+        skippedImageCount,
       })};
       const groups = Array.from(document.querySelectorAll("[data-archive-entry]"));
       const browserLocales = Array.isArray(navigator.languages) && navigator.languages.length > 0
@@ -4268,6 +4371,12 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         if (generatedCopy) {
           generatedCopy.textContent = formatArchiveTemplate(archiveStrings.archiveHtmlGenerated, {
             exportedAt: formatArchiveDateTime(archiveRuntimeData.exportedAtIso),
+          });
+        }
+        const skippedCopy = document.querySelector("#archive-skipped-copy");
+        if (skippedCopy) {
+          skippedCopy.textContent = formatArchiveTemplate(archiveStrings.archiveSkippedImagesNotice, {
+            skipped: archiveRuntimeData.skippedImageCount || 0,
           });
         }
         const rangeCopy = document.querySelector("#archive-range-copy");
@@ -5184,6 +5293,12 @@ async function renderArchivePdfCanvasPage(catalog, posts, pageIndex, pageCount, 
   const pageCounter = `Seite ${pageIndex + 1}/${pageCount}`;
   const pageCounterWidth = context.measureText(pageCounter).width;
   context.fillText(pageCounter, margin + pageWidth - (18 * scale) - pageCounterWidth, margin + (24 * scale));
+  const skippedImageCount = Number(catalog?.summary?.skippedImageCount) || 0;
+  if (skippedImageCount > 0) {
+    context.fillStyle = "#a33e2d";
+    context.font = `${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(t("archiveSkippedImagesPdfNotice", { skipped: skippedImageCount }), margin + (18 * scale), margin + (48 * scale));
+  }
 
   const baseCardX = margin + (18 * scale);
   const baseCardWidth = pageWidth - (36 * scale);
@@ -5590,6 +5705,89 @@ async function ensureArchiveCatalogLoaded(forceRefresh = false) {
   return archiveCatalog;
 }
 
+async function importArchiveThreadFromUrl() {
+  const threadUrl = String(archiveThreadUrlInput?.value || "").trim();
+  if (!threadUrl) {
+    throw new Error(t("archiveThreadUrlInvalid"));
+  }
+
+  setArchiveProgress({
+    title: t("archiveThreadUrlLoadingTitle"),
+    step: t("archiveThreadUrlLoadingStep"),
+    percent: 4,
+    detail: threadUrl,
+  });
+  archivePreviewState = null;
+  archiveTransientNotice = "";
+  activeArchiveRunId = crypto.randomUUID();
+  activeArchiveRunState = "running";
+  updateArchiveRunControls();
+  renderArchivePreview();
+  renderArchiveStatusLine();
+
+  let catalog;
+  try {
+    catalog = await sendToServiceWorker("IMPORT_ARCHIVE_THREAD_FROM_URL", {
+      runId: activeArchiveRunId,
+      url: threadUrl,
+    }, {
+      timeoutMs: 600000,
+      onProgress(progress) {
+        const progressDetail = [
+          progress.detail || "",
+          progress.preview?.metric || "",
+          progress.preview?.meta || "",
+        ].filter(Boolean).join(" \u2022 ");
+        setArchiveProgress({
+          title: progress.title || archiveJobState?.title || t("archiveThreadUrlLoadingTitle"),
+          step: progress.step || archiveJobState?.step || t("archiveThreadUrlLoadingStep"),
+          percent: Number.isFinite(progress.percent) ? progress.percent : (archiveJobState?.percent || 0),
+          detail: progressDetail || archiveJobState?.detail || threadUrl,
+        });
+        if (progress.checkpoint) {
+          archiveLastCheckpoint = progress.checkpoint;
+        } else if (progress.preview?.meta) {
+          archiveLastCheckpoint = progress.preview.meta;
+        } else if (progress.detail) {
+          archiveLastCheckpoint = progress.detail;
+        }
+        if (progress.preview) {
+          archivePreviewState = progress.preview;
+          renderArchivePreview();
+        }
+        if (progress.state === "paused") {
+          activeArchiveRunState = "paused";
+        } else if (progress.state === "running") {
+          activeArchiveRunState = "running";
+        }
+        updateArchiveRunControls();
+        renderArchiveStatusLine();
+        renderArchiveStartHint();
+      },
+    });
+  } catch (error) {
+    activeArchiveRunState = "idle";
+    activeArchiveRunId = null;
+    updateArchiveRunControls();
+    throw error;
+  }
+
+  activeArchiveRunState = "idle";
+  activeArchiveRunId = null;
+  updateArchiveRunControls();
+  await applyLoadedArchiveCatalog(normalizeImportedArchiveCatalog(catalog), {
+    filterKey: `thread-url:${catalog?.manifest?.threadImport?.entryUri || threadUrl}`,
+    filters: null,
+    waveIndex: 1,
+    nextCursor: "",
+    hasMore: false,
+    exportedPosts: catalog?.posts?.length || 0,
+    exportedImages: Array.isArray(catalog?.assets) ? catalog.assets.length : 0,
+    status: "completed",
+    step: t("archiveThreadUrlImportedStep"),
+  });
+}
+
 function buildComposedText(baseText) {
   const trimmedBase = baseText.trim();
   const selectedText = getSelectedHashtagText();
@@ -5611,6 +5809,7 @@ function renderHashtagCloud() {
   hashtagCloud.innerHTML = "";
   const isArchiveContext = isArchiveHashtagContext();
   const activeSelectedHashtags = isArchiveContext ? archiveSelectedHashtags : selectedHashtags;
+  const composerHashtagLocked = composerLocked && !isArchiveContext;
 
   hashtags.forEach((tag) => {
     const item = document.createElement("div");
@@ -5623,7 +5822,11 @@ function renderHashtagCloud() {
       button.classList.add("is-selected");
     }
     button.textContent = formatHashtag(tag.value);
+    button.disabled = composerHashtagLocked;
     button.addEventListener("click", () => {
+      if (composerHashtagLocked) {
+        return;
+      }
       const currentSelection = isArchiveContext ? archiveSelectedHashtags : selectedHashtags;
       const nextSelection = currentSelection.includes(tag.normalized)
         ? currentSelection.filter((entry) => entry !== tag.normalized)
@@ -5650,12 +5853,16 @@ function renderHashtagCloud() {
     editButton.type = "button";
     editButton.className = "hashtag-tool";
     editButton.setAttribute("aria-label", t("editHashtagAria", { tag: formatHashtag(tag.value) }));
+    editButton.disabled = composerHashtagLocked;
     editButton.innerHTML = `
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 16.75V20h3.25L18.4 8.84l-3.24-3.24L4 16.75zm14.71-9.04a1 1 0 0 0 0-1.42l-1-1a1 1 0 0 0-1.42 0l-.88.88 3.24 3.24.06-.06z"></path>
       </svg>
     `;
     editButton.addEventListener("click", async () => {
+      if (composerHashtagLocked) {
+        return;
+      }
       openHashtagEditDialog(tag);
     });
 
@@ -5663,12 +5870,16 @@ function renderHashtagCloud() {
     deleteButton.type = "button";
     deleteButton.className = "hashtag-tool danger";
     deleteButton.setAttribute("aria-label", t("deleteHashtagAria", { tag: formatHashtag(tag.value) }));
+    deleteButton.disabled = composerHashtagLocked;
     deleteButton.innerHTML = `
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path>
       </svg>
     `;
     deleteButton.addEventListener("click", async () => {
+      if (composerHashtagLocked) {
+        return;
+      }
       hashtags = hashtags.filter((entry) => entry.normalized !== tag.normalized);
       selectedHashtags = selectedHashtags.filter((entry) => entry !== tag.normalized);
       archiveSelectedHashtags = archiveSelectedHashtags.filter((entry) => entry !== tag.normalized);
@@ -6821,6 +7032,7 @@ async function hydrateAppState() {
     syncArchiveTransientNoticeFromCatalog();
     applyDesktopLayoutState();
     applySidebarState();
+    applyHashtagPaneContext();
     applyTranslations();
     if (segmentImages.some((images) => (images || []).length > 0)) {
       scheduleImageValidation();
@@ -7254,6 +7466,35 @@ archiveNextWaveButton.addEventListener("click", async () => {
   }
 });
 
+if (archiveThreadUrlInput) {
+  archiveThreadUrlInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      archiveLoadThreadUrlButton?.click();
+    }
+  });
+}
+
+if (archiveLoadThreadUrlButton) {
+  archiveLoadThreadUrlButton.addEventListener("click", async () => {
+    try {
+      setBusy(archiveLoadThreadUrlButton, true, t("archiveWorkingButton"), t("archiveLoadThreadUrlButton"));
+      await importArchiveThreadFromUrl();
+    } catch (error) {
+      console.error(error);
+      setArchiveProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("archiveThreadUrlImportFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("archiveThreadUrlImportFailed"), t("archiveErrorTitle"));
+    } finally {
+      setBusy(archiveLoadThreadUrlButton, false, t("archiveWorkingButton"), t("archiveLoadThreadUrlButton"));
+    }
+  });
+}
+
 archivePauseButton.addEventListener("click", () => {
   void setArchiveRunControl("pause");
 });
@@ -7357,33 +7598,13 @@ archiveImportInput.addEventListener("change", async (event) => {
       percent: 40,
       detail: file.name,
     });
-    archivePreviewState = null;
-    activeArchiveRunId = null;
-    activeArchiveRunState = "idle";
-    archiveLastCheckpoint = "";
-    archiveCatalog = await loadArchiveCatalogFromFile(file);
-    archiveSession = {
+    await applyLoadedArchiveCatalog(await loadArchiveCatalogFromFile(file), {
       filterKey: "import",
       filters: null,
       waveIndex: 1,
       nextCursor: "",
       hasMore: false,
-      exportedPosts: archiveCatalog.posts.length,
-      exportedImages: archiveCatalog.summary.imageCount,
-      updatedAt: new Date().toISOString(),
-    };
-    await saveArchiveSession(archiveSession);
-    await saveArchiveCatalogState(archiveCatalog);
-    archiveTransientNotice = t("archiveImportedNotice", {
-      posts: archiveCatalog.posts.length,
-      images: archiveCatalog.summary.imageCount,
-    });
-    renderArchiveWorkspace();
-    setArchiveProgress({
-      title: t("archiveProgressDoneTitle"),
       step: t("archiveImported"),
-      percent: 100,
-      detail: archiveTransientNotice,
     });
   } catch (error) {
     console.error(error);
@@ -7504,6 +7725,9 @@ hideTipsButton.addEventListener("click", async () => {
 
 hashtagForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (composerLocked && !isArchiveHashtagContext()) {
+    return;
+  }
   const parsed = parseHashtagValue(hashtagInput.value);
   if (!parsed) {
     setStatus(t("hashtagInvalid"), "error");
@@ -7527,6 +7751,9 @@ hashtagForm.addEventListener("submit", async (event) => {
 });
 
 hashtagPlacementSelect.addEventListener("change", async () => {
+  if (composerLocked && !isArchiveHashtagContext()) {
+    return;
+  }
   hashtagPlacement = normalizeHashtagPlacement(hashtagPlacementSelect.value);
   segmentOverrides = null;
   setComposerLocked(false);
@@ -7803,6 +8030,7 @@ hashtagPlacement = "first";
 languageSelect.value = localePreference;
 applyLoginServiceSelection(LOGIN_SERVICE_PRESETS["bsky.social"]);
 renderAccountSwitcher();
+applyHashtagPaneContext();
 applyTranslations();
 updateInstallButtonVisibility();
 setStatus(t("statusPreparing"));
