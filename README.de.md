@@ -21,6 +21,29 @@
 
 Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich mit einem Bluesky-App-Passwort, speichert Entwürfe lokal im Browser und hilft dabei, längere Texte in bearbeitbare Thread-Abschnitte aufzuteilen. Bilder, Hashtags, Segment-Änderungen und weitere Einstellungen bleiben lokal erhalten und können zusätzlich exportiert oder als kompletter Thread gespeichert werden.
 
+## Kurz
+
+Threadline ist inzwischen deutlich mehr als ein Thread-Composer. Mit eigenen Workspaces für Archiv-Funktion, Netzwerk und DM-Archiv, direkter In-App-Hilfe, robusterem Export, besserer mobiler HTML-Lesbarkeit und Drag-and-Drop für Bilder wird die App zu einer kleinen Bluesky-Arbeitsumgebung.
+
+## In 3 Schritten Zum Ersten Thread-Post
+
+1. Erzeuge ein Bluesky-App-Passwort, füge dein Konto in Threadline hinzu und melde dich an.
+2. Schreibe oder füge deinen Text in den Composer ein, ergänze bei Bedarf Bilder, ALT-Texte und Hashtags.
+3. Prüfe die Thread-Abschnitte und veröffentliche den Thread mit dem Post-Button.
+
+## Bluesky-App-Passwort Erzeugen
+
+Threadline verwendet ein Bluesky-App-Passwort und nicht dein normales Konto-Passwort.
+
+1. Öffne Bluesky.
+2. Gehe zu `Einstellungen`.
+3. Öffne `Datenschutz und Sicherheit`.
+4. Öffne `App-Passwörter`.
+5. Erzeuge ein neues App-Passwort.
+6. Kopiere das erzeugte Passwort und verwende es in Threadline.
+
+Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kannst, ohne dein normales Login-Passwort ändern zu müssen.
+
 ## Funktionsumfang
 
 - Bluesky-Anmeldung mit App-Passwort über einen kompakten `Konto hinzufügen`-Dialog
@@ -34,7 +57,7 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Installierbare PWA mit Service Worker, Offline-App-Hülle und Install-Button
 - Auf mobilen Geräten lässt sich die linke Spalte über einen Aufklapper ein- und ausblenden
 - Hilfe-Dialog direkt aus dem README in der App
-- Update-Erkennung über `version.json` mit manueller Prüfung in den Einstellungen
+- Die App erkennt neue Versionen, kann manuell danach suchen und zeigt bei Bedarf direkt einen Neu-laden-Button
 - Statusanzeige und Historie der letzten Postings
 
 ## Schreiben Und Aufteilen
@@ -163,23 +186,6 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 7. Mit `PDF-Bände erzeugen` daraus zusätzlich eine paginierte PDF-Fassung erzeugen
 - Für große Accounts sollte der Export am besten auf einem Desktop-Gerät mit viel freiem Speicher in mehreren Wellen durchgeführt werden
 
-### Account-Archiv Für Techies
-
-- Der Export läuft vollständig in der bestehenden PWA ohne eigenes Backend
-- Posts werden über `com.atproto.repo.listRecords` für `app.bsky.feed.post` seitenweise geladen
-- Phase 1 des Filters arbeitet direkt auf den eigenen Repo-Records:
-- `Voll-Archiv` übernimmt alle eigenen Posts
-- `Nur eigene Postings` verwirft eigene Replies in fremden Threads
-- Phase 2 erweitert bei `Eigene Threads komplett` zusätzlich die eigenen Thread-Wurzeln über `app.bsky.feed.getPostThread`
-- Dabei werden auch Antworten fremder Accounts in eigenen Threads ins Archiv übernommen
-- Metriken werden in Batches über `app.bsky.feed.getPosts` nachhydratisiert
-- Bilder werden über `com.atproto.sync.getBlob` geladen und mit stabilen Pfaden ins Archiv übernommen
-- Große Exporte laufen in Wellen; im Browser werden dafür nur kleine Resume-Metadaten gehalten
-- Das ZIP enthält `manifest.json`, `posts.json` und alle geladenen Bilddateien
-- Das HTML-Archiv ist eine einzelne Datei mit eingebetteten Bildern, Suchfeld, Datumsfiltern sowie Optionen für `nur Posts mit Bildern` und `nur Threads`
-- PDF-Bände werden aus dem geladenen Archivmodell erzeugt, nicht direkt aus Live-Responses
-- Die Bandgröße für PDFs ist bewusst bis `1000` Posts konfigurierbar
-
 ## Posting Auf Bluesky
 
 - Ein einzelner kurzer Text kann als normaler Post gesendet werden
@@ -193,15 +199,13 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 - Hashtags, Mentions und Links werden beim Posten als Rich-Text-Facets übertragen, damit sie in Bluesky anklickbar sind
 - Auch die gewählten Post-Sprachen und Interaktionseinstellungen werden an Bluesky übergeben
 
-## Warum Es Keine Link-Cards Gibt
+## Netzwerk-Workspace
 
-### Kurz Erklärt
-
-Threadline läuft komplett als statische App im Browser und hat kein eigenes Backend. Darum kann die App fremde Webseiten nicht zuverlässig auslesen, um daraus Vorschaukarten mit Titel, Beschreibung und Bild zu bauen. Links im Text funktionieren trotzdem und bleiben in Bluesky anklickbar, aber eine automatisch erzeugte Link-Card wird von Threadline derzeit nicht erstellt.
-
-### Für Techies
-
-Das Problem ist Cross-Origin-Zugriff im Browser. Um Open-Graph-Daten einer fremden Seite zu lesen, müsste die Zielseite den Abruf per CORS ausdrücklich erlauben. Viele Websites tun das nicht. Ohne eigenen Server oder Worker kann eine PWA auf GitHub Pages diese HTML-Antworten und Vorschaubilder daher nicht verlässlich auslesen und als `app.bsky.embed.external` mit Thumbnail aufbereiten. Deshalb beschränkt sich Threadline aktuell bewusst auf klickbare Links per Rich-Text-Facets.
+- Der Bereich `Netzwerk` lädt Follower, Following und Mutuals schrittweise in Wellen und zeigt sie als interaktive Bühnenansicht
+- Accounts können nach Beziehungstyp gefiltert, gesucht und direkt in einem Fokus-Overlay untersucht werden
+- Der Fokus zeigt unter anderem Relevanz, Follow-Daten, Vorschau-Listen, gegenseitige Likes im Sample und aktuelle Aktivität
+- `Relevant` hebt Accounts mit einem internen Score hervor, der aktuell vor allem Beziehungstyp, Follower-Zahl dieses Accounts und dessen Posting-Aktivität kombiniert
+- Der Aktivitätsblock zeigt zurzeit den letzten Post sowie Posts und Likes auf diese aktuellen Posts in den letzten 14 und 60 Tagen
 
 ## Letzte Postings
 
@@ -222,33 +226,6 @@ Das Problem ist Cross-Origin-Zugriff im Browser. Um Open-Graph-Daten einer fremd
 - Es gibt einen Button für den nächsten Tipp
 - Tipps können ausgeblendet werden
 - In den Einstellungen lassen sie sich später wieder einschalten
-
-## Bluesky-App-Passwort Erzeugen
-
-Threadline verwendet ein Bluesky-App-Passwort und nicht dein normales Konto-Passwort.
-
-1. Öffne Bluesky.
-2. Gehe zu `Einstellungen`.
-3. Öffne `Datenschutz und Sicherheit`.
-4. Öffne `App-Passwörter`.
-5. Erzeuge ein neues App-Passwort.
-6. Kopiere das erzeugte Passwort und verwende es in Threadline.
-
-Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kannst, ohne dein normales Login-Passwort ändern zu müssen.
-
-## Lokal Starten
-
-Threadline ist eine statische App. Ein einfacher lokaler Webserver reicht aus.
-
-```powershell
-python -m http.server 4173
-```
-
-Danach im Browser öffnen:
-
-```text
-http://localhost:4173
-```
 
 ## Als App Installieren
 
@@ -287,61 +264,9 @@ Hinweis: Unter iOS kann die Installation nicht automatisch ausgelöst werden. In
 - schnelleres Wiederöffnen wie bei einer normalen App
 - offline-fähige App-Hülle durch den Service Worker
 
-## Hinweise Zu Zugangsdaten Und Speicherung
+## Technische Hinweise
 
-- Bluesky-App-Passwörter werden lokal gespeichert, damit Sessions erneuert und mehrere Logins reload-sicher gehalten werden können
-- Backups enthalten diese Login-Einträge, aber keine App-Passwörter
-- Session-Daten, Entwurf und App-Zustand liegen lokal in IndexedDB
-- Für diese App ist kein eigenes Backend nötig
-
-## Projektstruktur
-
-```text
-.
-├── app.js
-├── index.html
-├── manifest.webmanifest
-├── styles.css
-├── sw.js
-├── translations.js
-├── version.json
-└── icons/
-    ├── icon.svg
-    └── maskable-icon.svg
-```
-
-## Update-Erkennung
-
-Threadline verwendet eine Versionsprüfung mit sichtbarer App-Version.
-
-- `version.json` enthält die öffentlich sichtbaren Versionsinformationen
-- der Service Worker lädt `version.json` mit Netz-Priorität
-- die App prüft beim Start auf Updates
-- in den Einstellungen kann man manuell auf Updates prüfen
-
-Bei Änderungen sollten diese Dateien konsistent gehalten werden:
-
-- `version.json`
-- `app.js` (`CURRENT_VERSION_INFO`)
-- `sw.js` (`APP_VERSION`) wenn sich gecachte Assets oder das Verhalten des Service Workers ändern
-
-## Empfohlene Tests
-
-- Verwende ein eigenes Bluesky-Testkonto, oder
-- erstelle ein separates App-Passwort zum Testen
-
-Damit kannst du sinnvoll prüfen:
-
-- Login-Ablauf
-- automatische Session-Erneuerung
-- Entwurfs-Speicherung
-- Split-Verhalten
-- manuelle Segment-Bearbeitung
-- Thread-Datei speichern und laden
-- Backup exportieren und importieren
-- Bilder und ALT-Texte
-- Thread-Veröffentlichung
-- Update-Erkennung
+Ausführlichere technische Informationen zu Archiv, Netzwerk-Datenbasis, Link-Cards, lokalem Start, Update-Erkennung und empfohlenen Tests stehen in [TECHNICAL.de.md](TECHNICAL.de.md).
 
 ## Lizenz
 

@@ -3,19 +3,23 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https: data: blob:; font-src 'self' data:; media-src 'self' data: blob: https:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:; manifest-src 'self'">
     <meta name="theme-color" content="#0d1321">
-    <meta name="description" content="PWA zum Entwerfen und Veröffentlichen von Bluesky-Posts und Threads mit Bildern, Hashtags und Archivfunktion.">
+    <meta name="description" content="PWA zum Entwerfen und Veröffentlichen von Bluesky-Posts und Threads mit Bildern, Hashtags und Archiv-Funktion.">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Threadline">
     <meta property="og:title" content="Threadline">
-    <meta property="og:description" content="PWA zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archivfunktion.">
+    <meta property="og:description" content="PWA zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archiv-Funktion.">
     <meta property="og:url" content="https://marsrakete.github.io/threadline/">
-    <meta property="og:image" content="https://marsrakete.github.io/threadline/og-image.jpg">
+    <meta property="og:image" content="https://marsrakete.github.io/threadline/icons/threadline-og-workspaces.svg">
+    <meta property="og:image:type" content="image/svg+xml">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="Threadline Vorschau">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Threadline">
-    <meta name="twitter:description" content="PWA zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archivfunktion.">
-    <meta name="twitter:image" content="https://marsrakete.github.io/threadline/og-image.jpg">
+    <meta name="twitter:description" content="PWA zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archiv-Funktion.">
+    <meta name="twitter:image" content="https://marsrakete.github.io/threadline/icons/threadline-og-workspaces.svg">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="icons/icon.svg">
@@ -77,14 +81,46 @@
           </button>
         </div>
 
-        <div class="archive-launch-panel">
-          <p class="eyebrow" data-i18n="archiveLaunchEyebrow">Archiv</p>
-          <button type="button" class="ghost-button status-history-button" id="archive-button" data-i18n="archiveLaunchButton" disabled>
-            Account-Archiv
-          </button>
-          <p id="archive-launch-note" class="archive-launch-note" data-i18n="archiveLaunchDisabledNote">
-            Zum Sichern bitte zuerst verbinden.
-          </p>
+        <div class="workspace-hub-panel">
+          <p class="eyebrow" data-i18n="workspaceHubEyebrow">Workspaces</p>
+          <div class="workspace-hub-grid">
+            <div class="workspace-launch-chip">
+              <button type="button" class="ghost-button status-history-button workspace-chip-button is-active" id="composer-button" data-i18n="composerLaunchButton" aria-pressed="true">
+                Composer
+              </button>
+              <p id="composer-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="composerLaunchNote">
+                Texte schreiben, Threads aufteilen und Bilder anordnen.
+              </p>
+            </div>
+
+            <div class="workspace-launch-chip">
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="archive-button" data-i18n="archiveLaunchButton" disabled>
+                Archiv-Funktion
+              </button>
+              <p id="archive-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="archiveLaunchDisabledNote">
+                Zum Sichern bitte zuerst verbinden.
+              </p>
+            </div>
+
+            <div class="workspace-launch-chip">
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="network-button" data-i18n="networkLaunchButton" disabled>
+                Netzwerk
+              </button>
+              <p id="network-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="networkLaunchDisabledNote">
+                Zum Anzeigen bitte zuerst verbinden.
+              </p>
+            </div>
+
+            <div class="workspace-launch-chip dm-launch-panel" hidden>
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="dm-button" data-i18n="dmLaunchButton" disabled>
+                DM-Archiv
+              </button>
+              <p id="dm-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="dmLaunchDisabledNote">
+                Zum Laden deiner DMs bitte zuerst verbinden.
+              </p>
+            </div>
+          </div>
+          <p id="archive-background-notice" class="archive-background-notice" hidden></p>
         </div>
 
         <div class="support-panel">
@@ -121,13 +157,19 @@
               <div class="section-heading">
                 <div>
                   <p class="eyebrow" data-i18n="composerEyebrow">Composer</p>
-                  <h2 data-i18n="composerTitle">Text eingeben</h2>
+                  <div class="help-heading">
+                    <h2 data-i18n="composerTitle">Text eingeben</h2>
+                    <button type="button" class="help-trigger" data-help-topic="composer_workspace" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+                  </div>
                 </div>
 
                 <div class="toggle-stack">
-                  <button id="post-settings-button" type="button" class="ghost-button composer-language-button" data-i18n="postSettingsButton">
-                    Post-Einstellungen
-                  </button>
+                  <div class="help-heading">
+                    <button id="post-settings-button" type="button" class="ghost-button composer-language-button" data-i18n="postSettingsButton">
+                      Post-Einstellungen
+                    </button>
+                    <button type="button" class="help-trigger" data-help-topic="composer_post_settings" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+                  </div>
                 </div>
               </div>
 
@@ -135,7 +177,10 @@
                 <p id="post-languages-summary" class="composer-language-summary"></p>
               </div>
 
-              <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
+              <div class="help-heading">
+                <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
+                <button type="button" class="help-trigger" data-help-topic="composer_input" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
               <textarea id="source-text" maxlength="5000" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …"></textarea>
 
               <div class="composer-meta">
@@ -169,7 +214,10 @@
 
             <section id="hashtags-pane" class="hashtags-pane">
               <p class="eyebrow" data-i18n="hashtagsEyebrow">Hashtags</p>
-              <p class="tips-title" data-i18n="hashtagsTitle">Hashtag-Verwalter</p>
+              <div class="help-heading">
+                <p class="tips-title" data-i18n="hashtagsTitle">Hashtag-Verwalter</p>
+                <button type="button" class="help-trigger" data-help-topic="composer_hashtags" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
               <form id="hashtag-form" class="hashtag-form">
                 <input id="hashtag-input" type="text" placeholder="#deinTag" autocomplete="off">
                 <button id="hashtag-add-button" type="submit" class="ghost-button" data-i18n="addHashtagButton">Hinzufügen</button>
@@ -210,7 +258,10 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow" data-i18n="splitEyebrow">Auto-Split</p>
-                <h2 data-i18n="splitTitle">Thread-Abschnitte</h2>
+                <div class="help-heading">
+                  <h2 data-i18n="splitTitle">Thread-Abschnitte</h2>
+                  <button type="button" class="help-trigger" data-help-topic="composer_segments" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+                </div>
                 <p class="section-note" data-i18n="splitHint">Feinschliff möglich! Das Editieren in den Abschnitten ist erlaubt. Änderungen im Composer überschreiben das aber!</p>
               </div>
             </div>
@@ -231,8 +282,11 @@
         <section id="archive-workspace" class="archive-workspace workspace-view" hidden>
           <div class="archive-header-panel">
             <div>
-              <p class="eyebrow" data-i18n="archiveHeaderEyebrow">Account-Archiv</p>
-              <h2 data-i18n="archiveHeaderTitle">Beiträge, Bilder und PDF-Bände sichern</h2>
+              <p class="eyebrow" data-i18n="archiveHeaderEyebrow">Archiv-Funktion</p>
+              <div class="help-heading">
+                <h2 data-i18n="archiveHeaderTitle">Posts, Threads und Medien sichern</h2>
+                <button type="button" class="help-trigger" data-help-topic="archive_workspace" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
               <p class="archive-warning" data-i18n="archiveMobileWarning">
                 Dieses Archiv sollte nach Möglichkeit nicht auf mobilen Geräten erzeugt werden, sondern auf einem PC oder Laptop mit viel freiem Speicher.
               </p>
@@ -240,13 +294,15 @@
                 Sichere deinen eigenen Bluesky-Account als ZIP-Archiv und erzeuge daraus mehrbändige PDF-Ausgaben.
               </p>
             </div>
-            <button type="button" class="ghost-button" id="archive-back-button" data-i18n="archiveBackButton">Zurück zum Composer</button>
           </div>
 
           <div class="archive-grid">
             <section class="archive-card">
               <p class="eyebrow" data-i18n="archiveScopeEyebrow">Umfang</p>
-              <h3 data-i18n="archiveScopeTitle">Welche Posts sollen ins Archiv?</h3>
+              <div class="help-heading">
+                <h3 data-i18n="archiveScopeTitle">Welche Posts sollen ins Archiv?</h3>
+                <button type="button" class="help-trigger" data-help-topic="archive_scope" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
               <label>
                 <span data-i18n="archiveScopeLabel">Auswahl</span>
                 <select id="archive-scope-select">
@@ -259,6 +315,7 @@
                 <span data-i18n="archiveContentModeLabel">Archivtyp</span>
                 <select id="archive-content-mode-select">
                   <option value="posts" data-i18n="archiveContentModePosts">Nur eigene Postings</option>
+                  <option value="thread_roots" data-i18n="archiveContentModeThreadRoots">Eigene Threads ohne Antworten</option>
                   <option value="full" data-i18n="archiveContentModeFull">Voll-Archiv</option>
                   <option value="threads" data-i18n="archiveContentModeThreads">Eigene Threads komplett</option>
                 </select>
@@ -333,11 +390,18 @@
             </section>
 
             <section class="archive-card archive-actions-card">
-              <p class="eyebrow" data-i18n="archiveActionsEyebrow">Aktionen</p>
-              <h3 data-i18n="archiveActionsTitle">Archiv erzeugen oder laden</h3>
-              <p id="archive-start-hint" class="archive-start-hint settings-note" data-i18n="archiveStartHintFresh">
-                Der nächste Start beginnt als Neustart bei Welle 1.
-              </p>
+              <p class="eyebrow" data-i18n="archiveUnrollEyebrow">Single Thread Export</p>
+              <div class="help-heading">
+                <h3 data-i18n="archiveUnrollTitle">Single Thread Export</h3>
+                <button
+                  type="button"
+                  class="help-trigger"
+                  data-help-topic="archive_unroll"
+                  data-i18n-attr="aria-label:helpButtonLabel,title:helpButtonTitle"
+                  aria-label="Hilfe anzeigen"
+                  title="Hilfe anzeigen"
+                >?</button>
+              </div>
               <label class="archive-thread-url-field">
                 <span data-i18n="archiveThreadUrlLabel">Posting-URL für Thread-Import</span>
                 <input
@@ -347,19 +411,42 @@
                   placeholder="https://bsky.app/profile/handle/post/..."
                 >
               </label>
+              <label>
+                <span data-i18n="archiveThreadImportModeLabel">Was soll geladen werden?</span>
+                <select id="archive-thread-import-mode-select">
+                  <option value="path" data-i18n="archiveThreadImportModePath">Nur der Threadpfad zur verlinkten Antwort</option>
+                  <option value="author" data-i18n="archiveThreadImportModeAuthor">Der komplette Thread ohne Antworten</option>
+                  <option value="tree" data-i18n="archiveThreadImportModeTree">Der komplette Thread mit allen Antworten</option>
+                </select>
+              </label>
               <div class="archive-thread-url-controls">
                 <button type="button" class="ghost-button" id="archive-load-thread-url-button" data-i18n="archiveLoadThreadUrlButton">
                   Thread aus URL laden
                 </button>
+                <button type="button" class="ghost-button" id="archive-export-html-button" data-i18n="archiveExportHtmlButton">HTML-Archiv erzeugen</button>
+                <button type="button" class="ghost-button" id="archive-export-html-compact-button" data-i18n="archiveExportHtmlCompactButton">Kompaktes HTML erzeugen</button>
+                <button type="button" class="ghost-button" id="archive-export-pdf-button" data-i18n="archiveExportPdfButton">PDF-Bände erzeugen</button>
               </div>
               <p id="archive-thread-url-note" class="settings-note" data-i18n="archiveThreadUrlHint">
                 Lade einen einzelnen Bluesky-Thread direkt aus einer Posting-URL. Wenn die URL auf eine Antwort zeigt, beginnt der Import automatisch beim Thread-Start.
               </p>
+            </section>
+
+            <section class="archive-card archive-actions-card">
+              <p class="eyebrow" data-i18n="archiveActionsEyebrow">Aktionen</p>
+              <div class="help-heading">
+                <h3 data-i18n="archiveActionsTitle">Archiv erzeugen oder laden</h3>
+                <button type="button" class="help-trigger" data-help-topic="archive_actions" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <p id="archive-start-hint" class="archive-start-hint settings-note" data-i18n="archiveStartHintFresh">
+                Der nächste Start beginnt als Neustart bei Welle 1.
+              </p>
               <div class="archive-actions">
                 <button type="button" class="ghost-button" id="archive-next-wave-button" data-i18n="archiveNextWaveButton">Nächste Welle laden</button>
                 <button type="button" id="archive-export-zip-button" data-i18n="archiveExportZipButton">Archiv als ZIP sichern</button>
-                <button type="button" class="ghost-button" id="archive-export-html-button" data-i18n="archiveExportHtmlButton">HTML-Archiv erzeugen</button>
-                <button type="button" class="ghost-button" id="archive-export-pdf-button" data-i18n="archiveExportPdfButton">PDF-Bände erzeugen</button>
+                <button type="button" class="ghost-button" id="archive-actions-export-html-button" data-i18n="archiveExportHtmlButton">HTML-Archiv erzeugen</button>
+                <button type="button" class="ghost-button" id="archive-actions-export-html-compact-button" data-i18n="archiveExportHtmlCompactButton">Kompaktes HTML erzeugen</button>
+                <button type="button" class="ghost-button" id="archive-actions-export-pdf-button" data-i18n="archiveExportPdfButton">PDF-Bände erzeugen</button>
                 <button type="button" class="ghost-button" id="archive-import-button" data-i18n="archiveImportButton">Archiv laden</button>
                 <button type="button" class="ghost-button" id="archive-reset-button" data-i18n="archiveResetButton">Archivlauf zurücksetzen</button>
               </div>
@@ -368,9 +455,49 @@
               </p>
             </section>
 
+            <section class="archive-card archive-actions-card">
+              <p class="eyebrow" data-i18n="archiveMediaEyebrow">Medien</p>
+              <div class="help-heading">
+                <h3 data-i18n="archiveMediaTitle">Bilder, Videos und Karten-Assets als ZIP laden</h3>
+                <button type="button" class="help-trigger" data-help-topic="archive_media" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <label>
+                <span data-i18n="archiveMediaActorLabel">Account</span>
+                <input
+                  id="archive-media-actor-input"
+                  type="text"
+                  inputmode="text"
+                  placeholder="@handle oder leer fuer mein Konto"
+                >
+              </label>
+              <label class="settings-check">
+                <input id="archive-media-images-toggle" type="checkbox" checked>
+                <span data-i18n="archiveMediaImagesToggle">Bilder laden</span>
+              </label>
+              <label class="settings-check">
+                <input id="archive-media-videos-toggle" type="checkbox" checked>
+                <span data-i18n="archiveMediaVideosToggle">Videos laden</span>
+              </label>
+              <label class="settings-check">
+                <input id="archive-media-other-toggle" type="checkbox" checked>
+                <span data-i18n="archiveMediaOtherToggle">Andere Assets laden (z. B. Linkkarten-Thumbs)</span>
+              </label>
+              <div class="archive-actions">
+                <button type="button" id="archive-export-media-zip-button" data-i18n="archiveExportMediaZipButton">
+                  Medien als ZIP streamen
+                </button>
+              </div>
+              <p class="settings-note" data-i18n="archiveMediaNote">
+              Der Medienexport nutzt dieselben Zeitraum- und Hashtag-Filter wie das Archiv und schreibt die Dateien nacheinander in eine ZIP-Datei.
+              </p>
+            </section>
+
             <section class="archive-card archive-progress-card">
               <p class="eyebrow" data-i18n="archiveProgressEyebrow">Fortschritt</p>
-              <h3 data-i18n="archiveProgressTitle">Laufender Export</h3>
+              <div class="help-heading">
+                <h3 data-i18n="archiveProgressTitle">Laufender Export</h3>
+                <button type="button" class="help-trigger" data-help-topic="archive_progress" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
               <label class="settings-check">
                 <input id="archive-live-preview-toggle" type="checkbox" checked>
                 <span data-i18n="archiveLivePreviewToggle">Live-Vorschau anzeigen</span>
@@ -383,6 +510,7 @@
                 <p id="archive-run-status-line" class="archive-run-status-line" data-i18n="archiveRunStatusIdle">
                   Noch kein Archivlauf aktiv.
                 </p>
+                <p id="archive-progress-heartbeat" class="archive-progress-heartbeat settings-note"></p>
                 <div class="archive-progress-bar">
                   <span id="archive-progress-fill"></span>
                 </div>
@@ -392,6 +520,14 @@
                 <button type="button" class="ghost-button" id="archive-pause-button" data-i18n="archivePauseButton" disabled>Pausieren</button>
                 <button type="button" class="ghost-button" id="archive-resume-button" data-i18n="archiveResumeButton" disabled>Fortsetzen</button>
                 <button type="button" class="ghost-button" id="archive-cancel-button" data-i18n="archiveCancelButton" disabled>Abbrechen</button>
+              </div>
+              <p class="settings-note archive-run-controls-note" data-i18n="archiveRunControlsNote">
+                Pause und Abbruch greifen nach dem aktuellen Bluesky-Request. Einzelne Thread-Anfragen werden nach 15 Sekunden einmal neu versucht und sonst übersprungen.
+              </p>
+              <div class="archive-run-controls">
+                <button type="button" class="ghost-button" id="archive-progress-export-html-compact-button" data-i18n="archiveExportHtmlCompactButton">
+                  Kompaktes HTML erzeugen
+                </button>
               </div>
               <div id="archive-preview-panel" class="archive-preview-panel">
                 <p class="archive-preview-kicker" data-i18n="archivePreviewTitle">Live-Vorschau</p>
@@ -420,6 +556,204 @@
               <p class="eyebrow" data-i18n="archiveSpecEyebrow">Ablauf</p>
               <h3 data-i18n="archiveSpecTitle">So funktioniert das Archiv</h3>
               <div id="archive-spec-content" class="archive-spec-content"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="network-workspace" class="archive-workspace network-workspace workspace-view" hidden>
+          <div class="archive-header-panel">
+            <div>
+              <p class="eyebrow" data-i18n="networkHeaderEyebrow">Netzwerk</p>
+              <div class="help-heading">
+                <h2 data-i18n="networkHeaderTitle">Dein soziales Umfeld auf einen Blick</h2>
+                <button type="button" class="help-trigger" data-help-topic="network_workspace" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <p class="section-note" data-i18n="networkHeaderNote">
+                Lade Followers und Following schrittweise, filtere Mutuals und fokussiere einzelne Verbindungen direkt in einer ruhigen Netzwerkansicht.
+              </p>
+            </div>
+          </div>
+
+          <div class="archive-grid network-grid">
+            <section class="archive-card network-stage-card">
+              <p class="eyebrow" data-i18n="networkStageEyebrow">Bühne</p>
+              <div class="help-heading">
+                <h3 data-i18n="networkStageTitle">Radiale Ansicht des eigenen Netzwerks</h3>
+                <button type="button" class="help-trigger" data-help-topic="network_stage" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <div class="network-toolbar network-stage-toolbar">
+                <p id="network-progress-line" class="archive-run-status-line" data-i18n="networkProgressIdle">
+                  Noch keine Netzwerkdaten geladen.
+                </p>
+                <div class="network-stage-toolbar-row">
+                  <label class="network-search-field" for="network-search-input">
+                    <span data-i18n="networkSearchLabel">Suche</span>
+                    <input id="network-search-input" type="search" placeholder="Handle oder Anzeigename">
+                  </label>
+                  <label class="network-search-field network-account-field" for="network-account-input">
+                    <span data-i18n="networkAccountInputLabel">Account</span>
+                    <input id="network-account-input" type="search" placeholder="Handle oder DID eingeben">
+                  </label>
+                  <div class="network-toolbar-actions network-toolbar-actions-compact">
+                    <button type="button" class="ghost-button" id="network-own-load-button" data-i18n="networkOwnLoadButton">Mein Netzwerk</button>
+                    <button type="button" class="ghost-button" id="network-account-load-button" data-i18n="networkAccountLoadButton">Netzwerk laden</button>
+                    <button type="button" class="ghost-button" id="network-load-button" data-i18n="networkLoadButton">Netzwerk laden</button>
+                    <button type="button" class="ghost-button" id="network-reset-button" data-i18n="networkResetButton">Ansicht zurücksetzen</button>
+                    <button type="button" class="ghost-button" id="network-shape-toggle-button" data-i18n="networkShapeButton" aria-pressed="false">Squircle</button>
+                    <button type="button" class="ghost-button" id="network-zoom-out-button" aria-label="Netzwerk verkleinern">-</button>
+                    <button type="button" class="ghost-button" id="network-zoom-reset-button" aria-label="Netzwerkansicht zurücksetzen">100%</button>
+                    <button type="button" class="ghost-button" id="network-zoom-in-button" aria-label="Netzwerk vergrößern">+</button>
+                  </div>
+                </div>
+                <div class="network-filter-summary-row">
+                  <div class="network-filter-group" role="toolbar" aria-label="Netzwerkfilter">
+                    <button type="button" class="ghost-button network-filter-button is-active" data-network-filter="all" id="network-filter-all" data-i18n="networkFilterAll">Alle</button>
+                    <button type="button" class="ghost-button network-filter-button" data-network-filter="mutual" id="network-filter-mutual" data-i18n="networkFilterMutual">Mutuals</button>
+                    <button type="button" class="ghost-button network-filter-button" data-network-filter="followers" id="network-filter-followers" data-i18n="networkFilterFollowers">Folgt dir</button>
+                    <button type="button" class="ghost-button network-filter-button" data-network-filter="following" id="network-filter-following" data-i18n="networkFilterFollowing">Du folgst</button>
+                    <button type="button" class="ghost-button network-filter-button" data-network-filter="strong" id="network-filter-strong" data-i18n="networkFilterStrong">Relevant</button>
+                    <button type="button" class="ghost-button network-filter-button" data-network-filter="common" id="network-filter-common" data-i18n="networkFilterCommon" hidden>Nur gemeinsame Mutuals</button>
+                  </div>
+                  <div class="network-summary" id="network-summary">
+                    <div class="archive-summary-item">
+                      <span class="archive-summary-label" data-i18n="networkSummaryLoadedLabel">Geladen</span>
+                      <strong id="network-summary-loaded">0</strong>
+                    </div>
+                    <div class="archive-summary-item">
+                      <span class="archive-summary-label" data-i18n="networkSummaryMutualsLabel">Mutuals</span>
+                      <strong id="network-summary-mutuals">0</strong>
+                    </div>
+                    <div class="archive-summary-item">
+                      <span class="archive-summary-label" data-i18n="networkSummaryVisibleLabel">Sichtbar</span>
+                      <strong id="network-summary-visible">0</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="network-stage-shell">
+                <div class="network-canvas-panel">
+                  <div id="network-stage-hovercard" class="network-stage-hovercard" hidden></div>
+                  <svg id="network-stage-svg" class="network-stage-svg" viewBox="0 0 960 720" role="img" aria-label="Netzwerkansicht"></svg>
+                  <p id="network-stage-empty" class="settings-note" data-i18n="networkEmpty">
+                    Lade die erste Welle, um das Netzwerk anzuzeigen.
+                  </p>
+                  <aside id="network-focus-panel" class="network-focus-panel">
+                    <div class="network-focus-panel-head">
+                      <p class="eyebrow" data-i18n="networkFocusEyebrow">Fokus</p>
+                      <button type="button" id="network-focus-toggle-button" class="network-focus-toggle-button" aria-expanded="true" aria-label="Fokus einklappen"></button>
+                    </div>
+                    <div id="network-focus-card" class="network-focus-card">
+                      <p class="settings-note" data-i18n="networkFocusEmpty">
+                        Wähle einen Knoten aus, um Details zur Verbindung zu sehen.
+                      </p>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </section>
+
+            <section class="archive-card network-insights-card">
+              <p class="eyebrow" data-i18n="networkInsightsEyebrow">Einordnung</p>
+              <h3 data-i18n="networkInsightsTitle">Verbindungen und Gruppen</h3>
+              <div id="network-results" class="archive-results network-results"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="dm-workspace" class="archive-workspace dm-workspace workspace-view" hidden>
+          <div class="archive-header-panel">
+            <div>
+              <p class="eyebrow" data-i18n="dmHeaderEyebrow">Direct Messages</p>
+              <div class="help-heading">
+                <h2 data-i18n="dmHeaderTitle">Direct Messages sichern (experimentell)</h2>
+                <button type="button" class="help-trigger" data-help-topic="dm_workspace" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <p class="archive-warning" data-i18n="dmPrivacyWarning">
+                Direct Messages sind besonders sensible Daten. Erzeuge dieses Archiv nur auf einem vertrauten Gerät.
+              </p>
+              <p class="section-note" data-i18n="dmHeaderNote">
+                Lade deine Bluesky-DMs lokal, prüfe Konversationen und sichere sie als JSON-Archiv für spätere HTML- oder PDF-Ausgaben.
+              </p>
+            </div>
+          </div>
+
+          <div class="archive-grid">
+            <section class="archive-card dm-scope-card">
+              <p class="eyebrow" data-i18n="dmScopeEyebrow">Umfang</p>
+              <div class="help-heading">
+                <h3 data-i18n="dmScopeTitle">Welche Unterhaltungen sollen geladen werden?</h3>
+                <button type="button" class="help-trigger" data-help-topic="dm_scope" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <div class="archive-actions">
+                <button type="button" class="ghost-button" id="dm-check-button" data-i18n="dmCheckButton">DM-Zugriff prüfen</button>
+                <button type="button" class="ghost-button" id="dm-load-partners-button" data-i18n="dmLoadPartnersButton">Liste der DM-Partner laden</button>
+              </div>
+              <label>
+                <span data-i18n="dmContactSearchLabel">DM-Partner suchen</span>
+                <input id="dm-contact-search-input" type="search" data-i18n-placeholder="dmContactSearchPlaceholder" placeholder="Handle oder Anzeigename">
+              </label>
+              <div id="dm-contact-list" class="dm-contact-list"></div>
+              <p id="dm-contact-selection-note" class="settings-note" data-i18n="dmContactSelectionEmpty">
+                Lade zuerst deine DMs, um zuletzt aktive Kontakte auswählen zu können.
+              </p>
+              <div class="archive-range-grid">
+                <label>
+                  <span data-i18n="dmFromLabel">Von</span>
+                  <input id="dm-from-input" type="date">
+                </label>
+                <label>
+                  <span data-i18n="dmToLabel">Bis</span>
+                  <input id="dm-to-input" type="date">
+                </label>
+              </div>
+              <p class="settings-note" data-i18n="dmDateRangeHelp">
+                Optional: Lade nur Nachrichten innerhalb dieses Zeitraums. Leer bedeutet kompletter Verlauf mit dem ausgewählten Partner.
+              </p>
+              <p class="settings-note" data-i18n="dmScopeHelp">
+                Die erste Stufe lädt Konversationen und Nachrichten lokal aus der Chat-API. Medien- und HTML/PDF-Ansichten folgen danach.
+              </p>
+            </section>
+
+            <section class="archive-card archive-actions-card">
+              <p class="eyebrow" data-i18n="dmActionsEyebrow">Aktionen</p>
+              <div class="help-heading">
+                <h3 data-i18n="dmActionsTitle">DM-Daten laden oder sichern</h3>
+                <button type="button" class="help-trigger" data-help-topic="dm_actions" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <div class="archive-actions">
+                <button type="button" id="dm-load-button" data-i18n="dmLoadButton">DM des ausgewählten Partners laden</button>
+                <button type="button" class="ghost-button" id="dm-export-json-button" data-i18n="dmExportJsonButton">DM-Archiv als JSON sichern</button>
+                <button type="button" class="ghost-button" id="dm-export-html-button" data-i18n="dmExportHtmlButton">DM-HTML erzeugen</button>
+                <button type="button" class="ghost-button" id="dm-export-pdf-button" data-i18n="dmExportPdfButton">DM-PDF erzeugen</button>
+              </div>
+              <p class="settings-note" data-i18n="dmActionsNote">
+                Das JSON-Archiv ist die technische Grundlage. Ein lesbares HTML-Archiv bauen wir im nächsten Schritt darauf auf.
+              </p>
+            </section>
+
+            <section class="archive-card archive-progress-card">
+              <p class="eyebrow" data-i18n="dmProgressEyebrow">Fortschritt</p>
+              <div class="help-heading">
+                <h3 data-i18n="dmProgressTitle">DM-Export</h3>
+                <button type="button" class="help-trigger" data-help-topic="dm_progress" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <div class="archive-progress-shell" aria-live="polite">
+                <div class="archive-progress-meta">
+                  <strong id="dm-progress-title" data-i18n="dmProgressIdleTitle">Bereit</strong>
+                  <span id="dm-progress-step" class="settings-note" data-i18n="dmProgressIdleStep">Noch keine DMs geladen.</span>
+                </div>
+                <div class="archive-progress-bar">
+                  <span id="dm-progress-fill"></span>
+                </div>
+                <p id="dm-progress-detail" class="settings-note"></p>
+              </div>
+            </section>
+
+            <section class="archive-card">
+              <p class="eyebrow" data-i18n="dmResultsEyebrow">Ergebnis</p>
+              <h3 data-i18n="dmResultsTitle">Lokal verfügbare DM-Daten</h3>
+              <div id="dm-summary" class="archive-summary"></div>
+              <div id="dm-results" class="archive-results"></div>
             </section>
           </div>
         </section>
@@ -500,8 +834,31 @@
             <button type="button" id="export-settings-button" class="ghost-button" data-i18n="exportSettingsButton">Backup speichern</button>
             <button type="button" id="import-settings-button" class="ghost-button" data-i18n="importSettingsButton">Backup importieren</button>
           </div>
-          <input id="import-settings-input" class="is-hidden" type="file" accept="application/json,.json">
+          <input id="import-settings-input" class="is-hidden" type="file" accept="application/json,.json,application/gzip,.gz">
           <p id="backup-status" class="settings-note" hidden></p>
+        </section>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="shareEyebrow">Weiterempfehlen</p>
+          <p class="settings-note" data-i18n="shareDescription">
+            Teile den Link zu Threadline direkt aus der App.
+          </p>
+          <div class="settings-actions">
+            <button type="button" id="share-app-button" class="ghost-button" data-i18n="shareButton">App teilen</button>
+          </div>
+          <div class="share-card">
+              <img
+                id="share-qr-image"
+                class="share-qr-image"
+                src="icons/threadline-share-qr.svg"
+                alt="QR-Code zu Threadline"
+              >
+            <div class="share-card-copy">
+              <p class="field-hint" data-i18n="shareScanHint">Oder mit dem Smartphone scannen:</p>
+              <code id="share-url" class="share-url">https://marsrakete.github.io/threadline/</code>
+            </div>
+          </div>
+          <p id="share-status" class="settings-note" hidden></p>
         </section>
 
       </form>
@@ -613,8 +970,8 @@
       <form method="dialog" class="settings-sheet help-sheet">
         <div class="section-heading settings-heading">
           <div>
-            <p class="eyebrow" data-i18n="helpEyebrow">Hilfe</p>
-            <h2 data-i18n="helpTitle">README</h2>
+            <p id="help-dialog-eyebrow" class="eyebrow" data-i18n="helpEyebrow">Hilfe</p>
+            <h2 id="help-dialog-title" data-i18n="helpTitle">README</h2>
           </div>
           <button type="submit" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
@@ -891,6 +1248,7 @@
       </article>
     </template>
 
+    <script src="version.js"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

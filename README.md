@@ -21,6 +21,29 @@
 
 Threadline is a static PWA for publishing Bluesky threads. It connects with a Bluesky app password, stores drafts locally in the browser, and helps turn longer text into editable thread segments. Images, hashtags, segment edits, and other settings persist locally and can also be exported or saved as a complete thread file.
 
+## In Short
+
+Threadline has grown far beyond a thread composer. With dedicated workspaces for archive functions, network exploration, and DM archiving, direct in-app help, more robust exports, better mobile HTML readability, and drag-and-drop image handling, it now feels like a small Bluesky workbench.
+
+## First Thread Post In 3 Steps
+
+1. Create a Bluesky app password, add your account in Threadline, and sign in.
+2. Write or paste your text into the composer, then add images, ALT texts, and hashtags if needed.
+3. Review the generated thread segments and publish your thread with the post button.
+
+## Create A Bluesky App Password
+
+Threadline uses a Bluesky app password, not your main account password.
+
+1. Open Bluesky.
+2. Go to `Settings`.
+3. Open `Privacy and Security`.
+4. Open `App Passwords`.
+5. Create a new app password.
+6. Copy the generated password and use it in Threadline.
+
+Using a dedicated app password is recommended because you can revoke it later without changing your main login password.
+
 ## Feature Set
 
 - Bluesky sign-in with app password through a compact `Add account` dialog
@@ -34,7 +57,7 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Installable PWA with service worker, offline app shell, and install button
 - On mobile devices, the left column can be collapsed and expanded with a compact toggle
 - In-app help dialog based on the README
-- Update detection via `version.json`, including manual update checks
+- The app detects new versions, lets you check manually, and shows a reload button when needed
 - Status area and recent posting history
 
 ## Writing And Splitting
@@ -163,23 +186,6 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 7. Use `Generate PDF volumes` to create a paginated PDF version from that same loaded archive
 - For large accounts, the export should ideally be done on a desktop device with plenty of free storage and in multiple waves
 
-### Account Archive For Techies
-
-- The export runs fully inside the existing PWA without a custom backend
-- Posts are loaded page by page via `com.atproto.repo.listRecords` for `app.bsky.feed.post`
-- Phase 1 of the filter works directly on your own repo records:
-- `Full archive` keeps all of your own posts
-- `Own posts only` removes your replies inside other people's threads
-- Phase 2 additionally expands your own thread roots through `app.bsky.feed.getPostThread` when `My threads complete` is selected
-- That step also pulls in replies from other accounts inside your own threads
-- Metrics are hydrated in batches through `app.bsky.feed.getPosts`
-- Images are fetched through `com.atproto.sync.getBlob` and copied into the archive with stable paths
-- Large exports run in waves; the browser only keeps small resume metadata for that process
-- The ZIP contains `manifest.json`, `posts.json`, and all downloaded image files
-- The HTML archive is a single file with embedded images, a search field, date filters, and options for `only posts with images` and `only threads`
-- PDF volumes are generated from the loaded archive model, not directly from live API responses
-- The PDF volume size intentionally supports up to `1000` posts
-
 ## Publishing To Bluesky
 
 - Short text can be sent as a single post
@@ -193,15 +199,13 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 - Hashtags, mentions, and links are posted as rich-text facets so they become clickable in Bluesky
 - Selected post languages and interaction settings are also sent with the publish request
 
-## Why There Are No Link Cards
+## Network Workspace
 
-### Plain-Language Explanation
-
-Threadline is a fully static browser app and does not run its own backend. Because of that, it cannot reliably read third-party websites in order to build preview cards with title, description, and image. Links in the text still work and stay clickable on Bluesky, but Threadline does not currently generate automatic link cards.
-
-### Technical Explanation
-
-The blocker is cross-origin access in the browser. To read Open Graph data from another website, that site would need to allow the request through CORS. Many sites do not. Without a custom server or worker, a PWA hosted on GitHub Pages cannot reliably fetch those HTML pages and preview images, then turn them into a proper `app.bsky.embed.external` with a thumbnail. For that reason, Threadline currently sticks to clickable links via rich-text facets.
+- The `Network` area loads followers, follows, and mutuals in waves and shows them in an interactive stage view
+- Accounts can be filtered by relationship type, searched, and inspected directly in a focus overlay
+- The focus currently shows relevance, follow dates, preview lists, mutual likes in the sample, and recent activity
+- `Relevant` highlights accounts with an internal score that currently combines relationship type, that account's follower count, and that account's posting activity
+- The activity block currently shows the latest post plus posts and likes on those recent posts in the last 14 and 60 days
 
 ## Recent Posts
 
@@ -222,33 +226,6 @@ The blocker is cross-origin access in the browser. To read Open Graph data from 
 - There is a button for the next tip
 - Tips can be hidden completely
 - They can later be re-enabled in settings
-
-## Create A Bluesky App Password
-
-Threadline uses a Bluesky app password, not your main account password.
-
-1. Open Bluesky.
-2. Go to `Settings`.
-3. Open `Privacy and Security`.
-4. Open `App Passwords`.
-5. Create a new app password.
-6. Copy the generated password and use it in Threadline.
-
-Using a dedicated app password is recommended because you can revoke it later without changing your main login password.
-
-## Run Locally
-
-Threadline is a static app. Any simple local web server is enough.
-
-```powershell
-python -m http.server 4173
-```
-
-Then open:
-
-```text
-http://localhost:4173
-```
 
 ## Install As An App
 
@@ -287,61 +264,9 @@ Note: on iOS the installation cannot be triggered automatically. The app include
 - faster reopening like a normal app
 - an offline-ready app shell through the service worker
 
-## Credentials And Storage Notes
+## Technical Notes
 
-- Bluesky app passwords are stored locally so sessions can be renewed and multiple logins remain available after reloads
-- Backups include those saved login entries, but not app passwords
-- Session data, drafts, and app state are stored locally in IndexedDB
-- No custom backend is required
-
-## Project Structure
-
-```text
-.
-├── app.js
-├── index.html
-├── manifest.webmanifest
-├── styles.css
-├── sw.js
-├── translations.js
-├── version.json
-└── icons/
-    ├── icon.svg
-    └── maskable-icon.svg
-```
-
-## Update Detection
-
-Threadline uses a visible app-version check.
-
-- `version.json` contains the public version metadata
-- the service worker fetches `version.json` with network priority
-- the app checks for updates on startup
-- users can manually check for updates in settings
-
-When shipping changes, keep these files in sync:
-
-- `version.json`
-- `app.js` (`CURRENT_VERSION_INFO`)
-- `sw.js` (`APP_VERSION`) when cached assets or service-worker behavior change
-
-## Recommended Testing
-
-- Use a dedicated Bluesky test account, or
-- create a dedicated app password just for testing
-
-That lets you verify:
-
-- sign-in flow
-- automatic session renewal
-- draft persistence
-- split behavior
-- manual segment editing
-- saving and loading thread files
-- exporting and importing backups
-- images and ALT texts
-- thread publishing
-- update detection
+More detailed technical information about the archive, the network data model, link-card limits, running locally, update detection, and recommended testing is available in [TECHNICAL.md](TECHNICAL.md).
 
 ## License
 

@@ -1,4 +1,6 @@
-const APP_VERSION = "v116";
+importScripts("./version.js");
+
+const APP_VERSION = globalThis.APP_VERSION_INFO?.cacheVersion || "v0";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -8,7 +10,7 @@ const APP_SHELL = [
   "./post-languages.js",
   "./translations.js",
   "./manifest.webmanifest",
-  "./version.json",
+  "./version.js",
   "./README.md",
   "./README.de.md",
   "./og-image.jpg",
@@ -18,16 +20,24 @@ const APP_SHELL = [
 ];
 
 const DB_NAME = "threadline-db";
+const DB_VERSION = 2;
 const STORE_NAME = "settings";
+const COMPOSER_IMAGE_STORE_NAME = "composer-images";
 const AUTH_KEY = "auth";
 const DRAFT_KEY = "draft";
 const LOCALE_KEY = "locale";
 const SETTINGS_KEY = "ui-settings";
 const ARCHIVE_SESSION_KEY = "archive-session";
 const ARCHIVE_CATALOG_KEY = "archive-catalog";
+const DM_PARTNER_CACHE_KEY = "dm-partner-cache";
+const ACCOUNT_AVATAR_CACHE_KEY = "account-avatar-cache";
+const ARCHIVE_THREAD_REQUEST_TIMEOUT_MS = 15000;
+const ARCHIVE_THREAD_REQUEST_RETRIES = 1;
+const ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY = 4;
 const API_BASE = "https://bsky.social/xrpc";
 const DEFAULT_LOGIN_SERVICE = "https://bsky.social";
 const DEFAULT_POST_WEB_APP = "https://bsky.app";
+const CHAT_PROXY_DID = "did:web:api.bsky.chat#bsky_chat";
 const POST_WEB_FRONTENDS = {
   "bsky.social": DEFAULT_POST_WEB_APP,
   "eurosky.social": DEFAULT_POST_WEB_APP,
@@ -178,8 +188,14 @@ function normalizeImageEdit(edit = {}) {
   };
 }
 
-function normalizeThreadImage(entry = {}) {
-  if (!entry?.dataUrl) {
+function normalizeThreadImage(entry = {}, options = {}) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const allowMissingDataUrl = options.allowMissingDataUrl === true;
+  const dataUrl = typeof entry.dataUrl === "string" ? entry.dataUrl : "";
+  if (!allowMissingDataUrl && !dataUrl) {
     return null;
   }
 
@@ -187,7 +203,7 @@ function normalizeThreadImage(entry = {}) {
     id: entry.id || crypto.randomUUID(),
     name: entry.name || "image",
     type: entry.type || "image/jpeg",
-    dataUrl: entry.dataUrl,
+    ...(dataUrl ? { dataUrl } : {}),
     alt: String(entry.alt || "").slice(0, 1000),
     width: Number(entry.width) || 0,
     height: Number(entry.height) || 0,
@@ -213,12 +229,59 @@ function normalizeSegmentImages(segments) {
   );
 }
 
+function stripThreadImageData(entry = {}) {
+  const normalized = normalizeThreadImage(entry, { allowMissingDataUrl: true });
+  if (!normalized) {
+    return null;
+  }
+
+  delete normalized.dataUrl;
+  return normalized;
+}
+
+function normalizeSegmentImageMetadata(segments) {
+  return (Array.isArray(segments) ? segments : []).map((images) =>
+    (Array.isArray(images) ? images : [])
+      .map((entry) => stripThreadImageData(entry))
+      .filter(Boolean)
+      .slice(0, 4),
+  );
+}
+
 function normalizeSegmentOverrides(segments) {
   const normalized = (Array.isArray(segments) ? segments : [])
     .map((entry) => String(entry || ""))
     .filter((entry) => entry.trim().length > 0);
 
   return normalized.length > 0 ? normalized : null;
+}
+
+async function dataUrlToBlob(dataUrl) {
+  const response = await fetch(dataUrl);
+  return await response.blob();
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function blobToDataUrl(blob) {
+  if (typeof FileReader === "function") {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("Blob konnte nicht gelesen werden."));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return `data:${blob.type || "application/octet-stream"};base64,${bytesToBase64(bytes)}`;
 }
 
 function normalizePostingHistory(entries) {
@@ -436,6 +499,13 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+    return;
+  }
+});
+
 self.addEventListener("fetch", (event) => {
   const requestUrl = new URL(event.request.url);
 
@@ -443,7 +513,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (requestUrl.pathname.endsWith("/version.json")) {
+  if (requestUrl.pathname.endsWith("/version.js")) {
     event.respondWith(
       fetch(event.request)
         .then((networkResponse) => {
@@ -451,7 +521,7 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseCopy));
           return networkResponse;
         })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./version.json"))),
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./version.js"))),
     );
     return;
   }
@@ -523,14 +593,24 @@ async function handleMessage(message, port) {
       return getArchiveSession();
     case "GET_ARCHIVE_CATALOG":
       return getArchiveCatalog();
+    case "GET_DM_PARTNER_CACHE":
+      return getDmPartnerCache();
+    case "GET_ACCOUNT_AVATAR_CACHE":
+      return getAccountAvatarCache();
     case "SAVE_ARCHIVE_SESSION":
       return saveArchiveSession(message.payload);
     case "SAVE_ARCHIVE_CATALOG":
       return saveArchiveCatalog(message.payload);
+    case "SAVE_DM_PARTNER_CACHE":
+      return saveDmPartnerCache(message.payload);
+    case "SAVE_ACCOUNT_AVATAR_CACHE":
+      return saveAccountAvatarCache(message.payload);
     case "CLEAR_ARCHIVE_SESSION":
       return clearArchiveSession();
     case "CLEAR_ARCHIVE_CATALOG":
       return clearArchiveCatalog();
+    case "CLEAR_DM_PARTNER_CACHE":
+      return clearDmPartnerCache();
     case "SET_ARCHIVE_RUN_CONTROL":
       return setArchiveRunControl(message.payload);
     case "SWITCH_ACCOUNT":
@@ -547,6 +627,24 @@ async function handleMessage(message, port) {
       return exportAccountArchiveWave(message.payload, (progress) => port.postMessage({ progress }));
     case "IMPORT_ARCHIVE_THREAD_FROM_URL":
       return importArchiveThreadFromUrl(message.payload, (progress) => port.postMessage({ progress }));
+    case "CHECK_DM_ACCESS":
+      return checkDmAccess();
+    case "LOAD_NETWORK_SLICE":
+      return loadNetworkSlice(message.payload, (progress) => port.postMessage({ progress }));
+    case "LOAD_NETWORK_ACTOR_FOCUS":
+      return loadNetworkActorFocus(message.payload, (progress) => port.postMessage({ progress }));
+    case "LOAD_NETWORK_COMMON_MUTUALS":
+      return loadNetworkCommonMutuals(message.payload, (progress) => port.postMessage({ progress }));
+    case "SCAN_ACCOUNT_MEDIA_EXPORT":
+      return scanAccountMediaExport(message.payload, (progress) => port.postMessage({ progress }));
+    case "DOWNLOAD_ACCOUNT_MEDIA_ASSET":
+      return downloadAccountMediaAsset(message.payload, (progress) => port.postMessage({ progress }));
+    case "LIST_DM_PARTNERS":
+      return listDmPartners(message.payload, (progress) => port.postMessage({ progress }));
+    case "HYDRATE_DM_PARTNER_AVATARS":
+      return hydrateDmPartnerAvatars(message.payload, (progress) => port.postMessage({ progress }));
+    case "EXPORT_DM_ARCHIVE":
+      return exportDmArchive(message.payload, (progress) => port.postMessage({ progress }));
     default:
       throw new Error("Unbekannter Service-Worker-Befehl.");
   }
@@ -554,10 +652,16 @@ async function handleMessage(message, port) {
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = () => {
-      request.result.createObjectStore(STORE_NAME);
+      const database = request.result;
+      if (!database.objectStoreNames.contains(STORE_NAME)) {
+        database.createObjectStore(STORE_NAME);
+      }
+      if (!database.objectStoreNames.contains(COMPOSER_IMAGE_STORE_NAME)) {
+        database.createObjectStore(COMPOSER_IMAGE_STORE_NAME, { keyPath: "id" });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error("IndexedDB konnte nicht geoeffnet werden."));
@@ -589,8 +693,24 @@ function normalizeServiceUrl(value) {
   }
 }
 
+function isInsecureServiceUrl(value) {
+  return /^http:\/\//i.test(String(value || "").trim());
+}
+
+function assertSecureServiceUrl(value) {
+  if (isInsecureServiceUrl(value)) {
+    throw new Error("Insecure service URLs are not allowed. Please use HTTPS.");
+  }
+}
+
 function xrpcBaseForService(service) {
+  assertSecureServiceUrl(service);
   return `${normalizeServiceUrl(service)}/xrpc`;
+}
+
+async function buildPublicBlobUrlForDid(auth, did, cid, serviceCache = null) {
+  const serviceUrl = await resolvePdsForDid(did, auth.pdsUrl || auth.service, serviceCache);
+  return `${xrpcBaseForService(serviceUrl)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
 }
 
 function resolvePostWebBase(serviceUrl = DEFAULT_LOGIN_SERVICE) {
@@ -620,6 +740,7 @@ function normalizeAuthAccount(entry = {}) {
     service: normalizeServiceUrl(entry.service || entry.pdsUrl || DEFAULT_LOGIN_SERVICE),
     pdsUrl: normalizeServiceUrl(entry.pdsUrl || entry.service || DEFAULT_LOGIN_SERVICE),
     avatar: String(entry.avatar || ""),
+    avatarPath: String(entry.avatarPath || ""),
     appPassword: entry.appPassword ? String(entry.appPassword) : "",
     session: entry.session && typeof entry.session === "object" ? entry.session : null,
     updatedAt: entry.updatedAt || new Date().toISOString(),
@@ -659,6 +780,7 @@ function getAccountPublicMeta(account) {
     handle: account.handle || account.identifier || "",
     service: normalizeServiceUrl(account.service || account.pdsUrl || DEFAULT_LOGIN_SERVICE),
     avatar: account.avatar || "",
+    avatarPath: account.avatarPath || "",
     hasStoredPassword: Boolean(account.appPassword),
     hasSession: Boolean(account.session?.did),
     updatedAt: account.updatedAt || "",
@@ -754,6 +876,196 @@ async function writeStoredValue(key, value) {
   });
 }
 
+async function readComposerImageBlobEntries(ids = []) {
+  const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).map((value) => String(value || "")).filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+
+  const database = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(COMPOSER_IMAGE_STORE_NAME, "readonly");
+    const store = transaction.objectStore(COMPOSER_IMAGE_STORE_NAME);
+    const records = new Map();
+    let pending = uniqueIds.length;
+
+    const fail = (error) => reject(error || transaction.error || new Error("Bilddaten konnten nicht gelesen werden."));
+
+    for (const id of uniqueIds) {
+      const request = store.get(id);
+      request.onsuccess = () => {
+        if (request.result) {
+          records.set(id, request.result);
+        }
+        pending -= 1;
+        if (pending === 0) {
+          resolve(records);
+        }
+      };
+      request.onerror = () => fail(request.error);
+    }
+
+    transaction.onerror = () => fail(transaction.error);
+    transaction.onabort = () => fail(transaction.error);
+  });
+}
+
+async function putComposerImageBlobEntries(entries = []) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return;
+  }
+
+  const database = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(COMPOSER_IMAGE_STORE_NAME, "readwrite");
+    const store = transaction.objectStore(COMPOSER_IMAGE_STORE_NAME);
+
+    for (const entry of entries) {
+      store.put(entry);
+    }
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("Bilddaten konnten nicht geschrieben werden."));
+    transaction.onabort = () => reject(transaction.error || new Error("Bilddaten konnten nicht geschrieben werden."));
+  });
+}
+
+async function listComposerImageBlobIds() {
+  const database = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(COMPOSER_IMAGE_STORE_NAME, "readonly");
+    const store = transaction.objectStore(COMPOSER_IMAGE_STORE_NAME);
+    const request = store.getAllKeys();
+
+    request.onsuccess = () => resolve((Array.isArray(request.result) ? request.result : []).map((value) => String(value || "")).filter(Boolean));
+    request.onerror = () => reject(request.error || new Error("Bilddaten konnten nicht gelesen werden."));
+  });
+}
+
+async function deleteComposerImageBlobEntries(ids = []) {
+  const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).map((value) => String(value || "")).filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    return;
+  }
+
+  const database = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(COMPOSER_IMAGE_STORE_NAME, "readwrite");
+    const store = transaction.objectStore(COMPOSER_IMAGE_STORE_NAME);
+
+    for (const id of uniqueIds) {
+      store.delete(id);
+    }
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("Bilddaten konnten nicht geloescht werden."));
+    transaction.onabort = () => reject(transaction.error || new Error("Bilddaten konnten nicht geloescht werden."));
+  });
+}
+
+function collectComposerImageIdsFromSegments(segments = []) {
+  const ids = new Set();
+  for (const images of normalizeSegmentImageMetadata(segments)) {
+    for (const image of images) {
+      ids.add(image.id);
+    }
+  }
+  return ids;
+}
+
+async function storeComposerImageBlobs(segmentImages = []) {
+  const normalized = normalizeSegmentImages(segmentImages);
+  const images = normalized.flatMap((items) => items || []);
+  if (images.length === 0) {
+    return normalized;
+  }
+
+  const existingRecords = await readComposerImageBlobEntries(images.map((image) => image.id));
+  const entries = [];
+
+  for (const image of images) {
+    if (!image?.id || !image?.dataUrl) {
+      continue;
+    }
+
+    const existing = existingRecords.get(image.id);
+    const expectedSize = Math.max(0, Number(image.originalSizeBytes) || 0);
+    const hasBlob = existing?.blob instanceof Blob;
+    const sizeMatches = expectedSize === 0 || Number(existing?.sizeBytes) === expectedSize;
+    const typeMatches = !image.type || !existing?.type || existing.type === image.type;
+    if (hasBlob && sizeMatches && typeMatches) {
+      continue;
+    }
+
+    const blob = await dataUrlToBlob(image.dataUrl);
+    entries.push({
+      id: image.id,
+      blob,
+      type: image.type || blob.type || "image/jpeg",
+      sizeBytes: expectedSize || blob.size || 0,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  if (entries.length > 0) {
+    await putComposerImageBlobEntries(entries);
+  }
+
+  return normalized;
+}
+
+async function hydrateStoredSegmentImages(segments = []) {
+  const normalizedMeta = normalizeSegmentImageMetadata(segments);
+  const missingIds = [];
+
+  normalizedMeta.forEach((images) => {
+    images.forEach((image) => {
+      if (!image.dataUrl && image.id) {
+        missingIds.push(image.id);
+      }
+    });
+  });
+
+  const blobRecords = await readComposerImageBlobEntries(missingIds);
+  const hydratedSegments = [];
+
+  for (let segmentIndex = 0; segmentIndex < normalizedMeta.length; segmentIndex += 1) {
+    const sourceImages = Array.isArray(segments[segmentIndex]) ? segments[segmentIndex] : [];
+    const hydratedImages = [];
+
+    for (let imageIndex = 0; imageIndex < normalizedMeta[segmentIndex].length; imageIndex += 1) {
+      const metaImage = normalizedMeta[segmentIndex][imageIndex];
+      const sourceImage = sourceImages[imageIndex];
+      const inlineDataUrl = typeof sourceImage?.dataUrl === "string" ? sourceImage.dataUrl : "";
+      const storedBlob = metaImage?.id ? blobRecords.get(metaImage.id) : null;
+      const blobDataUrl = storedBlob?.blob instanceof Blob ? await blobToDataUrl(storedBlob.blob) : "";
+      const hydrated = normalizeThreadImage({
+        ...metaImage,
+        dataUrl: inlineDataUrl || blobDataUrl,
+      });
+      if (hydrated) {
+        hydratedImages.push(hydrated);
+      }
+    }
+
+    hydratedSegments.push(hydratedImages);
+  }
+
+  return hydratedSegments;
+}
+
+async function pruneComposerImageBlobs() {
+  const draft = await readStoredValue(DRAFT_KEY);
+  const storedSettings = await readStoredValue(SETTINGS_KEY);
+  const referencedIds = new Set([
+    ...collectComposerImageIdsFromSegments(draft?.segmentImages),
+    ...collectComposerImageIdsFromSegments(storedSettings?.segmentImages),
+  ]);
+  const storedIds = await listComposerImageBlobIds();
+  const staleIds = storedIds.filter((id) => !referencedIds.has(id));
+  await deleteComposerImageBlobEntries(staleIds);
+}
+
 function decodeJwtPayload(jwt) {
   const [, payload] = jwt.split(".");
   if (!payload) {
@@ -809,6 +1121,21 @@ async function bskyFetch(endpoint, options = {}) {
   }
 
   return data;
+}
+
+async function refreshAuthReference(auth) {
+  if (!auth?.did) {
+    return auth;
+  }
+
+  const freshAuth = await ensureSession(auth.did);
+  if (!freshAuth) {
+    return auth;
+  }
+
+  Object.assign(auth, freshAuth);
+  auth.session = freshAuth.session;
+  return auth;
 }
 
 async function fetchDidDocument(did) {
@@ -875,7 +1202,586 @@ async function bskyGet(endpoint, query = {}, options = {}) {
   return bskyFetch(`${endpoint}${suffix}`, {
     method: "GET",
     headers: options.headers || {},
+    base: options.base,
+    signal: options.signal,
   });
+}
+
+function buildChatProxyHeaders(auth, headers = {}) {
+  return {
+    authorization: `Bearer ${auth.session.accessJwt}`,
+    "atproto-proxy": CHAT_PROXY_DID,
+    ...headers,
+  };
+}
+
+async function chatBskyGet(auth, endpoint, query = {}) {
+  return bskyGet(endpoint, query, {
+    base: xrpcBaseForService(auth.pdsUrl || auth.service),
+    headers: buildChatProxyHeaders(auth),
+  });
+}
+
+function normalizeNetworkProfile(profile = {}, source = "") {
+  const viewer = profile?.viewer && typeof profile.viewer === "object" ? profile.viewer : {};
+  return {
+    did: String(profile.did || "").trim(),
+    handle: String(profile.handle || "").trim(),
+    displayName: String(profile.displayName || profile.handle || "").trim(),
+    avatar: String(profile.avatar || "").trim(),
+    description: String(profile.description || "").trim().slice(0, 280),
+    followersCount: Number(profile.followersCount) || 0,
+    followsCount: Number(profile.followsCount) || 0,
+    postsCount: Number(profile.postsCount) || 0,
+    followingViewer: source === "following" || Boolean(viewer.following),
+    followedByViewer: source === "followers" || Boolean(viewer.followedBy),
+  };
+}
+
+const NETWORK_LIKE_SAMPLE_POSTS_PER_ACCOUNT = 100;
+const NETWORK_ACTIVITY_SAMPLE_POSTS = 200;
+const NETWORK_ACTIVITY_WINDOWS_DAYS = [14, 60];
+
+async function collectRecentAuthorPosts(auth, actorDid, limit = NETWORK_LIKE_SAMPLE_POSTS_PER_ACCOUNT) {
+  const collected = [];
+  let cursor = "";
+
+  while (collected.length < limit) {
+    const response = await bskyGet("app.bsky.feed.getAuthorFeed", {
+      actor: actorDid,
+      limit: Math.min(100, limit - collected.length),
+      cursor: cursor || undefined,
+    }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+    });
+
+    const feedItems = Array.isArray(response?.feed) ? response.feed : [];
+    for (const item of feedItems) {
+      const post = item?.post || null;
+      if (!post?.uri || post.author?.did !== actorDid) {
+        continue;
+      }
+      collected.push({
+        uri: post.uri,
+        cid: post.cid || "",
+        createdAt: String(post.record?.createdAt || post.indexedAt || "").trim(),
+        viewerLike: String(post.viewer?.like || "").trim(),
+        likeCount: Number(post.likeCount) || 0,
+      });
+      if (collected.length >= limit) {
+        break;
+      }
+    }
+
+    cursor = String(response?.cursor || "");
+    if (!cursor || !feedItems.length) {
+      break;
+    }
+  }
+
+  return collected;
+}
+
+async function countRecentLikesFromActorOnPosts(auth, actorDid, posts = []) {
+  if (!actorDid || !posts.length) {
+    return 0;
+  }
+
+  const targetUris = new Set(posts.map((post) => post.uri).filter(Boolean));
+  const oldestCreatedAt = posts
+    .map((post) => Date.parse(post.createdAt || ""))
+    .filter((value) => Number.isFinite(value))
+    .reduce((min, value) => Math.min(min, value), Number.POSITIVE_INFINITY);
+  const matched = new Set();
+  let cursor = "";
+  let pageCount = 0;
+
+  while (pageCount < 8 && matched.size < targetUris.size) {
+    const response = await bskyGet("app.bsky.notification.listNotifications", {
+      limit: 100,
+      cursor: cursor || undefined,
+    }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+    });
+
+    const notifications = Array.isArray(response?.notifications) ? response.notifications : [];
+    pageCount += 1;
+    let stopForAge = false;
+
+    for (const notification of notifications) {
+      const indexedAt = Date.parse(String(notification?.indexedAt || "").trim());
+      if (Number.isFinite(oldestCreatedAt) && Number.isFinite(indexedAt) && indexedAt < oldestCreatedAt) {
+        stopForAge = true;
+      }
+      if (notification?.reason !== "like" || notification?.author?.did !== actorDid) {
+        continue;
+      }
+      const subjectUri = String(notification?.reasonSubject || "").trim();
+      if (targetUris.has(subjectUri)) {
+        matched.add(subjectUri);
+      }
+    }
+
+    cursor = String(response?.cursor || "");
+    if (!cursor || !notifications.length || stopForAge) {
+      break;
+    }
+  }
+
+  return matched.size;
+}
+
+function collectNetworkActivityStats(posts = [], nowTimestamp = Date.now()) {
+  const windows = {};
+  NETWORK_ACTIVITY_WINDOWS_DAYS.forEach((days) => {
+    windows[days] = {
+      postsCount: 0,
+      likesReceivedCount: 0,
+    };
+  });
+
+  let latestPostAt = "";
+  let latestPostTimestamp = Number.NEGATIVE_INFINITY;
+
+  posts.forEach((post) => {
+    const createdAt = String(post?.createdAt || "").trim();
+    const createdTimestamp = Date.parse(createdAt);
+    if (!Number.isFinite(createdTimestamp)) {
+      return;
+    }
+
+    if (createdTimestamp > latestPostTimestamp) {
+      latestPostTimestamp = createdTimestamp;
+      latestPostAt = createdAt;
+    }
+
+    NETWORK_ACTIVITY_WINDOWS_DAYS.forEach((days) => {
+      const windowMs = days * 24 * 60 * 60 * 1000;
+      if ((nowTimestamp - createdTimestamp) <= windowMs) {
+        windows[days].postsCount += 1;
+        windows[days].likesReceivedCount += Number(post?.likeCount) || 0;
+      }
+    });
+  });
+
+  return {
+    samplePosts: posts.length,
+    latestPostAt,
+    windows,
+  };
+}
+
+async function collectNetworkLikeStats(auth, actorDid) {
+  const [actorPosts, ownPosts] = await Promise.all([
+    collectRecentAuthorPosts(auth, actorDid, NETWORK_LIKE_SAMPLE_POSTS_PER_ACCOUNT),
+    collectRecentAuthorPosts(auth, auth.session.did, NETWORK_LIKE_SAMPLE_POSTS_PER_ACCOUNT),
+  ]);
+
+  const youLikeCount = actorPosts.filter((post) => Boolean(post.viewerLike)).length;
+  const likesYouCount = await countRecentLikesFromActorOnPosts(auth, actorDid, ownPosts);
+
+  return {
+    samplePerAccount: NETWORK_LIKE_SAMPLE_POSTS_PER_ACCOUNT,
+    totalSample: actorPosts.length + ownPosts.length,
+    actorPostsSampled: actorPosts.length,
+    ownPostsSampled: ownPosts.length,
+    youLikeCount,
+    likesYouCount,
+    mutualLikesCount: youLikeCount + likesYouCount,
+  };
+}
+
+async function collectNetworkActivityForActor(auth, actorDid) {
+  const actorPosts = await collectRecentAuthorPosts(auth, actorDid, NETWORK_ACTIVITY_SAMPLE_POSTS);
+  return collectNetworkActivityStats(actorPosts);
+}
+
+async function collectGraphPage(auth, endpoint, actorDid, cursor, limit, source) {
+  const response = await bskyGet(endpoint, {
+    actor: actorDid,
+    limit,
+    cursor: cursor || undefined,
+  }, {
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+  });
+  const fieldName = endpoint.endsWith("Followers") ? "followers" : "follows";
+  return {
+    profiles: Array.isArray(response?.[fieldName])
+      ? response[fieldName].map((profile) => normalizeNetworkProfile(profile, source)).filter((profile) => profile.did)
+      : [],
+    cursor: String(response?.cursor || ""),
+  };
+}
+
+async function collectGraphWave(auth, endpoint, actorDid, cursor, targetTotal, source, notifyProgress, progressLabel) {
+  const maxPage = 100;
+  const collected = [];
+  let nextCursor = String(cursor || "");
+  let pages = 0;
+
+  do {
+    const remaining = Math.max(1, targetTotal - collected.length);
+    const page = await collectGraphPage(auth, endpoint, actorDid, nextCursor, Math.min(maxPage, remaining), source);
+    collected.push(...page.profiles);
+    nextCursor = page.cursor;
+    pages += 1;
+    notifyProgress({
+      title: "Netzwerk wird geladen",
+      step: progressLabel,
+      percent: endpoint.endsWith("Followers") ? 30 : 68,
+      detail: `${collected.length}/${targetTotal} geladen · Seite ${pages}`,
+    });
+  } while (nextCursor && collected.length < targetTotal);
+
+  return {
+    profiles: collected,
+    cursor: nextCursor,
+  };
+}
+
+function mergeNormalizedNetworkProfile(existing, incoming) {
+  if (!existing) {
+    return {
+      ...incoming,
+      followingViewer: incoming.followingViewer === true,
+      followedByViewer: incoming.followedByViewer === true,
+    };
+  }
+  return {
+    ...existing,
+    ...incoming,
+    did: incoming.did || existing.did || "",
+    handle: incoming.handle || existing.handle || "",
+    displayName: incoming.displayName || existing.displayName || incoming.handle || existing.handle || "",
+    avatar: incoming.avatar || existing.avatar || "",
+    description: incoming.description || existing.description || "",
+    followersCount: Number(incoming.followersCount) || Number(existing.followersCount) || 0,
+    followsCount: Number(incoming.followsCount) || Number(existing.followsCount) || 0,
+    postsCount: Number(incoming.postsCount) || Number(existing.postsCount) || 0,
+    followingViewer: existing.followingViewer === true || incoming.followingViewer === true,
+    followedByViewer: existing.followedByViewer === true || incoming.followedByViewer === true,
+  };
+}
+
+async function collectEntireGraph(auth, endpoint, actorDid, source, notifyProgress, title, stepPrefix, percent) {
+  const maxPage = 100;
+  const collected = [];
+  let nextCursor = "";
+  let pages = 0;
+  do {
+    const page = await collectGraphPage(auth, endpoint, actorDid, nextCursor, maxPage, source);
+    collected.push(...page.profiles);
+    nextCursor = page.cursor;
+    pages += 1;
+    notifyProgress({
+      title,
+      step: stepPrefix,
+      percent,
+      detail: `${collected.length} geladen · Seite ${pages}`,
+    });
+  } while (nextCursor);
+  return collected;
+}
+
+async function loadNetworkSlice({ actor = "", followerCursor = "", followCursor = "", limit = 500 } = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const targetSize = Math.max(100, Math.min(500, Number(limit) || 500));
+  const requestedActor = String(actor || "").trim() || auth.session.did;
+
+  notifyProgress({
+    title: "Netzwerk wird geladen",
+    step: "Profil wird geladen …",
+    percent: 8,
+    detail: "",
+  });
+  const viewerProfilePromise = bskyGet("app.bsky.actor.getProfile", {
+    actor: requestedActor,
+  }, {
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+  }).catch(() => null);
+
+  const followerResponse = await collectGraphWave(
+    auth,
+    "app.bsky.graph.getFollowers",
+    requestedActor,
+    followerCursor,
+    targetSize,
+    "followers",
+    notifyProgress,
+    followerCursor ? "Nächste Follower-Welle" : "Erste Follower-Welle",
+  );
+
+  const followsResponse = await collectGraphWave(
+    auth,
+    "app.bsky.graph.getFollows",
+    requestedActor,
+    followCursor,
+    targetSize,
+    "following",
+    notifyProgress,
+    followCursor ? "Nächste Following-Welle" : "Erste Following-Welle",
+  );
+
+  const viewerProfile = await viewerProfilePromise;
+  const followers = followerResponse.profiles;
+  const follows = followsResponse.profiles;
+
+  notifyProgress({
+    title: "Netzwerk wird geladen",
+    step: "Verbindungen werden aufbereitet …",
+    percent: 86,
+    detail: `${followers.length} Follower · ${follows.length} Following`,
+  });
+
+  return {
+    viewer: viewerProfile
+      ? normalizeNetworkProfile({
+          ...viewerProfile,
+          viewer: requestedActor === auth.session.did ? { following: true, followedBy: true } : {},
+        }, "viewer")
+      : {
+          did: requestedActor,
+          handle: auth.handle || auth.session.handle || "",
+          displayName: auth.handle || auth.session.handle || "",
+          avatar: auth.avatar || "",
+          description: "",
+          followersCount: 0,
+      followsCount: 0,
+      postsCount: 0,
+      followingViewer: true,
+      followedByViewer: true,
+    },
+    followers,
+    follows,
+    followerCursor: String(followerResponse.cursor || ""),
+    followCursor: String(followsResponse.cursor || ""),
+    hasMoreFollowers: Boolean(followerResponse.cursor),
+    hasMoreFollows: Boolean(followsResponse.cursor),
+    wave: {
+      followers: followers.length,
+      follows: follows.length,
+    },
+  };
+}
+
+async function loadNetworkActorFocus({ actor } = {}, notifyProgress = () => {}) {
+  const actorDid = String(actor || "").trim();
+  if (!actorDid) {
+    throw new Error("Kein Account für den Fokus angegeben.");
+  }
+
+  const auth = await ensureSession();
+  const headers = {
+    authorization: `Bearer ${auth.session.accessJwt}`,
+  };
+
+  notifyProgress({
+    title: "Fokus wird geladen",
+    step: "Profil wird aktualisiert …",
+    percent: 16,
+    detail: actorDid,
+  });
+  const profile = await bskyGet("app.bsky.actor.getProfile", {
+    actor: actorDid,
+  }, { headers });
+  const viewer = profile?.viewer && typeof profile.viewer === "object" ? profile.viewer : {};
+
+  notifyProgress({
+    title: "Fokus wird geladen",
+    step: "Follow-Beziehung wird geprüft …",
+    percent: 32,
+    detail: actorDid,
+  });
+  const relationshipDates = await loadNetworkRelationshipDates(auth, viewer);
+
+  notifyProgress({
+    title: "Fokus wird geladen",
+    step: "Follower-Vorschau wird geladen …",
+    percent: 48,
+    detail: actorDid,
+  });
+  const followerPage = await collectGraphPage(auth, "app.bsky.graph.getFollowers", actorDid, "", 12, "followers");
+
+  notifyProgress({
+    title: "Fokus wird geladen",
+    step: "Following-Vorschau wird geladen …",
+    percent: 78,
+    detail: actorDid,
+  });
+  const followPage = await collectGraphPage(auth, "app.bsky.graph.getFollows", actorDid, "", 12, "following");
+
+  notifyProgress({
+    title: "Fokus wird geladen",
+    step: "Aktivität wird ausgewertet …",
+    percent: 86,
+    detail: `Bis zu ${NETWORK_ACTIVITY_SAMPLE_POSTS} aktuelle Posts`,
+  });
+  const activityStats = await collectNetworkActivityForActor(auth, actorDid);
+
+  notifyProgress({
+    title: "Fokus wird geladen",
+    step: "Gegenseitige Likes werden geprüft …",
+    percent: 90,
+    detail: `Bis zu ${NETWORK_LIKE_SAMPLE_POSTS_PER_ACCOUNT} Posts je Account`,
+  });
+  const likeStats = await collectNetworkLikeStats(auth, actorDid);
+
+  return {
+    profile: normalizeNetworkProfile(profile, ""),
+    relationshipDates,
+    activityStats,
+    likeStats,
+    followersPreview: followerPage.profiles,
+    followsPreview: followPage.profiles,
+  };
+}
+
+async function loadNetworkCommonMutuals({ centerActor, focusActor } = {}, notifyProgress = () => {}) {
+  const centerDid = String(centerActor || "").trim();
+  const focusDid = String(focusActor || "").trim();
+  if (!centerDid || !focusDid || centerDid === focusDid) {
+    return {
+      commonDids: [],
+      commonProfiles: [],
+    };
+  }
+
+  const auth = await ensureSession();
+  notifyProgress({
+    title: "Gemeinsame Mutuals werden geladen",
+    step: "Mutuals des aktiven Accounts werden vollständig geladen …",
+    percent: 6,
+    detail: "",
+  });
+  const centerFollowers = await collectEntireGraph(
+    auth,
+    "app.bsky.graph.getFollowers",
+    centerDid,
+    "followers",
+    notifyProgress,
+    "Gemeinsame Mutuals werden geladen",
+    "Follower des aktiven Accounts werden geladen …",
+    18,
+  );
+  const centerFollows = await collectEntireGraph(
+    auth,
+    "app.bsky.graph.getFollows",
+    centerDid,
+    "following",
+    notifyProgress,
+    "Gemeinsame Mutuals werden geladen",
+    "Following des aktiven Accounts werden geladen …",
+    36,
+  );
+
+  notifyProgress({
+    title: "Gemeinsame Mutuals werden geladen",
+    step: "Follower des Fokus-Accounts werden geladen …",
+    percent: 54,
+    detail: `${centerFollowers.length + centerFollows.length} Profile des aktiven Accounts`,
+  });
+  const focusFollowers = await collectEntireGraph(
+    auth,
+    "app.bsky.graph.getFollowers",
+    focusDid,
+    "followers",
+    notifyProgress,
+    "Gemeinsame Mutuals werden geladen",
+    "Follower des Fokus-Accounts werden geladen …",
+    54,
+  );
+  const focusFollows = await collectEntireGraph(
+    auth,
+    "app.bsky.graph.getFollows",
+    focusDid,
+    "following",
+    notifyProgress,
+    "Gemeinsame Mutuals werden geladen",
+    "Following des Fokus-Accounts werden geladen …",
+    72,
+  );
+
+  const centerFollowerMap = new Map();
+  centerFollowers.forEach((profile) => {
+    if (profile?.did) {
+      centerFollowerMap.set(profile.did, mergeNormalizedNetworkProfile(centerFollowerMap.get(profile.did) || null, profile));
+    }
+  });
+  const centerFollowMap = new Map();
+  centerFollows.forEach((profile) => {
+    if (profile?.did) {
+      centerFollowMap.set(profile.did, mergeNormalizedNetworkProfile(centerFollowMap.get(profile.did) || null, profile));
+    }
+  });
+  const centerMutualDids = [...centerFollowerMap.keys()].filter((did) => centerFollowMap.has(did));
+  const focusFollowerSet = new Set(
+    focusFollowers.map((profile) => String(profile?.did || "").trim()).filter(Boolean),
+  );
+  const focusFollowSet = new Set(
+    focusFollows.map((profile) => String(profile?.did || "").trim()).filter(Boolean),
+  );
+  const commonDids = centerMutualDids.filter((did) => focusFollowerSet.has(did) && focusFollowSet.has(did));
+  const commonProfiles = commonDids
+    .map((did) => mergeNormalizedNetworkProfile(centerFollowerMap.get(did) || null, centerFollowMap.get(did) || null))
+    .filter((profile) => profile?.did);
+
+  notifyProgress({
+    title: "Gemeinsame Mutuals werden geladen",
+    step: "Schnittmenge wird berechnet …",
+    percent: 92,
+    detail: `${commonDids.length} gemeinsame Mutuals gefunden`,
+  });
+
+  return {
+    commonDids,
+    commonProfiles,
+  };
+}
+
+async function getRelationshipRecordCreatedAt(auth, recordUri) {
+  const parsed = parseAtUri(recordUri);
+  if (!parsed.did || !parsed.collection || !parsed.rkey) {
+    return "";
+  }
+
+  const record = await bskyGet("com.atproto.repo.getRecord", {
+    repo: parsed.did,
+    collection: parsed.collection,
+    rkey: parsed.rkey,
+  }, {
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+  });
+
+  return String(record?.value?.createdAt || "").trim();
+}
+
+async function loadNetworkRelationshipDates(auth, viewer = {}) {
+  const youFollowSincePromise = typeof viewer.following === "string" && viewer.following.startsWith("at://")
+    ? getRelationshipRecordCreatedAt(auth, String(viewer.following))
+    : Promise.resolve("");
+  const followsYouSincePromise = typeof viewer.followedBy === "string" && viewer.followedBy.startsWith("at://")
+    ? getRelationshipRecordCreatedAt(auth, String(viewer.followedBy))
+    : Promise.resolve("");
+
+  const [youFollowSince, followsYouSince] = await Promise.all([
+    youFollowSincePromise,
+    followsYouSincePromise,
+  ]);
+
+  return {
+    youFollowSince,
+    followsYouSince,
+  };
 }
 
 async function uploadBlob(auth, file) {
@@ -999,6 +1905,27 @@ async function login({ identifier, appPassword, service } = {}) {
   const didDocument = await fetchDidDocument(session.did).catch(() => null);
   const pdsUrl = extractPdsServiceFromDidDocument(didDocument, normalizedService);
   const avatar = await fetchAccountAvatar(session.did, { session });
+  const serviceCache = new Map();
+  const avatarCache = await getAccountAvatarCache();
+  const cachedAvatar = avatar
+    ? await cacheStoredAccountAvatar({
+        did: session.did,
+        identifier,
+        handle: session.handle,
+        service: normalizedService,
+        pdsUrl,
+        avatar,
+        session,
+      }, avatarCache?.assets, serviceCache).catch(() => null)
+    : null;
+  if (cachedAvatar) {
+    await saveAccountAvatarCache({
+      cache: {
+        updatedAt: new Date().toISOString(),
+        assets: cachedAvatar.assets,
+      },
+    });
+  }
   const nextState = upsertAccount(await readStoredAuth(), {
     did: session.did,
     identifier,
@@ -1006,6 +1933,7 @@ async function login({ identifier, appPassword, service } = {}) {
     service: normalizedService,
     pdsUrl,
     avatar,
+    avatarPath: cachedAvatar?.account?.avatarPath || "",
     appPassword,
     session,
     updatedAt: new Date().toISOString(),
@@ -1027,8 +1955,10 @@ async function authStatus() {
 async function getAppState({ browserLocale } = {}) {
   const state = await readStoredAuth();
   const auth = state.accounts.find((entry) => entry.did && entry.did === state.activeDid) || null;
+  const accountAvatarCache = await getAccountAvatarCache();
   const draft = await readStoredValue(DRAFT_KEY);
   const storedSettings = await readStoredValue(SETTINGS_KEY);
+  const hydratedSegmentImages = await hydrateStoredSegmentImages(storedSettings?.segmentImages || draft?.segmentImages);
   const legacyLocalePreference = await readStoredValue(LOCALE_KEY);
   const hashtags = normalizeHashtagEntries(storedSettings?.hashtags);
   const selectedHashtags = normalizeSelectedHashtagEntries(storedSettings?.selectedHashtags, hashtags);
@@ -1042,6 +1972,7 @@ async function getAppState({ browserLocale } = {}) {
     did: auth?.did || "",
     service: auth?.service || DEFAULT_LOGIN_SERVICE,
     accounts: state.accounts.map((entry) => getAccountPublicMeta(entry)),
+    accountAvatarAssets: normalizeAccountAvatarAssets(accountAvatarCache?.assets),
     draft: typeof draft === "string" ? draft : (draft?.sourceText || ""),
     locale,
     localePreference: localePreference || "auto",
@@ -1068,7 +1999,7 @@ async function getAppState({ browserLocale } = {}) {
     hashtagPlacement: ["first", "last", "all-top", "all-bottom"].includes(storedSettings?.hashtagPlacement)
       ? storedSettings.hashtagPlacement
       : "first",
-    segmentImages: normalizeSegmentImages(storedSettings?.segmentImages || draft?.segmentImages),
+    segmentImages: hydratedSegmentImages,
     segmentOverrides: normalizeSegmentOverrides(draft?.segmentOverrides),
     postingHistory: normalizePostingHistory(storedSettings?.postingHistory),
     archivePreferences: storedSettings?.archivePreferences && typeof storedSettings.archivePreferences === "object"
@@ -1078,11 +2009,13 @@ async function getAppState({ browserLocale } = {}) {
 }
 
 async function saveDraft({ draft, segmentImages, segmentOverrides } = {}) {
+  const normalizedImages = await storeComposerImageBlobs(segmentImages);
   await writeStoredValue(DRAFT_KEY, {
     sourceText: draft || "",
-    segmentImages: normalizeSegmentImages(segmentImages),
+    segmentImages: normalizeSegmentImageMetadata(normalizedImages),
     segmentOverrides: normalizeSegmentOverrides(segmentOverrides),
   });
+  await pruneComposerImageBlobs();
   return { ok: true };
 }
 
@@ -1094,6 +2027,9 @@ async function saveSettings(settings = {}) {
   const selectedHashtags = Array.isArray(settings.selectedHashtags)
     ? normalizeSelectedHashtagEntries(settings.selectedHashtags, hashtags)
     : normalizeSelectedHashtagEntries(existing.selectedHashtags, hashtags);
+  const normalizedImages = Array.isArray(settings.segmentImages)
+    ? await storeComposerImageBlobs(settings.segmentImages)
+    : normalizeSegmentImages(existing.segmentImages);
   const nextSettings = {
     ...existing,
     ...settings,
@@ -1126,8 +2062,8 @@ async function saveSettings(settings = {}) {
       ? settings.hashtagPlacement
       : (["first", "last", "all-top", "all-bottom"].includes(existing.hashtagPlacement) ? existing.hashtagPlacement : "first"),
     segmentImages: Array.isArray(settings.segmentImages)
-      ? normalizeSegmentImages(settings.segmentImages)
-      : normalizeSegmentImages(existing.segmentImages),
+      ? normalizeSegmentImageMetadata(normalizedImages)
+      : normalizeSegmentImageMetadata(existing.segmentImages),
     postingHistory: Array.isArray(settings.postingHistory)
       ? normalizePostingHistory(settings.postingHistory)
       : normalizePostingHistory(existing.postingHistory),
@@ -1137,6 +2073,7 @@ async function saveSettings(settings = {}) {
   };
   await writeStoredValue(SETTINGS_KEY, nextSettings);
   await writeStoredValue(LOCALE_KEY, nextSettings.localePreference);
+  await pruneComposerImageBlobs();
   return { ok: true };
 }
 
@@ -1146,6 +2083,14 @@ async function getArchiveSession() {
 
 async function getArchiveCatalog() {
   return await readStoredValue(ARCHIVE_CATALOG_KEY) || null;
+}
+
+async function getDmPartnerCache() {
+  return await readStoredValue(DM_PARTNER_CACHE_KEY) || null;
+}
+
+async function getAccountAvatarCache() {
+  return await readStoredValue(ACCOUNT_AVATAR_CACHE_KEY) || null;
 }
 
 async function saveArchiveSession({ session } = {}) {
@@ -1158,6 +2103,16 @@ async function saveArchiveCatalog({ catalog } = {}) {
   return { ok: true };
 }
 
+async function saveDmPartnerCache({ cache } = {}) {
+  await writeStoredValue(DM_PARTNER_CACHE_KEY, cache || null);
+  return { ok: true };
+}
+
+async function saveAccountAvatarCache({ cache } = {}) {
+  await writeStoredValue(ACCOUNT_AVATAR_CACHE_KEY, cache || null);
+  return { ok: true };
+}
+
 async function clearArchiveSession() {
   await writeStoredValue(ARCHIVE_SESSION_KEY, null);
   return { ok: true };
@@ -1166,6 +2121,73 @@ async function clearArchiveSession() {
 async function clearArchiveCatalog() {
   await writeStoredValue(ARCHIVE_CATALOG_KEY, null);
   return { ok: true };
+}
+
+async function clearDmPartnerCache() {
+  await writeStoredValue(DM_PARTNER_CACHE_KEY, null);
+  return { ok: true };
+}
+
+function normalizeAccountAvatarAssets(assets = []) {
+  return (Array.isArray(assets) ? assets : [])
+    .map((asset) => ({
+      did: String(asset?.did || ""),
+      url: String(asset?.url || ""),
+      path: String(asset?.path || ""),
+      type: String(asset?.type || "application/octet-stream"),
+      sizeBytes: Number(asset?.sizeBytes) || 0,
+      bytes: asset?.bytes instanceof Uint8Array ? asset.bytes : new Uint8Array(asset?.bytes || []),
+    }))
+    .filter((asset) => asset.did && asset.url && asset.path && asset.bytes.length > 0);
+}
+
+async function cacheStoredAccountAvatar(account = {}, assets = null, serviceCache = null) {
+  const did = String(account?.did || "").trim();
+  const avatarUrl = String(account?.avatar || "").trim();
+  if (!did || !avatarUrl) {
+    return {
+      account: {
+        ...account,
+        avatarPath: "",
+      },
+      assets: normalizeAccountAvatarAssets(assets),
+    };
+  }
+
+  const nextAssets = normalizeAccountAvatarAssets(assets);
+  const existing = nextAssets.find((asset) => asset.did === did && asset.url === avatarUrl);
+  if (existing?.path) {
+    return {
+      account: {
+        ...account,
+        avatarPath: existing.path,
+      },
+      assets: nextAssets,
+    };
+  }
+
+  const blob = await downloadRemoteAssetViaBlob(account, avatarUrl, did, serviceCache);
+  const extension = getAssetExtensionFromMimeType(blob.type);
+  const slug = String(account.handle || account.identifier || did)
+    .replace(/[^\w.-]+/g, "-")
+    .slice(0, 60) || "account";
+  const path = `account-avatars/${slug}.${extension}`;
+  const filteredAssets = nextAssets.filter((asset) => !(asset.did === did));
+  filteredAssets.push({
+    did,
+    url: avatarUrl,
+    path,
+    type: blob.type,
+    sizeBytes: blob.bytes.length,
+    bytes: blob.bytes,
+  });
+  return {
+    account: {
+      ...account,
+      avatarPath: path,
+    },
+    assets: filteredAssets,
+  };
 }
 
 function setArchiveRunControl({ runId, action } = {}) {
@@ -1185,6 +2207,17 @@ function setArchiveRunControl({ runId, action } = {}) {
   return { ok: true, state: current.state };
 }
 
+function isOfflineAuthErrorMessage(message = "") {
+  const normalized = String(message || "").toLowerCase();
+  return normalized.includes("keine verbindung zu bluesky möglich")
+    || normalized.includes("could not connect to bluesky")
+    || normalized.includes("fetch failed")
+    || normalized.includes("networkerror")
+    || normalized.includes("load failed")
+    || normalized.includes("failed to fetch")
+    || normalized.includes("verbindungscheck zu bluesky");
+}
+
 async function switchAccount({ did } = {}) {
   const state = await readStoredAuth();
   const account = state.accounts.find((entry) => entry.did && entry.did === did);
@@ -1201,7 +2234,9 @@ async function switchAccount({ did } = {}) {
     return buildAuthResponse(storedState, storedState.accounts.find((entry) => entry.did === (verified.did || did)));
   } catch (error) {
     const normalized = String(error?.message || "").toLowerCase();
-    const reason = !account.appPassword
+    const reason = isOfflineAuthErrorMessage(normalized)
+      ? "offline"
+      : !account.appPassword
       ? "missing_password"
       : (normalized.includes("invalid identifier or password")
         || normalized.includes("invalid login credentials")
@@ -1237,6 +2272,7 @@ async function importAccountMetadata({ accounts } = {}) {
       service: entry.service || DEFAULT_LOGIN_SERVICE,
       pdsUrl: entry.service || DEFAULT_LOGIN_SERVICE,
       avatar: entry.avatar || "",
+      avatarPath: entry.avatarPath || "",
       session: null,
       appPassword: "",
       updatedAt: new Date().toISOString(),
@@ -1310,7 +2346,9 @@ async function verifySession() {
     const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid) || null;
     const normalized = String(error?.message || "").toLowerCase();
     const result = buildAuthResponse({ ...state, activeDid: "" }, null);
-    result.reason = !activeAccount?.appPassword
+    result.reason = isOfflineAuthErrorMessage(normalized)
+      ? "offline"
+      : !activeAccount?.appPassword
       ? "missing_password"
       : (normalized.includes("invalid identifier or password")
         || normalized.includes("invalid login credentials")
@@ -1346,10 +2384,28 @@ async function ensureSession(targetDid = null) {
       });
 
       const avatar = auth.avatar || await fetchAccountAvatar(auth.did, { session: refreshedSession });
+      const serviceCache = new Map();
+      const avatarCache = await getAccountAvatarCache();
+      const cachedAvatar = avatar
+        ? await cacheStoredAccountAvatar({
+            ...auth,
+            session: refreshedSession,
+            avatar,
+          }, avatarCache?.assets, serviceCache).catch(() => null)
+        : null;
+      if (cachedAvatar) {
+        await saveAccountAvatarCache({
+          cache: {
+            updatedAt: new Date().toISOString(),
+            assets: cachedAvatar.assets,
+          },
+        });
+      }
       const nextState = upsertAccount(state, {
         ...auth,
         session: refreshedSession,
         avatar,
+        avatarPath: cachedAvatar?.account?.avatarPath || auth.avatarPath || "",
         updatedAt: new Date().toISOString(),
       });
       nextState.activeDid = auth.did;
@@ -1428,14 +2484,713 @@ function getBlobCidFromRef(image = {}) {
     || "";
 }
 
+function parseBlobUrlInfo(url = "") {
+  const value = String(url || "").trim();
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed = new URL(value);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    const plainIndex = parts.findIndex((part) => part === "plain");
+    if (plainIndex === -1 || parts.length < plainIndex + 3) {
+      return null;
+    }
+    const did = decodeURIComponent(parts[plainIndex + 1] || "");
+    const rawCid = decodeURIComponent(parts[plainIndex + 2] || "");
+    const cid = rawCid.split("@")[0].split(".")[0];
+    if (!did || !cid) {
+      return null;
+    }
+    return { did, cid };
+  } catch {
+    return null;
+  }
+}
+
+async function downloadRemoteAssetViaBlob(auth, url, fallbackDid = "", serviceCache = null) {
+  const blobInfo = parseBlobUrlInfo(url);
+  if (blobInfo?.did && blobInfo?.cid) {
+    return downloadBlobForDid(auth, blobInfo.did, blobInfo.cid, serviceCache);
+  }
+  if (fallbackDid && blobInfo?.cid) {
+    return downloadBlobForDid(auth, fallbackDid, blobInfo.cid, serviceCache);
+  }
+  return downloadRemoteAsset(url);
+}
+
+function getAssetExtensionFromMimeType(mimeType = "") {
+  const value = String(mimeType || "").toLowerCase();
+  if (value.includes("mp4")) {
+    return "mp4";
+  }
+  if (value.includes("webm")) {
+    return "webm";
+  }
+  if (value.includes("mpeg")) {
+    return "mpeg";
+  }
+  if (value.includes("quicktime") || value.includes("mov")) {
+    return "mov";
+  }
+  if (value.includes("png")) {
+    return "png";
+  }
+  if (value.includes("webp")) {
+    return "webp";
+  }
+  if (value.includes("gif")) {
+    return "gif";
+  }
+  if (value.includes("jpeg") || value.includes("jpg")) {
+    return "jpg";
+  }
+  if (value.includes("svg")) {
+    return "svg";
+  }
+  if (value.includes("json")) {
+    return "json";
+  }
+  return "jpg";
+}
+
+async function downloadRemoteAsset(url) {
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(`Asset konnte nicht geladen werden (${response.status})`);
+  }
+  return {
+    type: response.headers.get("content-type") || "application/octet-stream",
+    bytes: new Uint8Array(await response.arrayBuffer()),
+  };
+}
+
+function shouldStopAuthorFeedScanForFilters(createdAt = "", filters = {}) {
+  const timestamp = Date.parse(createdAt || "");
+  if (!Number.isFinite(timestamp)) {
+    return false;
+  }
+
+  if (filters.scope === "year" && filters.year) {
+    const year = Number(String(filters.year || "").slice(0, 4));
+    if (Number.isFinite(year) && timestamp < Date.parse(`${year}-01-01T00:00:00.000Z`)) {
+      return true;
+    }
+  }
+
+  if (filters.scope === "range" && filters.from) {
+    const fromTimestamp = Date.parse(`${filters.from}T00:00:00.000Z`);
+    if (Number.isFinite(fromTimestamp) && timestamp < fromTimestamp) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function formatMediaExportTimestamp(createdAt = "") {
+  const timestamp = Date.parse(createdAt || "");
+  if (Number.isNaN(timestamp)) {
+    return "unknown-date";
+  }
+  return new Date(timestamp).toISOString().replace(/:/g, "-").replace(/\.\d{3}Z$/, "Z");
+}
+
+function buildMediaExportPostFolder(post = {}) {
+  const timestamp = formatMediaExportTimestamp(post.createdAt || "");
+  const year = timestamp.slice(0, 4) || "unknown";
+  const month = timestamp.slice(0, 7) || `${year}-00`;
+  const rkey = String(post.rkey || "post")
+    .replace(/[^\w.-]+/g, "-")
+    .slice(0, 80) || "post";
+  return `posts/${year}/${month}/${timestamp}__post-${rkey}`;
+}
+
+function buildMediaExportPathStem(kind, post = {}, index = 0) {
+  const postFolder = buildMediaExportPostFolder(post);
+  if (kind === "video") {
+    return `${postFolder}/video-${String(index + 1).padStart(2, "0")}`;
+  }
+  if (kind === "other") {
+    return `${postFolder}/other-01`;
+  }
+  return `${postFolder}/img-${String(index + 1).padStart(2, "0")}`;
+}
+
+function buildMediaManifestEntriesForPost(post = {}, record = {}, options = {}) {
+  const includeImages = options.includeImages !== false;
+  const includeVideos = options.includeVideos !== false;
+  const includeOther = options.includeOther !== false;
+  const entries = [];
+  const postFolder = buildMediaExportPostFolder(post);
+
+  if (includeImages) {
+    const images = extractArchiveEmbedImages(record);
+    images.forEach((image, imageIndex) => {
+      const cid = getBlobCidFromRef(image);
+      if (!cid) {
+        return;
+      }
+      entries.push({
+        id: `${post.uri}::image::${imageIndex + 1}`,
+        kind: "image",
+        postUri: post.uri,
+        postCid: post.cid || "",
+        createdAt: post.createdAt || "",
+        authorDid: post.authorDid || "",
+        authorHandle: post.authorHandle || "",
+        rkey: post.rkey || "",
+        cid,
+        alt: String(image.alt || "").slice(0, 1000),
+        width: Number(image.aspectRatio?.width) || 0,
+        height: Number(image.aspectRatio?.height) || 0,
+        mimeTypeHint: String(image?.image?.mimeType || image?.mimeType || "").trim(),
+        postFolder,
+        pathStem: buildMediaExportPathStem("image", post, imageIndex),
+      });
+    });
+  }
+
+  if (includeVideos) {
+    const videos = extractArchiveEmbedVideos(record);
+    videos.forEach((videoEntry, videoIndex) => {
+      const cid = getBlobCidFromRef(videoEntry.video || {});
+      if (!cid) {
+        return;
+      }
+      entries.push({
+        id: `${post.uri}::video::${videoIndex + 1}`,
+        kind: "video",
+        postUri: post.uri,
+        postCid: post.cid || "",
+        createdAt: post.createdAt || "",
+        authorDid: post.authorDid || "",
+        authorHandle: post.authorHandle || "",
+        rkey: post.rkey || "",
+        cid,
+        alt: String(videoEntry.alt || "").slice(0, 1000),
+        width: Number(videoEntry.aspectRatio?.width) || 0,
+        height: Number(videoEntry.aspectRatio?.height) || 0,
+        mimeTypeHint: String(videoEntry?.video?.mimeType || "").trim(),
+        postFolder,
+        pathStem: buildMediaExportPathStem("video", post, videoIndex),
+      });
+    });
+  }
+
+  if (includeOther) {
+    const externalCard = extractArchiveExternalCardFromRecord(record);
+    if (externalCard?.thumbRef) {
+      const cid = getBlobCidFromRef(externalCard.thumbRef);
+      const remoteUrl = typeof externalCard.thumbRef === "string"
+        ? externalCard.thumbRef
+        : String(externalCard.thumbRef?.uri || externalCard.thumbRef?.url || externalCard.thumbRef?.thumb || "").trim();
+      if (cid || remoteUrl) {
+        entries.push({
+          id: `${post.uri}::other::thumb`,
+          kind: "other",
+          postUri: post.uri,
+          postCid: post.cid || "",
+          createdAt: post.createdAt || "",
+          authorDid: post.authorDid || "",
+          authorHandle: post.authorHandle || "",
+          rkey: post.rkey || "",
+          cid,
+          remoteUrl,
+          alt: String(externalCard.title || externalCard.description || "").slice(0, 1000),
+          mimeTypeHint: "",
+          postFolder,
+          pathStem: buildMediaExportPathStem("other", post, 0),
+        });
+      }
+    }
+  }
+
+  return entries;
+}
+
+async function resolveMediaExportActor(auth, actor = "") {
+  const rawActor = String(actor || "").trim();
+  if (!rawActor) {
+    return {
+      did: auth.session.did,
+      handle: auth.session.handle,
+      displayName: auth.session.handle,
+      avatar: auth.avatar || "",
+    };
+  }
+
+  const profile = await bskyGet("app.bsky.actor.getProfile", {
+    actor: rawActor,
+  }, {
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+  });
+
+  return {
+    did: String(profile?.did || "").trim(),
+    handle: String(profile?.handle || rawActor).trim(),
+    displayName: String(profile?.displayName || profile?.handle || rawActor).trim(),
+    avatar: String(profile?.avatar || "").trim(),
+  };
+}
+
+async function scanAccountMediaExport({ actor = "", filters = {}, includeImages = true, includeVideos = true, includeOther = true } = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const normalizedFilters = normalizeArchiveFilters(filters);
+  const actorProfile = await resolveMediaExportActor(auth, actor);
+  if (!actorProfile.did) {
+    throw new Error("Account fuer Medienexport konnte nicht aufgeloest werden.");
+  }
+
+  const posts = [];
+  const media = [];
+  const seenMediaIds = new Set();
+  const threadHashtagMatchCache = new Map();
+  const rootHashtagMatchCache = new Map();
+  const hasHashtagFilter = Array.isArray(normalizedFilters.hashtagTags) && normalizedFilters.hashtagTags.length > 0;
+  let cursor = "";
+  let pageCount = 0;
+  let stopScan = false;
+
+  notifyProgress({
+    title: "Medien werden gesucht",
+    step: "Autor-Feed wird seitenweise gelesen …",
+    percent: 4,
+    detail: actorProfile.handle ? `Account: @${actorProfile.handle}` : actorProfile.did,
+  });
+
+  while (!stopScan) {
+    const response = await bskyGet("app.bsky.feed.getAuthorFeed", {
+      actor: actorProfile.did,
+      limit: 100,
+      cursor: cursor || undefined,
+    }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+    });
+
+    const feedItems = Array.isArray(response?.feed) ? response.feed : [];
+    pageCount += 1;
+    let oldestSeenCreatedAt = "";
+
+    for (const item of feedItems) {
+      const postView = item?.post || null;
+      const record = postView?.record || {};
+      if (!postView?.uri || postView.author?.did !== actorProfile.did) {
+        continue;
+      }
+
+      const createdAt = String(record.createdAt || postView.indexedAt || "").trim();
+      oldestSeenCreatedAt = createdAt || oldestSeenCreatedAt;
+
+      if (!postMatchesArchiveSelection(record, normalizedFilters, actorProfile.did, postView.uri)) {
+        continue;
+      }
+
+      if (hasHashtagFilter) {
+        const matchesHashtagSelection = await postMatchesMediaExportHashtagSelection(
+          postView,
+          normalizedFilters,
+          auth,
+          threadHashtagMatchCache,
+          rootHashtagMatchCache,
+        );
+        if (!matchesHashtagSelection) {
+          continue;
+        }
+      }
+
+      const post = buildArchivePostEntity({
+        uri: postView.uri,
+        cid: postView.cid,
+        record,
+        authorHandle: postView.author?.handle || actorProfile.handle || "",
+        authorDisplayName: postView.author?.displayName || postView.author?.handle || actorProfile.displayName || "",
+        authorDid: postView.author?.did || actorProfile.did,
+        authorAvatar: postView.author?.avatar || actorProfile.avatar || "",
+        counts: {
+          likeCount: Number(postView.likeCount) || 0,
+          replyCount: Number(postView.replyCount) || 0,
+          repostCount: Number(postView.repostCount) || 0,
+          quoteCount: Number(postView.quoteCount) || 0,
+        },
+      });
+
+      const entries = buildMediaManifestEntriesForPost(post, record, {
+        includeImages,
+        includeVideos,
+        includeOther,
+      });
+
+      if (!entries.length) {
+        continue;
+      }
+
+      posts.push({
+        uri: post.uri,
+        cid: post.cid || "",
+        rkey: post.rkey || "",
+        createdAt: post.createdAt || "",
+        text: String(post.text || "").slice(0, 280),
+        authorDid: post.authorDid || "",
+        authorHandle: post.authorHandle || "",
+        postFolder: buildMediaExportPostFolder(post),
+        permalink: post.permalink || "",
+        threadRootUri: post.thread?.rootUri || "",
+        threadParentUri: post.thread?.parentUri || "",
+        mediaCount: entries.length,
+      });
+
+      for (const entry of entries) {
+        if (seenMediaIds.has(entry.id)) {
+          continue;
+        }
+        seenMediaIds.add(entry.id);
+        media.push(entry);
+      }
+    }
+
+    notifyProgress({
+      title: "Medien werden gesucht",
+      step: `Abruf ${pageCount} abgeschlossen`,
+      percent: Math.min(78, 4 + (pageCount * 4)),
+      detail: `${posts.length} Posts mit Medien · ${media.length} Assets gefunden`,
+    });
+
+    cursor = String(response?.cursor || "");
+    if (!cursor || !feedItems.length) {
+      break;
+    }
+
+    stopScan = shouldStopAuthorFeedScanForFilters(oldestSeenCreatedAt, normalizedFilters);
+  }
+
+  media.sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+  posts.sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+
+  notifyProgress({
+    title: "Medien werden gesucht",
+    step: "Manifest ist bereit",
+    percent: 100,
+    detail: `${posts.length} Posts mit Medien · ${media.length} Assets gefunden`,
+  });
+
+  return {
+    manifest: {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: APP_VERSION,
+      account: {
+        did: actorProfile.did,
+        handle: actorProfile.handle,
+        displayName: actorProfile.displayName,
+      },
+      filters: normalizedFilters,
+      selectedKinds: {
+        images: includeImages !== false,
+        videos: includeVideos !== false,
+        other: includeOther !== false,
+      },
+      postCount: posts.length,
+      mediaCount: media.length,
+    },
+    posts,
+    media,
+  };
+}
+
+async function downloadAccountMediaAsset({ item } = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  if (!item || typeof item !== "object") {
+    throw new Error("Kein Medium zum Laden uebergeben.");
+  }
+
+  const pathStem = String(item.pathStem || "").trim();
+  const cid = String(item.cid || "").trim();
+  const remoteUrl = String(item.remoteUrl || "").trim();
+  const authorDid = String(item.authorDid || auth.session.did || "").trim();
+  if (!pathStem || (!cid && !remoteUrl)) {
+    throw new Error("Medienquelle ist unvollstaendig.");
+  }
+
+  notifyProgress({
+    step: `${item.kind === "video" ? "Video" : (item.kind === "other" ? "Asset" : "Bild")} wird geladen`,
+    detail: String(item.postUri || "").trim(),
+  });
+
+  let blob = null;
+  if (cid) {
+    blob = await downloadBlobForDid(auth, authorDid, cid, new Map());
+  } else if (remoteUrl) {
+    blob = await downloadRemoteAssetViaBlob(auth, remoteUrl, authorDid, new Map());
+  }
+
+  if (!blob?.bytes?.length) {
+    throw new Error("Medium konnte nicht geladen werden.");
+  }
+
+  let extension = getAssetExtensionFromMimeType(blob.type || item.mimeTypeHint || "");
+  if (item.kind === "video" && (!extension || extension === "jpg")) {
+    extension = "mp4";
+  } else if (item.kind === "other" && !extension) {
+    extension = "bin";
+  } else if (!extension) {
+    extension = "jpg";
+  }
+  return {
+    id: String(item.id || "").trim(),
+    kind: String(item.kind || "asset").trim(),
+    path: `${pathStem}.${extension}`,
+    type: blob.type || "application/octet-stream",
+    sizeBytes: blob.bytes.length,
+    bytes: blob.bytes,
+    createdAt: String(item.createdAt || "").trim(),
+    postUri: String(item.postUri || "").trim(),
+    alt: String(item.alt || "").slice(0, 1000),
+    width: Number(item.width) || 0,
+    height: Number(item.height) || 0,
+  };
+}
+
+async function attachArchiveAvatarAssets(posts, assets, seenAssetPaths, auth = null, serviceCache = null, notifyProgress = null, progressBasePercent = 56) {
+  const postsByAvatarUrl = new Map();
+  for (const post of Array.isArray(posts) ? posts : []) {
+    const avatarUrl = String(post?.authorAvatar || "").trim();
+    if (!avatarUrl) {
+      continue;
+    }
+    if (!postsByAvatarUrl.has(avatarUrl)) {
+      postsByAvatarUrl.set(avatarUrl, []);
+    }
+    postsByAvatarUrl.get(avatarUrl).push(post);
+  }
+
+  const avatarEntries = [...postsByAvatarUrl.entries()];
+  const total = Math.max(1, avatarEntries.length);
+  let processedCount = 0;
+
+  await mapWithConcurrency(avatarEntries, ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY, async ([avatarUrl, linkedPosts]) => {
+    const samplePost = linkedPosts[0] || null;
+    try {
+      const blob = await downloadRemoteAssetViaBlob(
+        auth,
+        avatarUrl,
+        samplePost?.authorDid || "",
+        serviceCache,
+      );
+      const extension = getAssetExtensionFromMimeType(blob.type);
+      const authorSlug = String(samplePost?.authorHandle || samplePost?.authorDid || "author")
+        .replace(/[^\w.-]+/g, "-")
+        .slice(0, 60) || "author";
+      const path = `avatars/${authorSlug}.${extension}`;
+      linkedPosts.forEach((post) => {
+        post.authorAvatarPath = path;
+      });
+      if (!seenAssetPaths.has(path)) {
+        seenAssetPaths.add(path);
+        assets.push({
+          path,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          bytes: blob.bytes,
+        });
+      }
+    } catch {
+      linkedPosts.forEach((post) => {
+        post.authorAvatarPath = "";
+      });
+    }
+
+    processedCount += 1;
+    if (typeof notifyProgress === "function" && (processedCount % 10 === 0 || processedCount === total)) {
+      notifyProgress({
+        title: "Archiv wird gelesen",
+        step: `Avatare ${processedCount}/${total} vorbereitet`,
+        percent: Math.min(64, progressBasePercent + Math.round((processedCount / total) * 4)),
+        detail: "Eindeutige Profilbilder werden lokal ergänzt",
+        checkpoint: `Avatare vorbereitet (${processedCount}/${total})`,
+        state: "running",
+      });
+    }
+  });
+}
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const values = Array.isArray(items) ? items : [];
+  const limit = Math.max(1, Math.min(Number(concurrency) || 1, values.length || 1));
+  const results = new Array(values.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < values.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(values[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => runWorker()));
+  return results;
+}
+
 function normalizeArchiveFilters(filters = {}) {
   return {
     scope: filters.scope === "year" || filters.scope === "range" ? filters.scope : "all",
-    contentMode: filters.contentMode === "full" || filters.contentMode === "threads" ? filters.contentMode : "posts",
+    contentMode: ["posts", "thread_roots", "threads", "full"].includes(filters.contentMode) ? filters.contentMode : "posts",
     year: String(filters.year || "").trim(),
     from: String(filters.from || "").trim(),
     to: String(filters.to || "").trim(),
+    hashtagTags: normalizeHashtagEntries(filters.hashtagTags).map((entry) => entry.normalized),
+    hashtagScope: filters.hashtagScope === "startpost" ? "startpost" : "thread",
   };
+}
+
+function collectNormalizedHashtagsFromRecord(record = {}) {
+  const tags = new Set();
+  const addTag = (value) => {
+    const parsed = parseHashtagValue(value);
+    if (parsed?.normalized) {
+      tags.add(parsed.normalized);
+    }
+  };
+
+  const facets = Array.isArray(record?.facets) ? record.facets : [];
+  facets.forEach((facet) => {
+    const features = Array.isArray(facet?.features) ? facet.features : [];
+    features.forEach((feature) => {
+      if (feature?.$type === "app.bsky.richtext.facet#tag") {
+        addTag(feature.tag || feature.value || "");
+      }
+    });
+  });
+
+  const text = typeof record?.text === "string" ? record.text : "";
+  if (text) {
+    parseHashtagFacets(text).forEach((facet) => {
+      const features = Array.isArray(facet?.features) ? facet.features : [];
+      features.forEach((feature) => {
+        if (feature?.$type === "app.bsky.richtext.facet#tag") {
+          addTag(feature.tag || feature.value || "");
+        }
+      });
+    });
+  }
+
+  return tags;
+}
+
+function recordMatchesArchiveHashtags(record = {}, filters = {}) {
+  const selectedTags = Array.isArray(filters?.hashtagTags) ? filters.hashtagTags : [];
+  if (!selectedTags.length) {
+    return true;
+  }
+
+  const recordTags = collectNormalizedHashtagsFromRecord(record);
+  return selectedTags.some((tag) => recordTags.has(tag));
+}
+
+async function rootPostMatchesArchiveHashtags(rootUri, filters, auth, cache = new Map()) {
+  const selectedTags = Array.isArray(filters?.hashtagTags) ? filters.hashtagTags : [];
+  if (!rootUri || !selectedTags.length) {
+    return false;
+  }
+  if (cache.has(rootUri)) {
+    return cache.get(rootUri);
+  }
+
+  let threadResponse = null;
+  try {
+    const activeAuth = await refreshAuthReference(auth);
+    threadResponse = await bskyGet("app.bsky.feed.getPostThread", {
+      uri: rootUri,
+      depth: 0,
+      parentHeight: 0,
+    }, {
+      headers: {
+        authorization: `Bearer ${activeAuth.session.accessJwt}`,
+      },
+    });
+  } catch (error) {
+    if (isMissingArchivePostError(error)) {
+      cache.set(rootUri, false);
+      return false;
+    }
+    throw error;
+  }
+
+  const rootPostView = threadResponse?.thread?.post?.uri
+    ? threadResponse.thread.post
+    : (threadResponse?.post?.uri
+      ? threadResponse.post
+      : (threadResponse?.thread?.uri ? threadResponse.thread : threadResponse));
+  const matches = recordMatchesArchiveHashtags(rootPostView?.record || {}, filters);
+  cache.set(rootUri, matches);
+  return matches;
+}
+
+async function threadMatchesArchiveHashtags(rootUri, filters, auth, cache = new Map()) {
+  const selectedTags = Array.isArray(filters?.hashtagTags) ? filters.hashtagTags : [];
+  if (!rootUri || !selectedTags.length) {
+    return false;
+  }
+  if (cache.has(rootUri)) {
+    return cache.get(rootUri);
+  }
+
+  let threadResponse = null;
+  try {
+    const activeAuth = await refreshAuthReference(auth);
+    threadResponse = await bskyGet("app.bsky.feed.getPostThread", {
+      uri: rootUri,
+      depth: 100,
+      parentHeight: 0,
+    }, {
+      headers: {
+        authorization: `Bearer ${activeAuth.session.accessJwt}`,
+      },
+    });
+  } catch (error) {
+    if (isMissingArchivePostError(error)) {
+      cache.set(rootUri, false);
+      return false;
+    }
+    throw error;
+  }
+
+  const matches = collectThreadViewPosts(threadResponse.thread || threadResponse.post || threadResponse)
+    .some((postView) => recordMatchesArchiveHashtags(postView?.record || {}, filters));
+  cache.set(rootUri, matches);
+  return matches;
+}
+
+async function postMatchesMediaExportHashtagSelection(postView, filters, auth, threadCache = new Map(), rootCache = new Map()) {
+  const selectedTags = Array.isArray(filters?.hashtagTags) ? filters.hashtagTags : [];
+  if (!selectedTags.length) {
+    return true;
+  }
+
+  const record = postView?.record || {};
+  if (recordMatchesArchiveHashtags(record, filters)) {
+    return true;
+  }
+
+  const fallbackUri = postView?.uri || "";
+  const rootUri = getArchiveRootUri(record, fallbackUri) || fallbackUri;
+  if (!rootUri) {
+    return false;
+  }
+
+  if (filters.hashtagScope === "startpost") {
+    if (rootUri === fallbackUri) {
+      return false;
+    }
+    return rootPostMatchesArchiveHashtags(rootUri, filters, auth, rootCache);
+  }
+
+  return threadMatchesArchiveHashtags(rootUri, filters, auth, threadCache);
 }
 
 function postMatchesArchiveFilters(record, filters) {
@@ -1480,6 +3235,20 @@ function recordBelongsToOwnThread(record = {}, ownDid = "", fallbackUri = "") {
   return parseAtUri(rootUri).did === ownDid;
 }
 
+function recordBelongsToOwnMainThreadPath(record = {}, ownDid = "", fallbackUri = "") {
+  if (!recordBelongsToOwnThread(record, ownDid, fallbackUri)) {
+    return false;
+  }
+  if (!record?.reply) {
+    return true;
+  }
+  const parentUri = getArchiveParentUri(record);
+  if (!parentUri) {
+    return true;
+  }
+  return parseAtUri(parentUri).did === ownDid;
+}
+
 function postMatchesArchiveSelection(record, filters, ownDid, fallbackUri = "") {
   if (!postMatchesArchiveFilters(record, filters)) {
     return false;
@@ -1487,6 +3256,10 @@ function postMatchesArchiveSelection(record, filters, ownDid, fallbackUri = "") 
 
   if (filters.contentMode === "full") {
     return true;
+  }
+
+  if (filters.contentMode === "thread_roots") {
+    return recordBelongsToOwnMainThreadPath(record, ownDid, fallbackUri);
   }
 
   if (!record?.reply) {
@@ -1497,10 +3270,83 @@ function postMatchesArchiveSelection(record, filters, ownDid, fallbackUri = "") 
 }
 
 function extractArchiveEmbedImages(record = {}) {
-  return Array.isArray(record?.embed?.images) ? record.embed.images.slice(0, 4) : [];
+  const embed = record?.embed;
+  if (!embed || typeof embed !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(embed.images)) {
+    return embed.images.slice(0, 4);
+  }
+
+  if (embed.media && typeof embed.media === "object") {
+    return extractArchiveEmbedImages({ embed: embed.media });
+  }
+
+  return [];
 }
 
-function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", authorDid = "", authorDisplayName = "", counts = null }) {
+function extractArchiveEmbedVideos(record = {}) {
+  const embed = record?.embed;
+  if (!embed || typeof embed !== "object") {
+    return [];
+  }
+
+  if (embed.video && typeof embed.video === "object") {
+    return [{
+      video: embed.video,
+      alt: String(embed.alt || "").trim(),
+      aspectRatio: embed.aspectRatio && typeof embed.aspectRatio === "object"
+        ? {
+            width: Number(embed.aspectRatio.width) || 0,
+            height: Number(embed.aspectRatio.height) || 0,
+          }
+        : null,
+    }];
+  }
+
+  if (embed.media && typeof embed.media === "object") {
+    return extractArchiveEmbedVideos({ embed: embed.media });
+  }
+
+  return [];
+}
+
+function extractArchiveExternalCardFromRecord(record = {}) {
+  const embed = record?.embed;
+  if (!embed || typeof embed !== "object") {
+    return null;
+  }
+
+  const external = embed.external && typeof embed.external === "object"
+    ? embed.external
+    : (embed.media?.external && typeof embed.media.external === "object" ? embed.media.external : null);
+
+  if (!external) {
+    return null;
+  }
+
+  const url = String(external.uri || external.url || "").trim();
+  const title = String(external.title || "").trim();
+  const description = String(external.description || "").trim();
+  const thumbRef = external.thumb || external.thumbnail || external.image || null;
+  const thumb = typeof thumbRef === "string"
+    ? thumbRef
+    : String(thumbRef?.uri || thumbRef?.url || thumbRef?.thumb || "").trim();
+  if (!url && !title && !description && !thumbRef) {
+    return null;
+  }
+  return {
+    url,
+    title,
+    description,
+    thumb,
+    thumbRef,
+    thumbPath: "",
+  };
+}
+
+function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", authorDid = "", authorDisplayName = "", authorAvatar = "", counts = null }) {
   const parsed = parseAtUri(uri);
   return {
     uri,
@@ -1527,6 +3373,9 @@ function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", auth
     authorHandle,
     authorDisplayName,
     authorDid,
+    authorAvatar,
+    authorAvatarPath: "",
+    externalCard: extractArchiveExternalCardFromRecord(record),
     images: [],
   };
 }
@@ -1548,6 +3397,9 @@ function mergeArchivePostEntity(existing, incoming) {
   existing.authorHandle = incoming.authorHandle || existing.authorHandle;
   existing.authorDisplayName = incoming.authorDisplayName || existing.authorDisplayName;
   existing.authorDid = incoming.authorDid || existing.authorDid;
+  existing.authorAvatar = incoming.authorAvatar || existing.authorAvatar;
+  existing.authorAvatarPath = incoming.authorAvatarPath || existing.authorAvatarPath;
+  existing.externalCard = incoming.externalCard || existing.externalCard;
   if ((!existing.images || existing.images.length === 0) && incoming.images?.length) {
     existing.images = incoming.images;
   }
@@ -1574,12 +3426,747 @@ function collectThreadViewPosts(node, result = []) {
   return result;
 }
 
+function isMissingArchivePostError(error) {
+  const message = String(error?.message || "").trim().toLowerCase();
+  return message.includes("post not found")
+    || message.includes("record not found")
+    || message.includes("could not locate record")
+    || message.includes("not found");
+}
+
+function isArchiveThreadTimeoutError(error) {
+  return String(error?.message || "").toLowerCase().includes("thread request timed out");
+}
+
+async function archiveGetPostThread(auth, uri, {
+  depth = 100,
+  parentHeight = 0,
+  timeoutMs = ARCHIVE_THREAD_REQUEST_TIMEOUT_MS,
+  retries = ARCHIVE_THREAD_REQUEST_RETRIES,
+  notifyProgress = null,
+  progressTitle = "Archiv wird gelesen",
+  progressPercent = 50,
+  progressDetail = "",
+  checkpointPrefix = "Thread wird geladen",
+} = {}) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const activeAuth = await refreshAuthReference(auth);
+      return await bskyGet("app.bsky.feed.getPostThread", {
+        uri,
+        depth,
+        parentHeight,
+      }, {
+        headers: {
+          authorization: `Bearer ${activeAuth.session.accessJwt}`,
+        },
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        lastError = new Error(`Thread request timed out after ${Math.round(timeoutMs / 1000)}s.`);
+        if (typeof notifyProgress === "function") {
+          const isRetry = attempt < retries;
+          notifyProgress({
+            title: progressTitle,
+            step: isRetry
+              ? `Thread-Antwort dauert länger als ${Math.round(timeoutMs / 1000)}s · neuer Versuch startet`
+              : `Thread-Antwort bleibt zu langsam · Thread wird übersprungen`,
+            percent: progressPercent,
+            detail: progressDetail || uri,
+            checkpoint: isRetry
+              ? `${checkpointPrefix} · Wiederholungsversuch ${attempt + 2}/${retries + 1}`
+              : `${checkpointPrefix} · Timeout`,
+            state: "running",
+          });
+        }
+      } else {
+        lastError = error;
+      }
+      if (attempt >= retries) {
+        throw lastError;
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  throw lastError || new Error("Thread request timed out.");
+}
+
+function collectThreadPathPosts(node, targetUri, result = []) {
+  if (!node || typeof node !== "object") {
+    return false;
+  }
+
+  const postView = node.post && node.post.uri
+    ? node.post
+    : (node.uri && node.record ? node : null);
+
+  const replies = Array.isArray(node.replies)
+    ? node.replies
+    : (Array.isArray(postView?.replies) ? postView.replies : []);
+
+  if (postView?.uri === targetUri) {
+    result.push(postView);
+    return true;
+  }
+
+  for (const reply of replies) {
+    if (collectThreadPathPosts(reply, targetUri, result)) {
+      if (postView?.uri) {
+        result.unshift(postView);
+      }
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function collectThreadAuthorPosts(node, authorDid, result = []) {
+  if (!node || typeof node !== "object") {
+    return result;
+  }
+
+  const postView = node.post && node.post.uri
+    ? node.post
+    : (node.uri && node.record ? node : null);
+
+  if (postView?.uri && (!authorDid || postView.author?.did === authorDid)) {
+    result.push(postView);
+  }
+
+  const replies = Array.isArray(node.replies)
+    ? node.replies
+    : (Array.isArray(postView?.replies) ? postView.replies : []);
+  replies.forEach((reply) => collectThreadAuthorPosts(reply, authorDid, result));
+  return result;
+}
+
 function chunkEntries(items, size) {
   const result = [];
   for (let index = 0; index < items.length; index += size) {
     result.push(items.slice(index, index + size));
   }
   return result;
+}
+
+function normalizeDmDateFilterValue(value, isEnd = false) {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(`${value}T${isEnd ? "23:59:59.999" : "00:00:00.000"}Z`);
+  return Number.isNaN(date.getTime()) ? null : date.getTime();
+}
+
+function normalizeDmFilters(filters = {}) {
+  return {
+    participantDid: String(filters.participantDid || "").trim(),
+    from: String(filters.from || ""),
+    to: String(filters.to || ""),
+  };
+}
+
+function normalizeDmConversationEntity(convo = {}, selfDid = "") {
+  const members = Array.isArray(convo.members) ? convo.members : [];
+  const filteredMembers = members.filter((member) => member?.did && member.did !== selfDid);
+  const memberHandles = filteredMembers.map((member) => member.handle || member.did).filter(Boolean);
+  const participantCount = filteredMembers.length;
+  const isGroup = convo.isGroup === true || participantCount > 1;
+  return {
+    id: convo.id || convo.convoId || crypto.randomUUID(),
+    rev: convo.rev || "",
+    isGroup,
+    participantCount,
+    memberHandles,
+    members: filteredMembers.map((member) => ({
+      did: member.did || "",
+      handle: member.handle || "",
+      displayName: member.displayName || member.handle || "",
+      avatar: member.avatar || "",
+    })),
+    title: convo.name || convo.title || "",
+    unreadCount: Number(convo.unreadCount) || 0,
+    lastMessageAt: convo.lastMessage?.sentAt || convo.updatedAt || convo.createdAt || "",
+    updatedAt: convo.updatedAt || convo.lastMessage?.sentAt || convo.createdAt || "",
+    raw: convo,
+  };
+}
+
+function collectDmEmbeds(message = {}) {
+  const candidates = [
+    message,
+    message.embed,
+    message.external,
+    message.card,
+    message.link,
+    ...(Array.isArray(message.embeds) ? message.embeds : []),
+    message.message,
+    message.message?.embed,
+    message.message?.external,
+    message.message?.card,
+    message.message?.link,
+    ...(Array.isArray(message.message?.embeds) ? message.message.embeds : []),
+    message.record,
+    message.record?.embed,
+    message.record?.external,
+    message.record?.card,
+    message.record?.link,
+    ...(Array.isArray(message.record?.embeds) ? message.record.embeds : []),
+    message.content,
+    message.content?.embed,
+    message.content?.external,
+    message.content?.card,
+    message.content?.link,
+    ...(Array.isArray(message.content?.embeds) ? message.content.embeds : []),
+  ].filter(Boolean);
+  return candidates;
+}
+
+function collectDmFacets(message = {}) {
+  const candidates = [
+    message.facets,
+    message.message?.facets,
+    message.record?.facets,
+    message.content?.facets,
+  ];
+  for (const facets of candidates) {
+    if (Array.isArray(facets) && facets.length > 0) {
+      return facets;
+    }
+  }
+  return [];
+}
+
+function extractDmExternalCardFromEmbedSw(embed) {
+  if (!embed || typeof embed !== "object") {
+    return null;
+  }
+
+  const external = embed.external && typeof embed.external === "object"
+    ? embed.external
+    : embed.card && typeof embed.card === "object"
+      ? embed.card
+      : embed.link && typeof embed.link === "object"
+        ? embed.link
+        : embed;
+  const url = String(external.uri || external.url || "").trim();
+  const title = String(external.title || "").trim();
+  const description = String(external.description || "").trim();
+  const thumbRef = external.thumb || external.thumbnail || external.image || null;
+  const thumb = typeof thumbRef === "string"
+    ? thumbRef
+    : String(thumbRef?.uri || thumbRef?.url || thumbRef?.thumb || "").trim();
+
+  if (url) {
+    return {
+      url,
+      title,
+      description,
+      thumb,
+      thumbRef,
+    };
+  }
+
+  if (embed.media) {
+    return extractDmExternalCardFromEmbedSw(embed.media);
+  }
+
+  if (Array.isArray(embed.embeds)) {
+    for (const nestedEmbed of embed.embeds) {
+      const match = extractDmExternalCardFromEmbedSw(nestedEmbed);
+      if (match) {
+        return match;
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeDmMessageEntity(message = {}, convoId = "") {
+  const sender = message.sender || message.author || {};
+  return {
+    id: message.id || message.msgId || crypto.randomUUID(),
+    convoId,
+    sentAt: message.sentAt || message.createdAt || "",
+    text: String(message.text || message.message?.text || ""),
+    senderDid: sender.did || message.senderDid || "",
+    senderHandle: sender.handle || "",
+    senderDisplayName: sender.displayName || sender.handle || "",
+    senderAvatar: sender.avatar || "",
+    senderAvatarPath: "",
+    facets: collectDmFacets(message),
+    embeds: collectDmEmbeds(message),
+    externalCard: null,
+    raw: message,
+  };
+}
+
+async function exportDmArchive({ filters, partnerCache } = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const ownAvatar = auth.avatar || await fetchAccountAvatar(auth.session.did, auth);
+  let ownAvatarPath = "";
+  const pdsServiceCache = new Map();
+  const normalizedFilters = normalizeDmFilters(filters);
+  const fromTime = normalizeDmDateFilterValue(normalizedFilters.from, false);
+  const toTime = normalizeDmDateFilterValue(normalizedFilters.to, true);
+  if (!normalizedFilters.participantDid) {
+    throw new Error("Bitte zuerst genau einen DM-Partner auswählen.");
+  }
+
+  const cachedPartnerPayload = partnerCache && typeof partnerCache === "object"
+    ? {
+        recentContacts: Array.isArray(partnerCache.recentContacts) ? partnerCache.recentContacts : [],
+        conversations: Array.isArray(partnerCache.conversations) ? partnerCache.conversations : [],
+        assets: Array.isArray(partnerCache.assets) ? partnerCache.assets : [],
+      }
+    : null;
+  const partnerPayload = cachedPartnerPayload?.conversations?.length
+    ? cachedPartnerPayload
+    : await listDmPartners({ downloadAssets: false }, () => {});
+  const filteredConversations = (Array.isArray(partnerPayload.conversations) ? partnerPayload.conversations : [])
+    .filter((convo) => (convo.members || []).some((member) => member.did === normalizedFilters.participantDid));
+  const messages = [];
+  const participantSet = new Set();
+
+  for (const [index, convo] of filteredConversations.entries()) {
+    let messageCursor = "";
+    let convoMessageCount = 0;
+    do {
+      const response = await chatBskyGet(auth, "chat.bsky.convo.getMessages", {
+        convoId: convo.id,
+        limit: 100,
+        cursor: messageCursor,
+      });
+      const items = Array.isArray(response.messages) ? response.messages : [];
+      items.forEach((message) => {
+        const normalized = normalizeDmMessageEntity(message, convo.id);
+        const sentAtTime = normalized.sentAt ? Date.parse(normalized.sentAt) : NaN;
+        if (Number.isFinite(fromTime) && Number.isFinite(sentAtTime) && sentAtTime < fromTime) {
+          return;
+        }
+        if (Number.isFinite(toTime) && Number.isFinite(sentAtTime) && sentAtTime > toTime) {
+          return;
+        }
+        messages.push(normalized);
+        convoMessageCount += 1;
+      });
+      messageCursor = response.cursor || "";
+      notifyProgress({
+        title: "Direct Messages werden geladen",
+        step: `Unterhaltung ${index + 1}/${filteredConversations.length} wird gelesen`,
+        percent: Math.min(92, 30 + Math.round(((index + 1) / Math.max(1, filteredConversations.length)) * 60)),
+        detail: `${messages.length} Nachrichten lokal gesammelt`,
+      });
+    } while (messageCursor);
+
+    convo.messageCount = convoMessageCount;
+    convo.members.forEach((member) => {
+      if (member.did) {
+        participantSet.add(member.did);
+      }
+    });
+  }
+
+  const keptConversationIds = new Set(messages.map((message) => message.convoId));
+  const finalConversations = filteredConversations.filter((convo) => keptConversationIds.has(convo.id) || !normalizedFilters.from && !normalizedFilters.to);
+  const assets = Array.isArray(partnerPayload.assets) ? [...partnerPayload.assets] : [];
+  const existingAssetPaths = new Set(assets.map((asset) => asset.path));
+  const selectedPartner = (Array.isArray(partnerPayload.recentContacts) ? partnerPayload.recentContacts : [])
+    .find((contact) => contact.did === normalizedFilters.participantDid)
+    || finalConversations.flatMap((convo) => convo.members || []).find((member) => member.did === normalizedFilters.participantDid)
+    || null;
+  const memberByDid = new Map();
+
+  finalConversations.forEach((convo) => {
+    (convo.members || []).forEach((member) => {
+      if (member?.did && !memberByDid.has(member.did)) {
+        memberByDid.set(member.did, member);
+      }
+    });
+  });
+
+  messages.forEach((message) => {
+    if (message.senderDid === auth.session.did) {
+      message.senderHandle = auth.session.handle || message.senderHandle || "";
+      message.senderDisplayName = auth.session.handle || message.senderDisplayName || message.senderHandle || "";
+      message.senderAvatar = ownAvatar || message.senderAvatar || "";
+      return;
+    }
+    const member = memberByDid.get(message.senderDid);
+    if (!member) {
+      return;
+    }
+    message.senderHandle = member.handle || message.senderHandle || "";
+    message.senderDisplayName = member.displayName || member.handle || message.senderDisplayName || "";
+    message.senderAvatar = member.avatar || message.senderAvatar || "";
+  });
+
+  for (const message of messages) {
+    const externalCard = (Array.isArray(message.embeds) ? message.embeds : [])
+      .map((embed) => extractDmExternalCardFromEmbedSw(embed))
+      .find(Boolean);
+    if (!externalCard) {
+      continue;
+    }
+    message.externalCard = {
+      url: externalCard.url,
+      title: externalCard.title,
+      description: externalCard.description,
+      thumb: externalCard.thumb || "",
+      thumbPath: "",
+    };
+    const thumbCid = getBlobCidFromRef(externalCard.thumbRef || {});
+    const thumbUrl = typeof externalCard.thumbRef === "string"
+      ? externalCard.thumbRef
+      : String(externalCard.thumbRef?.uri || externalCard.thumbRef?.url || externalCard.thumbRef?.thumb || "").trim();
+    if (!thumbCid) {
+      if (!thumbUrl) {
+        continue;
+      }
+      try {
+        const blob = await downloadRemoteAssetViaBlob(
+          auth,
+          thumbUrl,
+          message.senderDid || normalizedFilters.participantDid || auth.session.did,
+          pdsServiceCache,
+        );
+        const extension = getAssetExtensionFromMimeType(blob.type);
+        const slug = String(message.senderHandle || message.senderDid || "link-card").replace(/[^\w.-]+/g, "-").slice(0, 60) || "link-card";
+        const path = `dm-link-cards/${slug}-${message.id || crypto.randomUUID()}.${extension}`;
+        if (!existingAssetPaths.has(path)) {
+          existingAssetPaths.add(path);
+          assets.push({
+            path,
+            type: blob.type,
+            sizeBytes: blob.bytes.length,
+            bytes: blob.bytes,
+          });
+        }
+        message.externalCard.thumbPath = path;
+      } catch {
+        // Keep card text even if thumbnail cannot be loaded.
+      }
+      continue;
+    }
+    try {
+      const blob = await downloadBlobForDid(auth, message.senderDid || normalizedFilters.participantDid || auth.session.did, thumbCid);
+      const extension = getAssetExtensionFromMimeType(blob.type);
+      const slug = String(message.senderHandle || message.senderDid || "link-card").replace(/[^\w.-]+/g, "-").slice(0, 60) || "link-card";
+      const path = `dm-link-cards/${slug}-${message.id || crypto.randomUUID()}.${extension}`;
+      if (!existingAssetPaths.has(path)) {
+        existingAssetPaths.add(path);
+        assets.push({
+          path,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          bytes: blob.bytes,
+        });
+      }
+      message.externalCard.thumbPath = path;
+    } catch {
+      // Keep card text even if thumbnail cannot be loaded.
+    }
+  }
+
+  if (selectedPartner?.avatar && !selectedPartner.avatarPath) {
+    try {
+      const blob = await downloadRemoteAssetViaBlob(auth, selectedPartner.avatar, selectedPartner.did, pdsServiceCache);
+      const extension = getAssetExtensionFromMimeType(blob.type);
+      const partnerSlug = String(selectedPartner.handle || selectedPartner.did || "partner")
+        .replace(/[^\w.-]+/g, "-")
+        .slice(0, 60) || "partner";
+      const path = `dm-avatars/${partnerSlug}.${extension}`;
+      if (!existingAssetPaths.has(path)) {
+        existingAssetPaths.add(path);
+        assets.push({
+          path,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          bytes: blob.bytes,
+        });
+      }
+      selectedPartner.avatarPath = path;
+      (Array.isArray(partnerPayload.recentContacts) ? partnerPayload.recentContacts : []).forEach((contact) => {
+        if (contact.did === selectedPartner.did) {
+          contact.avatarPath = path;
+        }
+      });
+      finalConversations.forEach((convo) => {
+        (convo.members || []).forEach((member) => {
+          if (member.did === selectedPartner.did) {
+            member.avatarPath = path;
+          }
+        });
+      });
+    } catch {
+      selectedPartner.avatarPath = "";
+    }
+  }
+
+  if (ownAvatar && !ownAvatarPath) {
+    try {
+      const blob = await downloadRemoteAssetViaBlob(auth, ownAvatar, auth.session.did, pdsServiceCache);
+      const extension = getAssetExtensionFromMimeType(blob.type);
+      const ownSlug = String(auth.session.handle || auth.session.did || "self")
+        .replace(/[^\w.-]+/g, "-")
+        .slice(0, 60) || "self";
+      const path = `dm-avatars/${ownSlug}.${extension}`;
+      if (!existingAssetPaths.has(path)) {
+        existingAssetPaths.add(path);
+        assets.push({
+          path,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          bytes: blob.bytes,
+        });
+      }
+      ownAvatarPath = path;
+      messages.forEach((message) => {
+        if (message.senderDid === auth.session.did) {
+          message.senderAvatarPath = path;
+        }
+      });
+    } catch {
+      // Keep export working without own avatar.
+    }
+  }
+
+  notifyProgress({
+    title: "Direct Messages werden geladen",
+    step: "DM-Archiv wird zusammengestellt …",
+    percent: 98,
+    detail: `${finalConversations.length} Konversationen · ${messages.length} Nachrichten`,
+  });
+
+  return {
+    manifest: {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: APP_VERSION,
+      account: {
+        handle: auth.session.handle,
+        did: auth.session.did,
+        displayName: auth.session.handle,
+        avatar: ownAvatar || "",
+        avatarPath: ownAvatarPath,
+      },
+      filters: normalizedFilters,
+      sourceType: "dm-chat-api",
+      conversationCount: finalConversations.length,
+      messageCount: messages.length,
+      participantCount: participantSet.size,
+    },
+    recentContacts: Array.isArray(partnerPayload.recentContacts) ? partnerPayload.recentContacts : [],
+    conversations: finalConversations,
+    messages,
+    assets,
+  };
+}
+
+async function checkDmAccess() {
+  const auth = await ensureSession();
+  await chatBskyGet(auth, "chat.bsky.convo.listConvos", { limit: 1 });
+  return { ok: true };
+}
+
+async function listDmPartners(payload = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const downloadAssets = payload?.downloadAssets !== false;
+  const conversations = [];
+  const recentContactsMap = new Map();
+  const assets = [];
+  const seenAssetPaths = new Set();
+  const pdsServiceCache = new Map();
+  let cursor = "";
+  let page = 0;
+
+  notifyProgress({
+    title: "DM-Partner werden geladen",
+    step: "Konversationsliste wird gelesen …",
+    percent: 8,
+    detail: "",
+  });
+
+  do {
+    const response = await chatBskyGet(auth, "chat.bsky.convo.listConvos", {
+      limit: 100,
+      cursor,
+    });
+    const convos = Array.isArray(response.convos) ? response.convos : [];
+    convos.forEach((convo) => {
+      const normalizedConvo = normalizeDmConversationEntity(convo, auth.session.did);
+      conversations.push(normalizedConvo);
+      normalizedConvo.members.forEach((member) => {
+        if (!member.did) {
+          return;
+        }
+        const existing = recentContactsMap.get(member.did);
+        const candidateTimestamp = Date.parse(normalizedConvo.lastMessageAt || normalizedConvo.updatedAt || 0) || 0;
+        const existingTimestamp = Date.parse(existing?.lastMessageAt || existing?.updatedAt || 0) || 0;
+        if (!existing || candidateTimestamp > existingTimestamp) {
+          recentContactsMap.set(member.did, {
+            did: member.did,
+            handle: member.handle || "",
+            displayName: member.displayName || member.handle || "",
+            avatar: member.avatar || "",
+            lastMessageAt: normalizedConvo.lastMessageAt || normalizedConvo.updatedAt || "",
+            conversationId: normalizedConvo.id,
+          });
+        }
+      });
+    });
+    cursor = response.cursor || "";
+    page += 1;
+    const listDone = !cursor;
+    notifyProgress({
+      title: "DM-Partner werden geladen",
+      step: `${recentContactsMap.size} DM-Partner gefunden`,
+      percent: downloadAssets
+        ? Math.min(54, 8 + (page * 12))
+        : Math.min(100, 8 + (page * 15)),
+      detail: cursor
+        ? "Weitere Konversationsseiten werden geladen …"
+        : listDone && downloadAssets
+          ? "Partnerliste geladen. Avatar-Bilder werden jetzt gesichert …"
+          : "Partnerliste vollständig geladen.",
+    });
+  } while (cursor);
+
+  const recentContacts = Array.from(recentContactsMap.values())
+    .sort((left, right) => (Date.parse(right.lastMessageAt || 0) || 0) - (Date.parse(left.lastMessageAt || 0) || 0));
+
+  if (downloadAssets) {
+    const avatarContacts = recentContacts.filter((contact) => contact.avatar);
+    for (const [index, contact] of avatarContacts.entries()) {
+      notifyProgress({
+        title: "DM-Partner werden geladen",
+        step: `Avatar-Bilder werden geladen (${index + 1}/${avatarContacts.length})`,
+        percent: avatarContacts.length > 0
+          ? 58 + Math.round(((index + 1) / avatarContacts.length) * 40)
+          : 98,
+        detail: contact.displayName || contact.handle || contact.did || "",
+      });
+      if (!contact.avatar) {
+        continue;
+      }
+      try {
+        const blob = await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
+        const extension = getAssetExtensionFromMimeType(blob.type);
+        const slug = String(contact.handle || contact.did || "partner").replace(/[^\w.-]+/g, "-").slice(0, 60) || "partner";
+        const path = `dm-avatars/${slug}.${extension}`;
+        contact.avatarPath = path;
+        if (!seenAssetPaths.has(path)) {
+          seenAssetPaths.add(path);
+          assets.push({
+            path,
+            type: blob.type,
+            sizeBytes: blob.bytes.length,
+            bytes: blob.bytes,
+          });
+        }
+        conversations.forEach((convo) => {
+          (convo.members || []).forEach((member) => {
+            if (member.did === contact.did) {
+              member.avatarPath = path;
+            }
+          });
+        });
+      } catch {
+        contact.avatarPath = "";
+      }
+    }
+    notifyProgress({
+      title: "DM-Partner werden geladen",
+      step: "Partnerliste vollständig geladen",
+      percent: 100,
+      detail: `${recentContacts.length} DM-Partner stehen lokal bereit.`,
+    });
+  }
+
+  return {
+    recentContacts,
+    conversations,
+    assets,
+  };
+}
+
+async function hydrateDmPartnerAvatars(payload = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const contacts = Array.isArray(payload.recentContacts) ? payload.recentContacts.map((contact) => ({ ...contact })) : [];
+  const conversations = Array.isArray(payload.conversations)
+    ? payload.conversations.map((convo) => ({
+        ...convo,
+        members: Array.isArray(convo.members) ? convo.members.map((member) => ({ ...member })) : [],
+      }))
+    : [];
+  const assets = [];
+  const seenAssetPaths = new Set();
+  const pdsServiceCache = new Map();
+  const avatarContacts = contacts.filter((contact) => contact.avatar);
+
+  notifyProgress({
+    title: "DM-Partner werden geladen",
+    step: "Avatar-Bilder werden gesichert …",
+    percent: 56,
+    detail: avatarContacts.length > 0 ? `${avatarContacts.length} Bilder werden vorbereitet` : "",
+  });
+
+  for (const [index, contact] of avatarContacts.entries()) {
+    notifyProgress({
+      title: "DM-Partner werden geladen",
+      step: `Avatar-Bilder werden geladen (${index + 1}/${avatarContacts.length})`,
+      percent: avatarContacts.length > 0
+        ? 58 + Math.round(((index + 1) / avatarContacts.length) * 40)
+        : 98,
+      detail: contact.displayName || contact.handle || contact.did || "",
+    });
+    try {
+      const blob = await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
+      const extension = getAssetExtensionFromMimeType(blob.type);
+      const slug = String(contact.handle || contact.did || "partner").replace(/[^\w.-]+/g, "-").slice(0, 60) || "partner";
+      const path = `dm-avatars/${slug}.${extension}`;
+      contact.avatarPath = path;
+      if (!seenAssetPaths.has(path)) {
+        seenAssetPaths.add(path);
+        assets.push({
+          path,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          bytes: blob.bytes,
+        });
+      }
+      conversations.forEach((convo) => {
+        (convo.members || []).forEach((member) => {
+          if (member.did === contact.did) {
+            member.avatarPath = path;
+          }
+        });
+      });
+    } catch {
+      contact.avatarPath = "";
+    }
+  }
+
+  notifyProgress({
+    title: "DM-Partner werden geladen",
+    step: "Partnerliste vollständig geladen",
+    percent: 100,
+    detail: `${contacts.length} DM-Partner stehen lokal bereit.`,
+  });
+
+  return {
+    recentContacts: contacts,
+    conversations,
+    assets,
+  };
 }
 
 function bytesToDataUrl(bytes, mimeType = "image/jpeg") {
@@ -1662,6 +4249,10 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   const normalizedFilters = normalizeArchiveFilters(filters);
   const ownDid = auth.session.did;
   const pdsServiceCache = new Map();
+  const threadHashtagMatchCache = new Map();
+  const rootHashtagMatchCache = new Map();
+  const hasHashtagFilter = Array.isArray(normalizedFilters.hashtagTags) && normalizedFilters.hashtagTags.length > 0;
+  const selectedHashtagCount = hasHashtagFilter ? normalizedFilters.hashtagTags.length : 0;
   const records = [];
   const rawRecordsByUri = new Map();
   const postsByUri = new Map();
@@ -1675,6 +4266,15 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   const seenAssetPaths = new Set();
   let previewCounter = 0;
   let cancelled = false;
+  let hashtagFilteredOutCount = 0;
+
+  const buildHashtagProgressDetail = (baseDetail = "") => {
+    if (!hasHashtagFilter) {
+      return baseDetail;
+    }
+    const suffix = `${selectedHashtagCount} Hashtags aktiv · ${hashtagFilteredOutCount} Posts wegen Hashtag-Filter übersprungen`;
+    return baseDetail ? `${baseDetail} · ${suffix}` : suffix;
+  };
 
   archiveRunControls.set(runId, { state: "running" });
 
@@ -1691,6 +4291,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       postCount: orderedPosts.length,
       imageCount,
       skippedImageCount,
+      hashtagFilteredOutCount,
     },
     posts: orderedPosts,
     assets,
@@ -1709,7 +4310,11 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
     title: "Archiv wird gelesen",
     step: "Eigene Posts werden aus dem Repo geladen …",
     percent: 5,
-    detail: `Konto: ${auth.session.handle}`,
+    detail: buildHashtagProgressDetail(
+      hasHashtagFilter
+        ? `Konto: ${auth.session.handle} · Hashtag-Filter aktiv`
+        : `Konto: ${auth.session.handle}`,
+    ),
     checkpoint: `Welle ${waveIndex} · Start`,
     state: "running",
   });
@@ -1720,6 +4325,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       break;
     }
 
+    const activeAuth = await refreshAuthReference(auth);
     const remaining = Math.max(1, Math.min(100, waveLimit - records.length));
     const page = await bskyGet("com.atproto.repo.listRecords", {
       repo: auth.session.did,
@@ -1728,26 +4334,45 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       cursor,
     }, {
       headers: {
-        authorization: `Bearer ${auth.session.accessJwt}`,
+        authorization: `Bearer ${activeAuth.session.accessJwt}`,
       },
     });
 
-    const pageRecords = (page.records || [])
-      .map((entry) => ({
+    const pageRecords = [];
+    for (const entry of (page.records || [])) {
+      const normalizedEntry = {
         uri: entry.uri,
         cid: entry.cid,
         value: entry.value || {},
-      }))
-      .filter((entry) => postMatchesArchiveSelection(entry.value, normalizedFilters, ownDid, entry.uri));
+      };
+      if (!postMatchesArchiveSelection(normalizedEntry.value, normalizedFilters, ownDid, normalizedEntry.uri)) {
+        continue;
+      }
+      if (hasHashtagFilter) {
+        const matchesHashtagSelection = await postMatchesMediaExportHashtagSelection({
+          uri: normalizedEntry.uri,
+          record: normalizedEntry.value,
+        }, normalizedFilters, auth, threadHashtagMatchCache, rootHashtagMatchCache);
+        if (!matchesHashtagSelection) {
+          hashtagFilteredOutCount += 1;
+          continue;
+        }
+      }
+      pageRecords.push(normalizedEntry);
+    }
 
     records.push(...pageRecords);
     cursor = page.cursor || "";
     pageCount += 1;
     notifyProgress({
       title: "Archiv wird gelesen",
-      step: `Abruf ${pageCount} abgeschlossen · ${records.length} Posts im gewählten Umfang gefunden`,
+      step: `${pageCount} Repo-Seiten geprüft · ${records.length} passende Posts gefunden`,
       percent: Math.min(45, 5 + (pageCount * 3)),
-      detail: `${records.length} Posts für Welle ${waveIndex} vorgemerkt`,
+      detail: buildHashtagProgressDetail(
+        hasHashtagFilter
+          ? `${records.length} Posts für Welle ${waveIndex} vorgemerkt · Posts werden mit Hashtag-Filter geprüft`
+          : `${records.length} Posts für Welle ${waveIndex} vorgemerkt`,
+      ),
       checkpoint: `Welle ${waveIndex} · ${records.length} Posts gefunden`,
       state: "running",
     });
@@ -1795,12 +4420,13 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         authorHandle: auth.session.handle,
         authorDisplayName: auth.session.handle,
         authorDid: ownDid,
+        authorAvatar: auth.avatar || "",
       }),
       entry.value,
     );
   });
 
-  if (normalizedFilters.contentMode === "threads" && records.length > 0) {
+  if ((normalizedFilters.contentMode === "threads" || normalizedFilters.contentMode === "thread_roots") && records.length > 0) {
     const threadRootUris = [...new Set(records
       .map((entry) => getArchiveRootUri(entry.value, entry.uri) || entry.uri)
       .filter((uri) => parseAtUri(uri).did === ownDid))];
@@ -1813,33 +4439,82 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         return buildResult("cancelled");
       }
 
-      notifyProgress({
-        title: "Archiv wird gelesen",
-        step: `Thread ${threadIndex + 1}/${threadRootUris.length} wird erweitert`,
-        percent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
-        detail: "Antworten in eigenen Threads werden nachgeladen",
-        checkpoint: `Eigene Threads werden erweitert (${threadIndex + 1}/${threadRootUris.length})`,
-        state: "running",
-      });
+        notifyProgress({
+          title: "Archiv wird gelesen",
+          step: `Thread ${threadIndex + 1}/${threadRootUris.length} wird erweitert`,
+          percent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
+          detail: buildHashtagProgressDetail(
+            hasHashtagFilter
+            ? (normalizedFilters.contentMode === "thread_roots"
+              ? "Eigene Thread-Hauptpfade werden nachgeladen und mit Hashtag-Filter geprüft"
+              : "Antworten in eigenen Threads werden nachgeladen und mit Hashtag-Filter geprüft")
+            : (normalizedFilters.contentMode === "thread_roots"
+              ? "Eigene Thread-Hauptpfade werden nachgeladen"
+              : "Antworten in eigenen Threads werden nachgeladen"),
+          ),
+          checkpoint: `Eigene Threads werden erweitert (${threadIndex + 1}/${threadRootUris.length})`,
+          state: "running",
+        });
 
-      const threadResponse = await bskyGet("app.bsky.feed.getPostThread", {
-        uri: rootUri,
-        depth: 100,
-        parentHeight: 0,
-      }, {
-        headers: {
-          authorization: `Bearer ${auth.session.accessJwt}`,
-        },
-      });
+      let threadResponse = null;
+      try {
+        threadResponse = await archiveGetPostThread(auth, rootUri, {
+          depth: 100,
+          parentHeight: 0,
+          notifyProgress,
+          progressTitle: "Archiv wird gelesen",
+          progressPercent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
+          progressDetail: rootUri,
+          checkpointPrefix: `Eigene Threads werden erweitert (${threadIndex + 1}/${threadRootUris.length})`,
+        });
+      } catch (error) {
+        if (!isMissingArchivePostError(error) && !isArchiveThreadTimeoutError(error)) {
+          throw error;
+        }
 
-      collectThreadViewPosts(threadResponse.thread || threadResponse.post || threadResponse).forEach((postView) => {
+        notifyProgress({
+          title: "Archiv wird gelesen",
+          step: `Thread ${threadIndex + 1}/${threadRootUris.length} wird übersprungen`,
+          percent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
+          detail: isArchiveThreadTimeoutError(error)
+            ? `Thread-Antwort zu langsam · ${rootUri}`
+            : `Startpost nicht mehr verfügbar · ${rootUri}`,
+          checkpoint: `Fehlenden Thread übersprungen (${threadIndex + 1}/${threadRootUris.length})`,
+          state: "running",
+        });
+        continue;
+      }
+
+      const threadViews = collectThreadViewPosts(threadResponse.thread || threadResponse.post || threadResponse);
+      for (const postView of threadViews) {
         const record = postView?.record || {};
         const rootCandidate = getArchiveRootUri(record, postView.uri) || postView.uri;
         if (parseAtUri(rootCandidate).did !== ownDid) {
-          return;
+          continue;
+        }
+        if (normalizedFilters.contentMode === "thread_roots") {
+          if ((postView.author?.did || "") !== ownDid) {
+            continue;
+          }
+          if (!recordBelongsToOwnMainThreadPath(record, ownDid, postView.uri)) {
+            continue;
+          }
         }
         if (!postMatchesArchiveFilters(record, normalizedFilters)) {
-          return;
+          continue;
+        }
+        if (hasHashtagFilter) {
+          const matchesHashtagSelection = await postMatchesMediaExportHashtagSelection(
+            postView,
+            normalizedFilters,
+            auth,
+            threadHashtagMatchCache,
+            rootHashtagMatchCache,
+          );
+          if (!matchesHashtagSelection) {
+            hashtagFilteredOutCount += 1;
+            continue;
+          }
         }
         upsertArchivePost(
           buildArchivePostEntity({
@@ -1849,6 +4524,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
             authorHandle: postView.author?.handle || "",
             authorDisplayName: postView.author?.displayName || postView.author?.handle || "",
             authorDid: postView.author?.did || "",
+            authorAvatar: postView.author?.avatar || "",
             counts: {
               likeCount: Number(postView.likeCount) || 0,
               replyCount: Number(postView.replyCount) || 0,
@@ -1858,7 +4534,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
           }),
           record,
         );
-      });
+      }
     }
   }
 
@@ -1874,9 +4550,10 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       return buildResult("cancelled");
     }
 
+    const activeAuth = await refreshAuthReference(auth);
     const response = await bskyGet("app.bsky.feed.getPosts", { uris: batch }, {
       headers: {
-        authorization: `Bearer ${auth.session.accessJwt}`,
+        authorization: `Bearer ${activeAuth.session.accessJwt}`,
       },
     });
     (response.posts || []).forEach((postView) => {
@@ -1890,6 +4567,10 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         repostCount: Number(postView.repostCount) || 0,
         quoteCount: Number(postView.quoteCount) || 0,
       };
+      target.authorAvatar = postView.author?.avatar || target.authorAvatar || "";
+      target.authorDisplayName = postView.author?.displayName || target.authorDisplayName || "";
+      target.authorHandle = postView.author?.handle || target.authorHandle || "";
+      target.authorDid = postView.author?.did || target.authorDid || "";
     });
     if ((batchIndex + 1) % 2 === 0 && batch.length > 0) {
       const previewPost = postsByUri.get(batch[0]);
@@ -1909,40 +4590,128 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       title: "Archiv wird gelesen",
       step: `Metriken ${batchIndex + 1}/${metricBatches.length} geladen`,
       percent: 55 + Math.round(((batchIndex + 1) / Math.max(1, metricBatches.length)) * 10),
-      detail: "Likes, Replies, Reposts und Quotes werden ergänzt",
+      detail: buildHashtagProgressDetail("Likes, Replies, Reposts und Quotes werden pro Post über die API ergänzt"),
       checkpoint: `Metriken geladen (${batchIndex + 1}/${metricBatches.length})`,
       state: "running",
     });
   }
 
-  for (const [postIndex, post] of orderedPosts.entries()) {
-    if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
-      archiveRunControls.delete(runId);
-      return buildResult("cancelled");
+  const uniqueAvatarCount = new Set(
+    orderedPosts
+      .map((post) => String(post?.authorAvatar || "").trim())
+      .filter(Boolean),
+  ).size;
+
+  notifyProgress({
+    title: "Archiv wird gelesen",
+    step: "Profilbilder werden ergänzt …",
+    percent: 61,
+    detail: buildHashtagProgressDetail(
+      uniqueAvatarCount > 0
+        ? `${uniqueAvatarCount} eindeutige Avatare werden vorbereitet`
+        : "Keine zusätzlichen Avatare gefunden",
+    ),
+    checkpoint: "Avatare werden vorbereitet",
+    state: "running",
+  });
+
+  await attachArchiveAvatarAssets(orderedPosts, assets, seenAssetPaths, auth, pdsServiceCache, notifyProgress, 61);
+
+  const linkCardPosts = orderedPosts.filter((post) => Boolean(post?.externalCard?.thumbRef));
+  if (linkCardPosts.length > 0) {
+    notifyProgress({
+      title: "Archiv wird gelesen",
+      step: "Linkkarten-Vorschaubilder werden ergänzt …",
+      percent: 65,
+      detail: buildHashtagProgressDetail(`${linkCardPosts.length} Posts mit Karten-Vorschau werden geprüft`),
+      checkpoint: "Linkkarten werden vorbereitet",
+      state: "running",
+    });
+  }
+
+  let processedLinkCards = 0;
+  await mapWithConcurrency(linkCardPosts, ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY, async (post, linkIndex) => {
+    const externalCard = post.externalCard;
+    if (!externalCard?.thumbRef) {
+      return;
+    }
+    const thumbCid = getBlobCidFromRef(externalCard.thumbRef);
+    if (thumbCid) {
+      try {
+        const blob = await downloadBlobForDid(auth, post.authorDid || ownDid, thumbCid, pdsServiceCache);
+        const extension = getAssetExtensionFromMimeType(blob.type);
+        const authorSlug = String(post.authorHandle || post.authorDid || "author")
+          .replace(/[^\w.-]+/g, "-")
+          .slice(0, 60) || "author";
+        const path = `link-cards/${authorSlug}-${post.rkey || `post-${linkIndex + 1}`}.${extension}`;
+        post.externalCard.thumbPath = path;
+        if (!seenAssetPaths.has(path)) {
+          seenAssetPaths.add(path);
+          assets.push({
+            path,
+            type: blob.type,
+            sizeBytes: blob.bytes.length,
+            bytes: blob.bytes,
+          });
+        }
+      } catch {
+        post.externalCard.thumbPath = "";
+      }
     }
 
-    const record = rawRecordsByUri.get(post.uri) || {};
-    const images = extractArchiveEmbedImages(record);
-    const blobDid = post.authorDid || ownDid;
-
-    for (const [imageIndex, image] of images.entries()) {
-      if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
-        archiveRunControls.delete(runId);
-        return buildResult("cancelled");
-      }
-
-      const cid = getBlobCidFromRef(image);
-      if (!cid) {
-        continue;
-      }
+    processedLinkCards += 1;
+    if (linkCardPosts.length > 0 && (processedLinkCards % 10 === 0 || processedLinkCards === linkCardPosts.length)) {
       notifyProgress({
         title: "Archiv wird gelesen",
-        step: `Bild ${imageIndex + 1}/${images.length} für Post ${postIndex + 1}/${orderedPosts.length} wird geladen`,
-        percent: 65 + Math.round(((postIndex + 1) / orderedPosts.length) * 30),
-        detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
-        checkpoint: `Bild ${imageIndex + 1} von ${images.length} für Post ${postIndex + 1} wird geladen`,
+        step: `Linkkarten ${processedLinkCards}/${linkCardPosts.length} verarbeitet`,
+        percent: 65 + Math.round((processedLinkCards / Math.max(1, linkCardPosts.length)) * 4),
+        detail: buildHashtagProgressDetail("Vorschaubilder externer Karten werden lokal ergänzt"),
+        checkpoint: `Linkkarten verarbeitet (${processedLinkCards}/${linkCardPosts.length})`,
         state: "running",
       });
+    }
+  });
+
+  const imageTasks = [];
+  orderedPosts.forEach((post, postIndex) => {
+    const record = rawRecordsByUri.get(post.uri) || {};
+    const images = extractArchiveEmbedImages(record);
+    post.images = [];
+    images.forEach((image, imageIndex) => {
+      imageTasks.push({
+        post,
+        postIndex,
+        image,
+        imageIndex,
+        imageTotal: images.length,
+        blobDid: post.authorDid || ownDid,
+      });
+    });
+  });
+
+  let processedImageTasks = 0;
+  let cancelledDuringImagePhase = false;
+  await mapWithConcurrency(imageTasks, ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY, async (task) => {
+    if (cancelledDuringImagePhase) {
+      return;
+    }
+    if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
+      cancelledDuringImagePhase = true;
+      return;
+    }
+
+    const { post, postIndex, image, imageIndex, imageTotal, blobDid } = task;
+    const cid = getBlobCidFromRef(image);
+    if (cid) {
+      notifyProgress({
+        title: "Archiv wird gelesen",
+        step: `Bild ${imageIndex + 1}/${imageTotal} für Post ${postIndex + 1}/${orderedPosts.length} wird geladen`,
+        percent: 65 + Math.round(((processedImageTasks + 1) / Math.max(1, imageTasks.length)) * 30),
+        detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
+        checkpoint: `Bild ${imageIndex + 1} von ${imageTotal} für Post ${postIndex + 1} wird geladen`,
+        state: "running",
+      });
+
       let blob = null;
       let lastBlobError = null;
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1956,12 +4725,13 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
           }
         }
       }
+
       if (!blob) {
         skippedImageCount += 1;
         notifyProgress({
           title: "Archiv wird gelesen",
           step: "Ein Bild konnte nicht geladen werden und wird uebersprungen",
-          percent: 65 + Math.round(((postIndex + 1) / orderedPosts.length) * 30),
+          percent: 65 + Math.round(((processedImageTasks + 1) / Math.max(1, imageTasks.length)) * 30),
           detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
           checkpoint: `Ein Bild wurde uebersprungen (${skippedImageCount} insgesamt)`,
           preview: {
@@ -1971,71 +4741,86 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
           },
           state: "running",
         });
-        continue;
-      }
-      const extension = blob.type.includes("png")
-        ? "png"
-        : (blob.type.includes("webp") ? "webp" : "jpg");
-      const authorSlug = String(post.authorHandle || post.authorDid || "author")
-        .replace(/[^\w.-]+/g, "-")
-        .slice(0, 60) || "author";
-      const path = `images/${String(post.createdAt || "unknown").slice(0, 4) || "misc"}/${authorSlug}-${post.rkey || `post-${postIndex + 1}`}-${imageIndex + 1}.${extension}`;
+      } else {
+        const extension = blob.type.includes("png")
+          ? "png"
+          : (blob.type.includes("webp") ? "webp" : "jpg");
+        const authorSlug = String(post.authorHandle || post.authorDid || "author")
+          .replace(/[^\w.-]+/g, "-")
+          .slice(0, 60) || "author";
+        const path = `images/${String(post.createdAt || "unknown").slice(0, 4) || "misc"}/${authorSlug}-${post.rkey || `post-${postIndex + 1}`}-${imageIndex + 1}.${extension}`;
 
-      post.images.push({
-        path,
-        alt: String(image.alt || "").slice(0, 1000),
-        width: Number(image.aspectRatio?.width) || 0,
-        height: Number(image.aspectRatio?.height) || 0,
-        mimeType: blob.type,
-        sizeBytes: blob.bytes.length,
-      });
-
-      if (!seenAssetPaths.has(path)) {
-        seenAssetPaths.add(path);
-        assets.push({
+        post.images[imageIndex] = {
           path,
-          type: blob.type,
+          alt: String(image.alt || "").slice(0, 1000),
+          width: Number(image.aspectRatio?.width) || 0,
+          height: Number(image.aspectRatio?.height) || 0,
+          sourceDid: blobDid,
+          sourceCid: cid,
+          remoteUrl: await buildPublicBlobUrlForDid(auth, blobDid, cid, pdsServiceCache),
+          mimeType: blob.type,
           sizeBytes: blob.bytes.length,
-          bytes: blob.bytes,
-        });
-        imageCount += 1;
-        if (imageCount % 10 === 0) {
-          notifyProgress({
-            preview: {
-            meta: `Bild ${imageCount} heruntergeladen`,
-              text: String(post.text || "").slice(0, 180),
-              imageDataUrl: bytesToDataUrl(blob.bytes, blob.type),
-              metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
-              alt: image.alt || "Archivbild",
-            },
-            checkpoint: `Bild ${imageCount} gespeichert`,
-            state: "running",
+        };
+
+        if (!seenAssetPaths.has(path)) {
+          seenAssetPaths.add(path);
+          assets.push({
+            path,
+            type: blob.type,
+            sizeBytes: blob.bytes.length,
+            bytes: blob.bytes,
           });
+          imageCount += 1;
+          if (imageCount % 10 === 0) {
+            notifyProgress({
+              preview: {
+                meta: `Bild ${imageCount} heruntergeladen`,
+                text: String(post.text || "").slice(0, 180),
+                imageDataUrl: bytesToDataUrl(blob.bytes, blob.type),
+                metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
+                alt: image.alt || "Archivbild",
+              },
+              checkpoint: `Bild ${imageCount} gespeichert`,
+              state: "running",
+            });
+          }
         }
       }
     }
 
-    if (orderedPosts.length > 0) {
+    processedImageTasks += 1;
+    if (imageTasks.length > 0 && (processedImageTasks % 8 === 0 || processedImageTasks === imageTasks.length)) {
       notifyProgress({
         title: "Archiv wird gelesen",
-        step: `Bilder ${postIndex + 1}/${orderedPosts.length} verarbeitet`,
-        percent: 65 + Math.round(((postIndex + 1) / orderedPosts.length) * 30),
+        step: `Bilder ${processedImageTasks}/${imageTasks.length} verarbeitet`,
+        percent: 65 + Math.round((processedImageTasks / Math.max(1, imageTasks.length)) * 30),
         detail: `${imageCount} Bilder im Archiv · ${skippedImageCount} Bilder ausgelassen`,
-        checkpoint: `${postIndex + 1} von ${orderedPosts.length} Posts bildseitig verarbeitet`,
+        checkpoint: `${processedImageTasks} von ${imageTasks.length} Bildern verarbeitet`,
         state: "running",
       });
     }
+  });
+
+  orderedPosts.forEach((post) => {
+    post.images = (post.images || []).filter(Boolean);
+  });
+  if (cancelledDuringImagePhase) {
+    archiveRunControls.delete(runId);
+    return buildResult("cancelled");
   }
 
   archiveRunControls.delete(runId);
   return buildResult(cancelled ? "cancelled" : "completed");
 }
 
-async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = () => {}) {
+async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notifyProgress = () => {}) {
   const auth = await ensureSession();
   const parsedSource = parseArchiveThreadSource(url);
   const resolveCache = new Map();
   const pdsServiceCache = new Map();
+  const normalizedImportMode = importMode === "tree"
+    ? "tree"
+    : (importMode === "author" ? "author" : "path");
   const actorDid = parsedSource.actor.startsWith("did:")
     ? parsedSource.actor
     : await resolveHandleToDid(parsedSource.actor, auth, resolveCache);
@@ -2055,18 +4840,63 @@ async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = 
     checkpoint: "Posting-URL wird geprueft",
     state: "running",
   });
-
-  const entryResponse = await bskyGet("app.bsky.feed.getPosts", {
-    uris: [entryUri],
-  }, {
-    headers: {
-      authorization: `Bearer ${auth.session.accessJwt}`,
-    },
-  });
-  const entryPost = Array.isArray(entryResponse.posts) ? entryResponse.posts[0] : null;
+  let entryPost = null;
+  let entryResponse = null;
+  try {
+    entryResponse = await bskyGet("app.bsky.feed.getPosts", {
+      uris: [entryUri],
+    }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+    });
+    entryPost = Array.isArray(entryResponse.posts) ? entryResponse.posts[0] : null;
+  } catch {
+    entryPost = null;
+  }
   if (!entryPost?.uri) {
+    notifyProgress({
+      title: "Thread wird geladen",
+      step: "Post nicht gefunden oder gelöscht",
+      percent: 100,
+      detail: entryUri,
+      checkpoint: "Post nicht gefunden oder gelöscht",
+      state: "running",
+    });
     archiveRunControls.delete(runId);
-    throw new Error("Das verlinkte Posting konnte nicht geladen werden.");
+    return {
+      manifest: {
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        appVersion: APP_VERSION,
+        account: {
+          handle: auth.session.handle,
+          did: auth.session.did,
+        },
+        sourceType: "thread-url",
+        threadImport: {
+          sourceUrl: parsedSource.sourceUrl,
+          entryUri,
+          rootUri: entryUri,
+          entryMode: "missing",
+          importMode: normalizedImportMode,
+          note: "Post nicht gefunden oder gelöscht",
+        },
+        postCount: 0,
+        imageCount: 0,
+        skippedImageCount: 0,
+      },
+      posts: [],
+      assets: [],
+      session: {
+        waveIndex: 1,
+        nextCursor: "",
+        hasMore: false,
+        exportedPosts: 0,
+        exportedImages: 0,
+        status: "completed",
+      },
+    };
   }
 
   const entryRecord = entryPost.record || {};
@@ -2076,7 +4906,9 @@ async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = 
   notifyProgress({
     title: "Thread wird geladen",
     step: entryMode === "reply"
-      ? "Das verlinkte Posting ist eine Antwort. Der Thread wird ab dem Start geladen …"
+      ? (normalizedImportMode === "tree"
+        ? "Das verlinkte Posting ist eine Antwort. Der komplette Thread-Baum wird ab dem Start geladen …"
+        : "Das verlinkte Posting ist eine Antwort. Nur der Threadpfad bis zu diesem Posting wird geladen …")
       : "Das verlinkte Posting ist der Start des Threads. Der ganze Thread wird geladen …",
     percent: 18,
     detail: entryPost.author?.handle || parsedSource.actor,
@@ -2106,6 +4938,7 @@ async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = 
           entryUri: entryPost.uri,
           rootUri,
           entryMode,
+          importMode: normalizedImportMode,
         },
       },
       posts: [],
@@ -2131,7 +4964,16 @@ async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = 
     },
   });
 
-  const threadViews = collectThreadViewPosts(threadResponse.thread || threadResponse.post || threadResponse);
+  const threadRoot = threadResponse.thread || threadResponse.post || threadResponse;
+  const threadViews = normalizedImportMode === "tree"
+    ? collectThreadViewPosts(threadRoot)
+    : (normalizedImportMode === "author"
+      ? collectThreadAuthorPosts(threadRoot, actorDid, [])
+      : (() => {
+      const pathPosts = [];
+      collectThreadPathPosts(threadRoot, entryPost.uri, pathPosts);
+      return pathPosts;
+      })());
   const postsByUri = new Map();
   const rawRecordsByUri = new Map();
   const seenAssetPaths = new Set();
@@ -2157,6 +4999,7 @@ async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = 
       authorHandle: postView.author?.handle || "",
       authorDisplayName: postView.author?.displayName || postView.author?.handle || "",
       authorDid: postView.author?.did || "",
+      authorAvatar: postView.author?.avatar || "",
       counts: {
         likeCount: Number(postView.likeCount) || 0,
         replyCount: Number(postView.replyCount) || 0,
@@ -2170,6 +5013,39 @@ async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = 
 
   const orderedPosts = Array.from(postsByUri.values())
     .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+
+  await attachArchiveAvatarAssets(orderedPosts, assets, seenAssetPaths, auth, pdsServiceCache);
+
+  for (const [postIndex, post] of orderedPosts.entries()) {
+    const externalCard = post.externalCard;
+    if (!externalCard?.thumbRef) {
+      continue;
+    }
+    const thumbCid = getBlobCidFromRef(externalCard.thumbRef);
+    if (!thumbCid) {
+      continue;
+    }
+    try {
+      const blob = await downloadBlobForDid(auth, post.authorDid || actorDid, thumbCid, pdsServiceCache);
+      const extension = getAssetExtensionFromMimeType(blob.type);
+      const authorSlug = String(post.authorHandle || post.authorDid || "author")
+        .replace(/[^\w.-]+/g, "-")
+        .slice(0, 60) || "author";
+      const path = `link-cards/${authorSlug}-${post.rkey || `thread-post-${postIndex + 1}`}.${extension}`;
+      post.externalCard.thumbPath = path;
+      if (!seenAssetPaths.has(path)) {
+        seenAssetPaths.add(path);
+        assets.push({
+          path,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          bytes: blob.bytes,
+        });
+      }
+    } catch {
+      post.externalCard.thumbPath = "";
+    }
+  }
 
   for (const [postIndex, post] of orderedPosts.entries()) {
     if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
@@ -2189,6 +5065,7 @@ async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = 
             entryUri: entryPost.uri,
             rootUri,
             entryMode,
+            importMode: normalizedImportMode,
             authorHandle: entryPost.author?.handle || "",
             authorDisplayName: entryPost.author?.displayName || entryPost.author?.handle || "",
           },
@@ -2268,6 +5145,9 @@ async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = 
         alt: String(image.alt || "").slice(0, 1000),
         width: Number(image.aspectRatio?.width) || 0,
         height: Number(image.aspectRatio?.height) || 0,
+        sourceDid: post.authorDid || actorDid,
+        sourceCid: cid,
+        remoteUrl: await buildPublicBlobUrlForDid(auth, post.authorDid || actorDid, cid, pdsServiceCache),
         mimeType: blob.type,
         sizeBytes: blob.bytes.length,
       });
@@ -2314,6 +5194,7 @@ async function importArchiveThreadFromUrl({ runId, url } = {}, notifyProgress = 
         entryUri: entryPost.uri,
         rootUri,
         entryMode,
+        importMode: normalizedImportMode,
         authorHandle: entryPost.author?.handle || "",
         authorDisplayName: entryPost.author?.displayName || entryPost.author?.handle || "",
       },

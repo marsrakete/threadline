@@ -38,11 +38,23 @@ const DEFAULT_POST_INTERACTION_SETTINGS = {
   allowMentioned: false,
   quotePostsAllowed: true,
 };
-const CURRENT_VERSION_INFO = {
-  appVersion: "0.4.97",
-  cacheVersion: "v116",
-  label: "Archive hashtag hint placement",
-};
+const DM_ACCESS_QUERY_PARAM = "DMSECRET";
+const DM_ACCESS_HASH_PARAM = "dmsecret";
+const DM_ACCESS_SESSION_KEY = "threadline:dm-access";
+const DM_ACCESS_GATE_ENABLED = false;
+const WORKSPACE_STORAGE_KEY = "threadline:last-workspace";
+const NETWORK_STAGE_SHAPE_STORAGE_KEY = "threadline:network-stage-shape";
+const NETWORK_STAGE_SHAPE_ROUND = "round";
+const NETWORK_STAGE_SHAPE_SQUIRCLE = "squircle";
+const APP_SHARE_TITLE = "Threadline";
+const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
+// Replace this SHA-256 hash with the hash of your private DM secret.
+const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
+const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
+  appVersion: "0.4.122",
+  cacheVersion: "v141",
+  label: "Offline account state",
+});
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -100,8 +112,15 @@ const sidebarToggleGlyph = document.querySelector("#sidebar-toggle-glyph");
 const sidebarResizeHandle = document.querySelector("#sidebar-resize-handle");
 const composerResizeHandle = document.querySelector("#composer-resize-handle");
 const historyButton = document.querySelector("#history-button");
+const composerButton = document.querySelector("#composer-button");
+const composerLaunchNote = document.querySelector("#composer-launch-note");
 const archiveButton = document.querySelector("#archive-button");
 const archiveLaunchNote = document.querySelector("#archive-launch-note");
+const networkButton = document.querySelector("#network-button");
+const networkLaunchNote = document.querySelector("#network-launch-note");
+const dmLaunchPanel = document.querySelector(".dm-launch-panel");
+const dmButton = document.querySelector("#dm-button");
+const dmLaunchNote = document.querySelector("#dm-launch-note");
 const saveThreadButton = document.querySelector("#save-thread-button");
 const settingsDialog = document.querySelector("#settings-dialog");
 const publishResultDialog = document.querySelector("#publish-result-dialog");
@@ -109,6 +128,8 @@ const progressDialog = document.querySelector("#progress-dialog");
 const errorDialog = document.querySelector("#error-dialog");
 const historyDialog = document.querySelector("#history-dialog");
 const helpDialog = document.querySelector("#help-dialog");
+const helpDialogEyebrow = document.querySelector("#help-dialog-eyebrow");
+const helpDialogTitle = document.querySelector("#help-dialog-title");
 const installDialog = document.querySelector("#install-dialog");
 const hashtagEditDialog = document.querySelector("#hashtag-edit-dialog");
 const altTextDialog = document.querySelector("#alt-text-dialog");
@@ -140,6 +161,10 @@ const exportSettingsButton = document.querySelector("#export-settings-button");
 const importSettingsButton = document.querySelector("#import-settings-button");
 const importSettingsInput = document.querySelector("#import-settings-input");
 const backupStatus = document.querySelector("#backup-status");
+const shareAppButton = document.querySelector("#share-app-button");
+const shareQrImage = document.querySelector("#share-qr-image");
+const shareUrl = document.querySelector("#share-url");
+const shareStatus = document.querySelector("#share-status");
 const clearHistoryButton = document.querySelector("#clear-history-button");
 const hashtagEditInput = document.querySelector("#hashtag-edit-input");
 const hashtagEditSaveButton = document.querySelector("#hashtag-edit-save-button");
@@ -220,7 +245,8 @@ const identifierField = document.querySelector("#identifier");
 const passwordField = document.querySelector("#password");
 const composerWorkspace = document.querySelector("#composer-workspace");
 const archiveWorkspace = document.querySelector("#archive-workspace");
-const archiveBackButton = document.querySelector("#archive-back-button");
+const networkWorkspace = document.querySelector("#network-workspace");
+const dmWorkspace = document.querySelector("#dm-workspace");
 const archiveScopeSelect = document.querySelector("#archive-scope-select");
 const archiveContentModeSelect = document.querySelector("#archive-content-mode-select");
 const archiveYearWrap = document.querySelector("#archive-year-wrap");
@@ -236,24 +262,54 @@ const archiveMetricsToggle = document.querySelector("#archive-metrics-toggle");
 const archiveThreadsToggle = document.querySelector("#archive-threads-toggle");
 const archivePdfIndentToggle = document.querySelector("#archive-pdf-indent-toggle");
 const archiveThreadUrlInput = document.querySelector("#archive-thread-url-input");
+const archiveThreadImportModeSelect = document.querySelector("#archive-thread-import-mode-select");
 const archiveLoadThreadUrlButton = document.querySelector("#archive-load-thread-url-button");
 const archiveThreadUrlNote = document.querySelector("#archive-thread-url-note");
 const archiveNextWaveButton = document.querySelector("#archive-next-wave-button");
 const archiveExportZipButton = document.querySelector("#archive-export-zip-button");
 const archiveExportHtmlButton = document.querySelector("#archive-export-html-button");
+const archiveExportHtmlCompactButton = document.querySelector("#archive-export-html-compact-button");
 const archiveExportPdfButton = document.querySelector("#archive-export-pdf-button");
+const archiveActionsExportHtmlButton = document.querySelector("#archive-actions-export-html-button");
+const archiveActionsExportHtmlCompactButton = document.querySelector("#archive-actions-export-html-compact-button");
+const archiveActionsExportPdfButton = document.querySelector("#archive-actions-export-pdf-button");
 const archiveImportButton = document.querySelector("#archive-import-button");
 const archiveResetButton = document.querySelector("#archive-reset-button");
+const archiveMediaActorInput = document.querySelector("#archive-media-actor-input");
+const archiveMediaImagesToggle = document.querySelector("#archive-media-images-toggle");
+const archiveMediaVideosToggle = document.querySelector("#archive-media-videos-toggle");
+const archiveMediaOtherToggle = document.querySelector("#archive-media-other-toggle");
+const archiveExportMediaZipButton = document.querySelector("#archive-export-media-zip-button");
+const dmContactSearchInput = document.querySelector("#dm-contact-search-input");
+const dmContactList = document.querySelector("#dm-contact-list");
+const dmContactSelectionNote = document.querySelector("#dm-contact-selection-note");
+const dmCheckButton = document.querySelector("#dm-check-button");
+const dmLoadPartnersButton = document.querySelector("#dm-load-partners-button");
+const dmFromInput = document.querySelector("#dm-from-input");
+const dmToInput = document.querySelector("#dm-to-input");
+const dmLoadButton = document.querySelector("#dm-load-button");
+const dmExportJsonButton = document.querySelector("#dm-export-json-button");
+const dmExportHtmlButton = document.querySelector("#dm-export-html-button");
+const dmExportPdfButton = document.querySelector("#dm-export-pdf-button");
+const dmProgressTitle = document.querySelector("#dm-progress-title");
+const dmProgressStep = document.querySelector("#dm-progress-step");
+const dmProgressFill = document.querySelector("#dm-progress-fill");
+const dmProgressDetail = document.querySelector("#dm-progress-detail");
+const dmSummary = document.querySelector("#dm-summary");
+const dmResults = document.querySelector("#dm-results");
 const archiveStartHint = document.querySelector("#archive-start-hint");
 const archiveProgressTitle = document.querySelector("#archive-progress-title");
 const archiveProgressStep = document.querySelector("#archive-progress-step");
 const archiveRunStatusLine = document.querySelector("#archive-run-status-line");
+const archiveProgressHeartbeat = document.querySelector("#archive-progress-heartbeat");
 const archiveProgressFill = document.querySelector("#archive-progress-fill");
 const archiveProgressDetail = document.querySelector("#archive-progress-detail");
+const archiveBackgroundNotice = document.querySelector("#archive-background-notice");
 const archiveLivePreviewToggle = document.querySelector("#archive-live-preview-toggle");
 const archivePauseButton = document.querySelector("#archive-pause-button");
 const archiveResumeButton = document.querySelector("#archive-resume-button");
 const archiveCancelButton = document.querySelector("#archive-cancel-button");
+const archiveProgressExportHtmlCompactButton = document.querySelector("#archive-progress-export-html-compact-button");
 const archivePreviewPanel = document.querySelector("#archive-preview-panel");
 const archivePreviewCard = document.querySelector("#archive-preview-card");
 const archiveSummaryPosts = document.querySelector("#archive-summary-posts");
@@ -261,6 +317,30 @@ const archiveSummaryImages = document.querySelector("#archive-summary-images");
 const archiveSummaryBands = document.querySelector("#archive-summary-bands");
 const archiveResults = document.querySelector("#archive-results");
 const archiveSpecContent = document.querySelector("#archive-spec-content");
+const networkSearchInput = document.querySelector("#network-search-input");
+const networkAccountInput = document.querySelector("#network-account-input");
+const networkOwnLoadButton = document.querySelector("#network-own-load-button");
+const networkAccountLoadButton = document.querySelector("#network-account-load-button");
+const networkFilterButtons = Array.from(document.querySelectorAll("[data-network-filter]"));
+const networkFilterCommonButton = document.querySelector("#network-filter-common");
+const networkLoadButton = document.querySelector("#network-load-button");
+const networkResetButton = document.querySelector("#network-reset-button");
+const networkShapeToggleButton = document.querySelector("#network-shape-toggle-button");
+const networkZoomOutButton = document.querySelector("#network-zoom-out-button");
+const networkZoomResetButton = document.querySelector("#network-zoom-reset-button");
+const networkZoomInButton = document.querySelector("#network-zoom-in-button");
+const networkProgressLine = document.querySelector("#network-progress-line");
+const networkSummaryLoaded = document.querySelector("#network-summary-loaded");
+const networkSummaryMutuals = document.querySelector("#network-summary-mutuals");
+const networkSummaryVisible = document.querySelector("#network-summary-visible");
+const networkCanvasPanel = document.querySelector(".network-canvas-panel");
+const networkStageSvg = document.querySelector("#network-stage-svg");
+const networkStageEmpty = document.querySelector("#network-stage-empty");
+const networkStageHovercard = document.querySelector("#network-stage-hovercard");
+const networkFocusPanel = document.querySelector("#network-focus-panel");
+const networkFocusToggleButton = document.querySelector("#network-focus-toggle-button");
+const networkFocusCard = document.querySelector("#network-focus-card");
+const networkResults = document.querySelector("#network-results");
 const serverPresetField = document.querySelector("#server-preset");
 const customServerWrap = document.querySelector("#custom-server-wrap");
 const customServerField = document.querySelector("#custom-server");
@@ -274,9 +354,12 @@ let authAccount = null;
 let authAccountService = "https://bsky.social";
 let authAccountDid = "";
 let savedAccounts = [];
+let appOnline = navigator.onLine !== false;
+let accountAvatarAssets = [];
 let draftSaveTimer = null;
 let serviceWorkerRegistration = null;
 let updateInProgress = false;
+let reloadInProgress = false;
 let sessionCheckTimer = null;
 let lastAutoUpdateCheckAt = 0;
 let deferredInstallPrompt = null;
@@ -311,8 +394,10 @@ let quotePostsAllowed = DEFAULT_POST_INTERACTION_SETTINGS.quotePostsAllowed;
 let segmentOverrides = null;
 let composerLocked = false;
 let backupStatusTimer = null;
+let shareStatusTimer = null;
 let editingHashtagNormalized = null;
 let segmentImages = [];
+let segmentImageDragState = null;
 let editingAltTarget = null;
 let editingImageTarget = null;
 let imageEditorSourceBitmap = null;
@@ -324,12 +409,67 @@ let imageValidationToken = 0;
 let currentWorkspace = "composer";
 let archiveCatalog = null;
 let archiveJobState = null;
+let dmCatalog = null;
+let dmRecentContacts = [];
+let dmRecentConversations = [];
+let dmRecentContactAssets = [];
+let dmPartnerCacheAccountDid = "";
+let dmPartnerCacheUpdatedAt = "";
+let dmSelectedParticipantDids = [];
+let dmJobState = {
+  title: "",
+  step: "",
+  percent: 0,
+  detail: "",
+};
+let dmAccessChecked = false;
+let dmAccessUnlocked = false;
 let archiveSession = null;
 let activeArchiveRunId = null;
 let activeArchiveRunState = "idle";
 let archivePreviewState = null;
 let archiveLastCheckpoint = "";
+let archiveLastProgressAt = "";
 let archiveTransientNotice = "";
+let networkAccountDid = "";
+let networkViewerProfile = null;
+let networkNodes = new Map();
+let networkFollowerCursor = "";
+let networkFollowCursor = "";
+let networkHasMoreFollowers = false;
+let networkHasMoreFollows = false;
+let networkLoading = false;
+let networkFilterMode = "all";
+let networkSearchQuery = "";
+let networkSelectedDid = "";
+let networkStatusLine = "";
+let networkWaveIndex = 0;
+let networkFocusDetails = new Map();
+let networkFocusLoadingDid = "";
+let networkStageSlots = new Map();
+let networkStageRelationCounts = {
+  mutual: 0,
+  followers: 0,
+  following: 0,
+  other: 0,
+};
+let networkStageZoom = 1;
+let networkStagePanX = 0;
+let networkStagePanY = 0;
+let networkStageDrag = null;
+let networkStageFitAll = true;
+let networkStageShape = getStoredNetworkStageShape();
+let networkHoveredDid = "";
+let networkFocusPreviewTab = "followers";
+let networkFocusCollapsed = false;
+let networkCommonMutualsTargetDid = "";
+let networkCommonMutualsDids = new Set();
+let networkCommonMutualsLoadingDid = "";
+let networkCommonMutualsHasMore = false;
+let workspaceRestorePending = true;
+let appStateHydrated = false;
+const NETWORK_STAGE_MIN_ZOOM = 0.42;
+const NETWORK_STAGE_MAX_ZOOM = 5.6;
 const LOGIN_SERVICE_PRESETS = {
   "bsky.social": "https://bsky.social",
   "eurosky.social": "https://eurosky.social",
@@ -347,6 +487,17 @@ async function registerServiceWorker() {
   }
 
   try {
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) {
+        return;
+      }
+      refreshing = true;
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("reload", String(Date.now()));
+      window.location.replace(nextUrl.toString());
+    });
+
     serviceWorkerRegistration = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
     await navigator.serviceWorker.ready;
     setStatus(t("statusCheckingSession"));
@@ -446,6 +597,10 @@ function localizeLoginErrorMessage(error) {
 
   if (normalized.includes("keine verbindung zu bluesky möglich") || normalized.includes("could not connect to bluesky")) {
     return t("statusLoginFailedConnection");
+  }
+
+  if (normalized.includes("insecure service urls are not allowed") || normalized.includes("please use https")) {
+    return t("statusLoginFailedInsecureService");
   }
 
   if (normalized.includes("bluesky-fehler: 401") || normalized.includes("bluesky error: 401")) {
@@ -552,7 +707,676 @@ function getAccountInitials(account) {
   return source.slice(0, 2).toUpperCase();
 }
 
+function getProfileInitials(profile) {
+  const source = String(profile?.displayName || profile?.handle || profile?.identifier || "?").replace(/^@/, "").trim();
+  return source.slice(0, 2).toUpperCase();
+}
+
+function getProfileLabel(profile) {
+  const name = String(profile?.displayName || profile?.handle || profile?.did || "").trim();
+  const handle = String(profile?.handle || "").trim();
+  if (name && handle && name.toLowerCase() !== handle.toLowerCase()) {
+    return `${name} @${handle}`;
+  }
+  if (handle) {
+    return `@${handle}`;
+  }
+  return name || String(profile?.did || "").trim();
+}
+
+function getKnownNetworkProfile(did) {
+  const actorDid = String(did || "").trim();
+  if (!actorDid) {
+    return null;
+  }
+  if (actorDid === networkViewerProfile?.did) {
+    return networkViewerProfile;
+  }
+  const direct = networkNodes.get(actorDid);
+  if (direct) {
+    return direct;
+  }
+  for (const detail of networkFocusDetails.values()) {
+    if (detail?.profile?.did === actorDid) {
+      return detail.profile;
+    }
+    const previewHit = [...(detail?.followersPreview || []), ...(detail?.followsPreview || [])]
+      .find((entry) => entry?.did === actorDid);
+    if (previewHit) {
+      return previewHit;
+    }
+  }
+  return null;
+}
+
+function resetNetworkState() {
+  networkAccountDid = networkAccountDid || authAccountDid || "";
+  networkViewerProfile = null;
+  networkNodes = new Map();
+  networkFollowerCursor = "";
+  networkFollowCursor = "";
+  networkHasMoreFollowers = false;
+  networkHasMoreFollows = false;
+  networkLoading = false;
+  networkSelectedDid = "";
+  networkStatusLine = t("networkProgressIdle");
+  networkWaveIndex = 0;
+  networkFocusDetails = new Map();
+  networkFocusLoadingDid = "";
+  networkStageSlots = new Map();
+  networkStageRelationCounts = {
+    mutual: 0,
+    followers: 0,
+    following: 0,
+    other: 0,
+  };
+  networkStageZoom = 1;
+  networkStagePanX = 0;
+  networkStagePanY = 0;
+  networkStageDrag = null;
+  networkStageFitAll = true;
+  networkHoveredDid = "";
+  networkFocusPreviewTab = "followers";
+  clearNetworkCommonMutuals();
+}
+
+function ensureNetworkStateForAccount() {
+  if (!authAccountDid) {
+    resetNetworkState();
+    return;
+  }
+  if (!networkAccountDid) {
+    networkAccountDid = authAccountDid;
+  }
+}
+
+function mergeNetworkNode(existing, incoming) {
+  if (!existing) {
+    return {
+      ...incoming,
+      followingViewer: incoming.followingViewer === true,
+      followedByViewer: incoming.followedByViewer === true,
+    };
+  }
+
+  return {
+    ...existing,
+    ...incoming,
+    handle: incoming.handle || existing.handle || "",
+    displayName: incoming.displayName || existing.displayName || incoming.handle || existing.handle || "",
+    avatar: incoming.avatar || existing.avatar || "",
+    description: incoming.description || existing.description || "",
+    followersCount: Number(incoming.followersCount) || Number(existing.followersCount) || 0,
+    followsCount: Number(incoming.followsCount) || Number(existing.followsCount) || 0,
+    postsCount: Number(incoming.postsCount) || Number(existing.postsCount) || 0,
+    followingViewer: existing.followingViewer || incoming.followingViewer === true,
+    followedByViewer: existing.followedByViewer || incoming.followedByViewer === true,
+  };
+}
+
+function ingestNetworkProfiles(profiles = []) {
+  profiles.forEach((profile) => {
+    if (!profile?.did || profile.did === networkAccountDid) {
+      return;
+    }
+    const existing = networkNodes.get(profile.did) || null;
+    networkNodes.set(profile.did, mergeNetworkNode(existing, profile));
+  });
+}
+
+function getNetworkRelationType(node) {
+  if (node?.followingViewer && node?.followedByViewer) {
+    return "mutual";
+  }
+  if (node?.followedByViewer) {
+    return "followers";
+  }
+  if (node?.followingViewer) {
+    return "following";
+  }
+  return "other";
+}
+
+function getNetworkRelationLabel(node) {
+  const relation = getNetworkRelationType(node);
+  const account = getNetworkCenterLabel();
+  if (relation === "mutual") {
+    return t("networkRelationMutual");
+  }
+  if (relation === "followers") {
+    return isViewingOwnNetwork()
+      ? t("networkRelationFollower")
+      : t("networkRelationFollowerOther", { account });
+  }
+  if (relation === "following") {
+    return isViewingOwnNetwork()
+      ? t("networkRelationFollowing")
+      : t("networkRelationFollowingOther", { account });
+  }
+  return t("networkRelationLoose");
+}
+
+function isViewingOwnNetwork() {
+  return Boolean(authAccountDid) && Boolean(networkAccountDid) && networkAccountDid === authAccountDid;
+}
+
+function getNetworkCenterProfile() {
+  return networkViewerProfile || null;
+}
+
+function getNetworkCenterLabel() {
+  const profile = getNetworkCenterProfile();
+  return profile?.displayName || profile?.handle || authAccount || t("networkViewerFallback");
+}
+
+function getNetworkNodeScore(node) {
+  const relation = getNetworkRelationType(node);
+  const relationScore = relation === "mutual" ? 120 : (relation === "followers" ? 80 : (relation === "following" ? 70 : 30));
+  return relationScore
+    + Math.min(80, Number(node?.followersCount) || 0)
+    + Math.min(40, Math.floor((Number(node?.postsCount) || 0) / 5));
+}
+
+function getNetworkScoreBreakdown(node) {
+  const relation = getNetworkRelationType(node);
+  const relationScore = relation === "mutual" ? 120 : (relation === "followers" ? 80 : (relation === "following" ? 70 : 30));
+  const followersScore = Math.min(80, Number(node?.followersCount) || 0);
+  const postsScore = Math.min(40, Math.floor((Number(node?.postsCount) || 0) / 5));
+  return {
+    relationScore,
+    followersScore,
+    postsScore,
+    total: relationScore + followersScore + postsScore,
+  };
+}
+
+function getStrongNetworkScoreThreshold(nodes = getAllNetworkNodes()) {
+  if (!nodes.length) {
+    return 0;
+  }
+
+  const scores = nodes
+    .map((node) => getNetworkNodeScore(node))
+    .sort((left, right) => right - left);
+  const preferredCount = Math.max(18, Math.ceil(scores.length * 0.14));
+  const thresholdIndex = Math.min(scores.length - 1, preferredCount - 1);
+  return Math.max(100, scores[thresholdIndex] || 0);
+}
+
+function getAllNetworkNodes() {
+  return Array.from(networkNodes.values()).sort((left, right) => {
+    const scoreDelta = getNetworkNodeScore(right) - getNetworkNodeScore(left);
+    if (scoreDelta !== 0) {
+      return scoreDelta;
+    }
+    return String(left.handle || left.displayName || "").localeCompare(String(right.handle || right.displayName || ""));
+  });
+}
+
+function matchesNetworkFilter(node, filterMode = networkFilterMode, strongThreshold = getStrongNetworkScoreThreshold()) {
+  const relation = getNetworkRelationType(node);
+  if (filterMode === "common") {
+    return getActiveNetworkCommonMutualDids().has(String(node?.did || "").trim());
+  }
+  if (filterMode === "mutual") {
+    return relation === "mutual";
+  }
+  if (filterMode === "followers") {
+    return relation === "followers";
+  }
+  if (filterMode === "following") {
+    return relation === "following";
+  }
+  if (filterMode === "strong") {
+    return getNetworkNodeScore(node) >= strongThreshold;
+  }
+  return true;
+}
+
+function getVisibleNetworkNodes(limit = Number.POSITIVE_INFINITY) {
+  const query = String(networkSearchQuery || "").trim().toLowerCase();
+  const allNodes = getAllNetworkNodes();
+  const strongThreshold = getStrongNetworkScoreThreshold(allNodes);
+  const nodes = allNodes
+    .filter((node) => matchesNetworkFilter(node, networkFilterMode, strongThreshold))
+    .filter((node) => {
+      if (!query) {
+        return true;
+      }
+      return `${node.displayName || ""} ${node.handle || ""}`.toLowerCase().includes(query);
+    });
+
+  if (!Number.isFinite(limit)) {
+    return nodes;
+  }
+  return nodes.slice(0, Math.max(0, limit));
+}
+
+function ensureNetworkStageSlot(node) {
+  if (!node?.did) {
+    return null;
+  }
+
+  const relation = getNetworkRelationType(node);
+  const existing = networkStageSlots.get(node.did);
+  if (existing && existing.relation === relation) {
+    return existing;
+  }
+
+  const slot = {
+    relation,
+    index: networkStageRelationCounts[relation] || 0,
+  };
+  networkStageRelationCounts[relation] = slot.index + 1;
+  networkStageSlots.set(node.did, slot);
+  return slot;
+}
+
+function hasPendingNetworkDataForGroup(groupKey) {
+  if (groupKey === "followers") {
+    return networkHasMoreFollowers;
+  }
+  if (groupKey === "following") {
+    return networkHasMoreFollows;
+  }
+  if (groupKey === "mutual") {
+    return networkHasMoreFollowers || networkHasMoreFollows;
+  }
+  return networkHasMoreFollowers || networkHasMoreFollows;
+}
+
+async function loadMoreNetworkGroup(groupKey = "all") {
+  if (!authAccount || networkLoading) {
+    return;
+  }
+
+  await loadNetworkWave({
+    triggerGroup: groupKey,
+  });
+}
+
+function getNetworkStageViewport(layout) {
+  const bounds = layout.contentBounds || {
+    minX: 0,
+    minY: 0,
+    maxX: layout.width,
+    maxY: layout.height,
+  };
+  const boundsWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const boundsHeight = Math.max(1, bounds.maxY - bounds.minY);
+  const fitPadding = 72;
+  if (networkStageFitAll) {
+    return {
+      x: bounds.minX - fitPadding,
+      y: bounds.minY - fitPadding,
+      width: boundsWidth + (fitPadding * 2),
+      height: boundsHeight + (fitPadding * 2),
+      zoom: 1,
+    };
+  }
+
+  const zoom = clamp(networkStageZoom, NETWORK_STAGE_MIN_ZOOM, NETWORK_STAGE_MAX_ZOOM);
+  const viewWidth = layout.width / zoom;
+  const viewHeight = layout.height / zoom;
+  const boundsCenterX = (bounds.minX + bounds.maxX) / 2;
+  const boundsCenterY = (bounds.minY + bounds.maxY) / 2;
+  const baseX = boundsCenterX - (viewWidth / 2);
+  const baseY = boundsCenterY - (viewHeight / 2);
+  const panPaddingX = Math.max(80, viewWidth * 0.12);
+  const panPaddingY = Math.max(80, viewHeight * 0.12);
+  const rawPanMinX = (bounds.maxX + panPaddingX) - (baseX + viewWidth);
+  const rawPanMaxX = (bounds.minX - panPaddingX) - baseX;
+  const rawPanMinY = (bounds.maxY + panPaddingY) - (baseY + viewHeight);
+  const rawPanMaxY = (bounds.minY - panPaddingY) - baseY;
+  const panMinX = Math.min(rawPanMinX, rawPanMaxX);
+  const panMaxX = Math.max(rawPanMinX, rawPanMaxX);
+  const panMinY = Math.min(rawPanMinY, rawPanMaxY);
+  const panMaxY = Math.max(rawPanMinY, rawPanMaxY);
+  networkStagePanX = clamp(networkStagePanX, panMinX, panMaxX);
+  networkStagePanY = clamp(networkStagePanY, panMinY, panMaxY);
+
+  return {
+    x: baseX + networkStagePanX,
+    y: baseY + networkStagePanY,
+    width: viewWidth,
+    height: viewHeight,
+    zoom,
+  };
+}
+
+function computeNetworkStageContentBounds(layout, visibleNodes, selectedDid) {
+  const padding = 28;
+  let minX = layout.centerX - 64;
+  let maxX = layout.centerX + 64;
+  let minY = layout.centerY - 64;
+  let maxY = layout.centerY + 92;
+
+  visibleNodes.forEach((node) => {
+    const point = layout.positions.get(node.did);
+    if (!point) {
+      return;
+    }
+    const relation = getNetworkRelationType(node);
+    const isSelected = node.did === selectedDid;
+    const radius = isSelected ? 27 : (relation === "mutual" ? 18 : 15);
+    minX = Math.min(minX, point.x - radius - padding);
+    maxX = Math.max(maxX, point.x + radius + padding);
+    minY = Math.min(minY, point.y - radius - padding);
+    maxY = Math.max(maxY, point.y + radius + padding);
+  });
+
+  if (layout.hasFocusIsland && selectedDid) {
+    const focusPreviewItems = getNetworkStageFocusPreviewItems(selectedDid);
+    const focusCenterX = layout.centerX;
+    const focusCenterY = layout.focusCenterY;
+    const focusRadius = 108;
+    minX = Math.min(minX, focusCenterX - focusRadius - 70);
+    maxX = Math.max(maxX, focusCenterX + focusRadius + 70);
+    minY = Math.min(minY, focusCenterY - focusRadius - 58);
+    maxY = Math.max(maxY, focusCenterY + focusRadius + 70);
+    focusPreviewItems.forEach((entry, index) => {
+      const angle = (-Math.PI / 2) + ((index / Math.max(1, focusPreviewItems.length)) * Math.PI * 2);
+      const orbitRadius = 76;
+      const pointX = focusCenterX + Math.cos(angle) * orbitRadius;
+      const pointY = focusCenterY + Math.sin(angle) * orbitRadius;
+      minX = Math.min(minX, pointX - 24);
+      maxX = Math.max(maxX, pointX + 24);
+      minY = Math.min(minY, pointY - 24);
+      maxY = Math.max(maxY, pointY + 24);
+    });
+  }
+
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+  };
+}
+
+function zoomNetworkStage(factor) {
+  networkStageFitAll = false;
+  networkStageZoom = clamp((networkStageZoom || 1) * factor, NETWORK_STAGE_MIN_ZOOM, NETWORK_STAGE_MAX_ZOOM);
+  renderNetworkStage();
+}
+
+function zoomNetworkStageAtPoint(factor, clientX, clientY) {
+  if (!networkStageSvg) {
+    zoomNetworkStage(factor);
+    return;
+  }
+  const visibleNodes = getVisibleNetworkNodes();
+  const selectedDid = networkSelectedDid || getPreferredNetworkSelection(visibleNodes);
+  const layout = computeNetworkLayout(visibleNodes, selectedDid);
+  layout.contentBounds = computeNetworkStageContentBounds(layout, visibleNodes, selectedDid);
+  const beforeViewport = getNetworkStageViewport(layout);
+  const bounds = networkStageSvg.getBoundingClientRect();
+  const relativeX = clamp((clientX - bounds.left) / Math.max(1, bounds.width), 0, 1);
+  const relativeY = clamp((clientY - bounds.top) / Math.max(1, bounds.height), 0, 1);
+  const stageX = beforeViewport.x + (beforeViewport.width * relativeX);
+  const stageY = beforeViewport.y + (beforeViewport.height * relativeY);
+
+  networkStageFitAll = false;
+  const nextZoom = clamp((networkStageZoom || 1) * factor, NETWORK_STAGE_MIN_ZOOM, NETWORK_STAGE_MAX_ZOOM);
+  networkStageZoom = nextZoom;
+
+  const afterViewWidth = layout.width / nextZoom;
+  const afterViewHeight = layout.height / nextZoom;
+  const targetX = stageX - (afterViewWidth * relativeX);
+  const targetY = stageY - (afterViewHeight * relativeY);
+  const defaultCenterX = ((layout.contentBounds.minX + layout.contentBounds.maxX) / 2) - (afterViewWidth / 2);
+  const defaultCenterY = ((layout.contentBounds.minY + layout.contentBounds.maxY) / 2) - (afterViewHeight / 2);
+  networkStagePanX = targetX - defaultCenterX;
+  networkStagePanY = targetY - defaultCenterY;
+
+  renderNetworkStage();
+}
+
+function resetNetworkStageView() {
+  networkStageFitAll = true;
+  networkStageZoom = 1;
+  networkStagePanX = 0;
+  networkStagePanY = 0;
+  renderNetworkStage();
+}
+
+function toggleNetworkStageShape() {
+  networkStageShape = networkStageShape === NETWORK_STAGE_SHAPE_SQUIRCLE
+    ? NETWORK_STAGE_SHAPE_ROUND
+    : NETWORK_STAGE_SHAPE_SQUIRCLE;
+  persistNetworkStageShapePreference(networkStageShape);
+  resetNetworkStageView();
+  renderNetworkWorkspace();
+}
+
+function getNetworkStageLabelCandidates(visibleNodes, selectedDid) {
+  const labelCandidates = [];
+  if (selectedDid) {
+    labelCandidates.push(selectedDid);
+  }
+
+  visibleNodes
+    .filter((node) => getNetworkRelationType(node) === "mutual")
+    .slice(0, 3)
+    .forEach((node) => {
+      if (!labelCandidates.includes(node.did)) {
+        labelCandidates.push(node.did);
+      }
+    });
+
+  visibleNodes.slice(0, 2).forEach((node) => {
+    if (!labelCandidates.includes(node.did)) {
+      labelCandidates.push(node.did);
+    }
+  });
+
+  return labelCandidates;
+}
+
+function getNetworkStageFocusPreviewItems(selectedDid) {
+  const focusData = selectedDid ? networkFocusDetails.get(selectedDid) || null : null;
+  if (!focusData) {
+    return [];
+  }
+
+  const followers = (focusData.followersPreview || []).slice(0, 4).map((entry) => ({
+    ...entry,
+    previewRelation: "followers",
+  }));
+  const following = (focusData.followsPreview || []).slice(0, 4).map((entry) => ({
+    ...entry,
+    previewRelation: "following",
+  }));
+
+  return [...followers, ...following]
+    .filter((entry) => entry?.did && entry.did !== selectedDid)
+    .filter((entry, index, items) => items.findIndex((candidate) => candidate.did === entry.did) === index);
+}
+
+function getPreferredNetworkSelection(visibleNodes = getVisibleNetworkNodes()) {
+  const selected = networkSelectedDid ? networkNodes.get(networkSelectedDid) : null;
+  if (selected && visibleNodes.some((node) => node.did === selected.did)) {
+    return selected.did;
+  }
+  return "";
+}
+
+function setNetworkSelection(did, { loadDetails = true, previewTab = "followers" } = {}) {
+  const actorDid = String(did || "").trim();
+  if (!actorDid) {
+    return;
+  }
+
+  if (networkCommonMutualsTargetDid && networkCommonMutualsTargetDid !== actorDid) {
+    clearNetworkCommonMutuals();
+  }
+
+  networkSelectedDid = actorDid;
+  networkFocusPreviewTab = previewTab;
+  networkFocusCollapsed = false;
+  renderNetworkWorkspace();
+  if (loadDetails) {
+    void loadNetworkFocusDetails(actorDid);
+  }
+}
+
+function clearNetworkCommonMutuals() {
+  networkCommonMutualsTargetDid = "";
+  networkCommonMutualsDids = new Set();
+  networkCommonMutualsLoadingDid = "";
+  networkCommonMutualsHasMore = false;
+  if (networkFilterMode === "common") {
+    networkFilterMode = "all";
+  }
+}
+
+function getActiveNetworkCommonMutualDids(selectedDid = networkSelectedDid) {
+  const actorDid = String(selectedDid || "").trim();
+  if (!actorDid || actorDid !== networkCommonMutualsTargetDid || !networkCommonMutualsDids.size) {
+    return new Set();
+  }
+  return new Set(networkCommonMutualsDids);
+}
+
+function setNetworkHoveredAccount(did = "") {
+  networkHoveredDid = String(did || "").trim();
+  if (!networkStageHovercard) {
+    return;
+  }
+
+  const profile = getKnownNetworkProfile(networkHoveredDid);
+  if (!profile) {
+    networkStageHovercard.hidden = true;
+    networkStageHovercard.textContent = "";
+    return;
+  }
+
+  networkStageHovercard.hidden = false;
+  networkStageHovercard.textContent = getProfileLabel(profile);
+}
+
+async function loadNetworkFocusDetails(did) {
+  const actorDid = String(did || "").trim();
+  if (!actorDid || networkFocusLoadingDid === actorDid) {
+    return;
+  }
+
+  networkFocusLoadingDid = actorDid;
+  renderNetworkWorkspace();
+
+  try {
+    const result = await sendToServiceWorker("LOAD_NETWORK_ACTOR_FOCUS", {
+      actor: actorDid,
+    }, {
+      timeoutMs: 120000,
+      onProgress(progress) {
+        const step = String(progress?.step || "").trim();
+        const detail = String(progress?.detail || "").trim();
+        if (networkSelectedDid === actorDid) {
+          const selectedProfile = networkNodes.get(actorDid) || null;
+          const actorLabel = selectedProfile ? getProfileLabel(selectedProfile) : "";
+          setNetworkStatus([step, actorLabel || detail].filter(Boolean).join(" · ") || t("networkFocusLoading"));
+        }
+      },
+    });
+
+    if (result?.profile?.did) {
+      const existing = networkNodes.get(result.profile.did) || null;
+      networkNodes.set(result.profile.did, mergeNetworkNode(existing, result.profile));
+      networkFocusDetails.set(result.profile.did, {
+        profile: result.profile,
+        relationshipDates: result.relationshipDates || null,
+        activityStats: result.activityStats || null,
+        likeStats: result.likeStats || null,
+        followersPreview: Array.isArray(result.followersPreview) ? result.followersPreview : [],
+        followsPreview: Array.isArray(result.followsPreview) ? result.followsPreview : [],
+      });
+    }
+  } catch (error) {
+    console.error(error);
+    if (networkSelectedDid === actorDid) {
+      setNetworkStatus(error.message || t("networkFocusLoadFailed"));
+    }
+  } finally {
+    if (networkFocusLoadingDid === actorDid) {
+      networkFocusLoadingDid = "";
+    }
+    renderNetworkWorkspace();
+  }
+}
+
+async function loadNetworkCommonMutuals(actorDid) {
+  const focusDid = String(actorDid || "").trim();
+  if (!focusDid || networkCommonMutualsLoadingDid === focusDid) {
+    return;
+  }
+  const centerDid = String(networkViewerProfile?.did || networkAccountDid || authAccountDid || "").trim();
+  if (!centerDid || centerDid === focusDid) {
+    return;
+  }
+
+  networkCommonMutualsLoadingDid = focusDid;
+  renderNetworkWorkspace();
+
+  try {
+    const result = await sendToServiceWorker("LOAD_NETWORK_COMMON_MUTUALS", {
+      centerActor: centerDid,
+      focusActor: focusDid,
+    }, {
+      timeoutMs: 420000,
+      onProgress(progress) {
+        const step = String(progress?.step || "").trim();
+        const detail = String(progress?.detail || "").trim();
+        if (networkSelectedDid === focusDid) {
+          setNetworkStatus([step, detail].filter(Boolean).join(" · ") || t("networkCommonMutualsLoading"));
+        }
+      },
+    });
+    networkFilterMode = "all";
+    networkSearchQuery = "";
+    if (networkSearchInput) {
+      networkSearchInput.value = "";
+    }
+    ingestNetworkProfiles(result?.commonProfiles || []);
+    networkCommonMutualsTargetDid = focusDid;
+    networkCommonMutualsDids = new Set(
+      Array.isArray(result?.commonDids) ? result.commonDids.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    );
+    networkCommonMutualsHasMore = false;
+    networkStageFitAll = true;
+    networkStageZoom = 1;
+    networkStagePanX = 0;
+    networkStagePanY = 0;
+    setNetworkStatus(t("networkCommonMutualsLoaded", {
+      count: formatCount(networkCommonMutualsDids.size),
+    }));
+  } catch (error) {
+    console.error(error);
+    clearNetworkCommonMutuals();
+    setNetworkStatus(error.message || t("networkCommonMutualsLoadFailed"));
+  } finally {
+    if (networkCommonMutualsLoadingDid === focusDid) {
+      networkCommonMutualsLoadingDid = "";
+    }
+    renderNetworkWorkspace();
+  }
+}
+
+function getRequestedNetworkActor() {
+  const typedActor = String(networkAccountInput?.value || "").trim();
+  if (typedActor) {
+    return typedActor;
+  }
+  if (networkViewerProfile?.handle) {
+    return networkViewerProfile.handle;
+  }
+  return networkAccountDid || authAccountDid || "";
+}
+
 function getAccountVisualState(account) {
+  if (!appOnline && account.hasSession) {
+    return "offline";
+  }
   if (account.did && account.did === authAccountDid && account.hasSession) {
     return "active";
   }
@@ -588,10 +1412,11 @@ function renderAccountSwitcher() {
       button.classList.add("is-needs-login");
     }
 
-    const avatar = document.createElement(account.avatar ? "img" : "span");
+    const avatarUri = getStoredAccountAvatarUri(account);
+    const avatar = document.createElement(avatarUri ? "img" : "span");
     avatar.className = "account-chip-avatar";
-    if (account.avatar) {
-      avatar.src = account.avatar;
+    if (avatarUri) {
+      avatar.src = avatarUri;
       avatar.alt = account.handle || account.identifier || "account";
       avatar.loading = "lazy";
     } else {
@@ -605,6 +1430,7 @@ function renderAccountSwitcher() {
     button.title = [
       account.handle || account.identifier || "",
       account.service || "",
+      state === "offline" ? t("accountStateOffline") : "",
       state === "active" ? t("accountStateActive") : "",
       state === "available" ? t("accountStateAvailable") : "",
       state === "signed-out" ? t("accountStateSignedOut") : "",
@@ -616,6 +1442,7 @@ function renderAccountSwitcher() {
       try {
         const result = await sendToServiceWorker("SWITCH_ACCOUNT", { did: account.did });
         savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+        await restoreAccountAvatarCache();
         renderAccountSwitcher();
 
         if (!result.authenticated) {
@@ -627,7 +1454,9 @@ function renderAccountSwitcher() {
           passwordField.value = "";
           updateStatusForAuth();
           const needsPassword = result.reason === "missing_password" || result.reason === "invalid_password";
-          const message = result.reason === "invalid_password"
+          const message = result.reason === "offline"
+            ? t("statusAccountOffline", { account: account.handle || account.identifier || "" })
+            : result.reason === "invalid_password"
             ? t("statusAccountPasswordRejected", { account: account.handle || account.identifier || "" })
             : t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" });
           setStatus(message, "error");
@@ -674,6 +1503,7 @@ function renderAccountSwitcher() {
           if (account.hasStoredPassword) {
             const result = await sendToServiceWorker("SWITCH_ACCOUNT", { did: account.did });
             savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+            await restoreAccountAvatarCache();
             renderAccountSwitcher();
             if (result.authenticated) {
               authAccount = result.handle || result.identifier || null;
@@ -683,16 +1513,20 @@ function renderAccountSwitcher() {
               await verifySession({ silent: true });
               return;
             }
-            const message = result.reason === "invalid_password"
+            const message = result.reason === "offline"
+              ? t("statusAccountOffline", { account: account.handle || account.identifier || "" })
+              : result.reason === "invalid_password"
               ? t("statusAccountPasswordRejected", { account: account.handle || account.identifier || "" })
               : t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" });
             setStatus(message, "error");
-            openLoginDialog({
-              account,
-              mode: "repair",
-              note: message,
-              tone: "error",
-            });
+            if (result.reason !== "offline") {
+              openLoginDialog({
+                account,
+                mode: "repair",
+                note: message,
+                tone: "error",
+              });
+            }
             return;
           }
 
@@ -707,6 +1541,7 @@ function renderAccountSwitcher() {
 
         const result = await sendToServiceWorker("LOGOUT", { did: account.did });
         savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+        await restoreAccountAvatarCache();
         authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
         authAccountDid = result.authenticated ? (result.did || "") : "";
         authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
@@ -739,6 +1574,7 @@ function renderAccountSwitcher() {
       try {
         const result = await sendToServiceWorker("REMOVE_ACCOUNT", { did: account.did });
         savedAccounts = Array.isArray(result.accounts) ? result.accounts : [];
+        await restoreAccountAvatarCache();
         authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
         authAccountDid = result.authenticated ? (result.did || "") : "";
         authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
@@ -760,17 +1596,34 @@ function renderAccountSwitcher() {
 function updateAuthButtons() {
   const isAuthenticated = Boolean(authAccount);
   addAccountButton.textContent = t("addAccountButton");
+  composerButton.disabled = false;
   archiveButton.disabled = !isAuthenticated;
+  networkButton.disabled = !isAuthenticated;
+  dmButton.disabled = !isAuthenticated || !isDmAccessAvailable();
+  [
+    [composerButton, currentWorkspace === "composer"],
+    [archiveButton, currentWorkspace === "archive"],
+    [networkButton, currentWorkspace === "network"],
+    [dmButton, currentWorkspace === "dm"],
+  ].forEach(([button, isActive]) => {
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  composerLaunchNote.textContent = t("composerLaunchNote");
   archiveLaunchNote.textContent = isAuthenticated ? t("archiveLaunchEnabledNote") : t("archiveLaunchDisabledNote");
+  networkLaunchNote.textContent = isAuthenticated ? t("networkLaunchEnabledNote") : t("networkLaunchDisabledNote");
+  dmLaunchNote.textContent = isAuthenticated ? t("dmLaunchEnabledNote") : t("dmLaunchDisabledNote");
   renderAccountSwitcher();
+  renderArchiveBackgroundNotice();
 }
 
 function applyDisconnectedState(showStatus = true) {
   authAccount = null;
   authAccountDid = "";
+  resetNetworkState();
   updateAuthButtons();
-  if (currentWorkspace === "archive") {
-    showComposerWorkspace();
+  if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network") {
+    showComposerWorkspace({ persist: false });
   }
 
   if (showStatus) {
@@ -789,6 +1642,172 @@ function setElementVisibility(element, isVisible) {
   element.hidden = !isVisible;
   element.setAttribute("aria-hidden", isVisible ? "false" : "true");
   element.style.display = isVisible ? "" : "none";
+}
+
+function persistWorkspacePreference(workspace) {
+  try {
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, String(workspace || "composer"));
+  } catch {
+    // Ignore storage errors in private or restricted contexts.
+  }
+}
+
+function getStoredWorkspacePreference() {
+  try {
+    const value = String(window.localStorage.getItem(WORKSPACE_STORAGE_KEY) || "").trim();
+    return value || "composer";
+  } catch {
+    return "composer";
+  }
+}
+
+function persistNetworkStageShapePreference(shape) {
+  try {
+    const normalizedShape = shape === NETWORK_STAGE_SHAPE_SQUIRCLE
+      ? NETWORK_STAGE_SHAPE_SQUIRCLE
+      : NETWORK_STAGE_SHAPE_ROUND;
+    window.localStorage.setItem(NETWORK_STAGE_SHAPE_STORAGE_KEY, normalizedShape);
+  } catch {
+    // Ignore storage errors in private or restricted contexts.
+  }
+}
+
+function getStoredNetworkStageShape() {
+  try {
+    const value = String(window.localStorage.getItem(NETWORK_STAGE_SHAPE_STORAGE_KEY) || "").trim();
+    return value === NETWORK_STAGE_SHAPE_SQUIRCLE
+      ? NETWORK_STAGE_SHAPE_SQUIRCLE
+      : NETWORK_STAGE_SHAPE_ROUND;
+  } catch {
+    return NETWORK_STAGE_SHAPE_ROUND;
+  }
+}
+
+function restorePreferredWorkspaceIfPossible() {
+  if (!workspaceRestorePending) {
+    return;
+  }
+  if (!appStateHydrated) {
+    return;
+  }
+  if (!authAccount) {
+    workspaceRestorePending = false;
+    if (currentWorkspace !== "composer") {
+      showComposerWorkspace();
+    }
+    return;
+  }
+
+  const preferred = getStoredWorkspacePreference();
+  if (preferred === "dm" && DM_ACCESS_GATE_ENABLED && !dmAccessChecked) {
+    return;
+  }
+
+  workspaceRestorePending = false;
+  if (preferred === "archive") {
+    showArchiveWorkspace();
+    return;
+  }
+  if (preferred === "network") {
+    showNetworkWorkspace();
+    return;
+  }
+  if (preferred === "dm" && isDmAccessAvailable()) {
+    showDmWorkspace();
+    return;
+  }
+  showComposerWorkspace();
+}
+
+function getDmSecretFromLocation() {
+  const url = new URL(window.location.href);
+  const querySecret = url.searchParams.get(DM_ACCESS_QUERY_PARAM);
+  if (querySecret) {
+    return querySecret.trim();
+  }
+
+  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+  const hashParams = new URLSearchParams(hash);
+  return String(hashParams.get(DM_ACCESS_HASH_PARAM) || "").trim();
+}
+
+function clearDmSecretFromLocation() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete(DM_ACCESS_QUERY_PARAM);
+  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+  const hashParams = new URLSearchParams(hash);
+  hashParams.delete(DM_ACCESS_HASH_PARAM);
+  const nextHash = hashParams.toString();
+  const nextUrl = `${url.pathname}${url.search}${nextHash ? `#${nextHash}` : ""}`;
+  window.history.replaceState({}, document.title, nextUrl);
+}
+
+function isDmAccessAvailable() {
+  return !DM_ACCESS_GATE_ENABLED || dmAccessUnlocked;
+}
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (item) => item.toString(16).padStart(2, "0")).join("");
+}
+
+async function applyDmAccessGateFromLocation() {
+  if (!DM_ACCESS_GATE_ENABLED) {
+    dmAccessUnlocked = true;
+    dmAccessChecked = true;
+    window.sessionStorage.removeItem(DM_ACCESS_SESSION_KEY);
+    setElementVisibility(dmLaunchPanel, true);
+    const secret = getDmSecretFromLocation();
+    if (secret) {
+      clearDmSecretFromLocation();
+    }
+    renderDmWorkspace();
+    updateAuthButtons();
+    restorePreferredWorkspaceIfPossible();
+    return;
+  }
+
+  const unlockedInSession = window.sessionStorage.getItem(DM_ACCESS_SESSION_KEY) === "1";
+  const secret = getDmSecretFromLocation();
+  let unlocked = unlockedInSession;
+
+  if (!unlocked && secret) {
+    try {
+      unlocked = await sha256Hex(secret) === DM_ACCESS_SECRET_HASH;
+    } catch (error) {
+      console.error(error);
+      unlocked = false;
+    }
+  }
+
+  dmAccessUnlocked = unlocked;
+  if (dmAccessUnlocked) {
+    window.sessionStorage.setItem(DM_ACCESS_SESSION_KEY, "1");
+    dmAccessChecked = true;
+  } else {
+    window.sessionStorage.removeItem(DM_ACCESS_SESSION_KEY);
+    dmAccessChecked = false;
+  }
+
+  setElementVisibility(dmLaunchPanel, isDmAccessAvailable());
+  if (!isDmAccessAvailable() && currentWorkspace === "dm") {
+    showComposerWorkspace({ persist: false });
+  }
+
+  if (secret) {
+    clearDmSecretFromLocation();
+  }
+
+  renderDmWorkspace();
+  updateAuthButtons();
+  restorePreferredWorkspaceIfPossible();
+}
+
+function assertDmAccessUnlocked() {
+  if (!isDmAccessAvailable()) {
+    throw new Error("Der DM-Bereich ist gesperrt.");
+  }
 }
 
 function applyHashtagPaneContext() {
@@ -819,17 +1838,2565 @@ function showArchiveWorkspace() {
   }
 
   currentWorkspace = "archive";
+  persistWorkspacePreference(currentWorkspace);
   composerWorkspace.hidden = true;
+  networkWorkspace.hidden = true;
+  dmWorkspace.hidden = true;
   archiveWorkspace.hidden = false;
   applyHashtagPaneContext();
+  updateAuthButtons();
   renderArchiveWorkspace();
 }
 
-function showComposerWorkspace() {
-  currentWorkspace = "composer";
+function showNetworkWorkspace() {
+  if (!authAccount) {
+    return;
+  }
+
+  ensureNetworkStateForAccount();
+  currentWorkspace = "network";
+  persistWorkspacePreference(currentWorkspace);
+  composerWorkspace.hidden = true;
   archiveWorkspace.hidden = true;
+  dmWorkspace.hidden = true;
+  networkWorkspace.hidden = false;
+  applyHashtagPaneContext();
+  updateAuthButtons();
+  renderNetworkWorkspace();
+  if (!networkNodes.size && !networkLoading) {
+    void loadNetworkWave({ silentErrors: false });
+  }
+}
+
+function showDmWorkspace() {
+  if (!authAccount || !isDmAccessAvailable()) {
+    return;
+  }
+
+  currentWorkspace = "dm";
+  persistWorkspacePreference(currentWorkspace);
+  composerWorkspace.hidden = true;
+  archiveWorkspace.hidden = true;
+  networkWorkspace.hidden = true;
+  dmWorkspace.hidden = false;
+  applyHashtagPaneContext();
+  updateAuthButtons();
+  if (!dmRecentContacts.length || (dmPartnerCacheAccountDid && authAccountDid && dmPartnerCacheAccountDid !== authAccountDid)) {
+    void restoreDmPartnerCache().then(() => {
+      if (currentWorkspace === "dm") {
+        renderDmWorkspace();
+      }
+    });
+  }
+  renderDmWorkspace();
+}
+
+function showComposerWorkspace(options = {}) {
+  currentWorkspace = "composer";
+  if (options.persist !== false) {
+    persistWorkspacePreference(currentWorkspace);
+  }
+  archiveWorkspace.hidden = true;
+  networkWorkspace.hidden = true;
+  dmWorkspace.hidden = true;
   composerWorkspace.hidden = false;
   applyHashtagPaneContext();
+  updateAuthButtons();
+}
+
+function setNetworkStatus(message) {
+  networkStatusLine = String(message || "").trim() || t("networkProgressIdle");
+  if (networkProgressLine) {
+    networkProgressLine.textContent = networkStatusLine;
+  }
+}
+
+function formatCount(value) {
+  return new Intl.NumberFormat(currentLocale).format(Number(value) || 0);
+}
+
+function formatNetworkRelationshipDate(value) {
+  const timestamp = Date.parse(String(value || "").trim());
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(currentLocale, {
+    dateStyle: "medium",
+  }).format(new Date(timestamp));
+}
+
+function getNetworkActivityWindow(activityStats, days) {
+  if (!activityStats?.windows || typeof activityStats.windows !== "object") {
+    return null;
+  }
+  const entry = activityStats.windows[days] ?? activityStats.windows[String(days)];
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+  return {
+    postsCount: Number(entry.postsCount) || 0,
+    likesReceivedCount: Number(entry.likesReceivedCount) || 0,
+  };
+}
+
+function formatNetworkActivityLastPost(value) {
+  const timestamp = Date.parse(String(value || "").trim());
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(currentLocale, {
+    dateStyle: "medium",
+  }).format(new Date(timestamp));
+}
+
+function updateNetworkFilterButtons() {
+  const commonFilterAvailable = Boolean(
+    networkFilterCommonButton
+    && networkCommonMutualsTargetDid
+    && networkCommonMutualsTargetDid === networkSelectedDid
+    && networkCommonMutualsDids.size,
+  );
+  if (networkFilterCommonButton) {
+    networkFilterCommonButton.hidden = !commonFilterAvailable;
+  }
+  if (!commonFilterAvailable && networkFilterMode === "common") {
+    networkFilterMode = "all";
+  }
+  networkFilterButtons.forEach((button) => {
+    if (button.hidden) {
+      button.classList.remove("is-active");
+      button.setAttribute("aria-pressed", "false");
+      return;
+    }
+    const isActive = button.dataset.networkFilter === networkFilterMode;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function renderNetworkSummary() {
+  const allNodes = getAllNetworkNodes();
+  const visibleNodes = getVisibleNetworkNodes();
+  const mutualCount = allNodes.filter((node) => getNetworkRelationType(node) === "mutual").length;
+  networkSummaryLoaded.textContent = formatCount(allNodes.length);
+  networkSummaryMutuals.textContent = formatCount(mutualCount);
+  networkSummaryVisible.textContent = formatCount(visibleNodes.length);
+}
+
+function createSvgNode(tagName, attributes = {}) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+  Object.entries(attributes).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      node.setAttribute(key, String(value));
+    }
+  });
+  return node;
+}
+
+function getNetworkOrbitAxes(radius) {
+  if (networkStageShape !== NETWORK_STAGE_SHAPE_SQUIRCLE) {
+    return {
+      radiusX: radius,
+      radiusY: radius,
+      exponent: 2,
+    };
+  }
+
+  return {
+    radiusX: radius * 1.18,
+    radiusY: radius * 0.88,
+    exponent: 4.6,
+  };
+}
+
+function getNetworkOrbitPoint(centerX, centerY, radius, angle) {
+  const orbit = getNetworkOrbitAxes(radius);
+  if (orbit.exponent <= 2.01) {
+    return {
+      x: centerX + Math.cos(angle) * orbit.radiusX,
+      y: centerY + Math.sin(angle) * orbit.radiusY,
+    };
+  }
+
+  const cosAngle = Math.cos(angle);
+  const sinAngle = Math.sin(angle);
+  const power = 2 / orbit.exponent;
+  return {
+    x: centerX + (Math.sign(cosAngle) * Math.pow(Math.abs(cosAngle), power) * orbit.radiusX),
+    y: centerY + (Math.sign(sinAngle) * Math.pow(Math.abs(sinAngle), power) * orbit.radiusY),
+  };
+}
+
+function buildNetworkOrbitPath(centerX, centerY, radius) {
+  const orbit = getNetworkOrbitAxes(radius);
+  if (orbit.exponent <= 2.01) {
+    return null;
+  }
+
+  const segmentCount = 72;
+  const points = [];
+  for (let index = 0; index <= segmentCount; index += 1) {
+    const angle = (-Math.PI / 2) + ((index / segmentCount) * Math.PI * 2);
+    points.push(getNetworkOrbitPoint(centerX, centerY, radius, angle));
+  }
+  return points
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(" ")
+    .concat(" Z");
+}
+
+function computeNetworkLayout(nodes, selectedDid = "") {
+  const densityFactor = clamp((nodes.length - 90) / 220, 0, 1.35);
+  const hasFocusIsland = Boolean(String(selectedDid || "").trim());
+  const groups = {
+    mutual: nodes.filter((node) => getNetworkRelationType(node) === "mutual"),
+    followers: nodes.filter((node) => getNetworkRelationType(node) === "followers"),
+    following: nodes.filter((node) => getNetworkRelationType(node) === "following"),
+    other: nodes.filter((node) => getNetworkRelationType(node) === "other"),
+  };
+  const laneSpacing = 32 + Math.round(8 * densityFactor);
+  const ringGap = 92 + Math.round(12 * densityFactor);
+  const ringConfig = {
+    mutual: { baseRadius: 176 + Math.round(10 * densityFactor), capacity: 24 },
+    followers: { baseRadius: 0, capacity: 30 },
+    following: { baseRadius: 0, capacity: 36 },
+    other: { baseRadius: 0, capacity: 42 },
+  };
+  const laneCounts = {
+    mutual: Math.max(1, Math.ceil(groups.mutual.length / ringConfig.mutual.capacity)),
+    followers: Math.max(1, Math.ceil(groups.followers.length / ringConfig.followers.capacity)),
+    following: Math.max(1, Math.ceil(groups.following.length / ringConfig.following.capacity)),
+    other: Math.max(1, Math.ceil(groups.other.length / ringConfig.other.capacity)),
+  };
+
+  ringConfig.followers.baseRadius = ringConfig.mutual.baseRadius + ((laneCounts.mutual - 1) * laneSpacing) + ringGap;
+  ringConfig.following.baseRadius = ringConfig.followers.baseRadius + ((laneCounts.followers - 1) * laneSpacing) + ringGap;
+  ringConfig.other.baseRadius = ringConfig.following.baseRadius + ((laneCounts.following - 1) * laneSpacing) + ringGap;
+
+  const outerRadius = ringConfig.other.baseRadius + ((laneCounts.other - 1) * laneSpacing);
+  const width = Math.max(960, Math.round((outerRadius * 2) + 320));
+  const height = hasFocusIsland
+    ? Math.max(1040, Math.round(outerRadius + 640))
+    : Math.max(880, Math.round((outerRadius * 2) + 240));
+  const centerX = width / 2;
+  const centerY = hasFocusIsland
+    ? 350 + Math.round(34 * densityFactor)
+    : Math.round(height / 2);
+  const focusCenterY = hasFocusIsland
+    ? Math.min(height - 190, centerY + outerRadius + (104 + Math.round(32 * densityFactor)))
+    : 0;
+
+  const positions = new Map();
+  Object.entries(groups).forEach(([groupName, groupNodes]) => {
+    const config = ringConfig[groupName] || ringConfig.other;
+    groupNodes.forEach((node) => {
+      const slot = ensureNetworkStageSlot(node);
+      const absoluteIndex = slot?.index || 0;
+      const lane = Math.floor(absoluteIndex / config.capacity);
+      const indexWithinLane = absoluteIndex % config.capacity;
+      const radius = config.baseRadius + (lane * laneSpacing);
+      const angle = (-Math.PI / 2)
+        + ((indexWithinLane / config.capacity) * Math.PI * 2)
+        + (lane * 0.12);
+      positions.set(node.did, getNetworkOrbitPoint(centerX, centerY, radius, angle));
+    });
+  });
+
+  return {
+    width,
+    height,
+    centerX,
+    centerY,
+    densityFactor,
+    ringRadii: {
+      mutual: ringConfig.mutual.baseRadius,
+      followers: ringConfig.followers.baseRadius,
+      following: ringConfig.following.baseRadius,
+    },
+    focusCenterY,
+    hasFocusIsland,
+    positions,
+  };
+}
+
+function renderNetworkStage() {
+  getAllNetworkNodes().forEach((node) => {
+    ensureNetworkStageSlot(node);
+  });
+  const visibleNodes = getVisibleNetworkNodes();
+  if (!visibleNodes.some((node) => node.did === networkHoveredDid)) {
+    setNetworkHoveredAccount("");
+  } else if (networkHoveredDid) {
+    setNetworkHoveredAccount(networkHoveredDid);
+  }
+  const selectedDid = getPreferredNetworkSelection(visibleNodes);
+  const stageSelectedDid = networkSelectedDid || selectedDid;
+  networkStageSvg.replaceChildren();
+  const hasData = visibleNodes.length > 0 || Boolean(networkViewerProfile?.did || authAccountDid);
+  networkStageEmpty.hidden = hasData;
+
+  const layout = computeNetworkLayout(visibleNodes, stageSelectedDid);
+  layout.contentBounds = computeNetworkStageContentBounds(layout, visibleNodes, stageSelectedDid);
+  const viewport = getNetworkStageViewport(layout);
+  networkStageSvg.setAttribute("viewBox", `${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`);
+  const activeCommonMutualDids = getActiveNetworkCommonMutualDids(stageSelectedDid);
+
+  const defs = createSvgNode("defs");
+  const stageGlow = createSvgNode("radialGradient", { id: "network-stage-glow" });
+  stageGlow.append(
+    createSvgNode("stop", { offset: "0%", "stop-color": "#58caff", "stop-opacity": "0.7" }),
+    createSvgNode("stop", { offset: "55%", "stop-color": "#58caff", "stop-opacity": "0.12" }),
+    createSvgNode("stop", { offset: "100%", "stop-color": "#58caff", "stop-opacity": "0" }),
+  );
+  defs.appendChild(stageGlow);
+  networkStageSvg.appendChild(defs);
+
+  const background = createSvgNode("g");
+  [
+    { radius: layout.ringRadii.mutual, color: "rgba(62, 160, 221, 0.24)" },
+    { radius: layout.ringRadii.followers, color: "rgba(62, 160, 221, 0.18)" },
+    { radius: layout.ringRadii.following, color: "rgba(62, 160, 221, 0.12)" },
+  ].forEach((entry) => {
+    const orbitPath = buildNetworkOrbitPath(layout.centerX, layout.centerY, entry.radius);
+    background.appendChild(createSvgNode(orbitPath ? "path" : "circle", orbitPath
+      ? {
+          d: orbitPath,
+          fill: "none",
+          stroke: entry.color,
+          "stroke-width": 1.5,
+        }
+      : {
+          cx: layout.centerX,
+          cy: layout.centerY,
+          r: entry.radius,
+          fill: "none",
+          stroke: entry.color,
+          "stroke-width": 1.5,
+        }));
+  });
+  background.appendChild(createSvgNode("circle", {
+    cx: layout.centerX,
+    cy: layout.centerY,
+    r: 110,
+    fill: "url(#network-stage-glow)",
+  }));
+  networkStageSvg.appendChild(background);
+
+  const edgeLayer = createSvgNode("g");
+  visibleNodes.forEach((node) => {
+    const point = layout.positions.get(node.did);
+    if (!point) {
+      return;
+    }
+    const isSelected = node.did === stageSelectedDid;
+    edgeLayer.appendChild(createSvgNode("line", {
+      x1: layout.centerX,
+      y1: layout.centerY,
+      x2: point.x,
+      y2: point.y,
+      stroke: isSelected ? "rgba(98, 229, 205, 0.95)" : "rgba(111, 154, 220, 0.26)",
+      "stroke-width": isSelected ? 2.2 : 1.1,
+    }));
+  });
+  networkStageSvg.appendChild(edgeLayer);
+
+  const viewerLayer = createSvgNode("g");
+  viewerLayer.appendChild(createSvgNode("circle", {
+    cx: layout.centerX,
+    cy: layout.centerY,
+    r: 46,
+    fill: "rgba(98, 229, 205, 0.92)",
+    stroke: "rgba(255, 255, 255, 0.92)",
+    "stroke-width": 2,
+  }));
+  const viewerText = createSvgNode("text", {
+    x: layout.centerX,
+    y: layout.centerY + 7,
+    "text-anchor": "middle",
+    fill: "#091320",
+    "font-size": 20,
+    "font-weight": 800,
+  });
+  viewerText.textContent = networkAccountDid === authAccountDid
+    ? "DU"
+    : getProfileInitials(networkViewerProfile || { handle: "?" });
+  viewerLayer.appendChild(viewerText);
+  const viewerHandleText = createSvgNode("text", {
+    x: layout.centerX,
+    y: layout.centerY + 76,
+    "text-anchor": "middle",
+    class: "network-node-label",
+  });
+  viewerHandleText.textContent = `@${networkViewerProfile?.handle || authAccount || "account"}`;
+  viewerLayer.appendChild(viewerHandleText);
+  networkStageSvg.appendChild(viewerLayer);
+
+  let focusLayer = null;
+
+  if (stageSelectedDid) {
+    const selectedProfile = getKnownNetworkProfile(stageSelectedDid);
+    const focusPreviewItems = getNetworkStageFocusPreviewItems(stageSelectedDid);
+    const focusCenterX = layout.centerX;
+    const focusCenterY = layout.focusCenterY;
+    const focusRadius = 108;
+    focusLayer = createSvgNode("g", {
+      class: "network-focus-island",
+    });
+    const focusShield = createSvgNode("circle", {
+      cx: focusCenterX,
+      cy: focusCenterY,
+      r: focusRadius + 42,
+      fill: "rgba(0, 0, 0, 0.001)",
+    });
+    const stopFocusIslandEvent = (event) => {
+      event.stopPropagation();
+    };
+    focusShield.addEventListener("pointerdown", stopFocusIslandEvent);
+    focusShield.addEventListener("click", stopFocusIslandEvent);
+    focusShield.addEventListener("dblclick", stopFocusIslandEvent);
+    focusLayer.appendChild(focusShield);
+
+    focusLayer.appendChild(createSvgNode("circle", {
+      cx: focusCenterX,
+      cy: focusCenterY,
+      r: focusRadius + 18,
+      fill: "rgba(11, 26, 48, 0.4)",
+      stroke: "rgba(95, 157, 255, 0.1)",
+      "stroke-width": 1,
+    }));
+    focusLayer.appendChild(createSvgNode("circle", {
+      cx: focusCenterX,
+      cy: focusCenterY,
+      r: focusRadius,
+      fill: "none",
+      stroke: "rgba(96, 174, 255, 0.24)",
+      "stroke-width": 1.6,
+      "stroke-dasharray": "4 8",
+    }));
+
+    const focusBridge = createSvgNode("line", {
+      x1: layout.centerX,
+      y1: layout.centerY + 56,
+      x2: focusCenterX,
+      y2: focusCenterY - focusRadius,
+      stroke: "rgba(98, 229, 205, 0.28)",
+      "stroke-width": 1.8,
+    });
+    focusLayer.appendChild(focusBridge);
+
+    const focusHint = createSvgNode("text", {
+      x: focusCenterX,
+      y: focusCenterY - focusRadius - 18,
+      "text-anchor": "middle",
+      class: "network-stage-hint network-stage-hint-focus",
+    });
+    focusHint.textContent = t("networkFocusEyebrow");
+    focusLayer.appendChild(focusHint);
+
+    const focusCenterGroup = createSvgNode("g", {
+      class: "network-node-button network-node-button-focus-center",
+      tabindex: 0,
+      role: "button",
+      "aria-label": `${selectedProfile?.displayName || selectedProfile?.handle || stageSelectedDid} · ${t("networkFocusEyebrow")}`,
+    });
+    focusCenterGroup.style.cursor = "pointer";
+    focusCenterGroup.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    focusCenterGroup.addEventListener("mouseenter", () => {
+      setNetworkHoveredAccount(stageSelectedDid);
+    });
+    focusCenterGroup.addEventListener("mouseleave", () => {
+      if (networkHoveredDid === stageSelectedDid) {
+        setNetworkHoveredAccount("");
+      }
+    });
+    focusCenterGroup.addEventListener("focus", () => {
+      setNetworkHoveredAccount(stageSelectedDid);
+    });
+    focusCenterGroup.addEventListener("blur", () => {
+      if (networkHoveredDid === stageSelectedDid) {
+        setNetworkHoveredAccount("");
+      }
+    });
+    focusCenterGroup.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setNetworkSelection(stageSelectedDid);
+    });
+    focusCenterGroup.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        setNetworkSelection(stageSelectedDid);
+      }
+    });
+    if (selectedProfile) {
+      const title = createSvgNode("title");
+      title.textContent = getProfileLabel(selectedProfile);
+      focusCenterGroup.appendChild(title);
+    }
+
+    focusCenterGroup.appendChild(createSvgNode("circle", {
+      cx: focusCenterX,
+      cy: focusCenterY,
+      r: 30,
+      fill: "rgba(98, 229, 205, 0.92)",
+      stroke: "#ffffff",
+      "stroke-width": 2.2,
+    }));
+    const focusInitials = createSvgNode("text", {
+      x: focusCenterX,
+      y: focusCenterY + 5,
+      "text-anchor": "middle",
+      fill: "#091320",
+      "font-size": 15,
+      "font-weight": 800,
+    });
+    focusInitials.textContent = getProfileInitials(selectedProfile || networkNodes.get(stageSelectedDid) || { handle: "?" });
+    focusCenterGroup.appendChild(focusInitials);
+
+    const focusHandle = createSvgNode("text", {
+      x: focusCenterX,
+      y: focusCenterY + 54,
+      "text-anchor": "middle",
+      class: "network-node-label",
+    });
+    focusHandle.textContent = `@${selectedProfile?.handle || networkNodes.get(stageSelectedDid)?.handle || "user"}`;
+    focusCenterGroup.appendChild(focusHandle);
+    focusLayer.appendChild(focusCenterGroup);
+
+    if (activeCommonMutualDids.size) {
+      const commonLinkLayer = createSvgNode("g", {
+        class: "network-common-mutual-layer",
+      });
+      activeCommonMutualDids.forEach((did) => {
+        const point = layout.positions.get(did);
+        if (!point) {
+          return;
+        }
+        commonLinkLayer.appendChild(createSvgNode("line", {
+          x1: focusCenterX,
+          y1: focusCenterY,
+          x2: point.x,
+          y2: point.y,
+          stroke: "rgba(92, 231, 207, 0.72)",
+          "stroke-width": 2.2,
+          "stroke-dasharray": "5 6",
+        }));
+      });
+      focusLayer.appendChild(commonLinkLayer);
+    }
+
+    focusPreviewItems.forEach((entry, index) => {
+      const angle = (-Math.PI / 2) + ((index / Math.max(1, focusPreviewItems.length)) * Math.PI * 2);
+      const orbitRadius = 76;
+      const pointX = focusCenterX + Math.cos(angle) * orbitRadius;
+      const pointY = focusCenterY + Math.sin(angle) * orbitRadius;
+      const previewColor = entry.previewRelation === "followers" ? "#69a9ff" : "#f8c26c";
+      const previewGroup = createSvgNode("g", {
+        class: "network-node-button network-node-button-preview",
+        tabindex: 0,
+        role: "button",
+        "aria-label": `${entry.displayName || entry.handle || entry.did} · ${entry.previewRelation === "followers" ? t("networkPreviewFollowersTitle") : t("networkPreviewFollowingTitle")}`,
+      });
+      previewGroup.style.cursor = "pointer";
+      previewGroup.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
+      previewGroup.addEventListener("mouseenter", () => {
+        setNetworkHoveredAccount(entry.did);
+      });
+      previewGroup.addEventListener("mouseleave", () => {
+        if (networkHoveredDid === entry.did) {
+          setNetworkHoveredAccount("");
+        }
+      });
+      previewGroup.addEventListener("focus", () => {
+        setNetworkHoveredAccount(entry.did);
+      });
+      previewGroup.addEventListener("blur", () => {
+        if (networkHoveredDid === entry.did) {
+          setNetworkHoveredAccount("");
+        }
+      });
+      previewGroup.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setNetworkSelection(entry.did, {
+          previewTab: entry.previewRelation,
+          loadDetails: true,
+        });
+      });
+      previewGroup.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          setNetworkSelection(entry.did, {
+            previewTab: entry.previewRelation,
+            loadDetails: true,
+          });
+        }
+      });
+      previewGroup.appendChild(createSvgNode("line", {
+        x1: focusCenterX,
+        y1: focusCenterY,
+        x2: pointX,
+        y2: pointY,
+        stroke: "rgba(152, 196, 255, 0.32)",
+        "stroke-width": 1.2,
+      }));
+      previewGroup.appendChild(createSvgNode("circle", {
+        cx: pointX,
+        cy: pointY,
+        r: 16,
+        fill: previewColor,
+        stroke: "rgba(255, 255, 255, 0.82)",
+        "stroke-width": 1.4,
+      }));
+      const previewInitials = createSvgNode("text", {
+        x: pointX,
+        y: pointY + 4,
+        "text-anchor": "middle",
+        fill: "#091320",
+        "font-size": 10,
+        "font-weight": 800,
+      });
+      previewInitials.textContent = getProfileInitials(entry);
+      previewGroup.appendChild(previewInitials);
+      const previewTitle = createSvgNode("title");
+      previewTitle.textContent = getProfileLabel(entry);
+      previewGroup.appendChild(previewTitle);
+      focusLayer.appendChild(previewGroup);
+    });
+
+  }
+
+  const nodeLayer = createSvgNode("g");
+  const labelCandidates = getNetworkStageLabelCandidates(visibleNodes, stageSelectedDid);
+
+  visibleNodes.forEach((node) => {
+    const point = layout.positions.get(node.did);
+    if (!point) {
+      return;
+    }
+    const relation = getNetworkRelationType(node);
+    const isSelected = node.did === stageSelectedDid;
+    const radius = isSelected ? 22 : (relation === "mutual" ? 18 : 15);
+    const isCommonMutual = activeCommonMutualDids.has(node.did);
+    const color = relation === "mutual"
+      ? "#5ce7cf"
+      : (relation === "followers" ? "#69a9ff" : (relation === "following" ? "#f8c26c" : "#bac6d6"));
+
+    const buttonGroup = createSvgNode("g", {
+      class: "network-node-button",
+      tabindex: 0,
+      role: "button",
+      "aria-label": `${node.displayName || node.handle || node.did} · ${getNetworkRelationLabel(node)}`,
+    });
+    buttonGroup.style.cursor = "pointer";
+    buttonGroup.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    buttonGroup.addEventListener("mouseenter", () => {
+      setNetworkHoveredAccount(node.did);
+    });
+    buttonGroup.addEventListener("mouseleave", () => {
+      if (networkHoveredDid === node.did) {
+        setNetworkHoveredAccount("");
+      }
+    });
+    buttonGroup.addEventListener("focus", () => {
+      setNetworkHoveredAccount(node.did);
+    });
+    buttonGroup.addEventListener("blur", () => {
+      if (networkHoveredDid === node.did) {
+        setNetworkHoveredAccount("");
+      }
+    });
+    buttonGroup.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setNetworkSelection(node.did);
+    });
+    buttonGroup.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        setNetworkSelection(node.did);
+      }
+    });
+    const title = createSvgNode("title");
+    title.textContent = getProfileLabel(node);
+    buttonGroup.appendChild(title);
+
+    buttonGroup.appendChild(createSvgNode("circle", {
+      cx: point.x,
+      cy: point.y,
+      r: radius + (isSelected ? 5 : 0),
+      fill: isSelected ? "rgba(255, 255, 255, 0.16)" : "rgba(255, 255, 255, 0.04)",
+    }));
+    if (isCommonMutual) {
+      buttonGroup.appendChild(createSvgNode("circle", {
+        cx: point.x,
+        cy: point.y,
+        r: radius + 10,
+        fill: "rgba(92, 231, 207, 0.08)",
+        stroke: "rgba(92, 231, 207, 0.34)",
+        "stroke-width": 6,
+      }));
+      buttonGroup.appendChild(createSvgNode("circle", {
+        cx: point.x,
+        cy: point.y,
+        r: radius + 7,
+        fill: "none",
+        stroke: "rgba(255, 255, 255, 0.92)",
+        "stroke-width": 2.2,
+      }));
+      buttonGroup.appendChild(createSvgNode("circle", {
+        cx: point.x,
+        cy: point.y,
+        r: radius + 4,
+        fill: "none",
+        stroke: "rgba(92, 231, 207, 1)",
+        "stroke-width": 2.8,
+        "stroke-dasharray": "4 4",
+      }));
+    }
+    buttonGroup.appendChild(createSvgNode("circle", {
+      cx: point.x,
+      cy: point.y,
+      r: radius,
+      fill: color,
+      stroke: isSelected ? "#ffffff" : "rgba(255, 255, 255, 0.38)",
+      "stroke-width": isSelected ? 2.4 : 1.4,
+    }));
+    const initials = createSvgNode("text", {
+      x: point.x,
+      y: point.y + 5,
+      "text-anchor": "middle",
+      fill: "#06111f",
+      "font-size": isSelected ? 14 : 12,
+      "font-weight": 800,
+    });
+    initials.textContent = getProfileInitials(node);
+    buttonGroup.appendChild(initials);
+
+    if (labelCandidates.includes(node.did)) {
+      const label = createSvgNode("text", {
+        x: point.x,
+        y: point.y + radius + 22,
+        "text-anchor": "middle",
+        class: "network-node-label",
+      });
+      label.textContent = `@${node.handle || "user"}`;
+      buttonGroup.appendChild(label);
+    }
+
+    nodeLayer.appendChild(buttonGroup);
+  });
+  networkStageSvg.appendChild(nodeLayer);
+  if (focusLayer) {
+    networkStageSvg.appendChild(focusLayer);
+  }
+
+  if (!hasData) {
+    const emptyHint = createSvgNode("text", {
+      x: layout.centerX,
+      y: layout.centerY - 12,
+      "text-anchor": "middle",
+      class: "network-stage-hint",
+    });
+    emptyHint.textContent = t("networkEmpty");
+    networkStageSvg.appendChild(emptyHint);
+  }
+}
+
+function renderNetworkFocus() {
+  const fallback = document.createElement("p");
+  fallback.className = "settings-note";
+  fallback.textContent = networkNodes.size ? t("networkFocusEmpty") : t("networkEmpty");
+  if (!networkSelectedDid) {
+    networkFocusCard.replaceChildren(fallback);
+    return;
+  }
+  const selectedProfile = networkSelectedDid ? getKnownNetworkProfile(networkSelectedDid) : null;
+  const node = networkSelectedDid ? networkNodes.get(networkSelectedDid) : null;
+  const focusData = networkSelectedDid ? networkFocusDetails.get(networkSelectedDid) || null : null;
+  const active = focusData?.profile || selectedProfile || node || networkViewerProfile || null;
+  networkFocusCard.replaceChildren();
+
+  if (!active) {
+    networkFocusCard.appendChild(fallback);
+    return;
+  }
+
+  const shell = document.createElement("div");
+  shell.className = "network-focus-shell";
+  const summary = document.createElement("section");
+  summary.className = "network-focus-summary";
+
+  const header = document.createElement("div");
+  header.className = "network-focus-head";
+  const badge = document.createElement("div");
+  badge.className = "network-avatar-badge";
+  const activeAvatarUri = active.did ? getStoredAccountAvatarUri(active) : (active.avatar || "");
+  if (activeAvatarUri) {
+    const image = document.createElement("img");
+    image.src = activeAvatarUri;
+    image.alt = active.displayName || active.handle || "avatar";
+    badge.appendChild(image);
+  } else {
+    badge.textContent = node ? getProfileInitials(node) : "DU";
+  }
+
+  const copy = document.createElement("div");
+  copy.className = "network-avatar-copy";
+  const name = document.createElement("strong");
+  name.textContent = active.displayName || active.handle || authAccount || t("networkViewerFallback");
+  const handle = document.createElement("span");
+  handle.className = "network-handle";
+  handle.textContent = `@${active.handle || authAccount || "account"}`;
+  copy.append(name, handle);
+  header.append(badge, copy);
+
+  const relation = document.createElement("span");
+  relation.className = "network-relation-pill";
+  relation.textContent = node ? getNetworkRelationLabel(node) : t("networkRelationViewer");
+
+  const focusActions = document.createElement("div");
+  focusActions.className = "network-focus-actions";
+  if (active?.did) {
+    const loadActorNetworkButton = document.createElement("button");
+    loadActorNetworkButton.type = "button";
+    loadActorNetworkButton.className = "ghost-button network-focus-action-button";
+    loadActorNetworkButton.textContent = t("networkFocusLoadActorButton");
+    loadActorNetworkButton.disabled = networkLoading || active.did === networkAccountDid;
+    loadActorNetworkButton.addEventListener("click", () => {
+      if (networkAccountInput) {
+        networkAccountInput.value = active.handle || active.did || "";
+      }
+      void loadNetworkWave({
+        actor: active.did || active.handle || "",
+        append: false,
+        silentErrors: false,
+      });
+    });
+    focusActions.appendChild(loadActorNetworkButton);
+
+    const commonMutualsButton = document.createElement("button");
+    commonMutualsButton.type = "button";
+    commonMutualsButton.className = "ghost-button network-focus-action-button";
+    const commonMutualsActive = networkCommonMutualsTargetDid === active.did;
+    commonMutualsButton.textContent = commonMutualsActive
+      ? t("networkCommonMutualsHideButton")
+      : t("networkCommonMutualsShowButton");
+    commonMutualsButton.disabled = networkLoading || networkCommonMutualsLoadingDid === active.did || active.did === networkAccountDid;
+    commonMutualsButton.addEventListener("click", () => {
+      if (networkCommonMutualsTargetDid === active.did) {
+        clearNetworkCommonMutuals();
+        renderNetworkWorkspace();
+        return;
+      }
+      void loadNetworkCommonMutuals(active.did);
+    });
+    focusActions.appendChild(commonMutualsButton);
+  }
+
+  const stats = document.createElement("div");
+  stats.className = "network-stat-grid";
+  [
+    { label: t("networkStatFollowers"), value: formatCount(active.followersCount) },
+    { label: t("networkStatFollowing"), value: formatCount(active.followsCount) },
+    { label: t("networkStatPosts"), value: formatCount(active.postsCount) },
+    { label: t("networkStatScore"), value: node ? formatCount(getNetworkNodeScore(node)) : "—" },
+  ].forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "network-stat-card";
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    const value = document.createElement("strong");
+    value.textContent = item.value;
+    card.append(label, value);
+    stats.appendChild(card);
+  });
+
+  summary.append(header, relation, focusActions, stats);
+
+  if (node) {
+    const scoreBreakdown = getNetworkScoreBreakdown(node);
+    const scoreExplain = document.createElement("p");
+    scoreExplain.className = "network-card-explainer";
+    scoreExplain.textContent = t(isViewingOwnNetwork() ? "networkScoreExplain" : "networkScoreExplainOther", {
+      score: formatCount(scoreBreakdown.total),
+      relation: getNetworkRelationLabel(node),
+      account: getNetworkCenterLabel(),
+      relationScore: formatCount(scoreBreakdown.relationScore),
+      followersScore: formatCount(scoreBreakdown.followersScore),
+      postsScore: formatCount(scoreBreakdown.postsScore),
+    });
+    summary.appendChild(scoreExplain);
+  }
+
+  if (active?.did === networkCommonMutualsTargetDid) {
+    const commonMeta = document.createElement("div");
+    commonMeta.className = "network-relationship-meta";
+    const commonCount = document.createElement("p");
+    commonCount.className = "network-card-explainer network-card-explainer-strong";
+    commonCount.textContent = networkCommonMutualsDids.size
+      ? t("networkCommonMutualsCount", {
+          count: formatCount(networkCommonMutualsDids.size),
+        })
+      : t("networkCommonMutualsZero");
+    commonMeta.appendChild(commonCount);
+    const commonWhere = document.createElement("p");
+    commonWhere.className = "network-card-explainer";
+    commonWhere.textContent = t("networkCommonMutualsWhereShown");
+    commonMeta.appendChild(commonWhere);
+    const commonSample = document.createElement("p");
+    commonSample.className = "network-card-explainer";
+    commonSample.textContent = t("networkCommonMutualsSampleNote");
+    commonMeta.appendChild(commonSample);
+    summary.appendChild(commonMeta);
+  } else if (networkCommonMutualsLoadingDid === active?.did) {
+    const commonLoading = document.createElement("p");
+    commonLoading.className = "network-card-explainer";
+    commonLoading.textContent = t("networkCommonMutualsLoading");
+    summary.appendChild(commonLoading);
+  }
+
+  const youFollowSince = formatNetworkRelationshipDate(focusData?.relationshipDates?.youFollowSince);
+  const followsYouSince = formatNetworkRelationshipDate(focusData?.relationshipDates?.followsYouSince);
+  if (isViewingOwnNetwork() && (youFollowSince || followsYouSince)) {
+    const relationshipMeta = document.createElement("div");
+    relationshipMeta.className = "network-relationship-meta";
+    if (youFollowSince && followsYouSince) {
+      const mutualSince = new Date(Math.max(
+        Date.parse(focusData.relationshipDates.youFollowSince || 0),
+        Date.parse(focusData.relationshipDates.followsYouSince || 0),
+      ));
+      const mutualLine = document.createElement("p");
+      mutualLine.className = "network-card-explainer";
+      mutualLine.textContent = t("networkMutualSince", {
+        date: new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium" }).format(mutualSince),
+      });
+      relationshipMeta.appendChild(mutualLine);
+    }
+    if (youFollowSince) {
+      const followLine = document.createElement("p");
+      followLine.className = "network-card-explainer";
+      followLine.textContent = t("networkYouFollowSince", {
+        date: youFollowSince,
+      });
+      relationshipMeta.appendChild(followLine);
+    }
+    if (followsYouSince) {
+      const followedByLine = document.createElement("p");
+      followedByLine.className = "network-card-explainer";
+      followedByLine.textContent = t("networkFollowsYouSince", {
+        date: followsYouSince,
+      });
+      relationshipMeta.appendChild(followedByLine);
+    }
+    summary.appendChild(relationshipMeta);
+  }
+
+  if (focusData?.activityStats) {
+    const activity14 = getNetworkActivityWindow(focusData.activityStats, 14);
+    const activity60 = getNetworkActivityWindow(focusData.activityStats, 60);
+    const latestPost = formatNetworkActivityLastPost(focusData.activityStats.latestPostAt);
+    if (activity14 || activity60 || latestPost) {
+      const activityMeta = document.createElement("div");
+      activityMeta.className = "network-relationship-meta";
+
+      const activityTitle = document.createElement("p");
+      activityTitle.className = "network-card-explainer network-card-explainer-strong";
+      activityTitle.textContent = t("networkActivityTitle");
+      activityMeta.appendChild(activityTitle);
+
+      if (latestPost) {
+        const latestLine = document.createElement("p");
+        latestLine.className = "network-card-explainer";
+        latestLine.textContent = t("networkLatestPost", {
+          date: latestPost,
+        });
+        activityMeta.appendChild(latestLine);
+      }
+
+      if (activity14) {
+        const posts14 = document.createElement("p");
+        posts14.className = "network-card-explainer";
+        posts14.textContent = t("networkRecentPostsWindow", {
+          days: "14",
+          count: formatCount(activity14.postsCount),
+        });
+        activityMeta.appendChild(posts14);
+
+        const likes14 = document.createElement("p");
+        likes14.className = "network-card-explainer";
+        likes14.textContent = t("networkRecentLikesWindow", {
+          days: "14",
+          count: formatCount(activity14.likesReceivedCount),
+        });
+        activityMeta.appendChild(likes14);
+      }
+
+      if (activity60) {
+        const posts60 = document.createElement("p");
+        posts60.className = "network-card-explainer";
+        posts60.textContent = t("networkRecentPostsWindow", {
+          days: "60",
+          count: formatCount(activity60.postsCount),
+        });
+        activityMeta.appendChild(posts60);
+
+        const likes60 = document.createElement("p");
+        likes60.className = "network-card-explainer";
+        likes60.textContent = t("networkRecentLikesWindow", {
+          days: "60",
+          count: formatCount(activity60.likesReceivedCount),
+        });
+        activityMeta.appendChild(likes60);
+      }
+
+      const activitySample = document.createElement("p");
+      activitySample.className = "network-card-explainer";
+      activitySample.textContent = t("networkActivitySampleNote", {
+        count: formatCount(focusData.activityStats.samplePosts || 0),
+      });
+      activityMeta.appendChild(activitySample);
+
+      summary.appendChild(activityMeta);
+    }
+  }
+
+  if (isViewingOwnNetwork() && focusData?.likeStats) {
+    const likeMeta = document.createElement("div");
+    likeMeta.className = "network-relationship-meta";
+
+    const totalLikes = document.createElement("p");
+    totalLikes.className = "network-card-explainer";
+    totalLikes.textContent = t("networkMutualLikesTotal", {
+      count: formatCount(focusData.likeStats.mutualLikesCount || 0),
+    });
+    likeMeta.appendChild(totalLikes);
+
+    const youLike = document.createElement("p");
+    youLike.className = "network-card-explainer";
+    youLike.textContent = t("networkYouLikePosts", {
+      count: formatCount(focusData.likeStats.youLikeCount || 0),
+    });
+    likeMeta.appendChild(youLike);
+
+    const likesYou = document.createElement("p");
+    likesYou.className = "network-card-explainer";
+    likesYou.textContent = t("networkTheyLikeYourPosts", {
+      count: formatCount(focusData.likeStats.likesYouCount || 0),
+    });
+    likeMeta.appendChild(likesYou);
+
+    const sampleNote = document.createElement("p");
+    sampleNote.className = "network-card-explainer";
+    sampleNote.textContent = t("networkLikesSampleNote", {
+      own: formatCount(focusData.likeStats.ownPostsSampled || 0),
+      actor: formatCount(focusData.likeStats.actorPostsSampled || 0),
+      total: formatCount(focusData.likeStats.totalSample || 0),
+    });
+    likeMeta.appendChild(sampleNote);
+
+    summary.appendChild(likeMeta);
+  }
+
+  if (active?.description) {
+    const descriptionWrap = document.createElement("details");
+    descriptionWrap.className = "network-description-disclosure";
+    const descriptionSummary = document.createElement("summary");
+    descriptionSummary.textContent = t("networkDescriptionButton");
+    const description = document.createElement("p");
+    description.className = "network-description";
+    description.textContent = active.description;
+    descriptionWrap.append(descriptionSummary, description);
+    summary.appendChild(descriptionWrap);
+  }
+
+  if (networkFocusLoadingDid && node?.did === networkFocusLoadingDid) {
+    const loading = document.createElement("p");
+    loading.className = "settings-note";
+    loading.textContent = t("networkFocusLoading");
+    summary.appendChild(loading);
+  }
+
+  if (focusData && node) {
+    const previewMeta = document.createElement("p");
+    previewMeta.className = "network-card-explainer";
+    previewMeta.textContent = t("networkStagePreviewMeta", {
+      followers: formatCount(focusData.followersPreview?.length || 0),
+      following: formatCount(focusData.followsPreview?.length || 0),
+    });
+    summary.appendChild(previewMeta);
+  }
+
+  shell.appendChild(summary);
+  networkFocusCard.appendChild(shell);
+}
+
+function renderNetworkResults() {
+  networkResults.replaceChildren();
+  const allNodes = getAllNetworkNodes();
+  if (!allNodes.length) {
+    const empty = document.createElement("p");
+    empty.className = "settings-note";
+    empty.textContent = t("networkResultsEmpty");
+    networkResults.appendChild(empty);
+    return;
+  }
+
+  const centerLabel = getNetworkCenterLabel();
+  const groups = [
+    [
+      "mutual",
+      t("networkGroupMutuals"),
+      isViewingOwnNetwork()
+        ? t("networkGroupMutualsNote")
+        : t("networkGroupMutualsNoteOther", { account: centerLabel }),
+    ],
+    [
+      "followers",
+      t("networkGroupFollowers"),
+      isViewingOwnNetwork()
+        ? t("networkGroupFollowersNote")
+        : t("networkGroupFollowersNoteOther", { account: centerLabel }),
+    ],
+    [
+      "following",
+      t("networkGroupFollowing"),
+      isViewingOwnNetwork()
+        ? t("networkGroupFollowingNote")
+        : t("networkGroupFollowingNoteOther", { account: centerLabel }),
+    ],
+  ];
+
+  const introCard = document.createElement("article");
+  introCard.className = "network-group-card network-group-card-intro";
+  const introTitle = document.createElement("strong");
+  introTitle.textContent = t("networkTopConnectionsTitle");
+  const introBody = document.createElement("p");
+  introBody.className = "network-card-explainer";
+  introBody.textContent = t("networkTopConnectionsMeta", {
+    total: formatCount(allNodes.length),
+    visible: formatCount(getVisibleNetworkNodes().length),
+  });
+  introCard.append(introTitle, introBody);
+  networkResults.appendChild(introCard);
+
+  groups.forEach(([groupKey, titleText, noteText]) => {
+    const groupItems = allNodes
+      .filter((node) => getNetworkRelationType(node) === groupKey);
+    const totalCount = groupItems.length;
+    const card = document.createElement("article");
+    card.className = "network-group-card";
+    const title = document.createElement("strong");
+    title.textContent = `${titleText} · ${formatCount(totalCount)}`;
+    const note = document.createElement("p");
+    note.className = "network-card-explainer";
+    note.textContent = noteText;
+    card.append(title, note);
+
+    if (!groupItems.length) {
+      const empty = document.createElement("p");
+      empty.className = "settings-note";
+      empty.textContent = t("networkGroupEmpty");
+      card.appendChild(empty);
+    } else {
+      const list = document.createElement("div");
+      list.className = "network-scroll-list";
+      groupItems.forEach((node) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "network-list-button";
+        button.addEventListener("click", () => {
+          setNetworkSelection(node.did);
+        });
+        const name = document.createElement("strong");
+        name.textContent = node.displayName || node.handle || node.did;
+        const meta = document.createElement("span");
+        meta.className = "network-list-meta";
+        meta.textContent = `@${node.handle || node.did} · ${formatCount(getNetworkNodeScore(node))}`;
+        button.append(name, meta);
+        list.appendChild(button);
+      });
+      card.appendChild(list);
+    }
+
+    if (hasPendingNetworkDataForGroup(groupKey)) {
+      const moreButton = document.createElement("button");
+      moreButton.type = "button";
+      moreButton.className = "ghost-button network-more-button";
+      moreButton.textContent = t("networkShowMoreButton");
+      moreButton.disabled = networkLoading;
+      moreButton.addEventListener("click", async () => {
+        await loadMoreNetworkGroup(groupKey);
+      });
+      const moreNote = document.createElement("p");
+      moreNote.className = "network-card-explainer";
+      moreNote.textContent = t("networkShowMoreNote");
+      card.append(moreButton, moreNote);
+    }
+
+    networkResults.appendChild(card);
+  });
+}
+
+function updateNetworkControls() {
+  const canLoadMore = networkHasMoreFollowers || networkHasMoreFollows || !networkNodes.size;
+  const requestedActor = getRequestedNetworkActor();
+  const loadButtonLabel = networkLoading
+    ? t("networkLoadingButton")
+    : canLoadMore && networkNodes.size
+    ? t("networkLoadMoreButton")
+    : t("networkLoadButton");
+  networkLoadButton.textContent = loadButtonLabel;
+  networkLoadButton.disabled = networkLoading || !authAccount || !canLoadMore;
+  networkLoadButton.title = !authAccount
+    ? t("networkLoadButton")
+    : networkLoading
+    ? t("networkLoadingButton")
+    : canLoadMore && networkNodes.size
+    ? t("networkLoadMoreTitle")
+    : canLoadMore
+    ? t("networkLoadButton")
+    : t("networkLoadFinishedTitle");
+  networkResetButton.disabled = networkLoading || (!networkNodes.size && !networkSearchQuery && networkFilterMode === "all");
+  if (networkOwnLoadButton) {
+    networkOwnLoadButton.disabled = networkLoading || !authAccount || isViewingOwnNetwork();
+  }
+  if (networkAccountLoadButton) {
+    networkAccountLoadButton.disabled = networkLoading || !authAccount || !requestedActor;
+  }
+}
+
+function renderNetworkWorkspace() {
+  ensureNetworkStateForAccount();
+  if (networkAccountInput && !networkAccountInput.matches(":focus")) {
+    networkAccountInput.value = String(networkAccountInput.value || "").trim() || networkViewerProfile?.handle || "";
+  }
+  networkCanvasPanel?.classList.toggle("has-focus", Boolean(networkSelectedDid));
+  networkCanvasPanel?.classList.toggle("has-focus-collapsed", Boolean(networkSelectedDid) && networkFocusCollapsed);
+  networkCanvasPanel?.classList.toggle("is-squircle", networkStageShape === NETWORK_STAGE_SHAPE_SQUIRCLE);
+  networkFocusPanel?.classList.toggle("is-collapsed", networkFocusCollapsed);
+  if (networkShapeToggleButton) {
+    const isSquircle = networkStageShape === NETWORK_STAGE_SHAPE_SQUIRCLE;
+    networkShapeToggleButton.classList.toggle("is-active", isSquircle);
+    networkShapeToggleButton.setAttribute("aria-pressed", isSquircle ? "true" : "false");
+    networkShapeToggleButton.title = isSquircle ? t("networkShapeDisableTitle") : t("networkShapeEnableTitle");
+  }
+  if (networkFocusToggleButton) {
+    networkFocusToggleButton.innerHTML = createIconSvg(
+      networkFocusCollapsed
+        ? "M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"
+        : "M7.4 15.4 12 10.8l4.6 4.6L18 14l-6-6-6 6z",
+    );
+    networkFocusToggleButton.setAttribute("aria-expanded", networkFocusCollapsed ? "false" : "true");
+    networkFocusToggleButton.setAttribute("aria-label", networkFocusCollapsed ? t("networkFocusExpand") : t("networkFocusCollapse"));
+    networkFocusToggleButton.disabled = !networkSelectedDid;
+  }
+  updateNetworkFilterButtons();
+  renderNetworkSummary();
+  renderNetworkStage();
+  renderNetworkFocus();
+  renderNetworkResults();
+  updateNetworkControls();
+  setNetworkStatus(networkStatusLine || t("networkProgressIdle"));
+  if (networkSelectedDid && !networkFocusDetails.has(networkSelectedDid) && networkFocusLoadingDid !== networkSelectedDid) {
+    void loadNetworkFocusDetails(networkSelectedDid);
+  }
+}
+
+async function loadNetworkWave(options = {}) {
+  if (!authAccount || networkLoading) {
+    return;
+  }
+
+  const requestedActor = String(
+    options.actor
+      || (options.append === true
+        ? (networkViewerProfile?.did || networkAccountDid || authAccountDid || "")
+        : getRequestedNetworkActor()),
+  ).trim();
+  if (!requestedActor) {
+    return;
+  }
+
+  const currentActorIdentity = String(networkViewerProfile?.handle || networkAccountDid || "").trim().toLowerCase();
+  const requestedActorIdentity = requestedActor.toLowerCase();
+  const switchActor = options.append !== true && (!networkNodes.size || !currentActorIdentity || currentActorIdentity !== requestedActorIdentity);
+
+  ensureNetworkStateForAccount();
+  if (switchActor) {
+    networkAccountDid = requestedActor;
+    resetNetworkState();
+    networkAccountDid = requestedActor;
+    networkFilterMode = "all";
+    networkSearchQuery = "";
+    if (networkSearchInput) {
+      networkSearchInput.value = "";
+    }
+    networkStatusLine = t("networkProgressLoading");
+  }
+  networkLoading = true;
+  updateNetworkControls();
+  setBusy(networkLoadButton, true, t("networkLoadingButton"), t("networkLoadButton"));
+
+  try {
+    const result = await sendToServiceWorker("LOAD_NETWORK_SLICE", {
+      actor: requestedActor,
+      followerCursor: networkFollowerCursor,
+      followCursor: networkFollowCursor,
+      limit: 500,
+    }, {
+      timeoutMs: 180000,
+      onProgress(progress) {
+        const step = String(progress?.step || "").trim();
+        const detail = String(progress?.detail || "").trim();
+        setNetworkStatus([step, detail].filter(Boolean).join(" · ") || t("networkProgressLoading"));
+      },
+    });
+
+    networkAccountDid = result?.viewer?.did || networkAccountDid || requestedActor;
+    networkViewerProfile = result?.viewer || networkViewerProfile;
+    if (networkAccountInput) {
+      networkAccountInput.value = networkViewerProfile?.handle || requestedActor;
+    }
+    ingestNetworkProfiles(result?.followers || []);
+    ingestNetworkProfiles(result?.follows || []);
+    networkFollowerCursor = String(result?.followerCursor || "");
+    networkFollowCursor = String(result?.followCursor || "");
+    networkHasMoreFollowers = result?.hasMoreFollowers === true;
+    networkHasMoreFollows = result?.hasMoreFollows === true;
+    networkWaveIndex += 1;
+    setNetworkStatus(t("networkProgressLoaded", {
+      wave: networkWaveIndex,
+      loaded: formatCount(networkNodes.size),
+      followers: formatCount((result?.wave?.followers) || 0),
+      follows: formatCount((result?.wave?.follows) || 0),
+    }));
+  } catch (error) {
+    console.error(error);
+    setNetworkStatus(error.message || t("networkLoadFailed"));
+    if (!options.silentErrors) {
+      showErrorDialog(error.message || t("networkLoadFailed"), t("archiveErrorTitle"));
+    }
+  } finally {
+    networkLoading = false;
+    setBusy(networkLoadButton, false, t("networkLoadingButton"), t("networkLoadButton"));
+    renderNetworkWorkspace();
+  }
+}
+
+function getDmFilters() {
+  return {
+    participantDid: dmSelectedParticipantDids[0] || "",
+    from: dmFromInput?.value || "",
+    to: dmToInput?.value || "",
+  };
+}
+
+function setDmProgress({ title, step, percent = 0, detail = "" } = {}) {
+  dmJobState = {
+    title: title || t("dmProgressIdleTitle"),
+    step: step || t("dmProgressIdleStep"),
+    percent: Math.max(0, Math.min(100, Number(percent) || 0)),
+    detail: detail || "",
+  };
+  if (dmProgressTitle) {
+    dmProgressTitle.textContent = dmJobState.title;
+  }
+  if (dmProgressStep) {
+    dmProgressStep.textContent = dmJobState.step;
+  }
+  if (dmProgressFill) {
+    dmProgressFill.style.width = `${dmJobState.percent}%`;
+  }
+  if (dmProgressDetail) {
+    dmProgressDetail.textContent = dmJobState.detail;
+  }
+}
+
+function renderDmSummary() {
+  if (!dmSummary) {
+    return;
+  }
+  dmSummary.replaceChildren();
+  const meta = dmCatalog?.manifest || {};
+  const items = [
+    {
+      label: t("dmSummaryConversationsLabel"),
+      value: String(Number(meta.conversationCount) || 0),
+    },
+    {
+      label: t("dmSummaryMessagesLabel"),
+      value: String(Number(meta.messageCount) || 0),
+    },
+    {
+      label: t("dmSummaryParticipantsLabel"),
+      value: String(Number(meta.participantCount) || 0),
+    },
+  ];
+
+  items.forEach((item) => {
+    const node = document.createElement("div");
+    node.className = "archive-summary-item";
+    const label = document.createElement("span");
+    label.className = "archive-summary-label";
+    label.textContent = item.label;
+    const value = document.createElement("strong");
+    value.textContent = item.value;
+    node.append(label, value);
+    dmSummary.appendChild(node);
+  });
+}
+
+function renderDmContacts() {
+  if (!dmContactList || !dmContactSelectionNote) {
+    return;
+  }
+
+  dmContactList.replaceChildren();
+  const query = String(dmContactSearchInput?.value || "").trim().toLowerCase();
+  const contactAssetUris = new Map((Array.isArray(dmRecentContactAssets) ? dmRecentContactAssets : []).map((asset) => [asset.path, assetToDataUri(asset)]));
+  const visibleContacts = (Array.isArray(dmRecentContacts) ? [...dmRecentContacts] : [])
+    .sort((left, right) => {
+      const leftLabel = String(left.displayName || left.handle || left.did || "");
+      const rightLabel = String(right.displayName || right.handle || right.did || "");
+      const nameCompare = leftLabel.localeCompare(rightLabel, currentLocale || undefined, { sensitivity: "base" });
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+      return String(left.handle || left.did || "").localeCompare(String(right.handle || right.did || ""), currentLocale || undefined, { sensitivity: "base" });
+    })
+    .filter((contact) => {
+      if (!query) {
+        return true;
+      }
+      const haystack = [
+        contact.handle || "",
+        contact.displayName || "",
+      ].join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
+
+  if (visibleContacts.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "settings-note";
+    empty.textContent = dmRecentContacts.length > 0
+      ? t("dmContactSearchEmpty")
+      : t("dmContactSelectionEmpty");
+    dmContactList.appendChild(empty);
+  } else {
+    visibleContacts.forEach((contact) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "hashtag-chip dm-contact-chip";
+      if (dmSelectedParticipantDids.includes(contact.did)) {
+        button.classList.add("is-selected");
+      }
+      const avatarUri = contact.avatarPath ? (contactAssetUris.get(contact.avatarPath) || "") : "";
+      const avatar = document.createElement(avatarUri ? "img" : "span");
+      avatar.className = "account-chip-avatar dm-contact-avatar";
+      if (avatarUri) {
+        avatar.src = avatarUri;
+        avatar.alt = contact.displayName || contact.handle || contact.did || "DM contact";
+        avatar.loading = "lazy";
+      } else {
+        avatar.textContent = getProfileInitials(contact);
+      }
+      const fullName = String(contact.displayName || "").trim();
+      const fullHandle = contact.handle ? `@${contact.handle}` : "";
+      const tooltip = [fullName, fullHandle].filter(Boolean).join("\n");
+      if (tooltip) {
+        button.title = tooltip;
+      }
+      const content = document.createElement("span");
+      content.className = "dm-contact-chip-content";
+      const name = document.createElement("strong");
+      name.className = "dm-contact-chip-name";
+      name.textContent = contact.displayName || `@${contact.handle || contact.did}`;
+      if (fullName) {
+        name.title = fullName;
+      }
+      const handle = document.createElement("span");
+      handle.className = "dm-contact-chip-handle";
+      handle.textContent = `@${contact.handle || contact.did}`;
+      if (fullHandle) {
+        handle.title = fullHandle;
+      }
+      content.append(name, handle);
+      button.append(avatar, content);
+      button.addEventListener("click", () => {
+        dmSelectedParticipantDids = dmSelectedParticipantDids.includes(contact.did)
+          ? []
+          : [contact.did];
+        renderDmWorkspace();
+      });
+      dmContactList.appendChild(button);
+    });
+  }
+
+  if (dmSelectedParticipantDids.length > 0) {
+    dmContactSelectionNote.textContent = t("dmContactSelectionOne");
+  } else if (dmRecentContacts.length > 0) {
+    dmContactSelectionNote.textContent = t("dmContactSelectionAll");
+  } else {
+    dmContactSelectionNote.textContent = t("dmContactSelectionEmpty");
+  }
+}
+
+function renderDmResults() {
+  if (!dmResults) {
+    return;
+  }
+  dmResults.replaceChildren();
+  if (!dmCatalog) {
+    const empty = document.createElement("p");
+    empty.className = "settings-note";
+    empty.textContent = t("dmResultsEmpty");
+    dmResults.appendChild(empty);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "archive-results";
+  const conversations = Array.isArray(dmCatalog.conversations) ? dmCatalog.conversations.slice(0, 8) : [];
+  conversations.forEach((convo) => {
+    const card = document.createElement("article");
+    card.className = "archive-result-card";
+    const title = document.createElement("h4");
+    title.textContent = getDmConversationTitle(convo, dmCatalog);
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t("dmConversationMeta", {
+      messages: convo.messageCount || 0,
+      updatedAt: formatHistoryTimestamp(convo.lastMessageAt || convo.updatedAt || ""),
+    });
+    card.append(title, note);
+    list.appendChild(card);
+  });
+  dmResults.appendChild(list);
+}
+
+function renderDmWorkspace() {
+  setElementVisibility(dmLaunchPanel, isDmAccessAvailable());
+  renderDmContacts();
+  renderDmSummary();
+  renderDmResults();
+  dmCheckButton.disabled = !authAccount || !isDmAccessAvailable();
+  dmLoadPartnersButton.disabled = !authAccount || !isDmAccessAvailable();
+  dmLoadButton.disabled = !authAccount || !isDmAccessAvailable() || dmSelectedParticipantDids.length !== 1;
+  dmExportJsonButton.disabled = !isDmAccessAvailable() || !dmCatalog;
+  if (dmExportHtmlButton) {
+    dmExportHtmlButton.disabled = !isDmAccessAvailable() || !dmCatalog;
+  }
+  if (dmExportPdfButton) {
+    dmExportPdfButton.disabled = !isDmAccessAvailable() || !dmCatalog;
+  }
+}
+
+async function exportDmArchiveJson(catalog = dmCatalog) {
+  assertDmAccessUnlocked();
+  if (!catalog) {
+    throw new Error(t("dmNeedArchive"));
+  }
+  setDmProgress({
+    title: t("dmProgressExportTitle"),
+    step: t("dmProgressExportStep"),
+    percent: 90,
+    detail: t("dmProgressExportDetail", { count: catalog.manifest?.messageCount || 0 }),
+  });
+  const payload = JSON.stringify(catalog, null, 2);
+  const fileName = `threadline-dm-archive-${new Date().toISOString().slice(0, 10)}.json`;
+  const file = new File([payload], fileName, { type: "application/json" });
+  await shareOrDownloadFile(file, fileName, { preferDownload: true });
+  setDmProgress({
+    title: t("dmProgressDoneTitle"),
+    step: t("dmProgressDoneStep"),
+    percent: 100,
+    detail: t("dmExportDone"),
+  });
+}
+
+function getDmPrimaryPartner(catalog = dmCatalog) {
+  const selectedDid = catalog?.manifest?.filters?.participantDid || dmSelectedParticipantDids[0] || "";
+  const selfDid = catalog?.manifest?.account?.did || "";
+  const conversations = Array.isArray(catalog?.conversations) ? catalog.conversations : [];
+  const recentContacts = Array.isArray(catalog?.recentContacts) ? catalog.recentContacts : [];
+  const conversationMember = conversations
+    .flatMap((convo) => Array.isArray(convo.members) ? convo.members : [])
+    .find((member) => member.did === selectedDid && member.did !== selfDid);
+  const recentContact = recentContacts.find((contact) => contact.did === selectedDid);
+  if (conversationMember || recentContact) {
+    return {
+      ...(recentContact || {}),
+      ...(conversationMember || {}),
+      did: conversationMember?.did || recentContact?.did || selectedDid,
+      handle: conversationMember?.handle || recentContact?.handle || "",
+      displayName: conversationMember?.displayName || recentContact?.displayName || conversationMember?.handle || recentContact?.handle || "",
+      avatar: conversationMember?.avatar || recentContact?.avatar || "",
+      avatarPath: conversationMember?.avatarPath || recentContact?.avatarPath || "",
+    };
+  }
+  return conversations[0]?.members?.find((member) => member?.did && member.did !== selfDid) || null;
+}
+
+function getDmConversationTitle(convo, catalog = dmCatalog) {
+  if (convo?.title) {
+    return convo.title;
+  }
+  const partner = getDmPrimaryPartner(catalog);
+  if (partner?.displayName && partner.displayName !== partner.handle) {
+    return partner.displayName;
+  }
+  if (partner?.handle) {
+    return `@${partner.handle}`;
+  }
+  return convo?.memberHandles?.join(", ") || t("dmConversationFallbackTitle");
+}
+
+function makeDmArchiveFileBaseName(catalog = dmCatalog) {
+  const ownHandle = String(catalog?.manifest?.account?.handle || authAccount || "account").replace(/[^\w.-]+/g, "-");
+  const partner = getDmPrimaryPartner(catalog);
+  const partnerPart = String(partner?.handle || partner?.did || "dm").replace(/[^\w.-]+/g, "-");
+  const datePart = formatArchiveDatePart(catalog?.manifest?.exportedAt);
+  return `threadline-dm-${ownHandle}-${partnerPart}-${datePart}`;
+}
+
+function collectDmMessagesForExport(catalog = dmCatalog) {
+  const conversations = Array.isArray(catalog?.conversations) ? catalog.conversations : [];
+  const convoById = new Map(conversations.map((convo) => [convo.id, convo]));
+  const memberByDid = new Map();
+  const selfDid = catalog?.manifest?.account?.did || "";
+  const selfHandle = catalog?.manifest?.account?.handle || authAccount || "";
+  const selfDisplayName = catalog?.manifest?.account?.displayName || selfHandle || "";
+  const selfAvatarPath = catalog?.manifest?.account?.avatarPath || "";
+  conversations.forEach((convo) => {
+    (convo.members || []).forEach((member) => {
+      if (member?.did && !memberByDid.has(member.did)) {
+        memberByDid.set(member.did, member);
+      }
+    });
+  });
+  return (Array.isArray(catalog?.messages) ? [...catalog.messages] : [])
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.sentAt || 0) || 0;
+      const rightTime = Date.parse(right.sentAt || 0) || 0;
+      if (leftTime !== rightTime) {
+        return leftTime - rightTime;
+      }
+      return String(left.id || "").localeCompare(String(right.id || ""));
+    })
+    .map((message) => ({
+      ...message,
+      senderHandle: message.senderDid === selfDid
+        ? (message.senderHandle || selfHandle || "")
+        : (memberByDid.get(message.senderDid)?.handle || message.senderHandle || ""),
+      senderDisplayName: message.senderDid === selfDid
+        ? (message.senderDisplayName || selfDisplayName || selfHandle || message.senderDid || "")
+        : (memberByDid.get(message.senderDid)?.displayName || memberByDid.get(message.senderDid)?.handle || message.senderDisplayName || message.senderHandle || message.senderDid || ""),
+      senderAvatarPath: message.senderDid === selfDid
+        ? (message.senderAvatarPath || selfAvatarPath || "")
+        : (memberByDid.get(message.senderDid)?.avatarPath || message.senderAvatarPath || ""),
+      conversation: convoById.get(message.convoId) || null,
+    }));
+}
+
+function getDmArchiveMessageRange(catalog = dmCatalog) {
+  const messages = collectDmMessagesForExport(catalog);
+  const datedMessages = messages
+    .map((message) => ({
+      message,
+      timestamp: Date.parse(message.sentAt || ""),
+    }))
+    .filter((entry) => Number.isFinite(entry.timestamp))
+    .sort((left, right) => left.timestamp - right.timestamp);
+
+  if (datedMessages.length === 0) {
+    return {
+      from: catalog?.manifest?.filters?.from || "",
+      to: catalog?.manifest?.filters?.to || "",
+    };
+  }
+
+  return {
+    from: datedMessages[0].message.sentAt || "",
+    to: datedMessages[datedMessages.length - 1].message.sentAt || "",
+  };
+}
+
+function extractDmExternalCardFromEmbed(embed) {
+  if (!embed || typeof embed !== "object") {
+    return null;
+  }
+
+  const external = embed.external && typeof embed.external === "object"
+    ? embed.external
+    : embed.card && typeof embed.card === "object"
+      ? embed.card
+      : embed.link && typeof embed.link === "object"
+        ? embed.link
+        : embed;
+  const url = String(external.uri || external.url || "").trim();
+  const title = String(external.title || "").trim();
+  const description = String(external.description || "").trim();
+  const thumb = String(external.thumb || external.thumbnail || external.image || "").trim();
+
+  if (url) {
+    return {
+      url,
+      title,
+      description,
+      thumb,
+    };
+  }
+
+  if (embed.media) {
+    return extractDmExternalCardFromEmbed(embed.media);
+  }
+
+  if (Array.isArray(embed.embeds)) {
+    for (const nestedEmbed of embed.embeds) {
+      const match = extractDmExternalCardFromEmbed(nestedEmbed);
+      if (match) {
+        return match;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getDmFacetLinkCard(message = {}) {
+  const linkRuns = extractPdfLinkRuns(
+    message?.text || "",
+    Array.isArray(message?.facets) ? message.facets : [],
+  ).filter((run) => run?.url);
+  if (linkRuns.length === 0) {
+    return null;
+  }
+  const firstUrl = String(linkRuns[0].url || "").trim();
+  if (!firstUrl) {
+    return null;
+  }
+  return {
+    url: firstUrl,
+    title: firstUrl,
+    description: "",
+    thumb: "",
+    thumbPath: "",
+  };
+}
+
+function getDmExternalCard(message = {}) {
+  if (message?.externalCard?.url) {
+    return message.externalCard;
+  }
+  const embeds = Array.isArray(message.embeds) ? message.embeds : [];
+  for (const embed of embeds) {
+    const card = extractDmExternalCardFromEmbed(embed);
+    if (card) {
+      return card;
+    }
+  }
+  return getDmFacetLinkCard(message);
+}
+
+function buildDmHtmlI18n() {
+  const keys = [
+    "dmHeaderEyebrow",
+    "dmHeaderTitle",
+    "dmHtmlGenerated",
+    "dmSummaryConversationsLabel",
+    "dmSummaryMessagesLabel",
+    "dmSummaryParticipantsLabel",
+    "dmConversationLabel",
+    "dmPartnerLabel",
+    "dmArchiveRangeLabel",
+    "dmArchiveRangeValue",
+    "dmHtmlSearchLabel",
+    "dmHtmlResetFilters",
+    "dmHtmlVisibleStatus",
+    "dmHtmlNoMatches",
+    "dmHtmlOpenConversation",
+    "dmHtmlNoText",
+    "closeButton",
+  ];
+
+  return Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [
+    locale,
+    Object.fromEntries(keys.map((key) => [key, translations[locale]?.[key] || translations[DEFAULT_LOCALE]?.[key] || key])),
+  ]));
+}
+
+function buildDmHtmlDocument(catalog = dmCatalog) {
+  const partner = getDmPrimaryPartner(catalog);
+  const messages = collectDmMessagesForExport(catalog);
+  const assetUris = new Map((catalog?.assets || []).map((asset) => [asset.path, assetToDataUri(asset)]));
+  const partnerAvatarUri = partner?.avatarPath ? (assetUris.get(partner.avatarPath) || "") : "";
+  const exportedAt = catalog?.manifest?.exportedAt || new Date().toISOString();
+  const ownHandle = catalog?.manifest?.account?.handle || authAccount || "";
+  const title = `${t("dmHeaderTitle")} · ${partner?.displayName || `@${partner?.handle || ""}`}`.trim();
+  const archiveRange = getDmArchiveMessageRange(catalog);
+  const rangeFrom = archiveRange.from || "";
+  const rangeTo = archiveRange.to || "";
+  const i18nPayload = JSON.stringify(buildDmHtmlI18n());
+  const localePayload = JSON.stringify(currentLocale);
+  const messagesMarkup = messages.map((message) => {
+    const senderName = message.senderDisplayName || message.senderHandle || message.senderDid || ownHandle;
+    const senderHandle = message.senderHandle ? `@${message.senderHandle}` : "";
+    const senderAvatarUri = message.senderAvatarPath ? (assetUris.get(message.senderAvatarPath) || "") : "";
+    const externalCard = getDmExternalCard(message);
+    const externalThumbUri = (externalCard?.thumbPath ? (assetUris.get(externalCard.thumbPath) || "") : "") || String(externalCard?.thumb || "").trim();
+    const searchValue = [
+      senderName,
+      senderHandle,
+      message.text || "",
+      extractPdfLinkRuns(message.text || "", message.facets || []).map((run) => run.url || "").filter(Boolean).join(" "),
+      externalCard?.title || "",
+      externalCard?.description || "",
+      externalCard?.url || "",
+    ].join(" ").replace(/\s+/g, " ").trim().toLowerCase();
+    return `
+      <article class="dm-html-message ${message.senderDid === catalog?.manifest?.account?.did ? "is-own" : "is-other"}" data-dm-message data-search="${escapeHtmlAttribute(searchValue)}">
+        <div class="dm-html-message-head">
+          <div class="dm-html-message-author">
+            ${senderAvatarUri ? `<img class="dm-html-message-avatar" src="${escapeHtmlAttribute(senderAvatarUri)}" alt="${escapeHtmlAttribute(senderName)}" loading="lazy">` : ""}
+            <div>
+              <strong data-dm-searchable="true">${escapeHtml(senderName)}</strong>
+              ${senderHandle ? `<span class="dm-html-handle" data-dm-searchable="true">${escapeHtml(senderHandle)}</span>` : ""}
+            </div>
+          </div>
+          <time datetime="${escapeHtmlAttribute(message.sentAt || "")}">${escapeHtml(formatCompactArchiveTimestamp(message.sentAt))}</time>
+        </div>
+        ${message.text ? `<div class="dm-html-text" data-dm-richtext="true">${renderArchiveHtmlRichText(message.text, message.facets || [])}</div>` : ""}
+        ${!message.text && !externalCard ? `<span class="archive-html-empty">${escapeHtml(t("dmHtmlNoText"))}</span>` : ""}
+        ${externalCard ? `
+          <a class="dm-html-link-card" href="${escapeHtmlAttribute(externalCard.url)}" target="_blank" rel="noreferrer noopener">
+            ${externalThumbUri ? `<img class="dm-html-link-card-thumb" src="${escapeHtmlAttribute(externalThumbUri)}" alt="">` : ""}
+            <span class="dm-html-link-card-copy">
+              <strong>${escapeHtml(externalCard.title || externalCard.url)}</strong>
+              ${externalCard.description ? `<span>${escapeHtml(externalCard.description)}</span>` : ""}
+              <small>${escapeHtml(shortenArchiveUrlForDisplay(externalCard.url))}</small>
+            </span>
+          </a>
+        ` : ""}
+      </article>
+    `;
+  }).join("");
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(title)}</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eff5ff;
+        --panel: rgba(255, 255, 255, 0.92);
+        --line: rgba(88, 118, 160, 0.16);
+        --text: #10233e;
+        --muted: #627895;
+        --accent: #2d72f6;
+        --accent-soft: rgba(45, 114, 246, 0.12);
+        --own: #dce9ff;
+        --other: #ffffff;
+        --shadow: 0 24px 44px rgba(24, 41, 75, 0.12);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        font-family: "Segoe UI", Aptos, Arial, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(45, 114, 246, 0.12), transparent 24%),
+          linear-gradient(180deg, #eff6ff 0%, #edf3fb 100%);
+        color: var(--text);
+      }
+      a { color: var(--accent); }
+      mark {
+        background: #ffec99;
+        color: #10233e;
+        border-radius: 0.22em;
+        padding: 0 0.12em;
+      }
+      .dm-html-shell {
+        width: min(1100px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 28px 0 56px;
+      }
+      .dm-html-hero,
+      .dm-html-toolbar,
+      .dm-html-message {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+      }
+      .dm-html-hero,
+      .dm-html-toolbar {
+        border-radius: 24px;
+        padding: 24px;
+        margin-bottom: 18px;
+      }
+      .dm-html-kicker {
+        margin: 0 0 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.74rem;
+        color: var(--muted);
+      }
+      .dm-html-hero h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3rem);
+      }
+      .dm-html-hero p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .dm-html-partner {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 10px;
+      }
+      .dm-html-avatar {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        object-fit: cover;
+        background: #dfe8f7;
+        border: 1px solid rgba(102, 133, 178, 0.22);
+        flex: 0 0 56px;
+      }
+      .dm-html-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+      .dm-html-meta strong {
+        display: block;
+        font-size: 1.3rem;
+      }
+      .dm-html-toolbar-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+      }
+      .dm-html-field label,
+      .dm-html-status {
+        display: block;
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .dm-html-field input {
+        width: 100%;
+        min-height: 46px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        padding: 0 14px;
+        font: inherit;
+      }
+      .dm-html-toolbar button {
+        min-height: 46px;
+        border: 0;
+        border-radius: 14px;
+        padding: 0 16px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .dm-html-status {
+        margin-top: 12px;
+      }
+      .dm-html-feed {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .dm-html-message {
+        border-radius: 22px;
+        padding: 18px 20px;
+      }
+      .dm-html-message.is-own {
+        margin-left: auto;
+        width: min(78%, 760px);
+        background: linear-gradient(180deg, #edf4ff 0%, var(--own) 100%);
+      }
+      .dm-html-message.is-other {
+        margin-right: auto;
+        width: min(78%, 760px);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      }
+      .dm-html-message-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: baseline;
+      }
+      .dm-html-message-author {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .dm-html-message-avatar {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        object-fit: cover;
+        background: #dfe8f7;
+        border: 1px solid rgba(102, 133, 178, 0.22);
+        flex: 0 0 34px;
+      }
+      .dm-html-message-head strong {
+        font-size: 1rem;
+      }
+      .dm-html-handle,
+      .dm-html-message time {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .dm-html-text {
+        margin-top: 12px;
+        line-height: 1.65;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .dm-html-link-card {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: minmax(0, 112px) minmax(0, 1fr);
+        gap: 14px;
+        padding: 12px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+        color: inherit;
+        text-decoration: none;
+      }
+      .dm-html-link-card-thumb {
+        width: 112px;
+        height: 84px;
+        object-fit: cover;
+        border-radius: 12px;
+        background: rgba(16, 35, 62, 0.08);
+      }
+      .dm-html-link-card-copy {
+        min-width: 0;
+        display: grid;
+        gap: 6px;
+      }
+      .dm-html-link-card-copy strong,
+      .dm-html-link-card-copy span,
+      .dm-html-link-card-copy small {
+        overflow-wrap: anywhere;
+      }
+      .dm-html-link-card-copy span,
+      .dm-html-link-card-copy small {
+        color: var(--muted);
+      }
+      [hidden] { display: none !important; }
+      @media (max-width: 780px) {
+        .dm-html-toolbar-row {
+          grid-template-columns: 1fr;
+        }
+        .dm-html-message.is-own,
+        .dm-html-message.is-other {
+          width: 100%;
+        }
+        .dm-html-link-card {
+          grid-template-columns: 1fr;
+        }
+        .dm-html-link-card-thumb {
+          width: 100%;
+          height: auto;
+          aspect-ratio: 4 / 3;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="dm-html-shell">
+      <section class="dm-html-hero">
+        <p class="dm-html-kicker">${escapeHtml(t("dmHeaderEyebrow"))}</p>
+        <h1>${escapeHtml(title)}</h1>
+        <p>${escapeHtml(t("dmHtmlGenerated", { date: formatCompactArchiveTimestamp(exportedAt) }))}</p>
+        <div class="dm-html-partner">
+          ${partnerAvatarUri ? `<img class="dm-html-avatar" src="${escapeHtmlAttribute(partnerAvatarUri)}" alt="${escapeHtmlAttribute(partner?.displayName || partner?.handle || "")}" loading="lazy">` : ""}
+          <p>${escapeHtml(t("dmPartnerLabel"))}: ${escapeHtml(partner?.displayName || "")}${partner?.handle ? ` · @${escapeHtml(partner.handle)}` : ""}</p>
+        </div>
+        <p>${escapeHtml(t("dmArchiveRangeValue", {
+          from: rangeFrom ? formatCompactArchiveTimestamp(rangeFrom) : "…",
+          to: rangeTo ? formatCompactArchiveTimestamp(rangeTo) : "…",
+        }))}</p>
+        <div class="dm-html-meta">
+          <div><span>${escapeHtml(t("dmSummaryConversationsLabel"))}</span><strong>${Number(catalog?.manifest?.conversationCount) || 0}</strong></div>
+          <div><span>${escapeHtml(t("dmSummaryMessagesLabel"))}</span><strong>${Number(catalog?.manifest?.messageCount) || 0}</strong></div>
+          <div><span>${escapeHtml(t("dmSummaryParticipantsLabel"))}</span><strong>${Number(catalog?.manifest?.participantCount) || 0}</strong></div>
+        </div>
+      </section>
+      <section class="dm-html-toolbar">
+        <div class="dm-html-toolbar-row">
+          <div class="dm-html-field">
+            <label for="dm-search">${escapeHtml(t("dmHtmlSearchLabel"))}</label>
+            <input id="dm-search" type="search" placeholder="${escapeHtmlAttribute(t("dmHtmlSearchLabel"))}">
+          </div>
+          <button type="button" id="dm-reset">${escapeHtml(t("dmHtmlResetFilters"))}</button>
+        </div>
+        <p class="dm-html-status" id="dm-status">${escapeHtml(t("dmHtmlVisibleStatus", { visible: messages.length, total: messages.length }))}</p>
+      </section>
+      <section class="dm-html-feed" id="dm-feed">
+        ${messagesMarkup}
+      </section>
+    </main>
+    <script>
+      const currentLocale = ${localePayload};
+      const htmlI18n = ${i18nPayload};
+      const supported = Object.keys(htmlI18n || {});
+      const browserLocale = (navigator.languages && navigator.languages.find((entry) => supported.includes(String(entry).slice(0, 2))))
+        || (navigator.language && supported.includes(String(navigator.language).slice(0, 2)) ? String(navigator.language).slice(0, 2) : "")
+        || currentLocale
+        || "en";
+      const strings = htmlI18n[browserLocale] || htmlI18n.en || {};
+      const searchInput = document.getElementById("dm-search");
+      const resetButton = document.getElementById("dm-reset");
+      const statusNode = document.getElementById("dm-status");
+      const messages = Array.from(document.querySelectorAll("[data-dm-message]"));
+
+      function t(key, vars = {}) {
+        let value = strings[key] || key;
+        Object.entries(vars).forEach(([name, replacement]) => {
+          value = value.replace(new RegExp("\\\\{" + name + "\\\\}", "g"), String(replacement));
+        });
+        return value;
+      }
+
+      function escapeRegExp(value) {
+        return String(value).replace(/[.*+?^{}$()|[\]\\]/g, "\\$&");
+      }
+
+      function clearHighlights(node) {
+        node.querySelectorAll("mark[data-dm-highlight]").forEach((mark) => {
+          const parent = mark.parentNode;
+          if (!parent) {
+            return;
+          }
+          parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
+          parent.normalize();
+        });
+      }
+
+      function highlightNode(node, query) {
+        clearHighlights(node);
+        if (!query) {
+          return;
+        }
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        const matches = [];
+        const regex = new RegExp(escapeRegExp(query), "ig");
+        while (walker.nextNode()) {
+          const textNode = walker.currentNode;
+          if (!textNode.nodeValue || !textNode.nodeValue.trim()) {
+            continue;
+          }
+          let match;
+          while ((match = regex.exec(textNode.nodeValue))) {
+            matches.push({ node: textNode, start: match.index, end: match.index + match[0].length });
+          }
+        }
+        matches.reverse().forEach((entry) => {
+          const range = document.createRange();
+          range.setStart(entry.node, entry.start);
+          range.setEnd(entry.node, entry.end);
+          const mark = document.createElement("mark");
+          mark.setAttribute("data-dm-highlight", "true");
+          range.surroundContents(mark);
+        });
+      }
+
+      function updateFilter() {
+        const query = String(searchInput.value || "").trim().toLowerCase();
+        let visible = 0;
+        messages.forEach((message) => {
+          const haystack = String(message.dataset.search || "");
+          const matches = !query || haystack.includes(query);
+          message.hidden = !matches;
+          if (matches) {
+            visible += 1;
+          }
+          message.querySelectorAll("[data-dm-searchable], [data-dm-richtext]").forEach((node) => highlightNode(node, query));
+        });
+        statusNode.textContent = visible
+          ? t("dmHtmlVisibleStatus", { visible, total: messages.length })
+          : t("dmHtmlNoMatches");
+      }
+
+      searchInput.addEventListener("input", updateFilter);
+      resetButton.addEventListener("click", () => {
+        searchInput.value = "";
+        updateFilter();
+      });
+      updateFilter();
+    </script>
+  </body>
+</html>`;
+}
+
+async function exportDmHtmlFromCatalog(catalog = dmCatalog) {
+  assertDmAccessUnlocked();
+  if (!catalog) {
+    throw new Error(t("dmNeedArchive"));
+  }
+  await ensureDmAvatarAssets(catalog);
+  setDmProgress({
+    title: t("dmProgressHtmlTitle"),
+    step: t("dmProgressHtmlStep"),
+    percent: 92,
+    detail: t("dmProgressHtmlDetail", { count: catalog?.manifest?.messageCount || 0 }),
+  });
+  const html = buildDmHtmlDocument(catalog);
+  const fileName = `${makeDmArchiveFileBaseName(catalog)}.html`;
+  const file = new File([html], fileName, { type: "text/html" });
+  await shareOrDownloadFile(file, fileName, { preferDownload: true });
+  setDmProgress({
+    title: t("dmProgressDoneTitle"),
+    step: t("dmProgressDoneStep"),
+    percent: 100,
+    detail: t("dmHtmlDone"),
+  });
+}
+
+function estimateDmPdfMessageHeight(context, message, maxWidth, scale) {
+  context.font = `${13 * scale}px "Segoe UI", Aptos, sans-serif`;
+  const lineHeight = 18 * scale;
+  const avatarOffset = message.senderAvatarPath ? (38 * scale) : 0;
+  const textLines = buildWrappedPdfLines(context, message.text || "", maxWidth - (36 * scale) - avatarOffset, message.facets || []);
+  const textHeight = Math.max(lineHeight, textLines.length * lineHeight);
+  return (72 * scale) + textHeight;
+}
+
+function paginateDmPdfMessages(messages, catalog) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1190;
+  canvas.height = 1684;
+  const context = canvas.getContext("2d");
+  const scale = canvas.width / 595;
+  const top = 112 * scale;
+  const bottom = 88 * scale;
+  const left = 54 * scale;
+  const right = 54 * scale;
+  const maxBubbleWidth = (canvas.width - left - right) * 0.76;
+  const pages = [];
+  let currentPage = [];
+  let currentHeight = top;
+  const selfDid = catalog?.manifest?.account?.did || "";
+
+  messages.forEach((message, index) => {
+    const isOwn = message.senderDid && message.senderDid === selfDid;
+    const width = Math.max(320 * scale, maxBubbleWidth);
+    const height = estimateDmPdfMessageHeight(context, message, width, scale);
+    if (currentPage.length > 0 && currentHeight + height > canvas.height - bottom) {
+      pages.push(currentPage);
+      currentPage = [];
+      currentHeight = top;
+    }
+    currentPage.push({
+      message,
+      isOwn,
+      x: isOwn ? (canvas.width - right - width) : left,
+      y: currentHeight,
+      width,
+      height,
+    });
+    currentHeight += height + (14 * scale);
+    if (index === messages.length - 1 && currentPage.length > 0) {
+      pages.push(currentPage);
+    }
+  });
+
+  return pages.length > 0 ? pages : [[]];
+}
+
+async function renderDmPdfCanvasPage(catalog, assetMap, entries, pageIndex, pageCount) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1190;
+  canvas.height = 1684;
+  const context = canvas.getContext("2d");
+  const scale = canvas.width / 595;
+  const annotations = [];
+  const partner = getDmPrimaryPartner(catalog);
+  const handle = catalog?.manifest?.account?.handle || "";
+  const partnerAvatarAsset = partner?.avatarPath ? assetMap.get(partner.avatarPath) : null;
+
+  context.fillStyle = "#f3f7ff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  context.fillStyle = "#10233e";
+  context.font = `700 ${24 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(getDmConversationTitle(entries[0]?.message?.conversation || catalog?.conversations?.[0], catalog), 54 * scale, 44 * scale);
+  if (partnerAvatarAsset) {
+    const avatarBitmap = await loadArchiveAssetBitmap(partnerAvatarAsset);
+    drawCircularImageCover(context, avatarBitmap, canvas.width - (122 * scale), 30 * scale, 42 * scale);
+    avatarBitmap.close();
+  }
+  context.font = `${12 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillStyle = "#5f7593";
+  context.fillText(`${t("dmPartnerLabel")}: ${partner?.displayName || ""}${partner?.handle ? ` · @${partner.handle}` : ""}`, 54 * scale, 70 * scale);
+  context.fillText(`@${handle} · ${formatCompactArchiveTimestamp(catalog?.manifest?.exportedAt || "")}`, 54 * scale, 88 * scale);
+  context.fillText(`${pageIndex + 1}/${pageCount}`, canvas.width - (90 * scale), 88 * scale);
+
+  for (const entry of entries) {
+    const { message, isOwn, x, y, width, height } = entry;
+    fillRoundedRect(context, x, y, width, height, 20 * scale, isOwn ? "#dce9ff" : "#ffffff");
+    strokeRoundedRect(context, x, y, width, height, 20 * scale, isOwn ? "#b8cdf5" : "#d7e1f0", 1.2 * scale);
+
+    const avatarSize = 28 * scale;
+    const avatarX = x + (18 * scale);
+    const avatarY = y + (12 * scale);
+    const senderAvatarAsset = message.senderAvatarPath ? assetMap.get(message.senderAvatarPath) : null;
+    const textInsetX = senderAvatarAsset ? (avatarX + avatarSize + (10 * scale)) : (x + (18 * scale));
+
+    if (senderAvatarAsset) {
+      const avatarBitmap = await loadArchiveAssetBitmap(senderAvatarAsset);
+      drawCircularImageCover(context, avatarBitmap, avatarX, avatarY, avatarSize);
+      avatarBitmap.close();
+    }
+
+    context.fillStyle = "#10233e";
+    context.font = `700 ${13 * scale}px "Segoe UI", Aptos, sans-serif`;
+    const senderName = message.senderDisplayName || message.senderHandle || message.senderDid || handle;
+    context.fillText(senderName, textInsetX, y + (14 * scale));
+
+    if (message.senderHandle) {
+      context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
+      context.fillStyle = "#5f7593";
+      context.fillText(`@${message.senderHandle}`, textInsetX, y + (32 * scale));
+    }
+
+    context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillStyle = "#5f7593";
+    const timeLabel = formatCompactArchiveTimestamp(message.sentAt);
+    const timeWidth = context.measureText(timeLabel).width;
+    context.fillText(timeLabel, x + width - timeWidth - (18 * scale), y + (16 * scale));
+
+    context.font = `${13 * scale}px "Segoe UI", Aptos, sans-serif`;
+    const lines = buildWrappedPdfLines(context, message.text || "", width - (36 * scale) - (senderAvatarAsset ? (avatarSize + (10 * scale)) : 0), message.facets || []);
+    const textBlock = drawArchivePdfTextBlock(context, lines, textInsetX, y + (46 * scale), 18 * scale);
+    annotations.push(...textBlock.annotations.map((annotation) => ({
+      rect: canvasRectToPdfRect(annotation, canvas.width, canvas.height),
+      url: annotation.url,
+    })));
+  }
+
+  const jpegBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+  const bytes = new Uint8Array(await jpegBlob.arrayBuffer());
+  return {
+    bytes,
+    width: canvas.width,
+    height: canvas.height,
+    annotations,
+  };
+}
+
+async function exportDmPdfFromCatalog(catalog = dmCatalog) {
+  assertDmAccessUnlocked();
+  if (!catalog) {
+    throw new Error(t("dmNeedArchive"));
+  }
+  await ensureDmAvatarAssets(catalog);
+  const messages = collectDmMessagesForExport(catalog);
+  const assetMap = new Map((catalog.assets || []).map((asset) => [asset.path, asset]));
+  const pagesData = paginateDmPdfMessages(messages, catalog);
+  const pages = [];
+
+  for (const [pageIndex, entries] of pagesData.entries()) {
+    setDmProgress({
+      title: t("dmProgressPdfTitle"),
+      step: t("dmProgressPdfStep", { index: pageIndex + 1, count: pagesData.length }),
+      percent: Math.round((pageIndex / Math.max(1, pagesData.length)) * 100),
+      detail: t("dmProgressPdfDetail", { count: messages.length }),
+    });
+    const rendered = await renderDmPdfCanvasPage(catalog, assetMap, entries, pageIndex, pagesData.length);
+    pages.push({
+      content: `q 595 0 0 842 0 0 cm /PageImage${pageIndex + 1} Do Q`,
+      images: [{
+        name: `PageImage${pageIndex + 1}`,
+        width: rendered.width,
+        height: rendered.height,
+        bytes: rendered.bytes,
+      }],
+      annotations: rendered.annotations,
+    });
+  }
+
+  const blob = buildPdfFile(pages);
+  const fileName = `${makeDmArchiveFileBaseName(catalog)}.pdf`;
+  const file = new File([blob], fileName, { type: "application/pdf" });
+  await shareOrDownloadFile(file, fileName, { preferDownload: true });
+  setDmProgress({
+    title: t("dmProgressDoneTitle"),
+    step: t("dmProgressDoneStep"),
+    percent: 100,
+    detail: t("dmPdfDone"),
+  });
+}
+
+async function checkDmAccess() {
+  assertDmAccessUnlocked();
+  if (!authAccount) {
+    throw new Error(t("dmLoadRequiresLogin"));
+  }
+  setDmProgress({
+    title: t("dmCheckTitle"),
+    step: t("dmCheckStep"),
+    percent: 10,
+    detail: "",
+  });
+  const result = await sendToServiceWorker("CHECK_DM_ACCESS", {}, {
+    timeoutMs: 120000,
+  });
+  dmAccessChecked = result?.ok === true;
+  renderDmWorkspace();
+  setDmProgress({
+    title: t("dmCheckDoneTitle"),
+    step: t("dmCheckDoneStep"),
+    percent: 100,
+    detail: t("dmCheckDoneDetail"),
+  });
+}
+
+async function loadDmPartners() {
+  assertDmAccessUnlocked();
+  if (!authAccount) {
+    throw new Error(t("dmLoadRequiresLogin"));
+  }
+  setDmProgress({
+    title: t("dmPartnersLoadingTitle"),
+    step: t("dmPartnersLoadingStep"),
+    percent: 12,
+    detail: "",
+  });
+  const result = await sendToServiceWorker("LIST_DM_PARTNERS", {
+    downloadAssets: false,
+  }, {
+    timeoutMs: 600000,
+    onProgress(progress) {
+      setDmProgress({
+        title: progress.title || t("dmPartnersLoadingTitle"),
+        step: progress.step || t("dmPartnersLoadingStep"),
+        percent: Number.isFinite(progress.percent) ? progress.percent : 0,
+        detail: progress.detail || "",
+      });
+    },
+  });
+  dmAccessChecked = true;
+  dmRecentContacts = Array.isArray(result?.recentContacts) ? result.recentContacts : [];
+  dmRecentConversations = Array.isArray(result?.conversations) ? result.conversations : [];
+  dmRecentContactAssets = [];
+  dmPartnerCacheAccountDid = authAccountDid || "";
+  dmPartnerCacheUpdatedAt = "";
+  dmSelectedParticipantDids = dmSelectedParticipantDids.filter((did) => dmRecentContacts.some((contact) => contact.did === did));
+  renderDmWorkspace();
+  await saveDmPartnerCache();
+  setDmProgress({
+    title: t("dmPartnersLoadingTitle"),
+    step: "Partnerliste geladen",
+    percent: 55,
+    detail: `${dmRecentContacts.length} DM-Partner werden angezeigt. Avatar-Bilder werden jetzt gesichert …`,
+  });
+  const hydrated = await sendToServiceWorker("HYDRATE_DM_PARTNER_AVATARS", {
+    recentContacts: dmRecentContacts,
+    conversations: dmRecentConversations,
+  }, {
+    timeoutMs: 600000,
+    onProgress(progress) {
+      setDmProgress({
+        title: progress.title || t("dmPartnersLoadingTitle"),
+        step: progress.step || t("dmPartnersLoadingStep"),
+        percent: Number.isFinite(progress.percent) ? progress.percent : 0,
+        detail: progress.detail || "",
+      });
+    },
+  });
+  dmRecentContacts = Array.isArray(hydrated?.recentContacts) ? hydrated.recentContacts : dmRecentContacts;
+  dmRecentConversations = Array.isArray(hydrated?.conversations) ? hydrated.conversations : dmRecentConversations;
+  dmRecentContactAssets = Array.isArray(hydrated?.assets) ? hydrated.assets : [];
+  dmSelectedParticipantDids = dmSelectedParticipantDids.filter((did) => dmRecentContacts.some((contact) => contact.did === did));
+  renderDmWorkspace();
+  await saveDmPartnerCache();
+  setDmProgress({
+    title: t("dmPartnersDoneTitle"),
+    step: t("dmPartnersDoneStep"),
+    percent: 100,
+    detail: t("dmPartnersDoneDetail", { count: dmRecentContacts.length }),
+  });
+}
+
+async function loadDmArchive() {
+  assertDmAccessUnlocked();
+  if (!authAccount) {
+    throw new Error(t("dmLoadRequiresLogin"));
+  }
+  if (dmSelectedParticipantDids.length !== 1) {
+    throw new Error(t("dmNeedPartnerSelection"));
+  }
+  if (!dmAccessChecked) {
+    await checkDmAccess();
+  }
+
+  const filters = getDmFilters();
+  setDmProgress({
+    title: t("dmProgressLoadingTitle"),
+    step: t("dmProgressLoadingStep"),
+    percent: 4,
+    detail: "",
+  });
+
+  const catalog = await sendToServiceWorker("EXPORT_DM_ARCHIVE", {
+    filters,
+    partnerCache: {
+      recentContacts: Array.isArray(dmRecentContacts) ? dmRecentContacts : [],
+      conversations: Array.isArray(dmRecentConversations) ? dmRecentConversations : [],
+      assets: Array.isArray(dmRecentContactAssets) ? dmRecentContactAssets : [],
+    },
+  }, {
+    timeoutMs: 600000,
+    onProgress(progress) {
+      setDmProgress({
+        title: progress.title || t("dmProgressLoadingTitle"),
+        step: progress.step || t("dmProgressLoadingStep"),
+        percent: Number.isFinite(progress.percent) ? progress.percent : 0,
+        detail: progress.detail || "",
+      });
+    },
+  });
+
+  dmCatalog = catalog;
+  dmRecentContacts = Array.isArray(catalog?.recentContacts) ? catalog.recentContacts : [];
+  dmRecentConversations = Array.isArray(catalog?.conversations) ? catalog.conversations : [];
+  dmRecentContactAssets = Array.isArray(catalog?.assets) ? catalog.assets.filter((asset) => String(asset.path || "").startsWith("dm-avatars/")) : [];
+  dmPartnerCacheAccountDid = authAccountDid || "";
+  dmSelectedParticipantDids = dmSelectedParticipantDids.filter((did) => dmRecentContacts.some((contact) => contact.did === did));
+  renderDmWorkspace();
+  await saveDmPartnerCache();
+  setDmProgress({
+    title: t("dmProgressDoneTitle"),
+    step: t("dmProgressDoneStep"),
+    percent: 100,
+    detail: t("dmLoadedNotice", {
+      conversations: catalog?.manifest?.conversationCount || 0,
+      messages: catalog?.manifest?.messageCount || 0,
+    }),
+  });
 }
 
 function getArchiveFilters() {
@@ -867,19 +4434,29 @@ function getArchivePreferences() {
     waveSize: getArchiveWaveSize(),
     pdfOptions: options,
     livePreview: archiveLivePreviewToggle ? archiveLivePreviewToggle.checked : true,
+    threadImportMode: archiveThreadImportModeSelect?.value === "tree"
+      ? "tree"
+      : (archiveThreadImportModeSelect?.value === "author" ? "author" : "path"),
   };
 }
 
 function applyArchivePreferences(preferences = {}) {
   const filters = preferences.filters || {};
   archiveScopeSelect.value = filters.scope === "year" || filters.scope === "range" ? filters.scope : "all";
-  archiveContentModeSelect.value = filters.contentMode === "full" || filters.contentMode === "threads" ? filters.contentMode : "posts";
+  archiveContentModeSelect.value = ["posts", "thread_roots", "threads", "full"].includes(filters.contentMode)
+    ? filters.contentMode
+    : "posts";
   archiveYearInput.value = String(filters.year || "");
   archiveFromInput.value = String(filters.from || "");
   archiveToInput.value = String(filters.to || "");
   archiveSelectedHashtags = normalizeSelectedHashtagEntries(filters.hashtagTags, hashtags);
   archiveHashtagScope = filters.hashtagScope === "startpost" ? "startpost" : "thread";
   archiveHashtagScopeSelect.value = archiveHashtagScope;
+  if (archiveThreadImportModeSelect) {
+    archiveThreadImportModeSelect.value = preferences.threadImportMode === "tree"
+      ? "tree"
+      : (preferences.threadImportMode === "author" ? "author" : "path");
+  }
   if (archiveFromInput.value || archiveToInput.value) {
     archiveScopeSelect.value = "range";
   }
@@ -921,6 +4498,45 @@ async function persistArchivePreferences() {
   await persistSettings();
 }
 
+function applyDmPartnerCache(cache = null) {
+  if (!cache || (cache.accountDid && authAccountDid && cache.accountDid !== authAccountDid)) {
+    dmRecentContacts = [];
+    dmRecentConversations = [];
+    dmRecentContactAssets = [];
+    dmPartnerCacheAccountDid = "";
+    dmPartnerCacheUpdatedAt = "";
+    return;
+  }
+
+  dmRecentContacts = Array.isArray(cache.recentContacts) ? cache.recentContacts : [];
+  dmRecentConversations = Array.isArray(cache.conversations) ? cache.conversations : [];
+  dmRecentContactAssets = Array.isArray(cache.assets) ? cache.assets : [];
+  dmPartnerCacheAccountDid = String(cache.accountDid || authAccountDid || "");
+  dmPartnerCacheUpdatedAt = String(cache.updatedAt || "");
+  dmSelectedParticipantDids = dmSelectedParticipantDids.filter((did) => dmRecentContacts.some((contact) => contact.did === did));
+}
+
+async function saveDmPartnerCache() {
+  if (!authAccountDid) {
+    return;
+  }
+  const cache = {
+    accountDid: authAccountDid,
+    updatedAt: new Date().toISOString(),
+    recentContacts: Array.isArray(dmRecentContacts) ? dmRecentContacts : [],
+    conversations: Array.isArray(dmRecentConversations) ? dmRecentConversations : [],
+    assets: Array.isArray(dmRecentContactAssets) ? dmRecentContactAssets : [],
+  };
+  dmPartnerCacheAccountDid = cache.accountDid;
+  dmPartnerCacheUpdatedAt = cache.updatedAt;
+  await sendToServiceWorker("SAVE_DM_PARTNER_CACHE", { cache }, { timeoutMs: 120000 });
+}
+
+async function restoreDmPartnerCache() {
+  const cache = await sendToServiceWorker("GET_DM_PARTNER_CACHE", {}, { timeoutMs: 120000 }).catch(() => null);
+  applyDmPartnerCache(cache);
+}
+
 async function saveArchiveSession(nextSession) {
   archiveSession = nextSession || null;
   await sendToServiceWorker("SAVE_ARCHIVE_SESSION", { session: archiveSession }, { timeoutMs: 120000 });
@@ -944,6 +4560,7 @@ async function clearArchiveSession() {
   activeArchiveRunId = null;
   activeArchiveRunState = "idle";
   archiveLastCheckpoint = "";
+  archiveLastProgressAt = "";
   archiveTransientNotice = "";
   await sendToServiceWorker("CLEAR_ARCHIVE_SESSION", {}, { timeoutMs: 30000 });
   await sendToServiceWorker("CLEAR_ARCHIVE_CATALOG", {}, { timeoutMs: 30000 }).catch((error) => {
@@ -960,10 +4577,15 @@ function updateArchiveScopeFields() {
 
 function setArchiveProgress({ title, step, percent = 0, detail = "" } = {}) {
   archiveJobState = { title, step, percent, detail };
+  if (title || step || detail || Number(percent) > 0) {
+    archiveLastProgressAt = new Date().toISOString();
+  }
   archiveProgressTitle.textContent = title || t("archiveProgressIdleTitle");
   archiveProgressStep.textContent = step || t("archiveProgressIdleStep");
   archiveProgressDetail.textContent = detail || "";
   archiveProgressFill.style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
+  renderArchiveProgressHeartbeat();
+  renderArchiveStatusLine();
 }
 
 function renderArchivePreview(preview = archivePreviewState) {
@@ -1013,19 +4635,75 @@ function getArchiveCurrentWave() {
   return 1;
 }
 
+function hasActiveArchiveRun() {
+  return activeArchiveRunState === "running" || activeArchiveRunState === "paused";
+}
+
+function formatArchiveProgressTime(timestamp) {
+  if (!timestamp) {
+    return "";
+  }
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(currentLocale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(parsed);
+}
+
+function renderArchiveProgressHeartbeat() {
+  if (!archiveProgressHeartbeat) {
+    return;
+  }
+  const time = formatArchiveProgressTime(archiveLastProgressAt);
+  archiveProgressHeartbeat.textContent = time ? t("archiveProgressLastHeartbeat", { time }) : "";
+}
+
+function renderArchiveBackgroundNotice() {
+  if (!archiveBackgroundNotice) {
+    return;
+  }
+  const showNotice = currentWorkspace !== "archive" && hasActiveArchiveRun();
+  archiveBackgroundNotice.hidden = !showNotice;
+  if (!showNotice) {
+    archiveBackgroundNotice.textContent = "";
+    return;
+  }
+  const time = formatArchiveProgressTime(archiveLastProgressAt);
+  archiveBackgroundNotice.textContent = activeArchiveRunState === "paused"
+    ? t("archiveBackgroundNoticePaused", { time })
+    : t("archiveBackgroundNoticeRunning", { time });
+}
+
 function renderArchiveStatusLine() {
+  renderArchiveBackgroundNotice();
   if (archiveTransientNotice) {
     archiveRunStatusLine.textContent = archiveTransientNotice;
     return;
   }
 
-  if (!archiveSession && activeArchiveRunState === "idle" && !archiveLastCheckpoint) {
+  const hasActiveArchiveJob = Boolean(
+    archiveJobState
+    && (String(archiveJobState.step || "").trim() || String(archiveJobState.detail || "").trim())
+    && Number(archiveJobState.percent) > 0
+    && Number(archiveJobState.percent) < 100,
+  );
+
+  if (!archiveSession && activeArchiveRunState === "idle" && !archiveLastCheckpoint && !hasActiveArchiveJob) {
     archiveRunStatusLine.textContent = t("archiveRunStatusIdle");
     return;
   }
 
   const wave = getArchiveCurrentWave();
   const checkpoint = archiveLastCheckpoint || archivePreviewState?.meta || archiveJobState?.detail || archiveJobState?.step || "";
+
+  if (!archiveSession && activeArchiveRunState === "idle" && hasActiveArchiveJob) {
+    archiveRunStatusLine.textContent = checkpoint || t("archiveRunStatusNoCheckpoint");
+    return;
+  }
 
   if (activeArchiveRunState === "paused") {
     archiveRunStatusLine.textContent = t("archiveRunStatusPaused", {
@@ -1118,6 +4796,7 @@ function updateArchiveRunControls() {
   archivePauseButton.hidden = !isRunning;
   archiveResumeButton.hidden = !isPaused;
   archiveCancelButton.hidden = !isRunning && !isPaused;
+  renderArchiveBackgroundNotice();
 }
 
 async function setArchiveRunControl(action) {
@@ -1260,9 +4939,13 @@ function renderArchiveWorkspace() {
   updateArchiveSummary();
   renderArchiveResults();
   archiveNextWaveButton.disabled = !authAccount || Boolean(archiveSession && !archiveSession.hasMore && archiveSession.exportedPosts > 0);
+  if (archiveExportMediaZipButton) {
+    archiveExportMediaZipButton.disabled = !authAccount;
+  }
   updateArchiveRunControls();
   renderArchiveStatusLine();
   renderArchiveStartHint();
+  renderArchiveProgressHeartbeat();
   renderArchivePreview();
   if (!archiveJobState) {
     setArchiveProgress({});
@@ -1278,6 +4961,7 @@ function invalidateArchiveCatalog() {
   activeArchiveRunId = null;
   activeArchiveRunState = "idle";
   archiveLastCheckpoint = "";
+  archiveLastProgressAt = "";
   archiveTransientNotice = "";
   void sendToServiceWorker("CLEAR_ARCHIVE_SESSION", {}, { timeoutMs: 30000 }).catch((error) => {
     console.error(error);
@@ -1677,8 +5361,21 @@ function applyTranslations() {
   customServerField.placeholder = "https://example.com";
   sourceText.placeholder = t("sourcePlaceholder");
   hashtagInput.placeholder = t("hashtagInputPlaceholder");
+  if (networkSearchInput) {
+    networkSearchInput.placeholder = t("networkSearchPlaceholder");
+  }
+  document.querySelectorAll(".help-trigger").forEach((element) => {
+    element.setAttribute("aria-label", t("contextHelpButtonLabel"));
+    element.setAttribute("title", t("contextHelpButtonLabel"));
+  });
+  if (networkAccountInput) {
+    networkAccountInput.placeholder = t("networkAccountInputPlaceholder");
+  }
   if (archiveThreadUrlInput) {
     archiveThreadUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
+  }
+  if (archiveMediaActorInput) {
+    archiveMediaActorInput.placeholder = t("archiveMediaActorPlaceholder");
   }
   loginButton.textContent = t("loginButton");
   loginDialogCancelButton.textContent = t("cancelButton");
@@ -1694,26 +5391,71 @@ function applyTranslations() {
   themeToggleButton.textContent = themeMode === "dark" ? t("lightModeButton") : t("darkModeButton");
   themeStatusNote.textContent = themeMode === "dark" ? t("themeDarkActive") : t("themeLightActive");
   archiveButton.textContent = t("archiveLaunchButton");
-  archiveBackButton.textContent = t("archiveBackButton");
+  networkButton.textContent = t("networkLaunchButton");
+  dmButton.textContent = t("dmLaunchButton");
+  networkLoadButton.textContent = networkLoading ? t("networkLoadingButton") : t("networkLoadButton");
+  networkResetButton.textContent = t("networkResetButton");
   archiveNextWaveButton.textContent = t("archiveNextWaveButton");
   if (archiveLoadThreadUrlButton) {
     archiveLoadThreadUrlButton.textContent = t("archiveLoadThreadUrlButton");
   }
   archiveExportZipButton.textContent = t("archiveExportZipButton");
+  if (archiveExportMediaZipButton) {
+    archiveExportMediaZipButton.textContent = t("archiveExportMediaZipButton");
+  }
   archiveExportHtmlButton.textContent = t("archiveExportHtmlButton");
+  if (archiveExportHtmlCompactButton) {
+    archiveExportHtmlCompactButton.textContent = t("archiveExportHtmlCompactButton");
+  }
   archiveExportPdfButton.textContent = t("archiveExportPdfButton");
+  if (archiveActionsExportHtmlButton) {
+    archiveActionsExportHtmlButton.textContent = t("archiveExportHtmlButton");
+  }
+  if (archiveActionsExportHtmlCompactButton) {
+    archiveActionsExportHtmlCompactButton.textContent = t("archiveExportHtmlCompactButton");
+  }
+  if (archiveProgressExportHtmlCompactButton) {
+    archiveProgressExportHtmlCompactButton.textContent = t("archiveExportHtmlCompactButton");
+  }
+  if (archiveActionsExportPdfButton) {
+    archiveActionsExportPdfButton.textContent = t("archiveExportPdfButton");
+  }
   archiveImportButton.textContent = t("archiveImportButton");
   updateAuthButtons();
   renderAccountSwitcher();
   archiveResetButton.textContent = t("archiveResetButton");
+  dmLoadButton.textContent = t("dmLoadButton");
+  dmExportJsonButton.textContent = t("dmExportJsonButton");
+  if (dmExportHtmlButton) {
+    dmExportHtmlButton.textContent = t("dmExportHtmlButton");
+  }
+  if (dmExportPdfButton) {
+    dmExportPdfButton.textContent = t("dmExportPdfButton");
+  }
+  dmCheckButton.textContent = t("dmCheckButton");
+  dmLoadPartnersButton.textContent = t("dmLoadPartnersButton");
+  if (dmContactSearchInput) {
+    dmContactSearchInput.placeholder = t("dmContactSearchPlaceholder");
+  }
   archivePauseButton.textContent = t("archivePauseButton");
   archiveResumeButton.textContent = t("archiveResumeButton");
   archiveCancelButton.textContent = t("archiveCancelButton");
+  renderArchiveProgressHeartbeat();
+  renderArchiveBackgroundNotice();
   renderVersionLabel();
   checkUpdatesButton.textContent = t("checkUpdatesButton");
   reloadAppButton.textContent = t("reloadButton");
   exportSettingsButton.textContent = t("exportSettingsButton");
   importSettingsButton.textContent = t("importSettingsButton");
+  if (shareAppButton) {
+    shareAppButton.textContent = t("shareButton");
+  }
+  if (shareQrImage) {
+    shareQrImage.alt = t("shareQrAlt");
+  }
+  if (shareUrl) {
+    shareUrl.textContent = APP_SHARE_URL;
+  }
   clearHistoryButton.textContent = t("clearHistoryButton");
   hashtagEditSaveButton.textContent = t("saveButton");
   hashtagEditCancelButton.textContent = t("cancelButton");
@@ -1766,6 +5508,8 @@ function applyTranslations() {
   Array.from(archiveContentModeSelect.options).forEach((option) => {
     if (option.value === "full") {
       option.textContent = t("archiveContentModeFull");
+    } else if (option.value === "thread_roots") {
+      option.textContent = t("archiveContentModeThreadRoots");
     } else if (option.value === "threads") {
       option.textContent = t("archiveContentModeThreads");
     } else {
@@ -1788,6 +5532,8 @@ function applyTranslations() {
   altTextRequiredToggle.checked = altTextRequired;
   publishWarning.textContent = t("publishAltTextWarning");
   updateComposerLockState();
+  renderNetworkWorkspace();
+  renderDmWorkspace();
 
   const languageNames = t("languageNames");
   Array.from(languageSelect.options).forEach((option) => {
@@ -1960,6 +5706,66 @@ function setBackupStatus(message, tone = "neutral") {
       backupStatus.textContent = "";
       delete backupStatus.dataset.tone;
     }, 5000);
+  }
+}
+
+function setShareStatus(message, tone = "neutral") {
+  if (!shareStatus) {
+    return;
+  }
+  window.clearTimeout(shareStatusTimer);
+  shareStatus.textContent = message;
+  shareStatus.hidden = !message;
+  if (message) {
+    shareStatus.dataset.tone = tone;
+  } else {
+    delete shareStatus.dataset.tone;
+  }
+  if (message) {
+    shareStatusTimer = window.setTimeout(() => {
+      shareStatus.hidden = true;
+      shareStatus.textContent = "";
+      delete shareStatus.dataset.tone;
+    }, 5000);
+  }
+}
+
+async function shareAppRecommendation() {
+  const payload = {
+    title: APP_SHARE_TITLE,
+    text: t("shareAppText"),
+    url: APP_SHARE_URL,
+  };
+
+  try {
+    if (navigator.share) {
+      await navigator.share(payload);
+      return;
+    }
+
+    const shareText = `${payload.text}\n${payload.url}`;
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(shareText);
+      setShareStatus(t("shareCopied"));
+      return;
+    }
+
+    const helper = document.createElement("textarea");
+    helper.value = shareText;
+    helper.setAttribute("readonly", "readonly");
+    helper.style.position = "fixed";
+    helper.style.opacity = "0";
+    helper.style.pointerEvents = "none";
+    document.body.append(helper);
+    helper.select();
+    document.execCommand("copy");
+    helper.remove();
+    setShareStatus(t("shareCopied"));
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return;
+    }
+    setShareStatus(t("shareUnavailable"), "error");
   }
 }
 
@@ -2812,6 +6618,91 @@ function moveSegmentImage(segmentIndex, imageIndex, direction) {
   queueDraftSave();
 }
 
+function clearSegmentImageDropMarkers() {
+  document.querySelectorAll(".segment-images.is-drop-target").forEach((element) => {
+    element.classList.remove("is-drop-target");
+  });
+  document.querySelectorAll(".segment-image-card.is-drop-before, .segment-image-card.is-drop-after").forEach((element) => {
+    element.classList.remove("is-drop-before", "is-drop-after");
+  });
+  document.querySelectorAll(".segment-card.is-file-drop-target").forEach((element) => {
+    element.classList.remove("is-file-drop-target");
+  });
+}
+
+function clearSegmentImageDragState() {
+  segmentImageDragState = null;
+  clearSegmentImageDropMarkers();
+  document.querySelectorAll(".segment-image-card.is-dragging").forEach((element) => {
+    element.classList.remove("is-dragging");
+  });
+}
+
+function getSegmentImageDropPosition(event, rect) {
+  const offsetX = event.clientX - rect.left - (rect.width / 2);
+  const offsetY = event.clientY - rect.top - (rect.height / 2);
+  if (Math.abs(offsetX) > Math.abs(offsetY)) {
+    return offsetX >= 0 ? "after" : "before";
+  }
+  return offsetY >= 0 ? "after" : "before";
+}
+
+function eventHasTransferFiles(event) {
+  const transfer = event.dataTransfer;
+  if (!transfer) {
+    return false;
+  }
+  if (transfer.files && transfer.files.length > 0) {
+    return true;
+  }
+  return Array.from(transfer.types || []).includes("Files");
+}
+
+function getDroppedImageFiles(event) {
+  const transfer = event.dataTransfer;
+  if (!transfer) {
+    return [];
+  }
+  return Array.from(transfer.files || []).filter((file) => file.type.startsWith("image/"));
+}
+
+function moveSegmentImageToPosition(fromSegmentIndex, fromImageIndex, toSegmentIndex, toImageIndex) {
+  const sourceImages = Array.isArray(segmentImages[fromSegmentIndex]) ? [...segmentImages[fromSegmentIndex]] : null;
+  const targetImages = Array.isArray(segmentImages[toSegmentIndex]) ? [...segmentImages[toSegmentIndex]] : null;
+  if (!sourceImages || !targetImages) {
+    return false;
+  }
+  if (fromImageIndex < 0 || fromImageIndex >= sourceImages.length) {
+    return false;
+  }
+  if (fromSegmentIndex !== toSegmentIndex && targetImages.length >= MAX_IMAGES_PER_SEGMENT) {
+    setStatus(t("imagesLimitReached"), "error");
+    return false;
+  }
+
+  const [image] = sourceImages.splice(fromImageIndex, 1);
+  let insertionIndex = Math.max(0, Math.min(toImageIndex, targetImages.length));
+  if (fromSegmentIndex === toSegmentIndex) {
+    insertionIndex = Math.max(0, Math.min(insertionIndex - (toImageIndex > fromImageIndex ? 1 : 0), sourceImages.length));
+    if (insertionIndex === fromImageIndex) {
+      return false;
+    }
+    sourceImages.splice(insertionIndex, 0, image);
+    segmentImages[fromSegmentIndex] = sourceImages;
+  } else {
+    targetImages.splice(insertionIndex, 0, image);
+    segmentImages[fromSegmentIndex] = sourceImages;
+    segmentImages[toSegmentIndex] = targetImages;
+  }
+
+  void persistSettings();
+  preserveScrollPosition(() => {
+    renderSegments({ preserveOverrides: true });
+  });
+  queueDraftSave();
+  return true;
+}
+
 function deleteSegmentImage(segmentIndex, imageIndex) {
   const images = segmentImages[segmentIndex];
   if (!Array.isArray(images)) {
@@ -3108,6 +6999,109 @@ function buildStoredZip(entries) {
   return concatUint8Arrays([localDirectory, centralDirectory, endRecord]);
 }
 
+class StreamingZipWriter {
+  constructor(writable) {
+    this.writable = writable;
+    this.centralParts = [];
+    this.offset = 0;
+    this.entryCount = 0;
+    this.closed = false;
+  }
+
+  async addFile(name, bytes, modifiedAt = new Date()) {
+    if (this.closed) {
+      throw new Error("ZIP-Writer ist bereits geschlossen.");
+    }
+
+    const nameBytes = utf8Bytes(name);
+    const dataBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+    const crc = crc32(dataBytes);
+    const { time, date } = dosDateTime(modifiedAt);
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0x0800, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, time, true);
+    localView.setUint16(12, date, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, dataBytes.length, true);
+    localView.setUint32(22, dataBytes.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    localView.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, time, true);
+    centralView.setUint16(14, date, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, dataBytes.length, true);
+    centralView.setUint32(24, dataBytes.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint16(30, 0, true);
+    centralView.setUint16(32, 0, true);
+    centralView.setUint16(34, 0, true);
+    centralView.setUint16(36, 0, true);
+    centralView.setUint32(38, 0, true);
+    centralView.setUint32(42, this.offset, true);
+    centralHeader.set(nameBytes, 46);
+
+    await this.writable.write(localHeader);
+    await this.writable.write(dataBytes);
+    this.centralParts.push(centralHeader);
+    this.offset += localHeader.length + dataBytes.length;
+    this.entryCount += 1;
+  }
+
+  async close() {
+    if (this.closed) {
+      return;
+    }
+
+    const centralDirectory = concatUint8Arrays(this.centralParts);
+    const endRecord = new Uint8Array(22);
+    const endView = new DataView(endRecord.buffer);
+    endView.setUint32(0, 0x06054b50, true);
+    endView.setUint16(4, 0, true);
+    endView.setUint16(6, 0, true);
+    endView.setUint16(8, this.entryCount, true);
+    endView.setUint16(10, this.entryCount, true);
+    endView.setUint32(12, centralDirectory.length, true);
+    endView.setUint32(16, this.offset, true);
+    endView.setUint16(20, 0, true);
+
+    await this.writable.write(centralDirectory);
+    await this.writable.write(endRecord);
+    await this.writable.close();
+    this.closed = true;
+  }
+}
+
+function supportsStreamingZipExport() {
+  return typeof window.showSaveFilePicker === "function";
+}
+
+function buildMediaExportPostFolder(post = {}) {
+  const rawCreatedAt = String(post?.createdAt || "").trim();
+  const timestamp = Number.isNaN(Date.parse(rawCreatedAt))
+    ? "unknown-date"
+    : new Date(rawCreatedAt).toISOString().replace(/:/g, "-").replace(/\.\d{3}Z$/, "Z");
+  const year = timestamp.slice(0, 4) || "unknown";
+  const month = timestamp.slice(0, 7) || `${year}-00`;
+  const rkey = String(post?.rkey || "post")
+    .replace(/[^\w.-]+/g, "-")
+    .slice(0, 80) || "post";
+  return `posts/${year}/${month}/${timestamp}__post-${rkey}`;
+}
+
 function parseStoredZip(bytes) {
   const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const entries = new Map();
@@ -3271,6 +7265,186 @@ function makeArchiveFileBaseName(catalog = archiveCatalog) {
   return `threadline-archive-${handle}-${datePart}`;
 }
 
+function getArchiveMediaExportOptions() {
+  return {
+    actor: String(archiveMediaActorInput?.value || "").trim(),
+    includeImages: archiveMediaImagesToggle?.checked !== false,
+    includeVideos: archiveMediaVideosToggle?.checked !== false,
+    includeOther: archiveMediaOtherToggle?.checked !== false,
+    filters: getArchiveFilters(),
+  };
+}
+
+async function exportArchiveMediaZip() {
+  if (!authAccount) {
+    throw new Error(t("archiveMediaRequiresLogin"));
+  }
+  if (!supportsStreamingZipExport()) {
+    throw new Error(t("archiveMediaStreamUnsupported"));
+  }
+
+  const options = getArchiveMediaExportOptions();
+  if (!options.includeImages && !options.includeVideos && !options.includeOther) {
+    throw new Error(t("archiveMediaNeedKind"));
+  }
+
+  const targetHandle = String(options.actor || authAccount || "account")
+    .replace(/^@+/, "")
+    .trim()
+    .replace(/[^\w.-]+/g, "-") || "account";
+  const datePart = new Date().toISOString().slice(0, 10);
+  const suggestedName = `threadline-media-${targetHandle}-${datePart}.zip`;
+  let fileHandle = null;
+  try {
+    fileHandle = await window.showSaveFilePicker({
+      suggestedName,
+      types: [{
+        description: "ZIP-Archiv",
+        accept: {
+          "application/zip": [".zip"],
+        },
+      }],
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return;
+    }
+    throw error;
+  }
+
+  archiveTransientNotice = "";
+  renderArchiveStatusLine();
+
+  setArchiveProgress({
+    title: t("archiveMediaScanTitle"),
+    step: t("archiveMediaScanStep"),
+    percent: 3,
+    detail: "",
+  });
+
+  const scanned = await sendToServiceWorker("SCAN_ACCOUNT_MEDIA_EXPORT", options, {
+    timeoutMs: 600000,
+    onProgress(progress) {
+      setArchiveProgress({
+        title: progress.title || t("archiveMediaScanTitle"),
+        step: progress.step || t("archiveMediaScanStep"),
+        percent: Number.isFinite(progress.percent) ? progress.percent : 3,
+        detail: progress.detail || "",
+      });
+    },
+  });
+
+  const mediaEntries = Array.isArray(scanned?.media) ? scanned.media : [];
+  if (!mediaEntries.length) {
+    throw new Error(t("archiveMediaNoMatches"));
+  }
+
+  const writable = await fileHandle.createWritable();
+  const zipWriter = new StreamingZipWriter(writable);
+  const exportedMedia = [];
+  const skippedMedia = [];
+  const scannedPosts = Array.isArray(scanned?.posts) ? scanned.posts : [];
+  const postsByUri = new Map(scannedPosts.map((post) => [post.uri, post]));
+  const writtenPostEntries = new Set();
+
+  try {
+    for (const [index, item] of mediaEntries.entries()) {
+      setArchiveProgress({
+        title: t("archiveMediaZipTitle"),
+        step: t("archiveMediaZipStep", { index: index + 1, count: mediaEntries.length }),
+        percent: 12 + Math.round(((index + 1) / Math.max(1, mediaEntries.length)) * 80),
+        detail: t("archiveMediaZipDetail", { count: exportedMedia.length, skipped: skippedMedia.length }),
+      });
+
+      try {
+        const loaded = await sendToServiceWorker("DOWNLOAD_ACCOUNT_MEDIA_ASSET", { item }, {
+          timeoutMs: 180000,
+          onProgress(progress) {
+            setArchiveProgress({
+              title: t("archiveMediaZipTitle"),
+              step: progress.step || t("archiveMediaZipStep", { index: index + 1, count: mediaEntries.length }),
+              percent: 12 + Math.round(((index + 1) / Math.max(1, mediaEntries.length)) * 80),
+              detail: progress.detail || t("archiveMediaZipDetail", { count: exportedMedia.length, skipped: skippedMedia.length }),
+            });
+          },
+        });
+
+        const modifiedAt = loaded?.createdAt ? new Date(loaded.createdAt) : new Date();
+        const relatedPost = postsByUri.get(loaded?.postUri || item.postUri || "") || null;
+        const postFolder = String(
+          relatedPost?.postFolder
+          || item.postFolder
+          || loaded?.postFolder
+          || buildMediaExportPostFolder(relatedPost || item || loaded || {}),
+        ).trim();
+        if (postFolder && !writtenPostEntries.has(postFolder) && relatedPost) {
+          const postSummary = {
+            ...relatedPost,
+            exportedAt: new Date().toISOString(),
+          };
+          await zipWriter.addFile(`${postFolder}/post.json`, utf8Bytes(JSON.stringify(postSummary, null, 2)), modifiedAt);
+          writtenPostEntries.add(postFolder);
+        }
+        await zipWriter.addFile(String(loaded.path || item.pathStem || `asset-${index + 1}`), loaded.bytes || new Uint8Array(), modifiedAt);
+        exportedMedia.push({
+          id: loaded.id || item.id || "",
+          kind: loaded.kind || item.kind || "",
+          path: loaded.path || "",
+          postFolder,
+          type: loaded.type || "",
+          sizeBytes: Number(loaded.sizeBytes) || 0,
+          createdAt: loaded.createdAt || item.createdAt || "",
+          postUri: loaded.postUri || item.postUri || "",
+          alt: loaded.alt || item.alt || "",
+          width: Number(loaded.width) || 0,
+          height: Number(loaded.height) || 0,
+        });
+      } catch (error) {
+        skippedMedia.push({
+          id: item.id || "",
+          kind: item.kind || "",
+          postFolder: String(item.postFolder || buildMediaExportPostFolder(item || {})).trim(),
+          createdAt: item.createdAt || "",
+          postUri: item.postUri || "",
+          reason: error?.message || t("archiveMediaSkippedUnknown"),
+        });
+      }
+    }
+
+    const exportManifest = {
+      ...(scanned?.manifest || {}),
+      exportedAt: new Date().toISOString(),
+      mediaCount: exportedMedia.length,
+      skippedMediaCount: skippedMedia.length,
+    };
+
+    await zipWriter.addFile("_meta/manifest.json", utf8Bytes(JSON.stringify(exportManifest, null, 2)));
+    await zipWriter.addFile("_meta/posts.json", utf8Bytes(JSON.stringify(scannedPosts, null, 2)));
+    await zipWriter.addFile("_meta/media.json", utf8Bytes(JSON.stringify(exportedMedia, null, 2)));
+    if (skippedMedia.length > 0) {
+      await zipWriter.addFile("_meta/skipped-media.json", utf8Bytes(JSON.stringify(skippedMedia, null, 2)));
+    }
+    await zipWriter.close();
+  } catch (error) {
+    try {
+      await writable.abort();
+    } catch {
+      // Ignore secondary abort errors.
+    }
+    throw error;
+  }
+
+  setArchiveProgress({
+    title: t("archiveProgressDoneTitle"),
+    step: t("archiveMediaDoneStep"),
+    percent: 100,
+    detail: t("archiveMediaDoneDetail", { count: exportedMedia.length, skipped: skippedMedia.length }),
+  });
+  archiveTransientNotice = t("archiveMediaDoneDetail", { count: exportedMedia.length, skipped: skippedMedia.length });
+  renderArchiveStatusLine();
+  setStatus(`${t("archiveProgressDoneTitle")}: ${archiveTransientNotice}`);
+}
+
 async function exportArchiveZipFromCatalog(catalog = archiveCatalog) {
   if (!catalog) {
     throw new Error(t("archiveNeedArchive"));
@@ -3327,12 +7501,276 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+function base64ToBytes(value = "") {
+  const binary = atob(String(value || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
 function assetToDataUri(asset) {
   return `data:${asset.type || "application/octet-stream"};base64,${bytesToBase64(asset.bytes)}`;
 }
 
-function renderArchiveHtmlRichText(text) {
-  return extractPdfLinkRuns(text).map((run) => {
+function getStoredAccountAvatarUri(account = {}) {
+  const assets = Array.isArray(accountAvatarAssets) ? accountAvatarAssets : [];
+  const avatarPath = String(account?.avatarPath || "").trim();
+  if (avatarPath) {
+    const asset = assets.find((entry) => entry.path === avatarPath);
+    if (asset) {
+      return assetToDataUri(asset);
+    }
+  }
+  const fallbackAsset = assets.find((entry) =>
+    (account?.did && entry.did === account.did)
+    || (account?.avatar && entry.url === account.avatar));
+  if (fallbackAsset) {
+    account.avatarPath = fallbackAsset.path;
+    return assetToDataUri(fallbackAsset);
+  }
+  return String(account?.avatar || "").trim();
+}
+
+function applyAccountAvatarCache(cache) {
+  accountAvatarAssets = Array.isArray(cache?.assets) ? cache.assets : [];
+}
+
+async function restoreAccountAvatarCache() {
+  const cache = await sendToServiceWorker("GET_ACCOUNT_AVATAR_CACHE", {}, { timeoutMs: 120000 }).catch(() => null);
+  applyAccountAvatarCache(cache);
+}
+
+function getAssetExtensionFromMimeType(mimeType = "") {
+  const value = String(mimeType || "").toLowerCase();
+  if (value.includes("png")) {
+    return "png";
+  }
+  if (value.includes("webp")) {
+    return "webp";
+  }
+  if (value.includes("gif")) {
+    return "gif";
+  }
+  return "jpg";
+}
+
+async function downloadRemoteAssetForCatalog(url) {
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(`Asset konnte nicht geladen werden (${response.status})`);
+  }
+  return {
+    type: response.headers.get("content-type") || "application/octet-stream",
+    bytes: new Uint8Array(await response.arrayBuffer()),
+  };
+}
+
+async function ensureArchiveAvatarAssets(catalog) {
+  if (!catalog) {
+    return catalog;
+  }
+  if (!Array.isArray(catalog.assets)) {
+    catalog.assets = [];
+  }
+
+  const existingPaths = new Set(catalog.assets.map((asset) => asset.path));
+  const pathByUrl = new Map();
+  const selfAccount = savedAccounts.find((account) => account.did && account.did === authAccountDid)
+    || savedAccounts.find((account) => account.handle && account.handle === authAccount)
+    || null;
+
+  for (const post of catalog.posts || []) {
+    if (!post.authorAvatar && post.authorDid && selfAccount?.avatar && post.authorDid === selfAccount.did) {
+      post.authorAvatar = selfAccount.avatar;
+    }
+    if (!post.authorAvatarPath && post.authorAvatar && pathByUrl.has(post.authorAvatar)) {
+      post.authorAvatarPath = pathByUrl.get(post.authorAvatar) || "";
+      continue;
+    }
+    if (post.authorAvatarPath || !post.authorAvatar) {
+      continue;
+    }
+    try {
+      const blob = await downloadRemoteAssetForCatalog(post.authorAvatar);
+      const extension = getAssetExtensionFromMimeType(blob.type);
+      const slug = String(post.authorHandle || post.authorDid || "author").replace(/[^\w.-]+/g, "-").slice(0, 60) || "author";
+      const path = `avatars/${slug}.${extension}`;
+      pathByUrl.set(post.authorAvatar, path);
+      post.authorAvatarPath = path;
+      if (!existingPaths.has(path)) {
+        existingPaths.add(path);
+        catalog.assets.push({
+          path,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          bytes: blob.bytes,
+        });
+      }
+    } catch {
+      post.authorAvatarPath = "";
+    }
+  }
+
+  return catalog;
+}
+
+async function ensureDmAvatarAssets(catalog) {
+  if (!catalog) {
+    return catalog;
+  }
+  if (!Array.isArray(catalog.assets)) {
+    catalog.assets = [];
+  }
+
+  const selfDid = catalog?.manifest?.account?.did || authAccountDid || "";
+  const selfAvatarPath = catalog?.manifest?.account?.avatarPath || "";
+  const partner = getDmPrimaryPartner(catalog);
+  const recentByDid = new Map((Array.isArray(catalog.recentContacts) ? catalog.recentContacts : []).map((entry) => [entry.did, entry]));
+  const memberByDid = new Map();
+  (catalog.conversations || []).forEach((convo) => {
+    (convo.members || []).forEach((member) => {
+      if (member?.did && !memberByDid.has(member.did)) {
+        memberByDid.set(member.did, member);
+      }
+    });
+  });
+
+  if (partner?.did) {
+    const recent = recentByDid.get(partner.did);
+    const mergedPath = partner.avatarPath || recent?.avatarPath || memberByDid.get(partner.did)?.avatarPath || "";
+    if (mergedPath) {
+      partner.avatarPath = mergedPath;
+      if (recent) {
+        recent.avatarPath = mergedPath;
+      }
+      const member = memberByDid.get(partner.did);
+      if (member) {
+        member.avatarPath = mergedPath;
+      }
+    }
+  }
+
+  (catalog.messages || []).forEach((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return;
+    }
+    if (entry.senderDid === selfDid && selfAvatarPath) {
+      entry.senderAvatarPath = entry.senderAvatarPath || selfAvatarPath;
+      return;
+    }
+    const member = memberByDid.get(entry.senderDid) || recentByDid.get(entry.senderDid);
+    if (member?.avatarPath && !entry.senderAvatarPath) {
+      entry.senderAvatarPath = member.avatarPath;
+    }
+  });
+
+  return catalog;
+}
+
+function utf8IndexToUtf16Index(text, byteIndex) {
+  const value = String(text || "");
+  const bytes = Math.max(0, Number(byteIndex) || 0);
+  let currentBytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const codePoint = value.codePointAt(index);
+    const char = String.fromCodePoint(codePoint);
+    const nextBytes = currentBytes + new TextEncoder().encode(char).length;
+    if (nextBytes > bytes) {
+      return index;
+    }
+    currentBytes = nextBytes;
+    if (codePoint > 0xffff) {
+      index += 1;
+    }
+  }
+  return value.length;
+}
+
+function getFacetLinkInfo(feature, rawText = "") {
+  const type = String(feature?.$type || "");
+  if (type.includes("#link") && feature?.uri) {
+    return {
+      kind: "link",
+      url: String(feature.uri),
+    };
+  }
+  if (type.includes("#mention")) {
+    const handle = String(rawText || "").trim().replace(/^@/, "");
+    return {
+      kind: "mention",
+      url: `https://bsky.app/profile/${encodeURIComponent(handle || feature.did || "")}`,
+    };
+  }
+  if (type.includes("#tag")) {
+    const tag = String(feature.tag || rawText || "").trim().replace(/^#/, "");
+    return {
+      kind: "tag",
+      url: `https://bsky.app/hashtag/${encodeURIComponent(tag)}`,
+    };
+  }
+  return null;
+}
+
+function extractFacetRichTextRuns(text, facets = []) {
+  const value = String(text || "");
+  const facetRanges = [];
+
+  (Array.isArray(facets) ? facets : []).forEach((facet) => {
+    const byteStart = Number(facet?.index?.byteStart);
+    const byteEnd = Number(facet?.index?.byteEnd);
+    if (!Number.isFinite(byteStart) || !Number.isFinite(byteEnd) || byteEnd <= byteStart) {
+      return;
+    }
+    const start = utf8IndexToUtf16Index(value, byteStart);
+    const end = utf8IndexToUtf16Index(value, byteEnd);
+    if (end <= start) {
+      return;
+    }
+    const rawText = value.slice(start, end);
+    const feature = (Array.isArray(facet?.features) ? facet.features : [])
+      .map((entry) => getFacetLinkInfo(entry, rawText))
+      .find(Boolean);
+    if (!feature?.url) {
+      return;
+    }
+    facetRanges.push({
+      start,
+      end,
+      url: feature.url,
+      kind: feature.kind,
+    });
+  });
+
+  facetRanges.sort((left, right) => left.start - right.start || left.end - right.end);
+  const runs = [];
+  let cursor = 0;
+
+  facetRanges.forEach((range) => {
+    if (range.start < cursor) {
+      return;
+    }
+    if (range.start > cursor) {
+      runs.push({ text: value.slice(cursor, range.start) });
+    }
+    runs.push({
+      text: value.slice(range.start, range.end),
+      url: range.url,
+      kind: range.kind,
+    });
+    cursor = range.end;
+  });
+
+  if (cursor < value.length) {
+    runs.push({ text: value.slice(cursor) });
+  }
+
+  return runs.length > 0 ? runs : null;
+}
+
+function renderArchiveHtmlRichText(text, facets = []) {
+  return extractPdfLinkRuns(text, facets).map((run) => {
     const content = escapeHtml(run.text || "").replace(/\n/g, "<br>");
     if (run.url) {
       return `<a href="${escapeHtmlAttribute(run.url)}" target="_blank" rel="noreferrer noopener">${content}</a>`;
@@ -3483,6 +7921,10 @@ function buildArchiveHtmlI18n() {
     "archiveHtmlHashtagsEmpty",
     "archiveHtmlVisibleStatus",
     "archiveHtmlNoMatches",
+    "archiveHtmlFilterSummary",
+    "archiveHtmlFilterHashtagsSuffix",
+    "archiveHtmlLoadImage",
+    "archiveHtmlOpenImage",
     "archiveHtmlOpenPost",
     "archiveHtmlLinksSummary",
     "archiveHtmlLinksEmpty",
@@ -3566,8 +8008,8 @@ function shortenArchiveUrlForDisplay(url) {
 function collectArchiveHtmlLinks(posts = []) {
   const items = [];
   posts.forEach((post) => {
-    extractPdfLinkRuns(post.text || "").forEach((run) => {
-      if (!run.url) {
+    extractPdfLinkRuns(post.text || "", post.facets || []).forEach((run) => {
+      if (!run.url || run.kind !== "link") {
         return;
       }
       items.push({
@@ -3589,6 +8031,10 @@ function collectArchiveHtmlLinks(posts = []) {
     }
     return String(left.url || "").localeCompare(String(right.url || ""));
   });
+}
+
+function getArchiveExternalCard(post = {}) {
+  return post?.externalCard?.url ? post.externalCard : null;
 }
 
 function buildArchiveThreadDepthMap(posts = []) {
@@ -3620,52 +8066,72 @@ function buildArchiveThreadDepthMap(posts = []) {
   return depthCache;
 }
 
-function buildArchiveHtmlDocument(catalog, assetUris) {
-  const groups = buildArchiveThreadGroups(catalog.posts || []);
-  const archiveHashtags = collectArchiveHtmlHashtags(catalog.posts || []);
-  const archiveLinks = collectArchiveHtmlLinks(catalog.posts || []);
-  const toolbarStrings = buildArchiveHtmlToolbarStrings();
-  const htmlI18n = buildArchiveHtmlI18n();
-  const handle = catalog?.manifest?.account?.handle || authAccount || "Bluesky";
-  const fromValue = formatArchiveHtmlDateInputValue(catalog?.summary?.from);
-  const toValue = formatArchiveHtmlDateInputValue(catalog?.summary?.to);
-  const exportedAtIso = catalog?.manifest?.exportedAt || new Date().toISOString();
-  const title = t("archiveHtmlTitle", { handle });
-  const skippedImageCount = Number(catalog?.summary?.skippedImageCount) || 0;
-  const groupsMarkup = groups.map((group, groupIndex) => {
-    const depthMap = buildArchiveThreadDepthMap(group.posts);
-    const summaryLabel = group.isThread
-      ? t("archiveHtmlThreadSummary", { count: group.posts.length, images: group.imageCount })
-      : t("archiveHtmlSingleSummary");
-    const postsMarkup = group.posts.map((post, postIndex) => {
-      const createdTimestamp = Date.parse(post.createdAt || 0) || 0;
-      const hasImages = (post.images || []).length > 0;
-      const searchValue = [
-        post.text || "",
-        post.permalink || "",
-        post.uri || "",
-        post.authorHandle || handle,
-        post.authorDisplayName || "",
-        extractPdfLinkRuns(post.text || "").map((run) => run.url || "").filter(Boolean).join(" "),
-      ].join(" ").replace(/\s+/g, " ").trim().toLowerCase();
-      const imagesMarkup = (post.images || []).map((image) => {
-        const assetUri = assetUris.get(image.path) || "";
-        if (!assetUri) {
-          return "";
-        }
-        return `
+function buildArchiveHtmlFilterSummary(catalog) {
+  const filters = catalog?.manifest?.filters || {};
+  const selectedTags = Array.isArray(filters?.hashtagTags) ? filters.hashtagTags : [];
+  const filteredOutCount = Math.max(0, Number(catalog?.manifest?.hashtagFilteredOutCount) || 0);
+  const scope = filters.scope === "year"
+    ? `Jahr ${filters.year || "?"}`
+    : (filters.scope === "range"
+      ? `${filters.from || "…"} – ${filters.to || "…"}`
+      : "Kompletter Account");
+  const hashtags = selectedTags.length > 0
+    ? t("archiveHtmlFilterHashtagsSuffix", { count: selectedTags.length, skipped: filteredOutCount })
+    : "";
+  return t("archiveHtmlFilterSummary", { scope, hashtags });
+}
+
+function buildArchiveHtmlImageMarkup(post, assetUris, options = {}) {
+  return (post.images || []).map((image) => {
+    const assetUri = options.embedPostImages !== false ? (assetUris.get(image.path) || "") : "";
+    if (!assetUri && options.embedPostImages === false) {
+      const remoteUrl = String(image.remoteUrl || "").trim();
+      if (!remoteUrl) {
+        return "";
+      }
+      return `
+          <figure class="archive-html-image archive-html-image-lazy" data-archive-image-remote="${escapeHtmlAttribute(remoteUrl)}" data-archive-image-alt="${escapeHtmlAttribute(image.alt || "")}">
+            <div class="archive-html-image-placeholder">
+              <button type="button" class="archive-html-inline-load" data-archive-load-image>${escapeHtml(t("archiveHtmlLoadImage"))}</button>
+              <a class="archive-html-link" href="${escapeHtmlAttribute(remoteUrl)}" target="_blank" rel="noreferrer noopener">${escapeHtml(t("archiveHtmlOpenImage"))}</a>
+            </div>
+            ${image.alt ? `<figcaption>${escapeHtml(`${t("archivePdfAltPrefix")} ${image.alt}`)}</figcaption>` : ""}
+          </figure>
+        `;
+    }
+    if (!assetUri) {
+      return "";
+    }
+    return `
           <figure class="archive-html-image">
             <img src="${escapeHtmlAttribute(assetUri)}" alt="${escapeHtmlAttribute(image.alt || "")}" loading="lazy">
             ${image.alt ? `<figcaption>${escapeHtml(`${t("archivePdfAltPrefix")} ${image.alt}`)}</figcaption>` : ""}
           </figure>
         `;
-      }).join("");
-      const metrics = post.counts || {};
-      const depth = depthMap.get(post.uri) || 0;
-      const authorDisplay = post.authorDisplayName && post.authorDisplayName !== post.authorHandle
-        ? post.authorDisplayName
-        : "";
-      return `
+  }).join("");
+}
+
+function buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap, handle, assetUris, options = {}) {
+  const createdTimestamp = Date.parse(post.createdAt || 0) || 0;
+  const hasImages = (post.images || []).length > 0;
+  const searchValue = [
+    post.text || "",
+    post.permalink || "",
+    post.uri || "",
+    post.authorHandle || handle,
+    post.authorDisplayName || "",
+    extractPdfLinkRuns(post.text || "", post.facets || []).map((run) => run.url || "").filter(Boolean).join(" "),
+  ].join(" ").replace(/\s+/g, " ").trim().toLowerCase();
+  const imagesMarkup = buildArchiveHtmlImageMarkup(post, assetUris, options);
+  const metrics = post.counts || {};
+  const depth = depthMap.get(post.uri) || 0;
+  const authorDisplay = post.authorDisplayName && post.authorDisplayName !== post.authorHandle
+    ? post.authorDisplayName
+    : "";
+  const authorAvatarUri = (post.authorAvatarPath ? (assetUris.get(post.authorAvatarPath) || "") : "") || post.authorAvatar || "";
+  const externalCard = getArchiveExternalCard(post);
+  const externalThumbUri = (externalCard?.thumbPath ? (assetUris.get(externalCard.thumbPath) || "") : "") || String(externalCard?.thumb || "").trim();
+  return `
         <article
           class="archive-html-post"
           data-archive-post
@@ -3676,10 +8142,13 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
           style="--thread-depth:${depth}"
         >
           <div class="archive-html-post-head">
-            <div>
+            <div class="archive-html-author">
+              ${authorAvatarUri ? `<img class="archive-html-avatar" src="${escapeHtmlAttribute(authorAvatarUri)}" alt="${escapeHtmlAttribute(authorDisplay || post.authorHandle || handle)}" loading="lazy">` : ""}
+              <div>
               <p class="archive-html-kicker">${group.isThread ? `#${groupIndex + 1}.${postIndex + 1}` : `#${groupIndex + 1}`}</p>
               <h2 data-archive-searchable="true">${escapeHtml(authorDisplay || `@${post.authorHandle || handle}`)}</h2>
               <p class="archive-html-author-handle" data-archive-searchable="true">@${escapeHtml(post.authorHandle || handle)}</p>
+              </div>
             </div>
             <time datetime="${escapeHtmlAttribute(post.createdAt || "")}">${escapeHtml(formatHistoryTimestamp(post.createdAt))}</time>
           </div>
@@ -3689,7 +8158,17 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
             <span>Reposts ${metrics.repostCount || 0}</span>
             <span>Quotes ${metrics.quoteCount || 0}</span>
           </div>
-          <div class="archive-html-text" data-archive-richtext="true">${post.text ? renderArchiveHtmlRichText(post.text) : `<span class="archive-html-empty">${escapeHtml(t("archiveHtmlNoText"))}</span>`}</div>
+          <div class="archive-html-text" data-archive-richtext="true">${post.text ? renderArchiveHtmlRichText(post.text, post.facets || []) : (!externalCard ? `<span class="archive-html-empty">${escapeHtml(t("archiveHtmlNoText"))}</span>` : "")}</div>
+          ${externalCard ? `
+            <a class="archive-html-link-card" href="${escapeHtmlAttribute(externalCard.url)}" target="_blank" rel="noreferrer noopener">
+              ${externalThumbUri ? `<img class="archive-html-link-card-thumb" src="${escapeHtmlAttribute(externalThumbUri)}" alt="">` : ""}
+              <span class="archive-html-link-card-copy">
+                <strong>${escapeHtml(externalCard.title || externalCard.url)}</strong>
+                ${externalCard.description ? `<span>${escapeHtml(externalCard.description)}</span>` : ""}
+                <small>${escapeHtml(shortenArchiveUrlForDisplay(externalCard.url))}</small>
+              </span>
+            </a>
+          ` : ""}
           ${imagesMarkup ? `<div class="archive-html-gallery">${imagesMarkup}</div>` : ""}
           <div class="archive-html-footer">
             ${post.permalink ? `<a class="archive-html-link" href="${escapeHtmlAttribute(post.permalink)}" target="_blank" rel="noreferrer noopener">${escapeHtml(t("archiveHtmlOpenPost"))}</a>` : ""}
@@ -3697,10 +8176,19 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
           </div>
         </article>
       `;
-    }).join("");
+}
 
-    if (group.isThread) {
-      return `
+function buildArchiveHtmlGroupMarkup(group, groupIndex, handle, assetUris, options = {}) {
+  const depthMap = buildArchiveThreadDepthMap(group.posts);
+  const summaryLabel = group.isThread
+    ? t("archiveHtmlThreadSummary", { count: group.posts.length, images: group.imageCount })
+    : t("archiveHtmlSingleSummary");
+  const postsMarkup = group.posts
+    .map((post, postIndex) => buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap, handle, assetUris, options))
+    .join("");
+
+  if (group.isThread) {
+    return `
         <details class="archive-html-entry archive-html-thread" data-archive-entry data-is-thread="true" data-entry-kind="thread">
           <summary>
             <div>
@@ -3714,9 +8202,9 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
           </div>
         </details>
       `;
-    }
+  }
 
-    return `
+  return `
       <details class="archive-html-entry archive-html-single" data-archive-entry data-is-thread="false" data-entry-kind="single">
         <summary class="archive-html-entry-head">
           <strong>${escapeHtml(summaryLabel)}</strong>
@@ -3727,9 +8215,11 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         </div>
       </details>
     `;
-  }).join("");
+}
 
-  const linksMarkup = archiveLinks.length > 0 ? `
+function buildArchiveHtmlLinksMarkup(archiveLinks) {
+  if (archiveLinks.length > 0) {
+    return `
         <details class="archive-html-entry archive-html-links">
           <summary>
             <div>
@@ -3751,7 +8241,10 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
             </div>
           </div>
         </details>
-  ` : `
+  `;
+  }
+
+  return `
         <details class="archive-html-entry archive-html-links">
           <summary>
             <div>
@@ -3764,6 +8257,25 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
           </div>
         </details>
   `;
+}
+
+function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
+  const groups = buildArchiveThreadGroups(catalog.posts || []);
+  const archiveHashtags = collectArchiveHtmlHashtags(catalog.posts || []);
+  const archiveLinks = collectArchiveHtmlLinks(catalog.posts || []);
+  const toolbarStrings = buildArchiveHtmlToolbarStrings();
+  const htmlI18n = buildArchiveHtmlI18n();
+  const handle = catalog?.manifest?.account?.handle || authAccount || "Bluesky";
+  const fromValue = formatArchiveHtmlDateInputValue(catalog?.summary?.from);
+  const toValue = formatArchiveHtmlDateInputValue(catalog?.summary?.to);
+  const exportedAtIso = catalog?.manifest?.exportedAt || new Date().toISOString();
+  const title = t("archiveHtmlTitle", { handle });
+  const skippedImageCount = Number(catalog?.summary?.skippedImageCount) || 0;
+  const filterSummaryText = buildArchiveHtmlFilterSummary(catalog);
+  const groupsMarkup = groups
+    .map((group, groupIndex) => buildArchiveHtmlGroupMarkup(group, groupIndex, handle, assetUris, options))
+    .join("");
+  const linksMarkup = buildArchiveHtmlLinksMarkup(archiveLinks);
 
   return `<!doctype html>
 <html lang="en">
@@ -3864,6 +8376,9 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         z-index: 10;
         padding: 18px;
         margin-bottom: 18px;
+      }
+      body.archive-html-nojs .archive-html-toolbar {
+        display: none !important;
       }
       .archive-html-toolbar-grid {
         display: grid;
@@ -4035,6 +8550,20 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         align-items: flex-start;
         margin-bottom: 10px;
       }
+      .archive-html-author {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .archive-html-avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        object-fit: cover;
+        background: #dfe8f7;
+        border: 1px solid rgba(102, 133, 178, 0.22);
+        flex: 0 0 42px;
+      }
       .archive-html-post-head h2 {
         margin: 0;
         font-size: 1.12rem;
@@ -4077,6 +8606,49 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       .archive-html-empty {
         color: var(--muted);
       }
+      .archive-html-link-card {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: minmax(0, 152px) minmax(0, 1fr);
+        gap: 14px;
+        align-items: stretch;
+        padding: 12px;
+        border-radius: 18px;
+        text-decoration: none;
+        color: inherit;
+        background: linear-gradient(180deg, rgba(236, 244, 255, 0.92), rgba(227, 238, 255, 0.86));
+        border: 1px solid rgba(102, 133, 178, 0.16);
+        box-shadow: 0 10px 24px rgba(24, 40, 70, 0.08);
+      }
+      .archive-html-link-card-thumb {
+        width: 100%;
+        height: 100%;
+        min-height: 106px;
+        max-height: 152px;
+        object-fit: cover;
+        border-radius: 14px;
+        background: rgba(209, 224, 246, 0.55);
+      }
+      .archive-html-link-card-copy {
+        min-width: 0;
+        display: grid;
+        gap: 8px;
+        align-content: center;
+      }
+      .archive-html-link-card-copy strong {
+        font-size: 1rem;
+        line-height: 1.35;
+        color: #10233e;
+      }
+      .archive-html-link-card-copy span {
+        color: #425e85;
+        line-height: 1.5;
+      }
+      .archive-html-link-card-copy small {
+        color: #587192;
+        font-size: 0.84rem;
+        word-break: break-word;
+      }
       .archive-html-gallery {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -4089,6 +8661,21 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         border-radius: 18px;
         background: rgba(237, 244, 255, 0.84);
         border: 1px solid rgba(102, 133, 178, 0.14);
+      }
+      .archive-html-image-placeholder {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        min-height: 80px;
+      }
+      .archive-html-inline-load {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 14px;
+        background: #152846;
+        color: #fff;
+        cursor: pointer;
       }
       .archive-html-image img {
         width: 100%;
@@ -4184,22 +8771,91 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       }
       [hidden] { display: none !important; }
       @media (max-width: 860px) {
-        .archive-html-shell { width: min(100vw - 18px, 100%); padding-top: 18px; }
-        .archive-html-toolbar-grid { grid-template-columns: 1fr; }
+        .archive-html-shell { width: min(100vw - 12px, 100%); padding: 14px 0 28px; }
+        .archive-html-hero,
+        .archive-html-toolbar,
+        .archive-html-entry { border-radius: 18px; }
+        .archive-html-hero { padding: 18px; margin-bottom: 12px; }
+        .archive-html-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+        .archive-html-meta-item { padding: 11px 12px; border-radius: 14px; }
+        .archive-html-toolbar {
+          position: static;
+          top: auto;
+          padding: 12px;
+          margin-bottom: 12px;
+        }
+        .archive-html-toolbar-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .archive-html-toolbar-grid > label:first-child {
+          grid-column: 1 / -1;
+        }
+        .archive-html-toolbar label,
+        .archive-html-toolbar .archive-html-checks label {
+          gap: 4px;
+          font-size: 0.84rem;
+        }
+        .archive-html-toolbar input[type="search"],
+        .archive-html-toolbar input[type="date"] {
+          padding: 10px 12px;
+          border-radius: 12px;
+          min-height: 42px;
+        }
+        .archive-html-checks {
+          gap: 10px 14px;
+          margin-top: 10px;
+        }
+        .archive-html-toolbar-actions {
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          overscroll-behavior-x: contain;
+          gap: 8px;
+          margin-top: 10px;
+          padding-bottom: 2px;
+          scrollbar-width: thin;
+        }
+        .archive-html-toolbar-actions button {
+          flex: 0 0 auto;
+          white-space: nowrap;
+          padding: 9px 12px;
+        }
+        .archive-html-filter-status,
+        .archive-html-hashtags,
+        .archive-html-hashtags-empty {
+          margin-top: 10px;
+        }
+        .archive-html-feed { gap: 12px; }
         .archive-html-entry summary,
         .archive-html-entry-head,
         .archive-html-post-head,
         .archive-html-footer { flex-direction: column; align-items: flex-start; }
+        .archive-html-link-card {
+          grid-template-columns: 1fr;
+        }
+        .archive-html-link-card-thumb {
+          min-height: 0;
+          height: auto;
+          max-height: 240px;
+          aspect-ratio: 4 / 3;
+        }
+      }
+      @media (max-width: 560px) {
+        .archive-html-toolbar-grid,
+        .archive-html-meta {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
-  <body>
+  <body class="archive-html-indent archive-html-nojs">
     <div class="archive-html-shell">
       <header class="archive-html-hero">
         <p class="archive-html-kicker" data-i18n-key="archiveHeaderEyebrow">${escapeHtml(t("archiveHeaderEyebrow"))}</p>
         <h1 id="archive-page-title">${escapeHtml(title)}</h1>
         <p id="archive-generated-copy">${escapeHtml(t("archiveHtmlGenerated", { exportedAt: formatHistoryTimestamp(exportedAtIso) }))}</p>
         ${skippedImageCount > 0 ? `<p class="archive-html-warning" id="archive-skipped-copy">${escapeHtml(t("archiveSkippedImagesNotice", { skipped: skippedImageCount }))}</p>` : ""}
+        ${filterSummaryText ? `<p class="archive-html-warning" id="archive-filter-copy" data-i18n-key="archiveHtmlFilterSummary">${escapeHtml(filterSummaryText)}</p>` : ""}
         <div class="archive-html-meta">
           <div class="archive-html-meta-item">
             <span data-i18n-key="archiveSummaryPosts">${escapeHtml(t("archiveSummaryPosts"))}</span>
@@ -4290,12 +8946,25 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
     </div>
 
     <script>
+      document.body.classList.remove("archive-html-nojs");
       const archiveHtmlI18n = ${JSON.stringify(htmlI18n)};
       const archiveRuntimeData = ${JSON.stringify({
         handle,
         exportedAtIso,
         title,
         skippedImageCount,
+        filterScope: (() => {
+          const filters = catalog?.manifest?.filters || {};
+          if (filters.scope === "year") {
+            return `Jahr ${filters.year || "?"}`;
+          }
+          if (filters.scope === "range") {
+            return `${filters.from || "…"} – ${filters.to || "…"}`;
+          }
+          return "Kompletter Account";
+        })(),
+        filterHashtagCount: Array.isArray(catalog?.manifest?.filters?.hashtagTags) ? catalog.manifest.filters.hashtagTags.length : 0,
+        filterSkippedCount: Math.max(0, Number(catalog?.manifest?.hashtagFilteredOutCount) || 0),
       })};
       const groups = Array.from(document.querySelectorAll("[data-archive-entry]"));
       const browserLocales = Array.isArray(navigator.languages) && navigator.languages.length > 0
@@ -4324,6 +8993,8 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
       const lightboxTitle = document.querySelector("#archive-lightbox-title");
       const lightboxClose = document.querySelector("#archive-lightbox-close");
       let indentThreads = true;
+      let lastAppliedQuery = "";
+      let filterApplyTimer = 0;
 
       function formatArchiveTemplate(template, values) {
         return String(template || "").replace(/\\{(\\w+)\\}/g, (_, key) => values[key] ?? "");
@@ -4377,6 +9048,19 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         if (skippedCopy) {
           skippedCopy.textContent = formatArchiveTemplate(archiveStrings.archiveSkippedImagesNotice, {
             skipped: archiveRuntimeData.skippedImageCount || 0,
+          });
+        }
+        const filterCopy = document.querySelector("#archive-filter-copy");
+        if (filterCopy) {
+          const hashtags = archiveRuntimeData.filterHashtagCount > 0
+            ? formatArchiveTemplate(archiveStrings.archiveHtmlFilterHashtagsSuffix, {
+                count: archiveRuntimeData.filterHashtagCount || 0,
+                skipped: archiveRuntimeData.filterSkippedCount || 0,
+              })
+            : "";
+          filterCopy.textContent = formatArchiveTemplate(archiveStrings.archiveHtmlFilterSummary, {
+            scope: archiveRuntimeData.filterScope || "",
+            hashtags,
           });
         }
         const rangeCopy = document.querySelector("#archive-range-copy");
@@ -4499,6 +9183,31 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         });
       }
 
+      function refreshArchiveHighlights(query) {
+        const normalizedQuery = String(query || "").trim().toLowerCase();
+        const queryChanged = normalizedQuery !== lastAppliedQuery;
+
+        if (queryChanged && lastAppliedQuery) {
+          document.querySelectorAll("[data-archive-richtext='true'], [data-archive-searchable='true']").forEach((element) => {
+            clearArchiveHighlights(element);
+          });
+        }
+
+        if (!normalizedQuery) {
+          lastAppliedQuery = "";
+          return;
+        }
+
+        const visibleElements = [];
+        document.querySelectorAll("[data-archive-post]:not([hidden])").forEach((post) => {
+          visibleElements.push(...post.querySelectorAll("[data-archive-richtext='true'], [data-archive-searchable='true']"));
+        });
+        visibleElements.forEach((element) => {
+          highlightArchiveQueryInElement(element, normalizedQuery);
+        });
+        lastAppliedQuery = normalizedQuery;
+      }
+
       function applyArchiveFilters() {
         const query = String(searchInput.value || "").trim().toLowerCase();
         const fromValue = fromInput.value ? Date.parse(fromInput.value + "T00:00:00Z") : null;
@@ -4506,6 +9215,7 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         const onlyImages = onlyImagesInput.checked;
         const onlyThreads = onlyThreadsInput.checked;
         let visibleEntries = 0;
+        let visibleThreads = 0;
         let visiblePosts = 0;
 
         groups.forEach((group) => {
@@ -4547,34 +9257,47 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
           group.hidden = !groupVisible;
           if (groupVisible) {
             visibleEntries += 1;
+            if (isThread) {
+              visibleThreads += 1;
+            }
           }
         });
 
         statusLine.textContent = visiblePosts > 0
-          ? formatArchiveTemplate(archiveStrings.visibleStatus, { entries: visibleEntries, posts: visiblePosts })
-          : archiveStrings.noMatches;
-        document.querySelectorAll("[data-archive-richtext='true']").forEach((element) => {
-          highlightArchiveQueryInElement(element, query);
-        });
-        document.querySelectorAll("[data-archive-searchable='true']").forEach((element) => {
-          highlightArchiveQueryInElement(element, query);
-        });
+          ? formatArchiveTemplate(archiveStrings.archiveHtmlVisibleStatus, {
+              entries: visibleEntries,
+              threads: visibleThreads,
+              posts: visiblePosts,
+            })
+          : archiveStrings.archiveHtmlNoMatches;
+        refreshArchiveHighlights(query);
         syncHashtagState();
         syncToggleAllButton();
         syncSectionToggleButtons();
       }
 
+      function queueArchiveFilterApply(delay = 120) {
+        window.clearTimeout(filterApplyTimer);
+        filterApplyTimer = window.setTimeout(() => {
+          applyArchiveFilters();
+        }, delay);
+      }
+
       function syncIndentButton() {
+        if (!indentButton) {
+          return;
+        }
         indentButton.classList.toggle("is-active", indentThreads);
         document.body.classList.toggle("archive-html-indent", indentThreads);
       }
 
-      [searchInput, fromInput, toInput, onlyImagesInput, onlyThreadsInput].forEach((element) => {
-        element.addEventListener("input", applyArchiveFilters);
-        element.addEventListener("change", applyArchiveFilters);
+      searchInput.addEventListener("input", () => queueArchiveFilterApply(140));
+      [fromInput, toInput, onlyImagesInput, onlyThreadsInput].forEach((element) => {
+        element.addEventListener("input", () => applyArchiveFilters());
+        element.addEventListener("change", () => applyArchiveFilters());
       });
 
-      resetButton.addEventListener("click", () => {
+      resetButton?.addEventListener("click", () => {
         searchInput.value = "";
         fromInput.value = ${JSON.stringify(fromValue)};
         toInput.value = ${JSON.stringify(toValue)};
@@ -4583,8 +9306,8 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         applyArchiveFilters();
       });
 
-      toggleThreadsButton.addEventListener("click", () => {
-        const threadEntries = getThreadEntries();
+      toggleThreadsButton?.addEventListener("click", () => {
+        const threadEntries = getThreadEntries().filter((entry) => !entry.hidden);
         const shouldOpen = threadEntries.some((entry) => !entry.open);
         threadEntries.forEach((item) => {
           item.open = shouldOpen;
@@ -4593,8 +9316,8 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         syncSectionToggleButtons();
       });
 
-      toggleSinglesButton.addEventListener("click", () => {
-        const singleEntries = getSingleEntries();
+      toggleSinglesButton?.addEventListener("click", () => {
+        const singleEntries = getSingleEntries().filter((entry) => !entry.hidden);
         const shouldOpen = singleEntries.some((entry) => !entry.open);
         singleEntries.forEach((item) => {
           item.open = shouldOpen;
@@ -4603,18 +9326,47 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
         syncSectionToggleButtons();
       });
 
-      toggleAllButton.addEventListener("click", () => {
-        const entries = getAllEntries();
+      toggleAllButton?.addEventListener("click", () => {
+        const entries = getAllEntries().filter((entry) => !entry.hidden);
         const shouldOpen = entries.some((entry) => !entry.open);
         entries.forEach((entry) => {
           entry.open = shouldOpen;
         });
         syncToggleAllButton();
+        syncSectionToggleButtons();
       });
 
-      indentButton.addEventListener("click", () => {
+      indentButton?.addEventListener("click", () => {
         indentThreads = !indentThreads;
         syncIndentButton();
+      });
+
+      document.querySelectorAll("[data-archive-load-image]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const figure = button.closest("[data-archive-image-remote]");
+          const remoteUrl = String(figure?.getAttribute("data-archive-image-remote") || "").trim();
+          const remoteAlt = String(figure?.getAttribute("data-archive-image-alt") || "").trim();
+          if (!figure || !remoteUrl || figure.querySelector("img")) {
+            return;
+          }
+          const image = document.createElement("img");
+          image.src = remoteUrl;
+          image.alt = remoteAlt;
+          image.loading = "lazy";
+          image.addEventListener("click", () => {
+            lightbox.hidden = false;
+            lightboxImage.src = image.src;
+            lightboxImage.alt = image.alt || "";
+            lightboxTitle.textContent = image.closest("[data-archive-post]")?.querySelector(".archive-html-author-handle")?.textContent || ${JSON.stringify(title)};
+            lightboxCaption.textContent = image.alt || "";
+          });
+          const placeholder = figure.querySelector(".archive-html-image-placeholder");
+          if (placeholder) {
+            placeholder.replaceWith(image);
+          } else {
+            figure.prepend(image);
+          }
+        });
       });
 
       getAllEntries().forEach((entry) => {
@@ -4669,40 +9421,49 @@ function buildArchiveHtmlDocument(catalog, assetUris) {
 </html>`;
 }
 
-async function exportArchiveHtmlFromCatalog(catalog = archiveCatalog) {
+async function exportArchiveHtmlFromCatalog(catalog = archiveCatalog, options = {}) {
   if (!catalog) {
     throw new Error(t("archiveNeedArchive"));
   }
+  await ensureArchiveAvatarAssets(catalog);
 
   const assets = Array.isArray(catalog.assets) ? catalog.assets : [];
   const assetUris = new Map();
+  const compactMode = options.mode === "compact";
 
   setArchiveProgress({
     title: t("archiveProgressHtmlTitle"),
     step: t("archiveProgressHtmlStep"),
     percent: 76,
-    detail: t("archiveProgressHtmlDetail", { count: assets.length }),
+    detail: compactMode
+      ? t("archiveProgressHtmlCompactDetail")
+      : t("archiveProgressHtmlDetail", { count: assets.length }),
   });
 
-  for (const [index, asset] of assets.entries()) {
-    assetUris.set(asset.path, assetToDataUri(asset));
-    setArchiveProgress({
-      title: t("archiveProgressHtmlTitle"),
-      step: t("archiveProgressHtmlStep"),
-      percent: 76 + Math.round(((index + 1) / Math.max(1, assets.length)) * 18),
-      detail: t("archiveProgressHtmlDetail", { count: assets.length }),
-    });
+  if (!compactMode) {
+    for (const [index, asset] of assets.entries()) {
+      assetUris.set(asset.path, assetToDataUri(asset));
+      setArchiveProgress({
+        title: t("archiveProgressHtmlTitle"),
+        step: t("archiveProgressHtmlStep"),
+        percent: 76 + Math.round(((index + 1) / Math.max(1, assets.length)) * 18),
+        detail: t("archiveProgressHtmlDetail", { count: assets.length }),
+      });
+    }
   }
 
-  const html = buildArchiveHtmlDocument(catalog, assetUris);
-  const fileName = `${makeArchiveFileBaseName(catalog)}.html`;
+  const html = buildArchiveHtmlDocument(catalog, assetUris, {
+    embedPostImages: !compactMode,
+    mode: compactMode ? "compact" : "full",
+  });
+  const fileName = `${makeArchiveFileBaseName(catalog)}${compactMode ? "-compact" : ""}.html`;
   const file = new File([html], fileName, { type: "text/html" });
   await shareOrDownloadFile(file, fileName, { preferDownload: true });
   setArchiveProgress({
     title: t("archiveProgressDoneTitle"),
     step: t("archiveProgressDoneStep"),
     percent: 100,
-    detail: t("archiveHtmlDone"),
+    detail: compactMode ? t("archiveHtmlCompactDone") : t("archiveHtmlDone"),
   });
 }
 
@@ -4718,9 +9479,14 @@ async function loadArchiveAssetBitmap(asset) {
   return createImageBitmap(blob);
 }
 
-function extractPdfLinkRuns(text) {
+function extractPdfLinkRuns(text, facets = []) {
+  const facetRuns = extractFacetRichTextRuns(text, facets);
+  if (facetRuns) {
+    return facetRuns;
+  }
+
   const value = String(text || "");
-  const regex = /(^|\s|\()((https?:\/\/[^\s]+)|((?<domain>[a-z][a-z0-9-]*(\.[a-z0-9-]+)+)[^\s]*))/gim;
+  const regex = /(^|\s|\()((https?:\/\/[^\s]+)|((?<domain>[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})[^\s]*))/gim;
   const runs = [];
   let cursor = 0;
   let match;
@@ -4765,8 +9531,8 @@ function extractPdfLinkRuns(text) {
   return runs.length > 0 ? runs : [{ text: value }];
 }
 
-function buildPdfTextTokens(text) {
-  const runs = extractPdfLinkRuns(text);
+function buildPdfTextTokens(text, facets = []) {
+  const runs = extractPdfLinkRuns(text, facets);
   const tokens = [];
 
   for (const run of runs) {
@@ -4804,8 +9570,8 @@ function fitPdfTokenToWidth(context, text, maxWidth) {
   return fitted || text.slice(0, 1);
 }
 
-function buildWrappedPdfLines(context, text, maxWidth) {
-  const tokens = buildPdfTextTokens(text);
+function buildWrappedPdfLines(context, text, maxWidth, facets = []) {
+  const tokens = buildPdfTextTokens(text, facets);
   const lines = [];
   let currentFragments = [];
   let currentWidth = 0;
@@ -4917,6 +9683,24 @@ function drawRoundedImageContain(context, bitmap, x, y, width, height, radius, b
   context.restore();
 }
 
+function drawCircularImageCover(context, bitmap, x, y, size, background = "#dfe9fb") {
+  context.save();
+  context.beginPath();
+  context.arc(x + (size / 2), y + (size / 2), size / 2, 0, Math.PI * 2);
+  context.closePath();
+  context.clip();
+  context.fillStyle = background;
+  context.fillRect(x, y, size, size);
+
+  const ratio = Math.max(size / bitmap.width, size / bitmap.height);
+  const drawWidth = bitmap.width * ratio;
+  const drawHeight = bitmap.height * ratio;
+  const offsetX = x + ((size - drawWidth) / 2);
+  const offsetY = y + ((size - drawHeight) / 2);
+  context.drawImage(bitmap, offsetX, offsetY, drawWidth, drawHeight);
+  context.restore();
+}
+
 function getArchivePdfImagePreset(options) {
   if (options.imageSize === "large") {
     return { singleMaxHeight: 250, gridCellMaxHeight: 160, gap: 10 };
@@ -4994,6 +9778,50 @@ function getArchivePdfImageFrames(post, contentWidth, options, scale) {
   };
 }
 
+function getArchivePdfExternalCardLayout(context, post, contentWidth, scale) {
+  const externalCard = getArchiveExternalCard(post);
+  if (!externalCard) {
+    return null;
+  }
+
+  const cardPadding = 11 * scale;
+  const gap = 10 * scale;
+  const hasThumb = Boolean(externalCard.thumbPath);
+  const thumbWidth = hasThumb ? Math.min(116 * scale, contentWidth * 0.3) : 0;
+  const thumbHeight = hasThumb ? (thumbWidth * 0.74) : 0;
+  const textWidth = Math.max(120 * scale, contentWidth - (cardPadding * 2) - (hasThumb ? (thumbWidth + gap) : 0));
+  const displayUrl = shortenArchiveUrlForDisplay(externalCard.url);
+
+  context.font = `700 ${10.5 * scale}px "Segoe UI", Aptos, sans-serif`;
+  const titleLines = buildWrappedPdfLines(context, externalCard.title || externalCard.url, textWidth).slice(0, 2);
+  context.font = `${9.2 * scale}px "Segoe UI", Aptos, sans-serif`;
+  const descriptionLines = externalCard.description
+    ? buildWrappedPdfLines(context, externalCard.description, textWidth).slice(0, 3)
+    : [];
+  context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
+  const urlLines = buildWrappedPdfLines(context, displayUrl, textWidth).slice(0, 2);
+
+  const titleHeight = titleLines.length * (13 * scale);
+  const descriptionHeight = descriptionLines.length * (11.5 * scale);
+  const urlHeight = urlLines.length * (10.5 * scale);
+  const textHeight = titleHeight + (descriptionLines.length ? descriptionHeight + (4 * scale) : 0) + (urlLines.length ? urlHeight + (5 * scale) : 0);
+  const contentHeight = Math.max(hasThumb ? thumbHeight : 0, textHeight);
+
+  return {
+    card: externalCard,
+    hasThumb,
+    thumbWidth,
+    thumbHeight,
+    textWidth,
+    cardPadding,
+    gap,
+    titleLines,
+    descriptionLines,
+    urlLines,
+    height: contentHeight + (cardPadding * 2),
+  };
+}
+
 function drawArchivePdfMetricPill(context, label, x, y, scale) {
   const paddingX = 8 * scale;
   const width = context.measureText(label).width + (paddingX * 2);
@@ -5020,14 +9848,20 @@ function estimateArchivePostCardHeight(context, post, options, scale, cardWidth,
   const depthIndent = layoutMode === "standalone" && options.indentThreads
     ? Math.min(4, Number(post?.threadDepth) || 0) * (18 * scale)
     : 0;
-  const contentWidth = cardWidth - (innerPadding * 2) - depthIndent;
+  const avatarOffset = post?.authorAvatarPath ? ((28 * scale) + (10 * scale)) : 0;
+  const contentWidth = cardWidth - (innerPadding * 2) - depthIndent - avatarOffset;
   const headerHeight = 42 * scale;
   const metricsHeight = options.includeMetrics ? (28 * scale) : 0;
   const textLineHeight = 15 * scale;
 
   context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const textLines = buildWrappedPdfLines(context, post.text || "", contentWidth);
+  const textLines = buildWrappedPdfLines(context, post.text || "", contentWidth, post.facets || []);
   let totalHeight = innerPadding + headerHeight + metricsHeight + (textLines.length * textLineHeight) + (12 * scale);
+
+  const externalCardLayout = getArchivePdfExternalCardLayout(context, post, contentWidth, scale);
+  if (externalCardLayout) {
+    totalHeight += externalCardLayout.height + (12 * scale);
+  }
 
   const imageLayout = getArchivePdfImageFrames(post, contentWidth, options, scale);
   if (imageLayout.totalHeight > 0) {
@@ -5153,8 +9987,12 @@ async function drawArchivePdfPostCard(
   let cursorY = y + innerPadding;
   const textStartX = x + innerPadding + (integrated ? 0 : (8 * scale));
   const depthIndent = 0;
-  const cardContentX = textStartX + depthIndent;
-  const contentWidth = width - (innerPadding * 2) - depthIndent;
+  const avatarSize = 28 * scale;
+  const avatarGap = 10 * scale;
+  const avatarAsset = post.authorAvatarPath ? assetMap.get(post.authorAvatarPath) : null;
+  const avatarOffset = avatarAsset ? (avatarSize + avatarGap) : 0;
+  const cardContentX = textStartX + depthIndent + avatarOffset;
+  const contentWidth = width - (innerPadding * 2) - depthIndent - avatarOffset;
 
   if (integrated && isReply) {
     fillRoundedRect(context, x + (10 * scale), y + (12 * scale), 3 * scale, cardHeight - (24 * scale), 2 * scale, "#d95f4b");
@@ -5163,6 +10001,11 @@ async function drawArchivePdfPostCard(
   }
 
   context.textBaseline = "top";
+  if (avatarAsset) {
+    const avatarBitmap = await loadArchiveAssetBitmap(avatarAsset);
+    drawCircularImageCover(context, avatarBitmap, textStartX, cursorY, avatarSize);
+    avatarBitmap.close();
+  }
   context.fillStyle = "#13213c";
   context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
   const pdfAuthorTitle = post.authorDisplayName || post.authorHandle || authAccount || "Bluesky";
@@ -5188,13 +10031,69 @@ async function drawArchivePdfPostCard(
 
   context.fillStyle = "#17233a";
   context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const textLines = buildWrappedPdfLines(context, post.text || "", contentWidth);
+  const textLines = buildWrappedPdfLines(context, post.text || "", contentWidth, post.facets || []);
   const textBlock = drawArchivePdfTextBlock(context, textLines, cardContentX, cursorY, 15 * scale);
   annotations.push(...textBlock.annotations.map((annotation) => ({
     rect: canvasRectToPdfRect(annotation, canvasWidth, canvasHeight),
     url: annotation.url,
   })));
   cursorY += textBlock.height + (12 * scale);
+
+  const externalCardLayout = getArchivePdfExternalCardLayout(context, post, contentWidth, scale);
+  if (externalCardLayout) {
+    const cardX = cardContentX;
+    const cardY = cursorY;
+    fillRoundedRect(context, cardX, cardY, contentWidth, externalCardLayout.height, 14 * scale, "#eef4ff");
+    strokeRoundedRect(context, cardX, cardY, contentWidth, externalCardLayout.height, 14 * scale, "#d2def0", 1 * scale);
+
+    let textX = cardX + externalCardLayout.cardPadding;
+    const textY = cardY + externalCardLayout.cardPadding;
+    if (externalCardLayout.hasThumb) {
+      const thumbX = cardX + externalCardLayout.cardPadding;
+      const thumbY = cardY + externalCardLayout.cardPadding;
+      const thumbAsset = assetMap.get(externalCardLayout.card.thumbPath);
+      if (thumbAsset) {
+        const thumbBitmap = await loadArchiveAssetBitmap(thumbAsset);
+        drawRoundedImageContain(context, thumbBitmap, thumbX, thumbY, externalCardLayout.thumbWidth, externalCardLayout.thumbHeight, 10 * scale, "#dfe8f7");
+        thumbBitmap.close();
+      } else {
+        fillRoundedRect(context, thumbX, thumbY, externalCardLayout.thumbWidth, externalCardLayout.thumbHeight, 10 * scale, "#dfe8f7");
+      }
+      strokeRoundedRect(context, thumbX, thumbY, externalCardLayout.thumbWidth, externalCardLayout.thumbHeight, 10 * scale, "#d5e0f2", 1 * scale);
+      textX += externalCardLayout.thumbWidth + externalCardLayout.gap;
+    }
+
+    context.fillStyle = "#122642";
+    context.font = `700 ${10.5 * scale}px "Segoe UI", Aptos, sans-serif`;
+    const titleBlock = drawArchivePdfTextBlock(context, externalCardLayout.titleLines, textX, textY, 13 * scale);
+    let cardTextY = textY + titleBlock.height;
+
+    if (externalCardLayout.descriptionLines.length > 0) {
+      cardTextY += 4 * scale;
+      context.fillStyle = "#415b81";
+      context.font = `${9.2 * scale}px "Segoe UI", Aptos, sans-serif`;
+      const descriptionBlock = drawArchivePdfTextBlock(context, externalCardLayout.descriptionLines, textX, cardTextY, 11.5 * scale);
+      cardTextY += descriptionBlock.height;
+    }
+
+    if (externalCardLayout.urlLines.length > 0) {
+      cardTextY += 5 * scale;
+      context.fillStyle = "#1d4ed8";
+      context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
+      drawArchivePdfTextBlock(context, externalCardLayout.urlLines, textX, cardTextY, 10.5 * scale);
+    }
+
+    annotations.push({
+      rect: canvasRectToPdfRect({
+        x: cardX,
+        y: cardY,
+        width: contentWidth,
+        height: externalCardLayout.height,
+      }, canvasWidth, canvasHeight),
+      url: externalCardLayout.card.url,
+    });
+    cursorY += externalCardLayout.height + (12 * scale);
+  }
 
   const imageLayout = getArchivePdfImageFrames(post, contentWidth, options, scale);
   for (const frame of imageLayout.frames) {
@@ -5560,6 +10459,7 @@ async function exportArchivePdfBandsFromCatalog(catalog = archiveCatalog) {
   if (!catalog) {
     throw new Error(t("archiveNeedArchive"));
   }
+  await ensureArchiveAvatarAssets(catalog);
 
   const options = getArchivePdfOptions();
   const orderedPosts = buildArchiveThreadGroups([...catalog.posts].reverse()).flatMap((group) => group.posts);
@@ -5707,6 +10607,9 @@ async function ensureArchiveCatalogLoaded(forceRefresh = false) {
 
 async function importArchiveThreadFromUrl() {
   const threadUrl = String(archiveThreadUrlInput?.value || "").trim();
+  const importMode = archiveThreadImportModeSelect?.value === "tree"
+    ? "tree"
+    : (archiveThreadImportModeSelect?.value === "author" ? "author" : "path");
   if (!threadUrl) {
     throw new Error(t("archiveThreadUrlInvalid"));
   }
@@ -5730,6 +10633,7 @@ async function importArchiveThreadFromUrl() {
     catalog = await sendToServiceWorker("IMPORT_ARCHIVE_THREAD_FROM_URL", {
       runId: activeArchiveRunId,
       url: threadUrl,
+      importMode,
     }, {
       timeoutMs: 600000,
       onProgress(progress) {
@@ -5833,8 +10737,8 @@ function renderHashtagCloud() {
         : [...currentSelection, tag.normalized];
       if (isArchiveContext) {
         archiveSelectedHashtags = normalizeSelectedHashtagEntries(nextSelection, hashtags);
-        if (archiveSelectedHashtags.length > 0 && archiveContentModeSelect.value !== "threads") {
-          archiveContentModeSelect.value = "threads";
+        if (archiveSelectedHashtags.length > 0 && archiveContentModeSelect.value === "posts") {
+          archiveContentModeSelect.value = "thread_roots";
         }
         renderHashtagCloud();
         invalidateArchiveCatalog();
@@ -5925,14 +10829,72 @@ async function persistSettings() {
       segmentImages,
       postingHistory,
       archivePreferences: getArchivePreferences(),
-    });
+    }, { timeoutMs: 120000 });
   } catch (error) {
     console.error(error);
     setStatus(error.message, "error");
   }
 }
 
-function createSettingsBackupPayload() {
+function serializeBackupAssets(assets = []) {
+  return (Array.isArray(assets) ? assets : []).map((asset) => ({
+    path: String(asset.path || ""),
+    type: String(asset.type || "application/octet-stream"),
+    sizeBytes: Math.max(0, Number(asset.sizeBytes) || (asset.bytes?.length || 0)),
+    bytesBase64: bytesToBase64(asset.bytes instanceof Uint8Array ? asset.bytes : new Uint8Array(asset.bytes || [])),
+  })).filter((asset) => asset.path && asset.bytesBase64);
+}
+
+function deserializeBackupAssets(assets = []) {
+  return (Array.isArray(assets) ? assets : []).map((asset) => ({
+    path: String(asset.path || ""),
+    type: String(asset.type || "application/octet-stream"),
+    sizeBytes: Math.max(0, Number(asset.sizeBytes) || 0),
+    bytes: base64ToBytes(asset.bytesBase64 || ""),
+  })).filter((asset) => asset.path && asset.bytes.length > 0);
+}
+
+async function gzipBytes(bytes) {
+  if (typeof CompressionStream !== "function") {
+    throw new Error("GZIP-Komprimierung wird in diesem Browser nicht unterstützt.");
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+  const chunks = [];
+  const reader = stream.getReader();
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (value) {
+      chunks.push(value);
+    }
+  }
+  return concatUint8Arrays(chunks);
+}
+
+async function gunzipBytes(bytes) {
+  if (typeof DecompressionStream !== "function") {
+    throw new Error("GZIP-Dekomprimierung wird in diesem Browser nicht unterstützt.");
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const chunks = [];
+  const reader = stream.getReader();
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (value) {
+      chunks.push(value);
+    }
+  }
+  return concatUint8Arrays(chunks);
+}
+
+async function createSettingsBackupPayload() {
+  const accountAssets = Array.isArray(accountAvatarAssets) ? accountAvatarAssets : [];
+  const dmAssets = Array.isArray(dmRecentContactAssets) ? dmRecentContactAssets : [];
   return {
     exportedAt: new Date().toISOString(),
     app: "Threadline",
@@ -5960,7 +10922,18 @@ function createSettingsBackupPayload() {
         identifier: account.identifier || "",
         service: account.service || "",
         avatar: account.avatar || "",
+        avatarPath: account.avatarPath || "",
       })),
+      accountAvatarCache: {
+        assets: serializeBackupAssets(accountAssets),
+      },
+      dmPartnerCache: {
+        accountDid: dmPartnerCacheAccountDid,
+        updatedAt: dmPartnerCacheUpdatedAt,
+        recentContacts: Array.isArray(dmRecentContacts) ? dmRecentContacts : [],
+        conversations: Array.isArray(dmRecentConversations) ? dmRecentConversations : [],
+        assets: serializeBackupAssets(dmAssets),
+      },
       hashtagPlacement,
       hashtags,
       selectedHashtags,
@@ -5976,11 +10949,13 @@ function isValidSettingsBackup(payload) {
 }
 
 async function exportSettingsBackup() {
-  const payload = createSettingsBackupPayload();
+  const payload = await createSettingsBackupPayload();
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(payload, null, 2));
+  const gzipPayload = await gzipBytes(jsonBytes);
   const file = new File(
-    [JSON.stringify(payload, null, 2)],
-    `threadline-settings-${new Date().toISOString().slice(0, 10)}.json`,
-    { type: "application/json" },
+    [gzipPayload],
+    `threadline-settings-${new Date().toISOString().slice(0, 10)}.json.gz`,
+    { type: "application/gzip" },
   );
 
   await shareOrDownloadFile(file, file.name);
@@ -5988,7 +10963,11 @@ async function exportSettingsBackup() {
 }
 
 async function importSettingsBackup(file) {
-  const text = await file.text();
+  const rawBytes = new Uint8Array(await file.arrayBuffer());
+  const payloadBytes = /\.gz$/i.test(file.name)
+    ? await gunzipBytes(rawBytes)
+    : rawBytes;
+  const text = new TextDecoder().decode(payloadBytes);
   const parsed = JSON.parse(text);
 
   if (!isValidSettingsBackup(parsed)) {
@@ -6042,6 +11021,43 @@ async function importSettingsBackup(file) {
     savedAccounts = Array.isArray(accountResult.accounts) ? accountResult.accounts : savedAccounts;
   }
 
+  if (imported.accountAvatarCache && typeof imported.accountAvatarCache === "object") {
+    const importedAccountAssets = Array.isArray(imported.accountAvatarCache.assets)
+      ? deserializeBackupAssets(imported.accountAvatarCache.assets)
+      : null;
+    if (importedAccountAssets) {
+      applyAccountAvatarCache({ assets: importedAccountAssets });
+      await sendToServiceWorker("SAVE_ACCOUNT_AVATAR_CACHE", {
+        cache: {
+          updatedAt: new Date().toISOString(),
+          assets: importedAccountAssets,
+        },
+      }, { timeoutMs: 120000 }).catch(() => {});
+    }
+  }
+
+  if (imported.dmPartnerCache && typeof imported.dmPartnerCache === "object") {
+    const importedDmAssets = Array.isArray(imported.dmPartnerCache.assets)
+      ? deserializeBackupAssets(imported.dmPartnerCache.assets)
+      : null;
+    applyDmPartnerCache({
+      accountDid: String(imported.dmPartnerCache.accountDid || ""),
+      updatedAt: String(imported.dmPartnerCache.updatedAt || ""),
+      recentContacts: Array.isArray(imported.dmPartnerCache.recentContacts) ? imported.dmPartnerCache.recentContacts : [],
+      conversations: Array.isArray(imported.dmPartnerCache.conversations) ? imported.dmPartnerCache.conversations : [],
+      assets: importedDmAssets ?? dmRecentContactAssets,
+    });
+    await sendToServiceWorker("SAVE_DM_PARTNER_CACHE", {
+      cache: {
+        accountDid: dmPartnerCacheAccountDid,
+        updatedAt: dmPartnerCacheUpdatedAt || new Date().toISOString(),
+        recentContacts: dmRecentContacts,
+        conversations: dmRecentConversations,
+        assets: importedDmAssets ?? dmRecentContactAssets,
+      },
+    }, { timeoutMs: 120000 }).catch(() => {});
+  }
+
   await persistSettings();
   applyTranslations();
   renderAccountSwitcher();
@@ -6057,16 +11073,23 @@ function versionSignature(versionInfo) {
 
 function normalizeVersionInfo(versionInfo) {
   return {
-    appVersion: versionInfo?.appVersion || "",
-    cacheVersion: versionInfo?.cacheVersion || "",
-    label: versionInfo?.label || "",
+    appVersion: String(versionInfo?.appVersion || "").trim(),
+    cacheVersion: String(versionInfo?.cacheVersion || "").trim(),
+    label: String(versionInfo?.label || "").trim(),
   };
 }
 
-function setUpdateStatus(message, showReload = false) {
-  updateStatus.textContent = message;
+function setUpdateStatus(message, showReload = false, error = false) {
+  if (!updateStatus || !reloadAppButton) {
+    return;
+  }
+
+  updateStatus.textContent = message || "";
   updateStatus.hidden = !message;
-  reloadAppButton.hidden = !showReload;
+  updateStatus.dataset.state = error ? "error" : (message ? "info" : "");
+  reloadAppButton.hidden = false;
+  reloadAppButton.disabled = Boolean(reloadInProgress);
+  reloadAppButton.classList.toggle("is-active", Boolean(showReload));
 }
 
 function renderVersionLabel() {
@@ -6087,17 +11110,36 @@ function renderVersionLabel() {
 }
 
 async function fetchVersionInfo() {
-  const response = await fetch("./version.json", { cache: "no-cache" });
+  const response = await fetch("./version.js", { cache: "no-cache" });
   if (!response.ok) {
     throw new Error("Version file unavailable");
   }
-  return normalizeVersionInfo(await response.json());
+  const source = await response.text();
+  const appVersion = source.match(/appVersion:\s*"([^"]+)"/)?.[1] || "";
+  const cacheVersion = source.match(/cacheVersion:\s*"([^"]+)"/)?.[1] || "";
+  const label = source.match(/label:\s*"([^"]*)"/)?.[1] || "";
+  return normalizeVersionInfo({ appVersion, cacheVersion, label });
 }
 
 async function performAppReload() {
-  setUpdateStatus(t("updateApplying"), false);
-  await serviceWorkerRegistration?.update().catch(() => {});
-  window.location.reload();
+  if (reloadInProgress) {
+    return;
+  }
+
+  reloadInProgress = true;
+  setUpdateStatus(t("updateApplying"), true);
+  try {
+    await serviceWorkerRegistration?.update().catch(() => {});
+    serviceWorkerRegistration?.waiting?.postMessage?.({ type: "SKIP_WAITING" });
+  } catch (error) {
+    console.error(error);
+  }
+
+  window.setTimeout(() => {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("reload", String(Date.now()));
+    window.location.replace(nextUrl.toString());
+  }, 120);
 }
 
 async function checkForUpdates(options = {}) {
@@ -6122,12 +11164,12 @@ async function checkForUpdates(options = {}) {
     await serviceWorkerRegistration?.update();
     const remoteVersion = await fetchVersionInfo();
 
-    if (!remoteVersion.appVersion || !remoteVersion.cacheVersion) {
-      if (!silentError) {
-        setUpdateStatus(t("updateVersionIncomplete"), false);
+      if (!remoteVersion.appVersion || !remoteVersion.cacheVersion) {
+        if (!silentError) {
+          setUpdateStatus(t("updateVersionIncomplete"), false, true);
+        }
+        return;
       }
-      return;
-    }
 
     if (versionSignature(remoteVersion) === versionSignature(CURRENT_VERSION_INFO)) {
       if (!silentNoChange) {
@@ -6142,7 +11184,7 @@ async function checkForUpdates(options = {}) {
   } catch (error) {
     console.error(error);
     if (!silentError) {
-      setUpdateStatus(t("updateFailed"), false);
+      setUpdateStatus(t("updateFailed"), false, true);
     }
   } finally {
     updateInProgress = false;
@@ -6172,8 +11214,19 @@ function scheduleSilentUpdateCheck() {
 
 function updateStatusForAuth() {
   updateAuthButtons();
+  ensureNetworkStateForAccount();
+  if (currentWorkspace === "network") {
+    renderNetworkWorkspace();
+    if (authAccount && !networkNodes.size && !networkLoading) {
+      void loadNetworkWave({ silentErrors: true });
+    }
+  }
 
   if (authAccount) {
+    if (!appOnline) {
+      setStatus(t("statusAccountOffline", { account: authAccount }), "error");
+      return;
+    }
     setStatus(t("statusConnected", { account: authAccount }));
     return;
   }
@@ -6191,11 +11244,19 @@ async function verifySession(options = {}) {
   try {
     const result = await sendToServiceWorker("VERIFY_SESSION");
     savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+    await restoreAccountAvatarCache();
     renderAccountSwitcher();
 
     if (!result.authenticated) {
       const activeAccount = savedAccounts.find((entry) => entry.did && entry.did === authAccountDid) || null;
       const accountLabel = activeAccount?.handle || activeAccount?.identifier || authAccount || "";
+      if (result.reason === "offline") {
+        if (!silent && accountLabel) {
+          setStatus(t("statusAccountOffline", { account: accountLabel }), "error");
+        }
+        updateAuthButtons();
+        return false;
+      }
       if (result.reason === "invalid_password" || result.reason === "missing_password") {
         const message = result.reason === "invalid_password"
           ? t("statusAccountPasswordRejected", { account: accountLabel })
@@ -6226,6 +11287,8 @@ async function verifySession(options = {}) {
     } else {
       setStatus(t("statusConnected", { account: authAccount }));
     }
+
+    restorePreferredWorkspaceIfPossible();
 
     return true;
   } catch (error) {
@@ -6284,6 +11347,18 @@ function formatHistoryTimestamp(value) {
   } catch {
     return value;
   }
+}
+
+function formatCompactArchiveTimestamp(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value || "");
+  }
+  return [
+    String(date.getDate()).padStart(2, "0"),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getFullYear()),
+  ].join(".") + ` ${String(date.getHours()).padStart(2, "0")}.${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function updateHistoryAvailability() {
@@ -6414,20 +11489,78 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function decodeMinimalHtmlEntities(value) {
+  return String(value || "")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function sanitizeHelpUrl(rawUrl, type = "link") {
+  const trimmed = String(rawUrl || "").trim();
+  if (!trimmed || /^\/\//.test(trimmed)) {
+    return "";
+  }
+
+  const decoded = decodeMinimalHtmlEntities(trimmed);
+  if (decoded.startsWith("#")) {
+    return escapeHtml(decoded);
+  }
+
+  try {
+    const parsed = new URL(decoded, window.location.href);
+    const protocol = parsed.protocol.toLowerCase();
+    const isAllowedProtocol = protocol === "https:" || protocol === "http:" || (type === "link" && protocol === "mailto:");
+    if (!isAllowedProtocol) {
+      return "";
+    }
+    return escapeHtml(parsed.href);
+  } catch {
+    const normalized = decoded.toLowerCase();
+    const looksLikeRelativePath = !/^[a-z][a-z0-9+.-]*:/i.test(normalized);
+    if (!looksLikeRelativePath) {
+      return "";
+    }
+    if (/[\u0000-\u001f]/.test(decoded)) {
+      return "";
+    }
+    return escapeHtml(decoded);
+  }
+}
+
 function renderInlineMarkdown(text) {
   let html = escapeHtml(text);
-  html = html.replace(/\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)/g, '<a href="$3" target="_blank" rel="noreferrer noopener"><img src="$2" alt="$1"></a>');
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+  html = html.replace(/\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)/g, (_, alt, imageUrl, linkUrl) => {
+    const safeImageUrl = sanitizeHelpUrl(imageUrl, "image");
+    const safeLinkUrl = sanitizeHelpUrl(linkUrl, "link");
+    if (!safeImageUrl || !safeLinkUrl) {
+      return escapeHtml(alt);
+    }
+    return `<a href="${safeLinkUrl}" target="_blank" rel="noreferrer noopener"><img src="${safeImageUrl}" alt="${alt}"></a>`;
+  });
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, imageUrl) => {
+    const safeImageUrl = sanitizeHelpUrl(imageUrl, "image");
+    return safeImageUrl ? `<img src="${safeImageUrl}" alt="${alt}">` : escapeHtml(alt);
+  });
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, linkUrl) => {
+    const safeLinkUrl = sanitizeHelpUrl(linkUrl, "link");
+    return safeLinkUrl ? `<a href="${safeLinkUrl}" target="_blank" rel="noreferrer noopener">${label}</a>` : label;
+  });
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   return html;
 }
 
 function convertHtmlBlocks(markdown) {
   return markdown
-    .replace(/<p\s+align="center">\s*<img\s+src="([^"]+)"\s+alt="([^"]*)"\s+width="([^"]+)"\s*>\s*<\/p>/gi, (_, src, alt, width) =>
-      `<p class="help-centered"><img src="${src}" alt="${escapeHtml(alt)}" width="${width}"></p>`)
+    .replace(/<p\s+align="center">\s*<img\s+src="([^"]+)"\s+alt="([^"]*)"\s+width="([^"]+)"\s*>\s*<\/p>/gi, (_, src, alt, width) => {
+      const safeImageUrl = sanitizeHelpUrl(src, "image");
+      return safeImageUrl
+        ? `<p class="help-centered"><img src="${safeImageUrl}" alt="${escapeHtml(alt)}" width="${width}"></p>`
+        : `<p class="help-centered">${escapeHtml(alt)}</p>`;
+    })
     .replace(/<p\s+align="center">\s*([\s\S]*?)\s*<\/p>/gi, (_, content) =>
       `<p class="help-centered">${renderInlineMarkdown(content.trim())}</p>`);
 }
@@ -6561,6 +11694,231 @@ async function loadReadmeContent() {
       helpContent.innerHTML = "";
     }
   }
+}
+
+function getInlineHelpTopic(topicId = "") {
+  switch (String(topicId || "").trim()) {
+    case "composer_workspace":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicComposerWorkspaceTitle"),
+        text: t("helpTopicComposerWorkspaceText"),
+        bullets: [
+          t("helpTopicComposerWorkspaceBullet1"),
+          t("helpTopicComposerWorkspaceBullet2"),
+          t("helpTopicComposerWorkspaceBullet3"),
+        ],
+      };
+    case "composer_input":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicComposerInputTitle"),
+        text: t("helpTopicComposerInputText"),
+        bullets: [
+          t("helpTopicComposerInputBullet1"),
+          t("helpTopicComposerInputBullet2"),
+          t("helpTopicComposerInputBullet3"),
+        ],
+      };
+    case "composer_post_settings":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicComposerPostSettingsTitle"),
+        text: t("helpTopicComposerPostSettingsText"),
+        bullets: [
+          t("helpTopicComposerPostSettingsBullet1"),
+          t("helpTopicComposerPostSettingsBullet2"),
+          t("helpTopicComposerPostSettingsBullet3"),
+        ],
+      };
+    case "composer_hashtags":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicComposerHashtagsTitle"),
+        text: t("helpTopicComposerHashtagsText"),
+        bullets: [
+          t("helpTopicComposerHashtagsBullet1"),
+          t("helpTopicComposerHashtagsBullet2"),
+          t("helpTopicComposerHashtagsBullet3"),
+        ],
+      };
+    case "composer_segments":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicComposerSegmentsTitle"),
+        text: t("helpTopicComposerSegmentsText"),
+        bullets: [
+          t("helpTopicComposerSegmentsBullet1"),
+          t("helpTopicComposerSegmentsBullet2"),
+          t("helpTopicComposerSegmentsBullet3"),
+        ],
+      };
+    case "archive_workspace":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicArchiveWorkspaceTitle"),
+        text: t("helpTopicArchiveWorkspaceText"),
+        bullets: [
+          t("helpTopicArchiveWorkspaceBullet1"),
+          t("helpTopicArchiveWorkspaceBullet2"),
+          t("helpTopicArchiveWorkspaceBullet3"),
+        ],
+      };
+    case "archive_scope":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicArchiveScopeTitle"),
+        text: t("helpTopicArchiveScopeText"),
+        bullets: [
+          t("helpTopicArchiveScopeBullet1"),
+          t("helpTopicArchiveScopeBullet2"),
+          t("helpTopicArchiveScopeBullet3"),
+        ],
+      };
+    case "archive_actions":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicArchiveActionsTitle"),
+        text: t("helpTopicArchiveActionsText"),
+        bullets: [
+          t("helpTopicArchiveActionsBullet1"),
+          t("helpTopicArchiveActionsBullet2"),
+          t("helpTopicArchiveActionsBullet3"),
+        ],
+      };
+    case "archive_media":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicArchiveMediaTitle"),
+        text: t("helpTopicArchiveMediaText"),
+        bullets: [
+          t("helpTopicArchiveMediaBullet1"),
+          t("helpTopicArchiveMediaBullet2"),
+          t("helpTopicArchiveMediaBullet3"),
+        ],
+      };
+    case "archive_unroll":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicArchiveUnrollTitle"),
+        text: t("helpTopicArchiveUnrollText"),
+        bullets: [
+          t("helpTopicArchiveUnrollBullet1"),
+          t("helpTopicArchiveUnrollBullet2"),
+          t("helpTopicArchiveUnrollBullet3"),
+        ],
+      };
+    case "archive_progress":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicArchiveProgressTitle"),
+        text: t("helpTopicArchiveProgressText"),
+        bullets: [
+          t("helpTopicArchiveProgressBullet1"),
+          t("helpTopicArchiveProgressBullet2"),
+          t("helpTopicArchiveProgressBullet3"),
+        ],
+      };
+    case "network_workspace":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicNetworkWorkspaceTitle"),
+        text: t("helpTopicNetworkWorkspaceText"),
+        bullets: [
+          t("helpTopicNetworkWorkspaceBullet1"),
+          t("helpTopicNetworkWorkspaceBullet2"),
+          t("helpTopicNetworkWorkspaceBullet3"),
+        ],
+      };
+    case "network_stage":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicNetworkStageTitle"),
+        text: t("helpTopicNetworkStageText"),
+        bullets: [
+          t("helpTopicNetworkStageBullet1"),
+          t("helpTopicNetworkStageBullet2"),
+          t("helpTopicNetworkStageBullet3"),
+        ],
+      };
+    case "dm_workspace":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicDmWorkspaceTitle"),
+        text: t("helpTopicDmWorkspaceText"),
+        bullets: [
+          t("helpTopicDmWorkspaceBullet1"),
+          t("helpTopicDmWorkspaceBullet2"),
+          t("helpTopicDmWorkspaceBullet3"),
+        ],
+      };
+    case "dm_scope":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicDmScopeTitle"),
+        text: t("helpTopicDmScopeText"),
+        bullets: [
+          t("helpTopicDmScopeBullet1"),
+          t("helpTopicDmScopeBullet2"),
+          t("helpTopicDmScopeBullet3"),
+        ],
+      };
+    case "dm_actions":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicDmActionsTitle"),
+        text: t("helpTopicDmActionsText"),
+        bullets: [
+          t("helpTopicDmActionsBullet1"),
+          t("helpTopicDmActionsBullet2"),
+          t("helpTopicDmActionsBullet3"),
+        ],
+      };
+    case "dm_progress":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicDmProgressTitle"),
+        text: t("helpTopicDmProgressText"),
+        bullets: [
+          t("helpTopicDmProgressBullet1"),
+          t("helpTopicDmProgressBullet2"),
+          t("helpTopicDmProgressBullet3"),
+        ],
+      };
+    default:
+      return null;
+  }
+}
+
+function renderInlineHelpHtml(topic) {
+  if (!topic) {
+    return "";
+  }
+  const textHtml = topic.text ? `<p>${escapeHtml(topic.text)}</p>` : "";
+  const bulletsHtml = Array.isArray(topic.bullets) && topic.bullets.length
+    ? `<ul class="help-topic-list">${topic.bullets.filter(Boolean).map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>`
+    : "";
+  return `${textHtml}${bulletsHtml}`;
+}
+
+function applyHelpDialogHeader(eyebrow, title) {
+  if (helpDialogEyebrow) {
+    helpDialogEyebrow.textContent = eyebrow || t("helpEyebrow");
+  }
+  if (helpDialogTitle) {
+    helpDialogTitle.textContent = title || t("helpTitle");
+  }
+}
+
+function openInlineHelpTopic(topicId) {
+  const topic = getInlineHelpTopic(topicId);
+  if (!topic) {
+    return;
+  }
+  applyHelpDialogHeader(topic.eyebrow, topic.title);
+  helpStatus.textContent = "";
+  helpContent.innerHTML = renderInlineHelpHtml(topic);
+  helpDialog.showModal();
 }
 
 function reserveForCounters(segmentCount) {
@@ -6760,14 +12118,114 @@ function createIconSvg(path) {
 
 function renderSegmentImages(container, segmentIndex) {
   container.innerHTML = "";
+  container.dataset.segmentIndex = String(segmentIndex);
   const images = Array.isArray(segmentImages[segmentIndex]) ? segmentImages[segmentIndex] : [];
+
+  container.addEventListener("dragover", (event) => {
+    if (!segmentImageDragState && eventHasTransferFiles(event)) {
+      event.preventDefault();
+      container.closest(".segment-card")?.classList.add("is-file-drop-target");
+      return;
+    }
+    if (!segmentImageDragState) {
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+    clearSegmentImageDropMarkers();
+    container.classList.add("is-drop-target");
+  });
+
+  container.addEventListener("drop", (event) => {
+    if (!segmentImageDragState && eventHasTransferFiles(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const files = getDroppedImageFiles(event);
+      clearSegmentImageDropMarkers();
+      if (files.length > 0) {
+        void handleSegmentImageSelection(segmentIndex, files);
+      }
+      return;
+    }
+    if (!segmentImageDragState) {
+      return;
+    }
+    event.preventDefault();
+    if (event.target.closest(".segment-image-card")) {
+      return;
+    }
+    moveSegmentImageToPosition(
+      segmentImageDragState.segmentIndex,
+      segmentImageDragState.imageIndex,
+      segmentIndex,
+      images.length,
+    );
+    clearSegmentImageDragState();
+  });
+  container.addEventListener("dragleave", (event) => {
+    const rect = container.getBoundingClientRect();
+    if (
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom
+    ) {
+      container.closest(".segment-card")?.classList.remove("is-file-drop-target");
+    }
+  });
 
   images.forEach((image, imageIndex) => {
     const card = document.createElement("div");
     card.className = "segment-image-card";
+    card.draggable = true;
+    card.dataset.segmentIndex = String(segmentIndex);
+    card.dataset.imageIndex = String(imageIndex);
     if (image.validation?.tooBig) {
       card.classList.add("is-too-large");
     }
+
+    card.addEventListener("dragstart", (event) => {
+      segmentImageDragState = { segmentIndex, imageIndex };
+      card.classList.add("is-dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", `${segmentIndex}:${imageIndex}`);
+      }
+    });
+    card.addEventListener("dragend", () => {
+      clearSegmentImageDragState();
+    });
+    card.addEventListener("dragover", (event) => {
+      if (!segmentImageDragState) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "move";
+      }
+      const dropPosition = getSegmentImageDropPosition(event, card.getBoundingClientRect());
+      clearSegmentImageDropMarkers();
+      container.classList.add("is-drop-target");
+      card.classList.add(dropPosition === "after" ? "is-drop-after" : "is-drop-before");
+    });
+    card.addEventListener("drop", (event) => {
+      if (!segmentImageDragState) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const dropPosition = getSegmentImageDropPosition(event, card.getBoundingClientRect());
+      moveSegmentImageToPosition(
+        segmentImageDragState.segmentIndex,
+        segmentImageDragState.imageIndex,
+        segmentIndex,
+        imageIndex + (dropPosition === "after" ? 1 : 0),
+      );
+      clearSegmentImageDragState();
+    });
 
     const preview = document.createElement("div");
     preview.className = "segment-image-preview";
@@ -6966,6 +12424,36 @@ function renderSegments(options = {}) {
       await handleSegmentImageSelection(index, event.target.files);
       event.target.value = "";
     });
+    card.addEventListener("dragover", (event) => {
+      if (segmentImageDragState || !eventHasTransferFiles(event)) {
+        return;
+      }
+      event.preventDefault();
+      card.classList.add("is-file-drop-target");
+    });
+    card.addEventListener("dragleave", (event) => {
+      const rect = card.getBoundingClientRect();
+      if (
+        event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom
+      ) {
+        card.classList.remove("is-file-drop-target");
+      }
+    });
+    card.addEventListener("drop", (event) => {
+      if (segmentImageDragState || !eventHasTransferFiles(event)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const files = getDroppedImageFiles(event);
+      card.classList.remove("is-file-drop-target");
+      if (files.length > 0) {
+        void handleSegmentImageSelection(index, files);
+      }
+    });
     card.appendChild(input);
     renderSegmentImages(imageContainer, index);
 
@@ -6980,10 +12468,12 @@ function renderSegments(options = {}) {
 async function hydrateAppState() {
   try {
     const browserLocale = detectBrowserLocale();
-    const [state, savedArchiveSession, savedArchiveCatalog] = await Promise.all([
+    const [state, savedArchiveSession, savedArchiveCatalog, savedDmPartnerCache, savedAccountAvatarCache] = await Promise.all([
       sendToServiceWorker("GET_APP_STATE", { browserLocale }),
       sendToServiceWorker("GET_ARCHIVE_SESSION", {}, { timeoutMs: 30000 }).catch(() => null),
       sendToServiceWorker("GET_ARCHIVE_CATALOG", {}, { timeoutMs: 120000 }).catch(() => null),
+      sendToServiceWorker("GET_DM_PARTNER_CACHE", {}, { timeoutMs: 120000 }).catch(() => null),
+      sendToServiceWorker("GET_ACCOUNT_AVATAR_CACHE", {}, { timeoutMs: 120000 }).catch(() => null),
     ]);
     localePreference = state.localePreference || "auto";
     tipsVisible = state.tipsVisible !== false;
@@ -7017,11 +12507,13 @@ async function hydrateAppState() {
       ? (browserLocale || DEFAULT_LOCALE)
       : state.locale || browserLocale || DEFAULT_LOCALE;
     savedAccounts = Array.isArray(state.accounts) ? state.accounts : [];
+    applyAccountAvatarCache(savedAccountAvatarCache || { assets: state.accountAvatarAssets || [] });
     identifierField.value = state.identifier || "";
     sourceText.value = state.draft || "";
     authAccount = state.handle || state.identifier || null;
     authAccountDid = state.did || "";
     authAccountService = state.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+    applyDmPartnerCache(savedDmPartnerCache);
     passwordField.value = "";
     applyLoginServiceSelection(authAccountService);
     hashtagPlacementSelect.value = hashtagPlacement;
@@ -7040,9 +12532,13 @@ async function hydrateAppState() {
     if (needsDesktopLayoutMigration) {
       await persistSettings();
     }
+    appStateHydrated = true;
+    restorePreferredWorkspaceIfPossible();
   } catch (error) {
     console.error(error);
     setStatus(error.message, "error");
+    appStateHydrated = true;
+    restorePreferredWorkspaceIfPossible();
   }
 }
 
@@ -7054,7 +12550,7 @@ function queueDraftSave() {
         draft: sourceText.value,
         segmentImages,
         segmentOverrides,
-      });
+      }, { timeoutMs: 120000 });
     } catch (error) {
       console.error(error);
       setStatus(error.message, "error");
@@ -7090,6 +12586,18 @@ loginDialog.addEventListener("cancel", (event) => {
   closeLoginDialog();
 });
 
+window.addEventListener("online", () => {
+  appOnline = true;
+  renderAccountSwitcher();
+  updateStatusForAuth();
+});
+
+window.addEventListener("offline", () => {
+  appOnline = false;
+  renderAccountSwitcher();
+  updateStatusForAuth();
+});
+
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -7110,6 +12618,7 @@ loginForm.addEventListener("submit", async (event) => {
     authAccountDid = result.did || "";
     authAccountService = result.service || service;
     savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
+    await restoreAccountAvatarCache();
     identifierField.value = result.identifier || identifier;
     applyLoginServiceSelection(authAccountService);
     closeLoginDialog();
@@ -7162,6 +12671,18 @@ publishButton.addEventListener("click", async () => {
     setStatus(t("statusOfflineBeforePublish"), "error");
     showErrorDialog(t("statusOfflineBeforePublish"));
     return;
+  }
+
+  if (selectedHashtags.length === 0) {
+    const continueWithoutHashtag = await openConfirmDialog({
+      title: t("publishNoHashtagTitle"),
+      message: t("publishNoHashtagText"),
+      confirmLabel: t("confirmYes"),
+      cancelLabel: t("cancelButton"),
+    });
+    if (!continueWithoutHashtag) {
+      return;
+    }
   }
 
   const publishAccount = authAccount || identifierField.value.trim();
@@ -7356,7 +12877,7 @@ clearButton.addEventListener("click", async () => {
   renderSegments({ preserveOverrides: false });
 
   try {
-    await sendToServiceWorker("SAVE_DRAFT", { draft: "", segmentImages: [], segmentOverrides: null });
+    await sendToServiceWorker("SAVE_DRAFT", { draft: "", segmentImages: [], segmentOverrides: null }, { timeoutMs: 120000 });
     await persistSettings();
     setStatus(t("clearConfirm"));
   } catch (error) {
@@ -7368,6 +12889,7 @@ clearButton.addEventListener("click", async () => {
 settingsButton.addEventListener("click", () => {
   setUpdateStatus("", false);
   setBackupStatus("");
+  setShareStatus("");
   settingsDialog.showModal();
 });
 
@@ -7376,13 +12898,187 @@ historyButton.addEventListener("click", () => {
   historyDialog.showModal();
 });
 
+composerButton.addEventListener("click", () => {
+  showComposerWorkspace();
+});
+
 archiveButton.addEventListener("click", () => {
   showArchiveWorkspace();
 });
 
-archiveBackButton.addEventListener("click", () => {
-  showComposerWorkspace();
+networkButton.addEventListener("click", () => {
+  showNetworkWorkspace();
 });
+
+dmButton.addEventListener("click", () => {
+  showDmWorkspace();
+});
+
+networkFilterButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    networkFilterMode = button.dataset.networkFilter || "all";
+    renderNetworkWorkspace();
+  });
+});
+
+if (networkSearchInput) {
+  networkSearchInput.addEventListener("input", () => {
+    networkSearchQuery = networkSearchInput.value.trim();
+    renderNetworkWorkspace();
+  });
+}
+
+if (networkAccountInput) {
+  networkAccountInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void loadNetworkWave({
+        actor: networkAccountInput.value.trim(),
+        append: false,
+        silentErrors: false,
+      });
+    }
+  });
+  networkAccountInput.addEventListener("input", () => {
+    updateNetworkControls();
+  });
+}
+
+if (networkAccountLoadButton) {
+  networkAccountLoadButton.addEventListener("click", async () => {
+    await loadNetworkWave({
+      actor: networkAccountInput?.value.trim() || "",
+      append: false,
+      silentErrors: false,
+    });
+  });
+}
+
+if (networkOwnLoadButton) {
+  networkOwnLoadButton.addEventListener("click", async () => {
+    if (networkAccountInput) {
+      networkAccountInput.value = authAccount || authAccountDid || "";
+    }
+    await loadNetworkWave({
+      actor: authAccountDid || authAccount || "",
+      append: false,
+      silentErrors: false,
+    });
+  });
+}
+
+networkLoadButton.addEventListener("click", async () => {
+  await loadNetworkWave({ append: true });
+});
+
+networkResetButton.addEventListener("click", () => {
+  networkFilterMode = "all";
+  networkSearchQuery = "";
+  networkSelectedDid = "";
+  networkHoveredDid = "";
+  networkFocusPreviewTab = "followers";
+  if (networkSearchInput) {
+    networkSearchInput.value = "";
+  }
+  renderNetworkWorkspace();
+});
+
+if (networkShapeToggleButton) {
+  networkShapeToggleButton.addEventListener("click", () => {
+    toggleNetworkStageShape();
+  });
+}
+
+if (networkZoomInButton) {
+  networkZoomInButton.addEventListener("click", () => {
+    const bounds = networkStageSvg?.getBoundingClientRect();
+    zoomNetworkStageAtPoint(
+      1.24,
+      bounds ? (bounds.left + (bounds.width / 2)) : 0,
+      bounds ? (bounds.top + (bounds.height / 2)) : 0,
+    );
+  });
+}
+
+if (networkZoomOutButton) {
+  networkZoomOutButton.addEventListener("click", () => {
+    const bounds = networkStageSvg?.getBoundingClientRect();
+    zoomNetworkStageAtPoint(
+      1 / 1.24,
+      bounds ? (bounds.left + (bounds.width / 2)) : 0,
+      bounds ? (bounds.top + (bounds.height / 2)) : 0,
+    );
+  });
+}
+
+if (networkZoomResetButton) {
+  networkZoomResetButton.addEventListener("click", () => {
+    resetNetworkStageView();
+  });
+}
+
+if (networkFocusToggleButton) {
+  networkFocusToggleButton.addEventListener("click", () => {
+    if (!networkSelectedDid) {
+      return;
+    }
+    networkFocusCollapsed = !networkFocusCollapsed;
+    renderNetworkWorkspace();
+  });
+}
+
+if (networkStageSvg) {
+  networkStageSvg.addEventListener("wheel", (event) => {
+    if (currentWorkspace !== "network") {
+      return;
+    }
+    event.preventDefault();
+    zoomNetworkStageAtPoint(event.deltaY < 0 ? 1.12 : (1 / 1.12), event.clientX, event.clientY);
+  }, { passive: false });
+
+  networkStageSvg.addEventListener("pointerdown", (event) => {
+    if (currentWorkspace !== "network") {
+      return;
+    }
+    event.preventDefault();
+    networkStageFitAll = false;
+    networkStageDrag = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    networkStageSvg.setPointerCapture(event.pointerId);
+  });
+
+  networkStageSvg.addEventListener("pointermove", (event) => {
+    if (!networkStageDrag || networkStageDrag.pointerId !== event.pointerId) {
+      return;
+    }
+    const bounds = networkStageSvg.getBoundingClientRect();
+    const visibleNodes = getVisibleNetworkNodes();
+    const selectedDid = networkSelectedDid || getPreferredNetworkSelection(visibleNodes);
+    const layout = computeNetworkLayout(visibleNodes, selectedDid);
+    layout.contentBounds = computeNetworkStageContentBounds(layout, visibleNodes, selectedDid);
+    const viewport = getNetworkStageViewport(layout);
+    const unitsPerPixelX = viewport.width / Math.max(1, bounds.width);
+    const unitsPerPixelY = viewport.height / Math.max(1, bounds.height);
+    networkStagePanX -= (event.clientX - networkStageDrag.x) * unitsPerPixelX;
+    networkStagePanY -= (event.clientY - networkStageDrag.y) * unitsPerPixelY;
+    networkStageDrag.x = event.clientX;
+    networkStageDrag.y = event.clientY;
+    renderNetworkStage();
+  });
+
+  const stopNetworkStageDrag = (event) => {
+    if (networkStageDrag?.pointerId === event.pointerId) {
+      networkStageDrag = null;
+    }
+  };
+
+  networkStageSvg.addEventListener("pointerup", stopNetworkStageDrag);
+  networkStageSvg.addEventListener("pointercancel", stopNetworkStageDrag);
+  networkStageSvg.addEventListener("pointerleave", stopNetworkStageDrag);
+}
 
 archiveScopeSelect.addEventListener("change", () => {
   updateArchiveScopeFields();
@@ -7403,6 +13099,12 @@ archiveBandSizeSelect.addEventListener("change", () => {
 archiveImageSizeSelect.addEventListener("change", () => {
   void persistArchivePreferences();
 });
+
+if (archiveThreadImportModeSelect) {
+  archiveThreadImportModeSelect.addEventListener("change", () => {
+    void persistArchivePreferences();
+  });
+}
 
 archiveMetricsToggle.addEventListener("change", () => {
   void persistArchivePreferences();
@@ -7452,6 +13154,56 @@ archiveToInput.addEventListener("change", () => {
   void persistArchivePreferences();
 });
 
+dmContactSearchInput.addEventListener("input", () => {
+  renderDmContacts();
+});
+
+dmCheckButton.addEventListener("click", async () => {
+  try {
+    setBusy(dmCheckButton, true, t("archiveWorkingButton"), t("dmCheckButton"));
+    await checkDmAccess();
+  } catch (error) {
+    console.error(error);
+    dmAccessChecked = false;
+    renderDmWorkspace();
+    setDmProgress({
+      title: t("archiveErrorTitle"),
+      step: error.message || t("dmCheckFailed"),
+      percent: 0,
+      detail: "",
+    });
+    showErrorDialog(error.message || t("dmCheckFailed"), t("archiveErrorTitle"));
+  } finally {
+    setBusy(dmCheckButton, false, t("archiveWorkingButton"), t("dmCheckButton"));
+  }
+});
+
+dmLoadPartnersButton.addEventListener("click", async () => {
+  try {
+    setBusy(dmLoadPartnersButton, true, t("archiveWorkingButton"), t("dmLoadPartnersButton"));
+    await loadDmPartners();
+  } catch (error) {
+    console.error(error);
+    setDmProgress({
+      title: t("archiveErrorTitle"),
+      step: error.message || t("dmLoadPartnersFailed"),
+      percent: 0,
+      detail: "",
+    });
+    showErrorDialog(error.message || t("dmLoadPartnersFailed"), t("archiveErrorTitle"));
+  } finally {
+    setBusy(dmLoadPartnersButton, false, t("archiveWorkingButton"), t("dmLoadPartnersButton"));
+  }
+});
+
+dmFromInput.addEventListener("change", () => {
+  renderDmWorkspace();
+});
+
+dmToInput.addEventListener("change", () => {
+  renderDmWorkspace();
+});
+
 archiveNextWaveButton.addEventListener("click", async () => {
   try {
     archiveCatalog = null;
@@ -7495,6 +13247,106 @@ if (archiveLoadThreadUrlButton) {
   });
 }
 
+dmLoadButton.addEventListener("click", async () => {
+  try {
+    setBusy(dmLoadButton, true, t("archiveWorkingButton"), t("dmLoadButton"));
+    await loadDmArchive();
+  } catch (error) {
+    console.error(error);
+    setDmProgress({
+      title: t("archiveErrorTitle"),
+      step: error.message || t("dmLoadFailed"),
+      percent: 0,
+      detail: "",
+    });
+    showErrorDialog(error.message || t("dmLoadFailed"), t("archiveErrorTitle"));
+  } finally {
+    setBusy(dmLoadButton, false, t("archiveWorkingButton"), t("dmLoadButton"));
+  }
+});
+
+dmExportJsonButton.addEventListener("click", async () => {
+  try {
+    setBusy(dmExportJsonButton, true, t("archiveWorkingButton"), t("dmExportJsonButton"));
+    await exportDmArchiveJson(dmCatalog);
+  } catch (error) {
+    console.error(error);
+    setDmProgress({
+      title: t("archiveErrorTitle"),
+      step: error.message || t("dmExportFailed"),
+      percent: 0,
+      detail: "",
+    });
+    showErrorDialog(error.message || t("dmExportFailed"), t("archiveErrorTitle"));
+  } finally {
+    setBusy(dmExportJsonButton, false, t("archiveWorkingButton"), t("dmExportJsonButton"));
+  }
+});
+
+if (dmExportHtmlButton) {
+  dmExportHtmlButton.addEventListener("click", async () => {
+    try {
+      setBusy(dmExportHtmlButton, true, t("archiveWorkingButton"), t("dmExportHtmlButton"));
+      await exportDmHtmlFromCatalog(dmCatalog);
+    } catch (error) {
+      console.error(error);
+      setDmProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("dmExportFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("dmExportFailed"), t("archiveErrorTitle"));
+    } finally {
+      setBusy(dmExportHtmlButton, false, t("archiveWorkingButton"), t("dmExportHtmlButton"));
+    }
+  });
+}
+
+if (dmExportPdfButton) {
+  dmExportPdfButton.addEventListener("click", async () => {
+    try {
+      setBusy(dmExportPdfButton, true, t("archiveWorkingButton"), t("dmExportPdfButton"));
+      await exportDmPdfFromCatalog(dmCatalog);
+    } catch (error) {
+      console.error(error);
+      setDmProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("dmExportFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("dmExportFailed"), t("archiveErrorTitle"));
+    } finally {
+      setBusy(dmExportPdfButton, false, t("archiveWorkingButton"), t("dmExportPdfButton"));
+    }
+  });
+}
+
+if (archiveActionsExportHtmlButton) {
+  archiveActionsExportHtmlButton.addEventListener("click", () => {
+    archiveExportHtmlButton?.click();
+  });
+}
+
+if (archiveActionsExportHtmlCompactButton) {
+  archiveActionsExportHtmlCompactButton.addEventListener("click", () => {
+    archiveExportHtmlCompactButton?.click();
+  });
+}
+
+if (archiveProgressExportHtmlCompactButton) {
+  archiveProgressExportHtmlCompactButton.addEventListener("click", () => {
+    archiveExportHtmlCompactButton?.click();
+  });
+}
+
+if (archiveActionsExportPdfButton) {
+  archiveActionsExportPdfButton.addEventListener("click", () => {
+    archiveExportPdfButton?.click();
+  });
+}
+
 archivePauseButton.addEventListener("click", () => {
   void setArchiveRunControl("pause");
 });
@@ -7526,6 +13378,26 @@ archiveExportZipButton.addEventListener("click", async () => {
   }
 });
 
+if (archiveExportMediaZipButton) {
+  archiveExportMediaZipButton.addEventListener("click", async () => {
+    try {
+      setBusy(archiveExportMediaZipButton, true, t("archiveWorkingButton"), t("archiveExportMediaZipButton"));
+      await exportArchiveMediaZip();
+    } catch (error) {
+      console.error(error);
+      setArchiveProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("archiveExportFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("archiveExportFailed"), t("archiveErrorTitle"));
+    } finally {
+      setBusy(archiveExportMediaZipButton, false, t("archiveWorkingButton"), t("archiveExportMediaZipButton"));
+    }
+  });
+}
+
 archiveExportHtmlButton.addEventListener("click", async () => {
   try {
     setBusy(archiveExportHtmlButton, true, t("archiveWorkingButton"), t("archiveExportHtmlButton"));
@@ -7542,6 +13414,25 @@ archiveExportHtmlButton.addEventListener("click", async () => {
     showErrorDialog(error.message || t("archiveHtmlFailed"), t("archiveErrorTitle"));
   } finally {
     setBusy(archiveExportHtmlButton, false, t("archiveWorkingButton"), t("archiveExportHtmlButton"));
+  }
+});
+
+archiveExportHtmlCompactButton?.addEventListener("click", async () => {
+  try {
+    setBusy(archiveExportHtmlCompactButton, true, t("archiveWorkingButton"), t("archiveExportHtmlCompactButton"));
+    const catalog = await ensureArchiveCatalogLoaded(false);
+    await exportArchiveHtmlFromCatalog(catalog, { mode: "compact" });
+  } catch (error) {
+    console.error(error);
+    setArchiveProgress({
+      title: t("archiveErrorTitle"),
+      step: error.message || t("archiveHtmlFailed"),
+      percent: 0,
+      detail: "",
+    });
+    showErrorDialog(error.message || t("archiveHtmlFailed"), t("archiveErrorTitle"));
+  } finally {
+    setBusy(archiveExportHtmlCompactButton, false, t("archiveWorkingButton"), t("archiveExportHtmlCompactButton"));
   }
 });
 
@@ -7651,8 +13542,15 @@ postLanguagesCloseButton.addEventListener("click", () => {
 });
 
 helpButton.addEventListener("click", () => {
+  applyHelpDialogHeader(t("helpEyebrow"), t("helpTitle"));
   helpDialog.showModal();
   void loadReadmeContent();
+});
+
+document.querySelectorAll("[data-help-topic]").forEach((button) => {
+  button.addEventListener("click", () => {
+    openInlineHelpTopic(button.dataset.helpTopic || "");
+  });
 });
 
 installButton.addEventListener("click", async () => {
@@ -7769,6 +13667,12 @@ exportSettingsButton.addEventListener("click", async () => {
     setBackupStatus(t("backupExportFailed"), "error");
   }
 });
+
+if (shareAppButton) {
+  shareAppButton.addEventListener("click", async () => {
+    await shareAppRecommendation();
+  });
+}
 
 importSettingsButton.addEventListener("click", () => {
   importSettingsInput.click();
@@ -7997,6 +13901,11 @@ document.addEventListener("visibilitychange", () => {
 
 window.addEventListener("focus", () => {
   void verifySession({ silent: true });
+  scheduleSilentUpdateCheck();
+});
+
+window.addEventListener("hashchange", () => {
+  void applyDmAccessGateFromLocation();
 });
 
 window.addEventListener("resize", () => {
@@ -8032,6 +13941,7 @@ applyLoginServiceSelection(LOGIN_SERVICE_PRESETS["bsky.social"]);
 renderAccountSwitcher();
 applyHashtagPaneContext();
 applyTranslations();
+void applyDmAccessGateFromLocation();
 updateInstallButtonVisibility();
 setStatus(t("statusPreparing"));
 registerServiceWorker();
