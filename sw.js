@@ -1179,6 +1179,7 @@ async function fetchAccountAvatar(did, auth = null) {
       headers: auth?.session?.accessJwt
         ? { authorization: `Bearer ${auth.session.accessJwt}` }
         : undefined,
+      base: auth?.pdsUrl || auth?.service ? authXrpcBase(auth) : undefined,
     });
     return typeof profile?.avatar === "string" ? profile.avatar : "";
   } catch {
@@ -1207,6 +1208,10 @@ async function bskyGet(endpoint, query = {}, options = {}) {
   });
 }
 
+function authXrpcBase(auth = null) {
+  return xrpcBaseForService(auth?.pdsUrl || auth?.service || DEFAULT_LOGIN_SERVICE);
+}
+
 function buildChatProxyHeaders(auth, headers = {}) {
   return {
     authorization: `Bearer ${auth.session.accessJwt}`,
@@ -1217,7 +1222,7 @@ function buildChatProxyHeaders(auth, headers = {}) {
 
 async function chatBskyGet(auth, endpoint, query = {}) {
   return bskyGet(endpoint, query, {
-    base: xrpcBaseForService(auth.pdsUrl || auth.service),
+    base: authXrpcBase(auth),
     headers: buildChatProxyHeaders(auth),
   });
 }
@@ -1255,6 +1260,7 @@ async function collectRecentAuthorPosts(auth, actorDid, limit = NETWORK_LIKE_SAM
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
+      base: authXrpcBase(auth),
     });
 
     const feedItems = Array.isArray(response?.feed) ? response.feed : [];
@@ -1306,6 +1312,7 @@ async function countRecentLikesFromActorOnPosts(auth, actorDid, posts = []) {
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
+      base: authXrpcBase(auth),
     });
 
     const notifications = Array.isArray(response?.notifications) ? response.notifications : [];
@@ -1409,6 +1416,7 @@ async function collectGraphPage(auth, endpoint, actorDid, cursor, limit, source)
     headers: {
       authorization: `Bearer ${auth.session.accessJwt}`,
     },
+    base: authXrpcBase(auth),
   });
   const fieldName = endpoint.endsWith("Followers") ? "followers" : "follows";
   return {
@@ -1506,6 +1514,7 @@ async function loadNetworkSlice({ actor = "", followerCursor = "", followCursor 
     headers: {
       authorization: `Bearer ${auth.session.accessJwt}`,
     },
+    base: authXrpcBase(auth),
   }).catch(() => null);
 
   const followerResponse = await collectGraphWave(
@@ -1591,7 +1600,7 @@ async function loadNetworkActorFocus({ actor } = {}, notifyProgress = () => {}) 
   });
   const profile = await bskyGet("app.bsky.actor.getProfile", {
     actor: actorDid,
-  }, { headers });
+  }, { headers, base: authXrpcBase(auth) });
   const viewer = profile?.viewer && typeof profile.viewer === "object" ? profile.viewer : {};
 
   notifyProgress({
@@ -1904,7 +1913,7 @@ async function login({ identifier, appPassword, service } = {}) {
 
   const didDocument = await fetchDidDocument(session.did).catch(() => null);
   const pdsUrl = extractPdsServiceFromDidDocument(didDocument, normalizedService);
-  const avatar = await fetchAccountAvatar(session.did, { session });
+  const avatar = await fetchAccountAvatar(session.did, { session, service: normalizedService, pdsUrl });
   const serviceCache = new Map();
   const avatarCache = await getAccountAvatarCache();
   const cachedAvatar = avatar
@@ -2383,7 +2392,11 @@ async function ensureSession(targetDid = null) {
         base: xrpcBaseForService(auth.pdsUrl || auth.service),
       });
 
-      const avatar = auth.avatar || await fetchAccountAvatar(auth.did, { session: refreshedSession });
+      const avatar = auth.avatar || await fetchAccountAvatar(auth.did, {
+        session: refreshedSession,
+        service: freshAuth.service || auth.service,
+        pdsUrl: freshAuth.pdsUrl || auth.pdsUrl,
+      });
       const serviceCache = new Map();
       const avatarCache = await getAccountAvatarCache();
       const cachedAvatar = avatar
@@ -2726,6 +2739,7 @@ async function resolveMediaExportActor(auth, actor = "") {
     headers: {
       authorization: `Bearer ${auth.session.accessJwt}`,
     },
+    base: authXrpcBase(auth),
   });
 
   return {
@@ -2770,6 +2784,7 @@ async function scanAccountMediaExport({ actor = "", filters = {}, includeImages 
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
+      base: authXrpcBase(auth),
     });
 
     const feedItems = Array.isArray(response?.feed) ? response.feed : [];
@@ -3112,6 +3127,7 @@ async function rootPostMatchesArchiveHashtags(rootUri, filters, auth, cache = ne
       headers: {
         authorization: `Bearer ${activeAuth.session.accessJwt}`,
       },
+      base: authXrpcBase(activeAuth),
     });
   } catch (error) {
     if (isMissingArchivePostError(error)) {
@@ -3151,6 +3167,7 @@ async function threadMatchesArchiveHashtags(rootUri, filters, auth, cache = new 
       headers: {
         authorization: `Bearer ${activeAuth.session.accessJwt}`,
       },
+      base: authXrpcBase(activeAuth),
     });
   } catch (error) {
     if (isMissingArchivePostError(error)) {
@@ -3465,6 +3482,7 @@ async function archiveGetPostThread(auth, uri, {
         headers: {
           authorization: `Bearer ${activeAuth.session.accessJwt}`,
         },
+        base: authXrpcBase(activeAuth),
         signal: controller.signal,
       });
     } catch (error) {
@@ -4336,6 +4354,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       headers: {
         authorization: `Bearer ${activeAuth.session.accessJwt}`,
       },
+      base: authXrpcBase(activeAuth),
     });
 
     const pageRecords = [];
@@ -4555,6 +4574,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       headers: {
         authorization: `Bearer ${activeAuth.session.accessJwt}`,
       },
+      base: authXrpcBase(activeAuth),
     });
     (response.posts || []).forEach((postView) => {
       const target = postsByUri.get(postView?.uri);
@@ -4849,6 +4869,7 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
+      base: authXrpcBase(auth),
     });
     entryPost = Array.isArray(entryResponse.posts) ? entryResponse.posts[0] : null;
   } catch {
@@ -4962,6 +4983,7 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
     headers: {
       authorization: `Bearer ${auth.session.accessJwt}`,
     },
+    base: authXrpcBase(auth),
   });
 
   const threadRoot = threadResponse.thread || threadResponse.post || threadResponse;
