@@ -4,44 +4,348 @@
 
 Diese Datei bündelt die technischeren Hintergrundinformationen, die nicht im schnellen Einstieg des Haupt-README stehen sollen.
 
-## Account-Archiv Für Techies
+## Schnittstellen-Überblick
 
-- Der Export läuft vollständig in der bestehenden PWA ohne eigenes Backend
-- Posts werden über `com.atproto.repo.listRecords` für `app.bsky.feed.post` seitenweise geladen
-- Phase 1 des Filters arbeitet direkt auf den eigenen Repo-Records:
-- `Voll-Archiv` übernimmt alle eigenen Posts
-- `Nur eigene Postings` verwirft eigene Replies in fremden Threads
-- Phase 2 erweitert bei `Eigene Threads komplett` zusätzlich die eigenen Thread-Wurzeln über `app.bsky.feed.getPostThread`
-- Dabei werden auch Antworten fremder Accounts in eigenen Threads ins Archiv übernommen
-- Metriken werden in Batches über `app.bsky.feed.getPosts` nachhydratisiert
-- Bilder werden über `com.atproto.sync.getBlob` geladen und mit stabilen Pfaden ins Archiv übernommen
-- Große Exporte laufen in Wellen; im Browser werden dafür nur kleine Resume-Metadaten gehalten
-- Das ZIP enthält `manifest.json`, `posts.json` und alle geladenen Bilddateien
-- Das HTML-Archiv ist eine einzelne Datei mit eingebetteten Bildern, Suchfeld, Datumsfiltern sowie Optionen für `nur Posts mit Bildern` und `nur Threads`
-- PDF-Bände werden aus dem geladenen Archivmodell erzeugt, nicht direkt aus Live-Responses
-- Die Bandgröße für PDFs ist bewusst bis `1000` Posts konfigurierbar
+Threadline ist eine statische PWA ohne eigenes Backend. Fast alle Datenflüsse laufen direkt vom Browser zum jeweils zuständigen Bluesky- oder AT-Protocol-Endpunkt. Der Service Worker in [sw.js](sw.js) bündelt dabei Login, API-Zugriffe, Caching und Archiv-Logik.
 
-## Netzwerk-Datenbasis
+```mermaid
+flowchart TD
+    A["Benutzer im Browser"] --> B["app.js"]
+    B --> C["Service Worker sw.js"]
 
-Threadline arbeitet im Netzwerk-Workspace ausschließlich mit der offiziellen Bluesky-API; eine API ist die definierte technische Schnittstelle, über die Apps Daten vom Dienst abrufen und senden.
+    C --> D["Login<br/>com.atproto.server.createSession"]
+    D --> E["Session mit DID, Handle,<br/>accessJwt, refreshJwt"]
+    E --> F["PDS-Basis ableiten<br/>auth.pdsUrl oder auth.service"]
+    F --> G["Refresh<br/>com.atproto.server.refreshSession"]
 
-- `Likes auf diese aktuellen Posts` meint bewusst Likes, die andere auf die aktuellen Posts des fokussierten Accounts vergeben haben
-- Diese Kennzahl ist für fremde Accounts über die API zuverlässig und zügig ableitbar
-- Nicht gemeint ist dabei: alle Likes, die dieser Account selbst irgendwo vergeben hat
-- Ebenfalls noch nicht enthalten ist eine Vollsuche, ob jeder sichtbare Account deine eigenen Posts gelikt hat
-- Das wäre zwar ein interessantes zusätzliches Signal für Nähe oder Relevanz, würde aber pro Account sehr viele weitere API-Abfragen erfordern
-- Für große Netzwerke würde das die Ansicht deutlich verlangsamen, unnötig viele Requests erzeugen und schneller an praktische API-Grenzen oder Timeouts stoßen
-- Darum setzt Threadline hier aktuell bewusst auf schnelle, nachvollziehbare Best-Effort-Signale statt auf eine teure Vollanalyse jedes einzelnen Accounts
+    C --> H["Composer"]
+    H --> H1["Handle auflösen<br/>com.atproto.identity.resolveHandle"]
+    H --> H2["Bilder hochladen<br/>com.atproto.repo.uploadBlob"]
+    H --> H3["Post anlegen<br/>com.atproto.repo.createRecord"]
+    H3 --> H4["optional Threadgate / Postgate"]
 
-## Warum Es Keine Link-Cards Gibt
+    C --> I["Archiv-Funktion"]
+    I --> I1["Eigene Posts lesen<br/>com.atproto.repo.listRecords"]
+    I --> I2["Threads erweitern<br/>app.bsky.feed.getPostThread"]
+    I --> I3["Metriken nachladen<br/>app.bsky.feed.getPosts"]
+    I --> I4["Bilder laden<br/>com.atproto.sync.getBlob"]
 
-### Kurz Erklärt
+    C --> J["Netzwerk"]
+    J --> J1["Profil<br/>app.bsky.actor.getProfile"]
+    J --> J2["Follower / Following<br/>app.bsky.graph.getFollowers / getFollows"]
+    J --> J3["Aktuelle Posts<br/>app.bsky.feed.getAuthorFeed"]
+    J --> J4["Likes auf aktuelle Posts<br/>app.bsky.notification.listNotifications"]
 
-Threadline läuft komplett als statische App im Browser und hat kein eigenes Backend. Darum kann die App fremde Webseiten nicht zuverlässig auslesen, um daraus Vorschaukarten mit Titel, Beschreibung und Bild zu bauen. Links im Text funktionieren trotzdem und bleiben in Bluesky anklickbar, aber eine automatisch erzeugte Link-Card wird von Threadline derzeit nicht erstellt.
+    C --> K["DM-Archiv"]
+    K --> K1["Konversationen<br/>chat.bsky.convo.listConvos"]
+    K --> K2["Nachrichten<br/>chat.bsky.convo.getMessages"]
+    K --> K3["Anhänge / Bilder"]
+```
 
-### Für Techies
+## Login Und Auth
 
-Das Problem ist Cross-Origin-Zugriff im Browser. Um Open-Graph-Daten einer fremden Seite zu lesen, müsste die Zielseite den Abruf per CORS ausdrücklich erlauben. Viele Websites tun das nicht. Ohne eigenen Server oder Worker kann eine PWA auf GitHub Pages diese HTML-Antworten und Vorschaubilder daher nicht verlässlich auslesen und als `app.bsky.embed.external` mit Thumbnail aufbereiten. Deshalb beschränkt sich Threadline aktuell bewusst auf klickbare Links per Rich-Text-Facets.
+### Was beim Login passiert
+
+1. Die App prüft den angegebenen Service und beschreibt ihn über `com.atproto.server.describeServer`.
+2. Danach wird über `com.atproto.server.createSession` eine Session mit DID, Handle, `accessJwt` und `refreshJwt` erzeugt.
+3. Threadline speichert diese Session lokal, damit Reloads und längere Archivläufe funktionieren.
+4. Für weitere Requests wird möglichst die PDS-Basis des eingeloggten Accounts verwendet, also `auth.pdsUrl` oder `auth.service`, nicht blind `bsky.social`.
+
+Zur Einordnung sind vor allem diese Originalquellen hilfreich:
+
+- [Protocol Overview](https://atproto.com/guides/overview)
+- [AT Protocol Specification](https://atproto.com/specs/atp)
+
+### Wozu `refreshSession` dient
+
+- `com.atproto.server.refreshSession` wird genutzt, wenn ein Access-Token während eines längeren Vorgangs abläuft.
+- Das ist vor allem für Archiv-Funktion, Netzwerk und DM-Archiv wichtig, weil dort viele Requests hintereinander laufen können.
+
+### Sicherheitsrelevante Hinweise
+
+- Threadline blockiert bewusst unsichere `http://`-PDS-Server.
+- App-Passwörter und Sessions liegen lokal im Browser, weil die App ohne eigenes Backend arbeitet.
+- Das ist praktisch für eine PWA, aber sicherheitlich sensibel und im [TODO.md](TODO.md) bewusst als offener Punkt notiert.
+
+## Repo-Befehle
+
+Diese Befehle arbeiten direkt auf Records im AT-Protocol-Repo eines Accounts.
+
+`Repo` meint hier nicht ein Git-Repository, sondern das persönliche Daten-Repository eines Accounts im AT-Protokoll. Darin liegen zum Beispiel Posts, Follows, Likes oder weitere accountbezogene Records.
+
+Mehr Hintergrund dazu:
+
+- [Reads and Writes](https://atproto.com/guides/reads-and-writes)
+- [Reading Data](https://atproto.com/guides/reading-data)
+
+### `com.atproto.repo.listRecords`
+
+Wird vor allem in der Archiv-Funktion verwendet.
+
+- Liest seitenweise eigene Repo-Einträge.
+- Threadline nutzt das für `app.bsky.feed.post`, also die eigenen Posts.
+- Darauf bauen Datumsfilter, Hashtag-Filter und die verschiedenen Archiv-Typen auf.
+
+### `com.atproto.repo.getRecord`
+
+Wird punktuell verwendet, wenn ein einzelner Record mit URI gezielt nachgeladen werden muss.
+
+- Im Netzwerk unter anderem für Beziehungsdaten wie Follow-Zeitpunkte.
+- Hilfreich, wenn eine Beziehung nicht nur als Status, sondern auch mit Datum angezeigt werden soll.
+
+### `com.atproto.repo.createRecord`
+
+Wird beim Veröffentlichen aus dem Composer genutzt.
+
+- legt eigentliche Posts vom Typ `app.bsky.feed.post` an
+- legt bei Bedarf `app.bsky.feed.threadgate` an
+- legt bei Bedarf `app.bsky.feed.postgate` an
+
+Damit steuert Threadline nicht nur den Post-Inhalt selbst, sondern auch Antworten und Zitierbarkeit.
+
+### `com.atproto.repo.uploadBlob`
+
+Wird für Composer-Bilder verwendet.
+
+- Bilddateien werden erst als Blob auf die zuständige PDS hochgeladen.
+- Der spätere Post referenziert diese Blob-Handles.
+- ALT-Texte werden dabei zusammen mit den Bild-Referenzen in das Embed geschrieben.
+
+## Get-Befehle
+
+### `app.bsky.actor.getProfile`
+
+Lädt Profilbasisdaten eines Accounts.
+
+Wird genutzt für:
+
+- Avatare
+- Anzeigenamen
+- Handles
+- Follower-/Following-Zahlen
+- Fokus-Ansicht im Netzwerk
+
+### `app.bsky.graph.getFollowers`
+
+Lädt die Accounts, die einem Zielaccount folgen.
+
+Wird genutzt für:
+
+- Netzwerk-Wellen
+- Mutual-Berechnung
+- gemeinsame Mutuals
+
+### `app.bsky.graph.getFollows`
+
+Lädt die Accounts, denen ein Zielaccount folgt.
+
+Wird genutzt für:
+
+- Netzwerk-Wellen
+- Mutual-Berechnung
+- Netzwerk eines fokussierten Accounts
+
+### `app.bsky.feed.getAuthorFeed`
+
+Lädt aktuelle Posts eines Accounts.
+
+Wird genutzt für:
+
+- Aktivitätsauswertung im Fokus
+- Posts in den letzten 14 / 60 Tagen
+- Likes auf aktuelle Posts
+- Medienexport für einen anderen Actor
+
+### `app.bsky.feed.getPosts`
+
+Lädt Posts gezielt per URI-Batch.
+
+Wird genutzt für:
+
+- Metriken im Archiv nachladen
+- Single-Thread-Import
+- gezielte Post-Auflösung, wenn ein Archiv oder Import URIs gesammelt hat
+
+### `app.bsky.feed.getPostThread`
+
+Lädt den Thread-Kontext zu einem Einstiegspost.
+
+Wird genutzt für:
+
+- Archiv-Typen, die Threads erweitern
+- Hashtag-Prüfung am Startpost oder im Thread
+- Single-Thread-Export
+
+Wichtig:
+
+- Dieser Call kann teuer sein und ist deshalb mit Timeout/Retry abgesichert.
+- Gelöschte oder fehlende Posts werden möglichst übersprungen statt den Lauf komplett zu stoppen.
+
+### `app.bsky.notification.listNotifications`
+
+Wird im Netzwerk nicht als allgemeine Notification-Ansicht verwendet, sondern für einen speziellen Best-Effort-Fall:
+
+- Likes auf aktuelle Posts eines fokussierten Accounts
+- dafür werden Like-Notifications auf die jüngeren Posts dieses Accounts ausgewertet
+
+### `chat.bsky.convo.listConvos`
+
+Lädt DM-Konversationen.
+
+Wird genutzt für:
+
+- Partnerliste im DM-Archiv
+- Vorprüfung, ob der Chat-Zugriff funktioniert
+
+### `chat.bsky.convo.getMessages`
+
+Lädt Nachrichten einer Konversation.
+
+Wird genutzt für:
+
+- DM-Archiv-Export
+- HTML- und PDF-Darstellung von DMs
+
+## Zusätzliche Identity- Und Blob-Befehle
+
+### `com.atproto.identity.resolveHandle`
+
+Löst einen Handle in eine DID auf.
+
+Wird genutzt für:
+
+- Mentions im Composer
+- einzelne Import- und Hilfspfade
+- Netzwerk-Eingaben, wenn statt einer DID ein Handle vorliegt
+
+Wichtig:
+
+- Dieser Pfad ist noch eine Stelle, die genauer auf vollständige Host-Unabhängigkeit geprüft werden sollte.
+- Für die üblichen Fälle funktioniert er, ist aber eine der Stellen, die bei fremden PDS besonders aufmerksam beobachtet werden sollten.
+
+Grundlagen dazu:
+
+- [Understanding Atproto](https://atproto.com/guides/understanding-atproto)
+- [AT Protocol Specification](https://atproto.com/specs/atp)
+
+### `com.atproto.sync.getBlob`
+
+Lädt Binärdaten wie Bilder per DID und CID.
+
+Wird genutzt für:
+
+- Archiv-Bilder
+- Composer-Bilder beim späteren Wiederherstellen
+- DM-Anhänge, soweit als Blob verfügbar
+
+## Avatare Und Bilder
+
+### Avatare
+
+Avatare werden in Threadline auf mehreren Wegen gebraucht:
+
+- im Login- und Account-Bereich
+- im Netzwerk-Fokus
+- im Archiv
+- im DM-Archiv
+
+Typischer Ablauf:
+
+1. Profil per `app.bsky.actor.getProfile` laden
+2. Avatar-URL oder Blob-Referenz ableiten
+3. falls für Archiv oder Export nötig, Asset lokal sichern
+
+Im Archiv werden Avatare dedupliziert, damit identische Bilder nicht mehrfach heruntergeladen oder ins ZIP geschrieben werden.
+
+### Composer-Bilder
+
+- werden im Composer zunächst lokal verarbeitet
+- dann per `com.atproto.repo.uploadBlob` hochgeladen
+- im Post als `app.bsky.embed.images` referenziert
+
+### Archiv-Bilder
+
+- werden nach dem Einsammeln der Posts separat geladen
+- dabei werden stabile Dateipfade oder eingebettete Daten für HTML erzeugt
+- im kompakten HTML können Bilder bei Bedarf später inline nachgeladen werden
+
+## Link-Cards
+
+### Kurz erklärt
+
+Threadline erzeugt beim normalen Schreiben keine automatischen Link-Cards.
+
+### Warum das so ist
+
+Die App läuft komplett statisch im Browser. Um eine echte Link-Card vom Typ `app.bsky.embed.external` sauber zu erzeugen, müsste Threadline:
+
+- HTML der Zielseite laden
+- Open-Graph-Daten auslesen
+- ein Vorschaubild laden
+- daraus ein externes Embed bauen
+
+Zur API-Systematik dahinter:
+
+- [AT Protocol XRPC API Reference](https://docs.bsky.app/docs/api/at-protocol-xrpc-api)
+- [Lexicon Specification](https://atproto.com/specs/lexicon)
+
+Das scheitert in der Praxis oft an CORS und daran, dass es keinen eigenen Backend-Proxy gibt.
+
+### Was trotzdem geht
+
+- klickbare Links über Rich-Text-Facets
+- bereits vorhandene externe Vorschaukarten in importierten oder archivierten Daten weiter anzeigen, wenn die Daten schon im Ausgangsmaterial stecken
+
+## Workspace-Sicht Nach Schnittstellen
+
+### Composer
+
+Nutzen vor allem:
+
+- `com.atproto.server.createSession`
+- `com.atproto.identity.resolveHandle`
+- `com.atproto.repo.uploadBlob`
+- `com.atproto.repo.createRecord`
+
+### Archiv-Funktion
+
+Nutzen vor allem:
+
+- `com.atproto.repo.listRecords`
+- `app.bsky.feed.getPostThread`
+- `app.bsky.feed.getPosts`
+- `com.atproto.sync.getBlob`
+
+### Netzwerk
+
+Nutzen vor allem:
+
+- `app.bsky.actor.getProfile`
+- `app.bsky.graph.getFollowers`
+- `app.bsky.graph.getFollows`
+- `app.bsky.feed.getAuthorFeed`
+- `app.bsky.notification.listNotifications`
+- punktuell `com.atproto.repo.getRecord`
+
+### DM-Archiv
+
+Nutzen vor allem:
+
+- `chat.bsky.convo.listConvos`
+- `chat.bsky.convo.getMessages`
+- zusätzliche Asset-Pfade für Bilder und Anhänge
+
+## PDS-Und Host-Auswahl
+
+Threadline versucht bei authentifizierten Requests bewusst, die PDS des aktuell angemeldeten Accounts zu nutzen.
+
+Das ist wichtig für:
+
+- fremde oder eigene PDS außerhalb von `bsky.social`
+- Spezialfälle wie eurosky
+- Archiv- und Netzwerk-Calls, die sonst auf dem falschen Host landen würden
+
+Die App ist damit deutlich PDS-tauglicher als ein reines `bsky.social`-Frontend. Trotzdem lohnt sich bei ungewöhnlichen Hosts immer ein gezielter Test aller vier Workspaces.
 
 ## Lokal Starten
 
@@ -83,7 +387,7 @@ http://localhost:4173
 
 ## Update-Erkennung
 
-Threadline verwendet eine Versionsprüfung mit sichtbarer App-Version.
+Threadline verwendet eine sichtbare Versionsprüfung.
 
 - `version.js` enthält die öffentlich sichtbaren Versionsinformationen für App und Service Worker
 - der Service Worker lädt `version.js` mit Netz-Priorität
@@ -112,4 +416,82 @@ Damit kannst du sinnvoll prüfen:
 - Backup exportieren und importieren
 - Bilder und ALT-Texte
 - Thread-Veröffentlichung
+- Archiv-Funktion mit Datums- und Hashtag-Filtern
+- Netzwerk-Wellen und Fokus-Ansicht
+- DM-Archiv
 - Update-Erkennung
+
+## Was Eine PWA Ist
+
+`PWA` steht für `Progressive Web App`.
+
+Gemeint ist damit eine Webanwendung, die im Browser läuft, sich aber in vielen Punkten wie eine installierbare App verhalten kann.
+
+Für Threadline heißt das konkret:
+
+- die App besteht aus HTML, CSS und JavaScript
+- sie kann über den Browser installiert werden
+- sie hat ein Web-App-Manifest für Name, Icon und Startverhalten
+- sie nutzt einen Service Worker für Caching, Hintergrundlogik und Update-Steuerung
+
+### Warum Threadline als PWA gebaut ist
+
+Das passt gut zum Projekt, weil Threadline:
+
+- ohne eigenes Backend funktionieren soll
+- lokal auf dem Gerät arbeiten soll
+- auf Desktop und Mobilgerät möglichst gleich nutzbar sein soll
+- installierbar sein soll, ohne über einen App-Store zu gehen
+
+Die PWA-Bauweise hilft also dabei, Threadline als leicht verteilbare, lokale Arbeitsumgebung für Bluesky zu betreiben.
+
+### Wie das technisch funktioniert
+
+Die drei wichtigsten Bausteine sind:
+
+1. `index.html`
+   Der Einstiegspunkt der App.
+
+2. `manifest.webmanifest`
+   Beschreibt App-Name, Icons, Farben und Startmodus, damit der Browser Threadline als installierbare App behandeln kann.
+
+3. `sw.js`
+   Der Service Worker. Er läuft neben der eigentlichen Seite und übernimmt Aufgaben wie:
+   - App-Shell cachen
+   - Updates erkennen
+   - Nachrichten zwischen UI und Hintergrundlogik abwickeln
+   - längere Archiv- und Netzwerkvorgänge koordinieren
+
+### Warum das für Threadline nützlich ist
+
+Durch die PWA-Struktur kann Threadline:
+
+- nach dem Laden schneller starten
+- statische Dateien lokal cachen
+- ein `Neu laden`-Update-Verfahren anbieten
+- sich auf Mobilgeräten app-artiger verhalten
+- Teile der Logik stabil im Service Worker bündeln
+
+### Grenzen dieser Bauweise
+
+Die PWA-Struktur bringt auch klare Grenzen mit:
+
+- kein eigener Server für CORS-Umgehung
+- keine serverseitige Geheimnisverwaltung
+- API-Zugriffe laufen aus dem Browser-Kontext
+- lokale Speicherung ist praktisch, aber sicherheitlich sensibel
+
+Gerade deshalb sind Themen wie lokale Session-Speicherung, Link-Cards und PDS-Kompatibilität in Threadline immer auch Architekturfragen der PWA-Bauweise.
+
+## Offizielle Original-Dokumentation
+
+Für tieferes Nachlesen sind diese Originalquellen besonders hilfreich:
+
+- [AT Protocol Docs](https://atproto.com/docs)
+- [Protocol Overview](https://atproto.com/guides/overview)
+- [Understanding Atproto](https://atproto.com/guides/understanding-atproto)
+- [Reads and Writes](https://atproto.com/guides/reads-and-writes)
+- [Reading Data](https://atproto.com/guides/reading-data)
+- [AT Protocol Specification](https://atproto.com/specs/atp)
+- [Lexicon Specification](https://atproto.com/specs/lexicon)
+- [AT Protocol XRPC API Reference](https://docs.bsky.app/docs/api/at-protocol-xrpc-api)
