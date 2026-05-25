@@ -603,6 +603,10 @@
                     <button type="button" class="ghost-button" id="network-zoom-out-button" aria-label="Netzwerk verkleinern">-</button>
                     <button type="button" class="ghost-button" id="network-zoom-reset-button" aria-label="Netzwerkansicht zurücksetzen">100%</button>
                     <button type="button" class="ghost-button" id="network-zoom-in-button" aria-label="Netzwerk vergrößern">+</button>
+                    <button type="button" class="ghost-button" id="network-stage-mode-button" data-i18n="networkStageModeButton">Fullscreen</button>
+                    <button type="button" class="ghost-button" id="network-stage-mode-focus-button" data-i18n="networkStageModeShowFocus" hidden>Fokus</button>
+                    <button type="button" class="ghost-button" id="network-stage-mode-lists-button" data-i18n="networkStageModeShowLists" hidden>Listen</button>
+                    <button type="button" class="ghost-button" id="network-stage-mode-exit-button" data-i18n="networkStageModeExitButton" hidden>Ende</button>
                   </div>
                 </div>
                 <div class="network-filter-summary-row">
@@ -655,6 +659,27 @@
             <section class="archive-card network-insights-card">
               <p class="eyebrow" data-i18n="networkInsightsEyebrow">Einordnung</p>
               <h3 data-i18n="networkInsightsTitle">Verbindungen und Gruppen</h3>
+              <div class="network-insights-controls">
+                <div class="network-insights-group-toggles" id="network-insights-group-toggles" hidden>
+                  <button type="button" class="ghost-button network-insights-group-button" id="network-insights-group-mutual" data-network-insights-group="mutual" data-i18n="networkGroupMutuals">Mutuals</button>
+                  <button type="button" class="ghost-button network-insights-group-button" id="network-insights-group-followers" data-network-insights-group="followers" data-i18n="networkGroupFollowers">Nur Follower</button>
+                  <button type="button" class="ghost-button network-insights-group-button" id="network-insights-group-following" data-network-insights-group="following" data-i18n="networkGroupFollowing">Nur Following</button>
+                </div>
+                <label class="network-sort-field network-sort-field-compact" for="network-sort-field-select">
+                  <span data-i18n="networkSortFieldLabel">Sortieren nach</span>
+                  <select id="network-sort-field-select">
+                    <option value="displayName" data-i18n="networkSortFieldDisplayName">Anzeigename</option>
+                    <option value="handle" data-i18n="networkSortFieldHandle">Handle</option>
+                  </select>
+                </label>
+                <label class="network-sort-field network-sort-field-compact" for="network-sort-direction-select">
+                  <span data-i18n="networkSortDirectionLabel">Richtung</span>
+                  <select id="network-sort-direction-select">
+                    <option value="asc" data-i18n="networkSortDirectionAsc">A–Z</option>
+                    <option value="desc" data-i18n="networkSortDirectionDesc">Z–A</option>
+                  </select>
+                </label>
+              </div>
               <div id="network-results" class="archive-results network-results"></div>
             </section>
           </div>

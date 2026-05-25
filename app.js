@@ -51,9 +51,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.122",
-  cacheVersion: "v141",
-  label: "Offline account state",
+  appVersion: "0.4.130",
+  cacheVersion: "v149",
+  label: "Single network overlay scroll",
 });
 
 function clamp(value, min, max) {
@@ -329,10 +329,17 @@ const networkShapeToggleButton = document.querySelector("#network-shape-toggle-b
 const networkZoomOutButton = document.querySelector("#network-zoom-out-button");
 const networkZoomResetButton = document.querySelector("#network-zoom-reset-button");
 const networkZoomInButton = document.querySelector("#network-zoom-in-button");
+const networkStageModeButton = document.querySelector("#network-stage-mode-button");
+const networkStageModeFocusButton = document.querySelector("#network-stage-mode-focus-button");
+const networkStageModeListsButton = document.querySelector("#network-stage-mode-lists-button");
+const networkStageModeExitButton = document.querySelector("#network-stage-mode-exit-button");
+const networkSortFieldSelect = document.querySelector("#network-sort-field-select");
+const networkSortDirectionSelect = document.querySelector("#network-sort-direction-select");
 const networkProgressLine = document.querySelector("#network-progress-line");
 const networkSummaryLoaded = document.querySelector("#network-summary-loaded");
 const networkSummaryMutuals = document.querySelector("#network-summary-mutuals");
 const networkSummaryVisible = document.querySelector("#network-summary-visible");
+const networkGrid = document.querySelector(".network-grid");
 const networkCanvasPanel = document.querySelector(".network-canvas-panel");
 const networkStageSvg = document.querySelector("#network-stage-svg");
 const networkStageEmpty = document.querySelector("#network-stage-empty");
@@ -341,6 +348,10 @@ const networkFocusPanel = document.querySelector("#network-focus-panel");
 const networkFocusToggleButton = document.querySelector("#network-focus-toggle-button");
 const networkFocusCard = document.querySelector("#network-focus-card");
 const networkResults = document.querySelector("#network-results");
+const networkInsightsGroupToggles = document.querySelector("#network-insights-group-toggles");
+const networkInsightsGroupButtons = Array.from(document.querySelectorAll("[data-network-insights-group]"));
+const networkStageCard = document.querySelector(".network-stage-card");
+const networkInsightsCard = document.querySelector(".network-insights-card");
 const serverPresetField = document.querySelector("#server-preset");
 const customServerWrap = document.querySelector("#custom-server-wrap");
 const customServerField = document.querySelector("#custom-server");
@@ -356,6 +367,7 @@ let authAccountDid = "";
 let savedAccounts = [];
 let appOnline = navigator.onLine !== false;
 let accountAvatarAssets = [];
+let composerSegmentRenderFrame = 0;
 let draftSaveTimer = null;
 let serviceWorkerRegistration = null;
 let updateInProgress = false;
@@ -462,6 +474,14 @@ let networkStageShape = getStoredNetworkStageShape();
 let networkHoveredDid = "";
 let networkFocusPreviewTab = "followers";
 let networkFocusCollapsed = false;
+let networkStageMode = false;
+let networkStageModeFocusVisible = false;
+let networkStageModeListsVisible = false;
+let networkSortField = "displayName";
+let networkSortDirection = "asc";
+let networkInsightsStageGroup = "mutual";
+let networkResultsScrollTop = 0;
+let networkResultsRestorePending = false;
 let networkCommonMutualsTargetDid = "";
 let networkCommonMutualsDids = new Set();
 let networkCommonMutualsLoadingDid = "";
@@ -952,6 +972,36 @@ function getVisibleNetworkNodes(limit = Number.POSITIVE_INFINITY) {
   return nodes.slice(0, Math.max(0, limit));
 }
 
+function getNetworkSortValue(node, field = networkSortField) {
+  if (field === "handle") {
+    return String(node?.handle || node?.did || "").trim();
+  }
+  return String(node?.displayName || node?.handle || node?.did || "").trim();
+}
+
+function sortNetworkNodes(nodes = []) {
+  const directionFactor = networkSortDirection === "desc" ? -1 : 1;
+  return [...nodes].sort((left, right) => {
+    const primary = getNetworkSortValue(left).localeCompare(
+      getNetworkSortValue(right),
+      currentLocale || undefined,
+      { sensitivity: "base" },
+    );
+    if (primary !== 0) {
+      return primary * directionFactor;
+    }
+    const secondary = String(left?.handle || left?.did || "").localeCompare(
+      String(right?.handle || right?.did || ""),
+      currentLocale || undefined,
+      { sensitivity: "base" },
+    );
+    if (secondary !== 0) {
+      return secondary * directionFactor;
+    }
+    return String(left?.did || "").localeCompare(String(right?.did || "")) * directionFactor;
+  });
+}
+
 function ensureNetworkStageSlot(node) {
   if (!node?.did) {
     return null;
@@ -1228,6 +1278,28 @@ function clearNetworkCommonMutuals() {
   if (networkFilterMode === "common") {
     networkFilterMode = "all";
   }
+}
+
+function restoreNetworkResultsScroll() {
+  if (!networkResults) {
+    return;
+  }
+  const target = Math.max(0, Number(networkResultsScrollTop) || 0);
+  networkResultsRestorePending = true;
+  networkResults.scrollTop = target;
+  requestAnimationFrame(() => {
+    if (!networkResults) {
+      networkResultsRestorePending = false;
+      return;
+    }
+    networkResults.scrollTop = target;
+    requestAnimationFrame(() => {
+      if (networkResults) {
+        networkResults.scrollTop = target;
+      }
+      networkResultsRestorePending = false;
+    });
+  });
 }
 
 function getActiveNetworkCommonMutualDids(selectedDid = networkSelectedDid) {
@@ -1659,6 +1731,37 @@ function getStoredWorkspacePreference() {
   } catch {
     return "composer";
   }
+}
+
+async function enterNetworkStageMode() {
+  networkStageMode = true;
+  networkStageModeFocusVisible = false;
+  networkStageModeListsVisible = false;
+  document.body.classList.add("network-stage-mode");
+  const fullscreenTarget = networkGrid || networkWorkspace || networkStageCard;
+  if (document.fullscreenEnabled && !document.fullscreenElement && fullscreenTarget?.requestFullscreen) {
+    try {
+      await fullscreenTarget.requestFullscreen();
+    } catch {
+      // Fallback to app-internal stage mode only.
+    }
+  }
+  renderNetworkWorkspace();
+}
+
+async function exitNetworkStageMode() {
+  networkStageMode = false;
+  networkStageModeFocusVisible = false;
+  networkStageModeListsVisible = false;
+  document.body.classList.remove("network-stage-mode");
+  if (document.fullscreenElement) {
+    try {
+      await document.exitFullscreen();
+    } catch {
+      // Ignore fullscreen exit failures.
+    }
+  }
+  renderNetworkWorkspace();
 }
 
 function persistNetworkStageShapePreference(shape) {
@@ -2938,6 +3041,7 @@ function renderNetworkFocus() {
 }
 
 function renderNetworkResults() {
+  const savedScrollTop = networkResults?.scrollTop || networkResultsScrollTop || 0;
   networkResults.replaceChildren();
   const allNodes = getAllNetworkNodes();
   if (!allNodes.length) {
@@ -2973,22 +3077,28 @@ function renderNetworkResults() {
     ],
   ];
 
-  const introCard = document.createElement("article");
-  introCard.className = "network-group-card network-group-card-intro";
-  const introTitle = document.createElement("strong");
-  introTitle.textContent = t("networkTopConnectionsTitle");
-  const introBody = document.createElement("p");
-  introBody.className = "network-card-explainer";
-  introBody.textContent = t("networkTopConnectionsMeta", {
-    total: formatCount(allNodes.length),
-    visible: formatCount(getVisibleNetworkNodes().length),
-  });
-  introCard.append(introTitle, introBody);
-  networkResults.appendChild(introCard);
+  if (!networkStageMode) {
+    const introCard = document.createElement("article");
+    introCard.className = "network-group-card network-group-card-intro";
+    const introTitle = document.createElement("strong");
+    introTitle.textContent = t("networkTopConnectionsTitle");
+    const introBody = document.createElement("p");
+    introBody.className = "network-card-explainer";
+    introBody.textContent = t("networkTopConnectionsMeta", {
+      total: formatCount(allNodes.length),
+      visible: formatCount(getVisibleNetworkNodes().length),
+    });
+    introCard.append(introTitle, introBody);
+    networkResults.appendChild(introCard);
+  }
 
   groups.forEach(([groupKey, titleText, noteText]) => {
-    const groupItems = allNodes
-      .filter((node) => getNetworkRelationType(node) === groupKey);
+    if (networkStageMode && networkStageModeListsVisible && groupKey !== networkInsightsStageGroup) {
+      return;
+    }
+    const groupItems = sortNetworkNodes(
+      allNodes.filter((node) => getNetworkRelationType(node) === groupKey),
+    );
     const totalCount = groupItems.length;
     const card = document.createElement("article");
     card.className = "network-group-card";
@@ -3012,6 +3122,7 @@ function renderNetworkResults() {
         button.type = "button";
         button.className = "network-list-button";
         button.addEventListener("click", () => {
+          networkResultsScrollTop = networkResults?.scrollTop || 0;
           setNetworkSelection(node.did);
         });
         const name = document.createElement("strong");
@@ -3042,6 +3153,9 @@ function renderNetworkResults() {
 
     networkResults.appendChild(card);
   });
+
+  networkResultsScrollTop = savedScrollTop;
+  restoreNetworkResultsScroll();
 }
 
 function updateNetworkControls() {
@@ -3074,13 +3188,19 @@ function updateNetworkControls() {
 
 function renderNetworkWorkspace() {
   ensureNetworkStateForAccount();
+  document.body.classList.toggle("network-stage-mode", networkStageMode);
   if (networkAccountInput && !networkAccountInput.matches(":focus")) {
     networkAccountInput.value = String(networkAccountInput.value || "").trim() || networkViewerProfile?.handle || "";
   }
-  networkCanvasPanel?.classList.toggle("has-focus", Boolean(networkSelectedDid));
-  networkCanvasPanel?.classList.toggle("has-focus-collapsed", Boolean(networkSelectedDid) && networkFocusCollapsed);
+  const focusPanelVisible = Boolean(networkSelectedDid) && (!networkStageMode || networkStageModeFocusVisible);
+  networkCanvasPanel?.classList.toggle("has-focus", focusPanelVisible);
+  networkCanvasPanel?.classList.toggle("has-focus-collapsed", focusPanelVisible && networkFocusCollapsed);
   networkCanvasPanel?.classList.toggle("is-squircle", networkStageShape === NETWORK_STAGE_SHAPE_SQUIRCLE);
+  networkStageCard?.classList.toggle("is-stage-mode", networkStageMode);
+  networkInsightsCard?.classList.toggle("is-stage-mode-visible", networkStageMode && networkStageModeListsVisible);
+  networkInsightsCard?.toggleAttribute("hidden", networkStageMode && !networkStageModeListsVisible);
   networkFocusPanel?.classList.toggle("is-collapsed", networkFocusCollapsed);
+  networkFocusPanel?.toggleAttribute("hidden", networkStageMode && !networkStageModeFocusVisible);
   if (networkShapeToggleButton) {
     const isSquircle = networkStageShape === NETWORK_STAGE_SHAPE_SQUIRCLE;
     networkShapeToggleButton.classList.toggle("is-active", isSquircle);
@@ -3097,6 +3217,44 @@ function renderNetworkWorkspace() {
     networkFocusToggleButton.setAttribute("aria-label", networkFocusCollapsed ? t("networkFocusExpand") : t("networkFocusCollapse"));
     networkFocusToggleButton.disabled = !networkSelectedDid;
   }
+  if (networkStageModeButton) {
+    networkStageModeButton.hidden = networkStageMode;
+    networkStageModeButton.setAttribute("aria-pressed", networkStageMode ? "true" : "false");
+  }
+  if (networkStageModeExitButton) {
+    networkStageModeExitButton.hidden = !networkStageMode;
+  }
+  if (networkStageModeFocusButton) {
+    networkStageModeFocusButton.hidden = !networkStageMode;
+    networkStageModeFocusButton.disabled = !networkSelectedDid;
+    networkStageModeFocusButton.classList.toggle("is-active", networkStageModeFocusVisible);
+    networkStageModeFocusButton.setAttribute("aria-pressed", networkStageModeFocusVisible ? "true" : "false");
+    networkStageModeFocusButton.textContent = networkStageModeFocusVisible
+      ? t("networkStageModeHideFocus")
+      : t("networkStageModeShowFocus");
+  }
+  if (networkStageModeListsButton) {
+    networkStageModeListsButton.hidden = !networkStageMode;
+    networkStageModeListsButton.classList.toggle("is-active", networkStageModeListsVisible);
+    networkStageModeListsButton.setAttribute("aria-pressed", networkStageModeListsVisible ? "true" : "false");
+    networkStageModeListsButton.textContent = networkStageModeListsVisible
+      ? t("networkStageModeHideLists")
+      : t("networkStageModeShowLists");
+  }
+  if (networkSortFieldSelect) {
+    networkSortFieldSelect.value = networkSortField;
+  }
+  if (networkSortDirectionSelect) {
+    networkSortDirectionSelect.value = networkSortDirection;
+  }
+  if (networkInsightsGroupToggles) {
+    networkInsightsGroupToggles.hidden = !(networkStageMode && networkStageModeListsVisible);
+  }
+  networkInsightsGroupButtons.forEach((button) => {
+    const isActive = button.dataset.networkInsightsGroup === networkInsightsStageGroup;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
   updateNetworkFilterButtons();
   renderNetworkSummary();
   renderNetworkStage();
@@ -3104,6 +3262,7 @@ function renderNetworkWorkspace() {
   renderNetworkResults();
   updateNetworkControls();
   setNetworkStatus(networkStatusLine || t("networkProgressIdle"));
+  restoreNetworkResultsScroll();
   if (networkSelectedDid && !networkFocusDetails.has(networkSelectedDid) && networkFocusLoadingDid !== networkSelectedDid) {
     void loadNetworkFocusDetails(networkSelectedDid);
   }
@@ -12347,7 +12506,12 @@ function renderSegmentImages(container, segmentIndex) {
 }
 
 function renderSegments(options = {}) {
-  const { preserveOverrides = Boolean(segmentOverrides) } = options;
+  const {
+    preserveOverrides = Boolean(segmentOverrides),
+    preserveView = true,
+    animate = false,
+  } = options;
+  const previousScrollTop = preserveView && segmentsPane ? segmentsPane.scrollTop : 0;
   const text = sourceText.value;
   const useCounters = counterToggle.checked;
   appendThreadIntro = threadIntroToggle.checked;
@@ -12397,7 +12561,13 @@ function renderSegments(options = {}) {
     input.multiple = true;
     input.className = "is-hidden";
 
-    card.style.animationDelay = `${index * 55}ms`;
+    if (animate) {
+      card.classList.add("is-entering");
+      card.style.animationDelay = `${index * 55}ms`;
+    } else {
+      card.classList.remove("is-entering");
+      card.style.animationDelay = "0ms";
+    }
     indexLabel.textContent = t("segmentPart", { index: index + 1 });
     lengthLabel.textContent = `${segment.length}/${MAX_POST_LENGTH}`;
     textarea.value = segment;
@@ -12461,8 +12631,32 @@ function renderSegments(options = {}) {
     autoSizeTextarea(segmentsList.lastElementChild.querySelector(".segment-text"));
   });
 
+  if (preserveView && segmentsPane) {
+    segmentsPane.scrollTop = previousScrollTop;
+  }
   scheduleSegmentTextareaResize();
+  if (preserveView && segmentsPane) {
+    requestAnimationFrame(() => {
+      if (segmentsPane) {
+        segmentsPane.scrollTop = previousScrollTop;
+      }
+    });
+  }
   updatePublishAvailability();
+}
+
+function scheduleComposerSegmentRender() {
+  if (composerSegmentRenderFrame) {
+    cancelAnimationFrame(composerSegmentRenderFrame);
+  }
+  composerSegmentRenderFrame = requestAnimationFrame(() => {
+    composerSegmentRenderFrame = 0;
+    renderSegments({
+      preserveOverrides: false,
+      preserveView: true,
+      animate: false,
+    });
+  });
 }
 
 async function hydrateAppState() {
@@ -12763,7 +12957,7 @@ publishButton.addEventListener("click", async () => {
 sourceText.addEventListener("input", () => {
   segmentOverrides = null;
   setComposerLocked(false);
-  renderSegments({ preserveOverrides: false });
+  scheduleComposerSegmentRender();
   queueDraftSave();
 });
 counterToggle.addEventListener("change", () => {
@@ -12944,6 +13138,20 @@ if (networkAccountInput) {
   });
 }
 
+if (networkSortFieldSelect) {
+  networkSortFieldSelect.addEventListener("change", () => {
+    networkSortField = networkSortFieldSelect.value === "handle" ? "handle" : "displayName";
+    renderNetworkWorkspace();
+  });
+}
+
+if (networkSortDirectionSelect) {
+  networkSortDirectionSelect.addEventListener("change", () => {
+    networkSortDirection = networkSortDirectionSelect.value === "desc" ? "desc" : "asc";
+    renderNetworkWorkspace();
+  });
+}
+
 if (networkAccountLoadButton) {
   networkAccountLoadButton.addEventListener("click", async () => {
     await loadNetworkWave({
@@ -13017,6 +13225,44 @@ if (networkZoomResetButton) {
   });
 }
 
+if (networkStageModeButton) {
+  networkStageModeButton.addEventListener("click", async () => {
+    await enterNetworkStageMode();
+  });
+}
+
+if (networkStageModeExitButton) {
+  networkStageModeExitButton.addEventListener("click", async () => {
+    await exitNetworkStageMode();
+  });
+}
+
+if (networkStageModeFocusButton) {
+  networkStageModeFocusButton.addEventListener("click", () => {
+    networkStageModeFocusVisible = !networkStageModeFocusVisible;
+    renderNetworkWorkspace();
+  });
+}
+
+if (networkStageModeListsButton) {
+  networkStageModeListsButton.addEventListener("click", () => {
+    networkStageModeListsVisible = !networkStageModeListsVisible;
+    renderNetworkWorkspace();
+  });
+}
+
+networkInsightsGroupButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const nextGroup = String(button.dataset.networkInsightsGroup || "").trim();
+    if (!nextGroup) {
+      return;
+    }
+    networkInsightsStageGroup = nextGroup;
+    networkResultsScrollTop = 0;
+    renderNetworkWorkspace();
+  });
+});
+
 if (networkFocusToggleButton) {
   networkFocusToggleButton.addEventListener("click", () => {
     if (!networkSelectedDid) {
@@ -13078,6 +13324,32 @@ if (networkStageSvg) {
   networkStageSvg.addEventListener("pointerup", stopNetworkStageDrag);
   networkStageSvg.addEventListener("pointercancel", stopNetworkStageDrag);
   networkStageSvg.addEventListener("pointerleave", stopNetworkStageDrag);
+}
+
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && networkStageMode) {
+    networkStageMode = false;
+    networkStageModeFocusVisible = false;
+    networkStageModeListsVisible = false;
+    document.body.classList.remove("network-stage-mode");
+    renderNetworkWorkspace();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && networkStageMode && !document.fullscreenElement) {
+    event.preventDefault();
+    void exitNetworkStageMode();
+  }
+});
+
+if (networkResults) {
+  networkResults.addEventListener("scroll", () => {
+    if (networkResultsRestorePending) {
+      return;
+    }
+    networkResultsScrollTop = networkResults.scrollTop;
+  });
 }
 
 archiveScopeSelect.addEventListener("change", () => {

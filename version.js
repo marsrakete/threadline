@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.123",
-  cacheVersion: "v142",
-  label: "Offline account state",
+  appVersion: "0.4.130",
+  cacheVersion: "v149",
+  label: "Single network overlay scroll",
 });

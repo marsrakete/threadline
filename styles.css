@@ -1519,6 +1519,51 @@ body.theme-dark .support-actions img {
   gap: 5px;
 }
 
+.network-sort-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.network-sort-field {
+  display: grid;
+  gap: 4px;
+  min-width: 132px;
+}
+
+.network-sort-field-compact {
+  min-width: 0;
+}
+
+.network-sort-field span {
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.network-sort-field select {
+  min-width: 0;
+}
+
+.network-insights-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.network-insights-group-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+
+.network-insights-group-button {
+  flex: 1 1 calc(33.333% - 4px);
+  min-width: 0;
+}
+
 .network-filter-button.is-active {
   background: linear-gradient(135deg, rgba(38, 198, 190, 0.22), rgba(74, 135, 255, 0.18));
   border-color: rgba(38, 198, 190, 0.42);
@@ -1953,6 +1998,82 @@ body.theme-dark .support-actions img {
   align-items: start;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+body.network-stage-mode .sidebar,
+body.network-stage-mode .sidebar-resize-handle,
+body.network-stage-mode .composer-resize-handle,
+body.network-stage-mode #composer-workspace,
+body.network-stage-mode #archive-workspace,
+body.network-stage-mode #dm-workspace,
+body.network-stage-mode #network-workspace > .archive-header-panel {
+  display: none !important;
+}
+
+body.network-stage-mode .workspace {
+  display: block;
+  overflow: hidden;
+  padding: 0;
+}
+
+body.network-stage-mode #network-workspace {
+  overflow: visible;
+  padding: 0;
+}
+
+.network-stage-card.is-stage-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  margin: 0;
+  border-radius: 0;
+  padding: 14px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: linear-gradient(180deg, var(--panel), var(--panel-soft));
+}
+
+.network-stage-card.is-stage-mode .network-stage-shell,
+.network-stage-card.is-stage-mode .network-canvas-panel {
+  min-height: 0;
+  height: 100%;
+  max-height: none;
+}
+
+.network-stage-card.is-stage-mode .network-stage-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.network-insights-card.is-stage-mode-visible {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 85;
+  display: block !important;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(48vh, 520px);
+  overflow: hidden;
+  box-shadow: 0 18px 44px rgba(10, 21, 39, 0.28);
+}
+
+.network-insights-card.is-stage-mode-visible .network-results {
+  max-height: calc(min(48vh, 520px) - 96px);
+  overflow: auto;
+}
+
+.network-insights-card.is-stage-mode-visible .network-results {
+  grid-template-columns: 1fr;
+}
+
+.network-insights-card.is-stage-mode-visible .network-group-card-intro {
+  display: none;
+}
+
+.network-insights-card.is-stage-mode-visible .network-scroll-list {
+  max-height: none;
+  overflow: visible;
 }
 
 .network-group-card {
@@ -2960,6 +3081,10 @@ body.theme-dark .network-list-button {
     grid-template-columns: 1fr;
   }
 
+  .network-insights-controls {
+    grid-template-columns: 1fr;
+  }
+
   .network-toolbar-actions-compact {
     justify-content: flex-start;
   }
@@ -3326,7 +3451,7 @@ body.theme-dark .network-list-button {
     animation-delay: 120ms;
   }
 
-  .segment-card {
+  .segment-card.is-entering {
     animation: fade-up 360ms ease both;
   }
 }
