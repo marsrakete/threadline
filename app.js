@@ -417,6 +417,7 @@ let imageEditorDraft = null;
 let imageEditorDragging = false;
 let imageEditorDragStart = null;
 let confirmResolver = null;
+let ignoreNextConfirmClose = false;
 let imageValidationToken = 0;
 let currentWorkspace = "composer";
 let archiveCatalog = null;
@@ -6881,6 +6882,7 @@ async function openConfirmDialog({ title, message, confirmLabel, cancelLabel }) 
   confirmDialogConfirmButton.textContent = confirmLabel || t("confirmYes");
   confirmDialogCancelButton.textContent = cancelLabel || t("confirmNo");
   if (confirmDialog.open) {
+    ignoreNextConfirmClose = true;
     confirmDialog.close();
   }
   return new Promise((resolve) => {
@@ -6890,11 +6892,15 @@ async function openConfirmDialog({ title, message, confirmLabel, cancelLabel }) 
 }
 
 function resolveConfirmDialog(value) {
-  if (confirmResolver) {
-    confirmResolver(value);
-    confirmResolver = null;
+  const resolver = confirmResolver;
+  confirmResolver = null;
+  if (confirmDialog.open) {
+    ignoreNextConfirmClose = true;
+    confirmDialog.close();
   }
-  confirmDialog.close();
+  if (resolver) {
+    resolver(value);
+  }
 }
 
 function buildThreadExportPayload() {
@@ -14144,6 +14150,10 @@ confirmDialog.addEventListener("cancel", (event) => {
   resolveConfirmDialog(false);
 });
 confirmDialog.addEventListener("close", () => {
+  if (ignoreNextConfirmClose) {
+    ignoreNextConfirmClose = false;
+    return;
+  }
   if (confirmResolver) {
     resolveConfirmDialog(false);
   }
