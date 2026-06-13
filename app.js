@@ -52,9 +52,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.137",
-  cacheVersion: "v156",
-  label: "Reorder thread export tools",
+  appVersion: "0.4.139",
+  cacheVersion: "v158",
+  label: "Publish multi-image galleries",
 });
 
 function clamp(value, min, max) {

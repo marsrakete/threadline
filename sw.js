@@ -3342,6 +3342,12 @@ function extractArchiveEmbedImages(record = {}) {
     return embed.images.slice(0, MAX_IMAGES_PER_SEGMENT);
   }
 
+  if (Array.isArray(embed.items)) {
+    return embed.items
+      .filter((item) => item?.image)
+      .slice(0, MAX_IMAGES_PER_SEGMENT);
+  }
+
   if (embed.media && typeof embed.media === "object") {
     return extractArchiveEmbedImages({ embed: embed.media });
   }
@@ -5447,10 +5453,18 @@ async function publishThread({ segments, langs, postInteraction }, notifyProgres
           });
         }
 
-        record.embed = {
-          $type: "app.bsky.embed.images",
-          images: embeddedImages,
-        };
+        record.embed = images.length <= 4
+          ? {
+              $type: "app.bsky.embed.images",
+              images: embeddedImages,
+            }
+          : {
+              $type: "app.bsky.embed.gallery",
+              items: embeddedImages.map((image) => ({
+                $type: "app.bsky.embed.gallery#image",
+                ...image,
+              })),
+            };
       }
 
       if (root && parent) {
