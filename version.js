@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.139",
-  cacheVersion: "v158",
-  label: "Publish multi-image galleries",
+  appVersion: "0.4.140",
+  cacheVersion: "v159",
+  label: "Add Mu login preset",
 });
