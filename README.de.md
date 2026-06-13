@@ -47,7 +47,7 @@ Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kanns
 ## Funktionsumfang
 
 - Bluesky-Anmeldung mit App-Passwort über einen kompakten `Konto hinzufügen`-Dialog
-- Presets für `bsky.social`, `eurosky.social` und eigene PDS-Server
+- Presets für `bsky.social`, `eurosky.social`, Mu.social mit automatischer PDS-Erkennung und eigene PDS-Server
 - Mehrere gespeicherte Logins mit schnellem Kontowechsel
 - Konten bleiben nach dem Abmelden sichtbar und können per Icon wieder angemeldet oder entfernt werden
 - Lokale Session-Erneuerung ohne eigenes Backend

@@ -52,9 +52,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.140",
-  cacheVersion: "v159",
-  label: "Add Mu login preset",
+  appVersion: "0.4.143",
+  cacheVersion: "v162",
+  label: "Show active posting target",
 });
 
 function clamp(value, min, max) {
@@ -376,6 +376,7 @@ let currentLocale = DEFAULT_LOCALE;
 let localePreference = "auto";
 let authAccount = null;
 let authAccountService = "https://bsky.social";
+let authAccountWebApp = DEFAULT_POST_WEB_APP;
 let authAccountDid = "";
 let savedAccounts = [];
 let appOnline = navigator.onLine !== false;
@@ -626,6 +627,7 @@ function localizeLoginErrorMessage(error) {
     CONNECTIVITY_FAILED: "statusLoginFailedConnection",
     CONNECTIVITY_TIMEOUT: "statusLoginFailedConnection",
     INSECURE_SERVICE_URL: "statusLoginFailedInsecureService",
+    LOGIN_MU_PDS_RESOLUTION_FAILED: "statusLoginFailedMuPdsResolution",
   };
   if (localizedErrorKeys[errorCode]) {
     return t(localizedErrorKeys[errorCode]);
@@ -712,6 +714,24 @@ function getSelectedLoginService() {
   return normalizeServiceUrl(serverPresetField.value);
 }
 
+function getPostTargetName(webApp = authAccountWebApp) {
+  try {
+    return new URL(normalizeServiceUrl(webApp)).hostname.toLowerCase() === "mu.social"
+      ? "Mu.social"
+      : "Bluesky";
+  } catch {
+    return "Bluesky";
+  }
+}
+
+function getPublishButtonLabel() {
+  return t("publishButtonTarget", { target: getPostTargetName() });
+}
+
+function getPublishBusyLabel() {
+  return t("publishBusyTarget", { target: getPostTargetName() });
+}
+
 function applyLoginServiceSelection(serviceUrl = LOGIN_SERVICE_PRESETS["bsky.social"]) {
   const normalized = normalizeServiceUrl(serviceUrl);
   const presetEntry = Object.entries(LOGIN_SERVICE_PRESETS).find(([, url]) => normalizeServiceUrl(url) === normalized);
@@ -738,7 +758,11 @@ function openLoginDialog(options = {}) {
   const account = options.account || null;
   identifierField.value = options.identifier ?? account?.identifier ?? account?.handle ?? "";
   passwordField.value = "";
-  applyLoginServiceSelection(options.service || account?.service || LOGIN_SERVICE_PRESETS["bsky.social"]);
+  applyLoginServiceSelection(
+    options.service
+    || (account?.webApp === LOGIN_SERVICE_PRESETS["mu.social"] ? account.webApp : account?.service)
+    || LOGIN_SERVICE_PRESETS["bsky.social"],
+  );
   setLoginDialogNote(options.note || "", options.tone || "neutral");
   if (!loginDialog.open) {
     loginDialog.showModal();
@@ -1559,6 +1583,7 @@ function renderAccountSwitcher() {
           authAccount = null;
           authAccountDid = "";
           authAccountService = account.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+          authAccountWebApp = account.webApp || resolvePostWebBase(authAccountService);
           identifierField.value = account.identifier || account.handle || "";
           applyLoginServiceSelection(authAccountService);
           passwordField.value = "";
@@ -1584,6 +1609,7 @@ function renderAccountSwitcher() {
         authAccount = result.handle || result.identifier || null;
         authAccountDid = result.did || "";
         authAccountService = result.service || account.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+        authAccountWebApp = result.webApp || account.webApp || resolvePostWebBase(authAccountService);
         identifierField.value = result.identifier || "";
         applyLoginServiceSelection(authAccountService);
         passwordField.value = "";
@@ -1619,6 +1645,7 @@ function renderAccountSwitcher() {
               authAccount = result.handle || result.identifier || null;
               authAccountDid = result.did || "";
               authAccountService = result.service || account.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+              authAccountWebApp = result.webApp || account.webApp || resolvePostWebBase(authAccountService);
               updateStatusForAuth();
               await verifySession({ silent: true });
               return;
@@ -1655,6 +1682,7 @@ function renderAccountSwitcher() {
         authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
         authAccountDid = result.authenticated ? (result.did || "") : "";
         authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+        authAccountWebApp = result.webApp || resolvePostWebBase(authAccountService);
         updateStatusForAuth();
         setStatus(t("accountSignedOutStatus", { account: account.handle || account.identifier || "account" }));
       } catch (error) {
@@ -1688,6 +1716,7 @@ function renderAccountSwitcher() {
         authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
         authAccountDid = result.authenticated ? (result.did || "") : "";
         authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+        authAccountWebApp = result.webApp || resolvePostWebBase(authAccountService);
         identifierField.value = result.identifier || "";
         applyLoginServiceSelection(authAccountService);
         updateStatusForAuth();
@@ -1706,6 +1735,7 @@ function renderAccountSwitcher() {
 function updateAuthButtons() {
   const isAuthenticated = Boolean(authAccount);
   addAccountButton.textContent = t("addAccountButton");
+  publishButton.textContent = getPublishButtonLabel();
   composerButton.disabled = false;
   archiveButton.disabled = !isAuthenticated;
   networkButton.disabled = !isAuthenticated;
@@ -5574,7 +5604,7 @@ function applyTranslations() {
   loginDialogCancelButton.textContent = t("cancelButton");
   loginDialogCloseTop.textContent = t("closeButton");
   addAccountButton.textContent = t("addAccountButton");
-  publishButton.textContent = t("publishButton");
+  publishButton.textContent = getPublishButtonLabel();
   clearButton.textContent = t("clearButton");
   settingsButton.textContent = t("settingsButton");
   loadThreadButton.textContent = t("loadThreadButton");
@@ -11598,6 +11628,7 @@ async function verifySession(options = {}) {
     authAccount = result.handle || result.identifier || authAccount;
     authAccountDid = result.did || authAccountDid;
     authAccountService = result.service || authAccountService;
+    authAccountWebApp = result.webApp || authAccountWebApp;
 
     if (silent) {
       updateAuthButtons();
@@ -11647,9 +11678,13 @@ function showPublishResult(result) {
   const postCount = result.posts?.length || 0;
   const handle = result.handle || authAccount;
   const firstPost = result.posts?.[0];
-  const postUrl = buildBlueskyPostUrl(handle, firstPost?.uri, result.service || authAccountService);
+  const resultWebApp = result.webApp || authAccountWebApp;
+  const postTarget = getPostTargetName(resultWebApp);
+  const postUrl = buildBlueskyPostUrl(handle, firstPost?.uri, resultWebApp);
 
-  publishResultText.textContent = postCount > 1 ? t("publishResultMessageMany") : t("publishResultMessageOne");
+  publishResultText.textContent = postCount > 1
+    ? t("publishResultMessageManyTarget", { target: postTarget })
+    : t("publishResultMessageOneTarget", { target: postTarget });
   publishResultLink.href = postUrl || "#";
   publishResultLink.hidden = !postUrl;
   publishResultDialog.showModal();
@@ -11751,7 +11786,7 @@ async function recordPublishedThread(result, preparedSegments) {
   const handle = result.handle || authAccount;
   const firstPost = result.posts?.[0];
   const service = result.service || authAccountService;
-  const url = buildBlueskyPostUrl(handle, firstPost?.uri, service);
+  const url = buildBlueskyPostUrl(handle, firstPost?.uri, result.webApp || authAccountWebApp || service);
   if (!url) {
     return;
   }
@@ -12866,6 +12901,7 @@ async function hydrateAppState() {
     authAccount = state.handle || state.identifier || null;
     authAccountDid = state.did || "";
     authAccountService = state.service || LOGIN_SERVICE_PRESETS["bsky.social"];
+    authAccountWebApp = state.webApp || resolvePostWebBase(authAccountService);
     applyDmPartnerCache(savedDmPartnerCache);
     passwordField.value = "";
     applyLoginServiceSelection(authAccountService);
@@ -12964,12 +13000,14 @@ loginForm.addEventListener("submit", async (event) => {
       identifier,
       appPassword,
       service,
+      webApp: serverPresetField.value === "mu.social" ? LOGIN_SERVICE_PRESETS["mu.social"] : undefined,
     });
 
     passwordField.value = "";
     authAccount = result.handle || result.identifier;
     authAccountDid = result.did || "";
     authAccountService = result.service || service;
+    authAccountWebApp = result.webApp || resolvePostWebBase(service);
     savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
     await restoreAccountAvatarCache();
     identifierField.value = result.identifier || identifier;
@@ -13041,7 +13079,10 @@ publishButton.addEventListener("click", async () => {
   const publishAccount = authAccount || identifierField.value.trim();
   const confirmed = await openConfirmDialog({
     title: t("publishConfirmTitle"),
-    message: t("publishConfirmText", { account: publishAccount || "?" }),
+    message: t("publishConfirmText", {
+      account: publishAccount || "?",
+      target: getPostTargetName(),
+    }),
     confirmLabel: t("confirmYes"),
     cancelLabel: t("cancelButton"),
   });
@@ -13050,7 +13091,7 @@ publishButton.addEventListener("click", async () => {
   }
 
   try {
-    setBusy(publishButton, true, t("publishBusy"), t("publishButton"));
+    setBusy(publishButton, true, getPublishBusyLabel(), getPublishButtonLabel());
     showProgressDialog(t("progressTitle"), t("progressCheckingConnectivity"));
     await sendToServiceWorker("CHECK_CONNECTIVITY");
     showProgressDialog(t("progressTitle"), t("progressPreparing"));
@@ -13109,7 +13150,7 @@ publishButton.addEventListener("click", async () => {
     showErrorDialog(message);
   } finally {
     hideProgressDialog();
-    setBusy(publishButton, false, t("publishBusy"), t("publishButton"));
+    setBusy(publishButton, false, getPublishBusyLabel(), getPublishButtonLabel());
   }
 });
 

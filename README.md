@@ -47,7 +47,7 @@ Using a dedicated app password is recommended because you can revoke it later wi
 ## Feature Set
 
 - Bluesky sign-in with app password through a compact `Add account` dialog
-- Presets for `bsky.social`, `eurosky.social`, and custom PDS servers
+- Presets for `bsky.social`, `eurosky.social`, Mu.social with automatic PDS discovery, and custom PDS servers
 - Multiple saved logins with quick account switching
 - Accounts stay visible after sign-out and can be signed in again or removed via icon actions
 - Local session renewal without a custom backend

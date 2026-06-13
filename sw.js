@@ -37,6 +37,7 @@ const ARCHIVE_THREAD_REQUEST_RETRIES = 1;
 const ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY = 4;
 const API_BASE = "https://bsky.social/xrpc";
 const DEFAULT_LOGIN_SERVICE = "https://bsky.social";
+const MU_WEB_CLIENT = "https://mu.social";
 const DEFAULT_POST_WEB_APP = "https://bsky.app";
 const CHAT_PROXY_DID = "did:web:api.bsky.chat#bsky_chat";
 const POST_WEB_FRONTENDS = {
@@ -746,15 +747,30 @@ function buildPostWebUrl(handle, recordKey, serviceUrl = DEFAULT_LOGIN_SERVICE) 
   return `${resolvePostWebBase(serviceUrl)}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordKey)}`;
 }
 
+function inferAccountWebApp(entry = {}, service = DEFAULT_LOGIN_SERVICE, handle = "") {
+  if (entry.webApp) {
+    return normalizeServiceUrl(entry.webApp);
+  }
+
+  const normalizedHandle = String(handle || entry.handle || entry.identifier || "").toLowerCase();
+  if (normalizedHandle.endsWith(".eurosky.social") || normalizedHandle.endsWith(".mu.social")) {
+    return MU_WEB_CLIENT;
+  }
+
+  return resolvePostWebBase(service);
+}
+
 function normalizeAuthAccount(entry = {}) {
   const did = entry.session?.did || entry.did || "";
   const handle = entry.session?.handle || entry.handle || entry.identifier || "";
+  const service = normalizeServiceUrl(entry.service || entry.pdsUrl || DEFAULT_LOGIN_SERVICE);
   return {
     did,
     identifier: String(entry.identifier || handle || ""),
     handle: String(handle || ""),
-    service: normalizeServiceUrl(entry.service || entry.pdsUrl || DEFAULT_LOGIN_SERVICE),
+    service,
     pdsUrl: normalizeServiceUrl(entry.pdsUrl || entry.service || DEFAULT_LOGIN_SERVICE),
+    webApp: inferAccountWebApp(entry, service, handle),
     avatar: String(entry.avatar || ""),
     avatarPath: String(entry.avatarPath || ""),
     appPassword: entry.appPassword ? String(entry.appPassword) : "",
@@ -795,6 +811,7 @@ function getAccountPublicMeta(account) {
     identifier: account.identifier || "",
     handle: account.handle || account.identifier || "",
     service: normalizeServiceUrl(account.service || account.pdsUrl || DEFAULT_LOGIN_SERVICE),
+    webApp: normalizeServiceUrl(account.webApp || resolvePostWebBase(account.service)),
     avatar: account.avatar || "",
     avatarPath: account.avatarPath || "",
     hasStoredPassword: Boolean(account.appPassword),
@@ -811,6 +828,7 @@ function buildAuthResponse(state, account = null) {
     handle: activeAccount?.handle || "",
     did: activeAccount?.did || "",
     service: activeAccount?.service || "",
+    webApp: activeAccount?.webApp || DEFAULT_POST_WEB_APP,
     accounts: state.accounts.map((entry) => getAccountPublicMeta(entry)),
   };
 }
@@ -1919,7 +1937,7 @@ async function buildBlobDownloadError(response) {
   return new Error(remoteMessage || `Blob konnte nicht geladen werden (${status}).`);
 }
 
-async function login({ identifier, appPassword, service } = {}) {
+async function login({ identifier, appPassword, service, webApp } = {}) {
   if (!identifier || !appPassword) {
     throw createServiceWorkerError(
       "Identifier and app password are required.",
@@ -1927,7 +1945,44 @@ async function login({ identifier, appPassword, service } = {}) {
     );
   }
 
-  const normalizedService = normalizeServiceUrl(service || DEFAULT_LOGIN_SERVICE);
+  const requestedService = normalizeServiceUrl(service || DEFAULT_LOGIN_SERVICE);
+  const requestedWebApp = normalizeServiceUrl(
+    requestedService === MU_WEB_CLIENT ? MU_WEB_CLIENT : webApp || resolvePostWebBase(requestedService),
+  );
+  let normalizedService = requestedService;
+  if (requestedService === MU_WEB_CLIENT) {
+    const normalizedIdentifier = String(identifier || "").trim().replace(/^@/, "");
+    if (normalizedIdentifier.includes("@") && !normalizedIdentifier.startsWith("did:")) {
+      throw createServiceWorkerError(
+        "Mu.social is a web client, not a login server. Use your handle or select the account's PDS.",
+        "LOGIN_MU_PDS_RESOLUTION_FAILED",
+      );
+    }
+
+    const did = normalizedIdentifier.startsWith("did:")
+      ? normalizedIdentifier
+      : await resolveHandleToDid(normalizedIdentifier, null, new Map());
+    if (!did) {
+      throw createServiceWorkerError(
+        "The account server for this Mu.social handle could not be resolved.",
+        "LOGIN_MU_PDS_RESOLUTION_FAILED",
+      );
+    }
+
+    const didDocument = await fetchDidDocument(did).catch(() => null);
+    const pdsEntry = Array.isArray(didDocument?.service)
+      ? didDocument.service.find((entry) =>
+          entry?.type === "AtprotoPersonalDataServer"
+          || String(entry?.id || "").endsWith("#atproto_pds"))
+      : null;
+    if (!pdsEntry?.serviceEndpoint) {
+      throw createServiceWorkerError(
+        "The account server for this Mu.social handle could not be resolved.",
+        "LOGIN_MU_PDS_RESOLUTION_FAILED",
+      );
+    }
+    normalizedService = normalizeServiceUrl(pdsEntry.serviceEndpoint);
+  }
   const session = await bskyFetch("com.atproto.server.createSession", {
     method: "POST",
     body: JSON.stringify({
@@ -1949,6 +2004,7 @@ async function login({ identifier, appPassword, service } = {}) {
         handle: session.handle,
         service: normalizedService,
         pdsUrl,
+        webApp: requestedWebApp,
         avatar,
         session,
       }, avatarCache?.assets, serviceCache).catch(() => null)
@@ -1967,6 +2023,7 @@ async function login({ identifier, appPassword, service } = {}) {
     handle: session.handle,
     service: normalizedService,
     pdsUrl,
+    webApp: requestedWebApp,
     avatar,
     avatarPath: cachedAvatar?.account?.avatarPath || "",
     appPassword,
@@ -2006,6 +2063,7 @@ async function getAppState({ browserLocale } = {}) {
     handle: auth?.session?.handle || "",
     did: auth?.did || "",
     service: auth?.service || DEFAULT_LOGIN_SERVICE,
+    webApp: auth?.webApp || resolvePostWebBase(auth?.service),
     accounts: state.accounts.map((entry) => getAccountPublicMeta(entry)),
     accountAvatarAssets: normalizeAccountAvatarAssets(accountAvatarCache?.assets),
     draft: typeof draft === "string" ? draft : (draft?.sourceText || ""),
@@ -2293,6 +2351,7 @@ async function switchAccount({ did } = {}) {
       identifier: account.identifier || "",
       handle: account.handle || "",
       service: account.service || DEFAULT_LOGIN_SERVICE,
+      webApp: account.webApp || resolvePostWebBase(account.service),
       accounts: state.accounts.map((entry) => getAccountPublicMeta(entry)),
     };
   }
@@ -2313,6 +2372,7 @@ async function importAccountMetadata({ accounts } = {}) {
       handle: entry.handle || entry.identifier || "",
       service: entry.service || DEFAULT_LOGIN_SERVICE,
       pdsUrl: entry.service || DEFAULT_LOGIN_SERVICE,
+      webApp: entry.webApp || resolvePostWebBase(entry.service),
       avatar: entry.avatar || "",
       avatarPath: entry.avatarPath || "",
       session: null,
@@ -2466,6 +2526,7 @@ async function ensureSession(targetDid = null) {
     identifier: auth.identifier,
     appPassword: auth.appPassword,
     service: auth.service,
+    webApp: auth.webApp,
   }).then(async () => {
     const refreshedState = await readStoredAuth();
     const refreshedAuth = refreshedState.accounts.find((entry) => entry.did === auth.did);
@@ -5520,5 +5581,6 @@ async function publishThread({ segments, langs, postInteraction }, notifyProgres
     posts,
     handle: auth.session.handle,
     service: auth.service || DEFAULT_LOGIN_SERVICE,
+    webApp: auth.webApp || resolvePostWebBase(auth.service),
   };
 }
