@@ -390,49 +390,6 @@
             </section>
 
             <section class="archive-card archive-actions-card">
-              <p class="eyebrow" data-i18n="archiveUnrollEyebrow">Single Thread Export</p>
-              <div class="help-heading">
-                <h3 data-i18n="archiveUnrollTitle">Single Thread Export</h3>
-                <button
-                  type="button"
-                  class="help-trigger"
-                  data-help-topic="archive_unroll"
-                  data-i18n-attr="aria-label:helpButtonLabel,title:helpButtonTitle"
-                  aria-label="Hilfe anzeigen"
-                  title="Hilfe anzeigen"
-                >?</button>
-              </div>
-              <label class="archive-thread-url-field">
-                <span data-i18n="archiveThreadUrlLabel">Posting-URL für Thread-Import</span>
-                <input
-                  id="archive-thread-url-input"
-                  type="url"
-                  inputmode="url"
-                  placeholder="https://bsky.app/profile/handle/post/..."
-                >
-              </label>
-              <label>
-                <span data-i18n="archiveThreadImportModeLabel">Was soll geladen werden?</span>
-                <select id="archive-thread-import-mode-select">
-                  <option value="path" data-i18n="archiveThreadImportModePath">Nur der Threadpfad zur verlinkten Antwort</option>
-                  <option value="author" data-i18n="archiveThreadImportModeAuthor">Der komplette Thread ohne Antworten</option>
-                  <option value="tree" data-i18n="archiveThreadImportModeTree">Der komplette Thread mit allen Antworten</option>
-                </select>
-              </label>
-              <div class="archive-thread-url-controls">
-                <button type="button" class="ghost-button" id="archive-load-thread-url-button" data-i18n="archiveLoadThreadUrlButton">
-                  Thread aus URL laden
-                </button>
-                <button type="button" class="ghost-button" id="archive-export-html-button" data-i18n="archiveExportHtmlButton">HTML-Archiv erzeugen</button>
-                <button type="button" class="ghost-button" id="archive-export-html-compact-button" data-i18n="archiveExportHtmlCompactButton">Kompaktes HTML erzeugen</button>
-                <button type="button" class="ghost-button" id="archive-export-pdf-button" data-i18n="archiveExportPdfButton">PDF-Bände erzeugen</button>
-              </div>
-              <p id="archive-thread-url-note" class="settings-note" data-i18n="archiveThreadUrlHint">
-                Lade einen einzelnen Bluesky-Thread direkt aus einer Posting-URL. Wenn die URL auf eine Antwort zeigt, beginnt der Import automatisch beim Thread-Start.
-              </p>
-            </section>
-
-            <section class="archive-card archive-actions-card">
               <p class="eyebrow" data-i18n="archiveActionsEyebrow">Aktionen</p>
               <div class="help-heading">
                 <h3 data-i18n="archiveActionsTitle">Archiv erzeugen oder laden</h3>
@@ -550,6 +507,52 @@
                 </div>
               </div>
               <div id="archive-results" class="archive-results"></div>
+            </section>
+
+            <section class="archive-card archive-actions-card">
+              <p class="eyebrow" data-i18n="archiveUnrollEyebrow">Thread Export und Post prüfen</p>
+              <div class="help-heading">
+                <h3 data-i18n="archiveUnrollTitle">Thread Export und Post prüfen</h3>
+                <button
+                  type="button"
+                  class="help-trigger"
+                  data-help-topic="archive_unroll"
+                  data-i18n-attr="aria-label:helpButtonLabel,title:helpButtonTitle"
+                  aria-label="Hilfe anzeigen"
+                  title="Hilfe anzeigen"
+                >?</button>
+              </div>
+              <label class="archive-thread-url-field">
+                <span data-i18n="archiveThreadUrlLabel">Posting-URL für Thread-Import</span>
+                <input
+                  id="archive-thread-url-input"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://bsky.app/profile/handle/post/..."
+                >
+              </label>
+              <label>
+                <span data-i18n="archiveThreadImportModeLabel">Was soll geladen werden?</span>
+                <select id="archive-thread-import-mode-select">
+                  <option value="path" data-i18n="archiveThreadImportModePath">Nur der Threadpfad zur verlinkten Antwort</option>
+                  <option value="author" data-i18n="archiveThreadImportModeAuthor">Der komplette Thread ohne Antworten</option>
+                  <option value="tree" data-i18n="archiveThreadImportModeTree">Der komplette Thread mit allen Antworten</option>
+                </select>
+              </label>
+              <div class="archive-thread-url-controls">
+                <button type="button" class="ghost-button" id="archive-load-thread-url-button" data-i18n="archiveLoadThreadUrlButton">
+                  Thread aus URL laden
+                </button>
+                <button type="button" class="ghost-button" id="archive-check-post-edit-button" data-i18n="postEditCheckOpenButton">
+                  Post-Änderung prüfen
+                </button>
+                <button type="button" class="ghost-button" id="archive-export-html-button" data-i18n="archiveExportHtmlButton">HTML-Archiv erzeugen</button>
+                <button type="button" class="ghost-button" id="archive-export-html-compact-button" data-i18n="archiveExportHtmlCompactButton">Kompaktes HTML erzeugen</button>
+                <button type="button" class="ghost-button" id="archive-export-pdf-button" data-i18n="archiveExportPdfButton">PDF-Bände erzeugen</button>
+              </div>
+              <p id="archive-thread-url-note" class="settings-note" data-i18n="archiveThreadUrlHint">
+                Lade einen einzelnen Bluesky-Thread direkt aus einer Posting-URL. Wenn die URL auf eine Antwort zeigt, beginnt der Import automatisch beim Thread-Start.
+              </p>
             </section>
 
             <section class="archive-card archive-spec-card">
@@ -988,6 +991,63 @@
         </div>
 
         <div id="history-list" class="history-list"></div>
+      </form>
+    </dialog>
+
+    <dialog id="post-edit-check-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet post-edit-check-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="postEditCheckEyebrow">Post-Prüfung</p>
+            <h2 data-i18n="postEditCheckTitle">Änderung eines Posts prüfen</h2>
+          </div>
+          <button type="button" id="post-edit-check-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <p class="settings-note" data-i18n="postEditCheckDescription">
+          Prüft den aktuellen ATProto-Record auf die von Mu gespeicherten Felder für Originaltext und Änderungszeit.
+        </p>
+
+        <label for="post-edit-check-url">
+          <span data-i18n="postEditCheckUrlLabel">Posting-URL</span>
+          <input
+            id="post-edit-check-url"
+            type="url"
+            inputmode="url"
+            placeholder="https://bsky.app/profile/handle/post/..."
+          >
+        </label>
+
+        <div class="settings-actions post-edit-check-actions">
+          <button type="button" id="post-edit-check-submit" data-i18n="postEditCheckButton">Prüfen</button>
+          <button type="button" id="post-edit-check-close" class="ghost-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <p id="post-edit-check-status" class="post-edit-check-status settings-note"></p>
+
+        <div id="post-edit-check-result" hidden>
+          <dl class="post-edit-check-meta">
+            <div>
+              <dt data-i18n="postEditCheckCreatedLabel">Erstellt</dt>
+              <dd id="post-edit-check-created"></dd>
+            </div>
+            <div>
+              <dt data-i18n="postEditCheckUpdatedLabel">Geändert</dt>
+              <dd id="post-edit-check-updated"></dd>
+            </div>
+          </dl>
+
+          <div class="post-edit-comparison">
+            <section class="post-edit-column">
+              <h3 data-i18n="postEditCheckOriginalTitle">Ursprünglicher Text</h3>
+              <div id="post-edit-check-original" class="post-edit-text"></div>
+            </section>
+            <section class="post-edit-column post-edit-column-current">
+              <h3 data-i18n="postEditCheckCurrentTitle">Aktueller Text</h3>
+              <div id="post-edit-check-current" class="post-edit-text"></div>
+            </section>
+          </div>
+        </div>
       </form>
     </dialog>
 

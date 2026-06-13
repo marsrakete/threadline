@@ -98,7 +98,7 @@ Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kanns
 
 ## Bilder Pro Thread-Abschnitt
 
-- Pro Abschnitt können bis zu 4 Bilder angehängt werden
+- Pro Abschnitt können bis zu 10 Bilder angehängt werden
 - Bilder werden unter dem jeweiligen Abschnitt als kleine Vorschau angezeigt
 - Jedes Bild bleibt seinem Thread-Abschnitt fest zugeordnet
 - Bilder können innerhalb eines Abschnitts nach links oder rechts sortiert werden
@@ -176,6 +176,7 @@ Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kanns
 - `Voll-Archiv`: lädt alle eigenen Posts und alle eigenen Replies, auch in fremden Threads
 - `Nur eigene Postings`: lädt eigene Top-Level-Posts und eigene Replies nur in eigenen Threads, aber keine eigenen Replies in fremden Threads
 - `Eigene Threads komplett`: lädt eigene Posts, eigene Replies in diesen Threads und zusätzlich Antworten fremder Accounts innerhalb dieser eigenen Threads
+- `Post-Änderung prüfen` untersucht eine Bluesky- oder Mu-Posting-URL auf Mu-kompatible Bearbeitungsmetadaten und vergleicht Originaltext und aktuellen Text
 - Der Ablauf für normale Nutzung ist:
 1. Zeitraum festlegen: alles, ein Jahr oder ein eigener Datumsbereich
 2. Archivtyp festlegen: Voll-Archiv, Nur eigene Postings oder Eigene Threads komplett

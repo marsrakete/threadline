@@ -3,7 +3,7 @@ import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./translations.
 
 const MAX_POST_LENGTH = 300;
 const MANUAL_SPLIT_MARKER = "%%";
-const MAX_IMAGES_PER_SEGMENT = 4;
+const MAX_IMAGES_PER_SEGMENT = 10;
 const MAX_ALT_TEXT_LENGTH = 1000;
 const IMAGE_BLOB_LIMIT = 2_000_000;
 const IMAGE_MAX_DIMENSION = 4_000;
@@ -27,9 +27,10 @@ const LEGACY_DESKTOP_LAYOUT_SIGNATURES = new Set([
 ]);
 const DEFAULT_POST_WEB_APP = "https://bsky.app";
 const POST_WEB_FRONTENDS = {
-  "bsky.social": DEFAULT_POST_WEB_APP,
-  "eurosky.social": DEFAULT_POST_WEB_APP,
-  "bsky.app": DEFAULT_POST_WEB_APP,
+  "bsky.social": "https://bsky.app",
+  "bsky.app": "https://bsky.app",
+  "eurosky.social": "https://mu.social",
+  "mu.social": "https://mu.social",
 };
 const DEFAULT_POST_INTERACTION_SETTINGS = {
   replyMode: "everyone",
@@ -51,9 +52,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.131",
-  cacheVersion: "v150",
-  label: "Confirm dialog flow fix",
+  appVersion: "0.4.137",
+  cacheVersion: "v156",
+  label: "Reorder thread export tools",
 });
 
 function clamp(value, min, max) {
@@ -127,6 +128,17 @@ const publishResultDialog = document.querySelector("#publish-result-dialog");
 const progressDialog = document.querySelector("#progress-dialog");
 const errorDialog = document.querySelector("#error-dialog");
 const historyDialog = document.querySelector("#history-dialog");
+const postEditCheckDialog = document.querySelector("#post-edit-check-dialog");
+const postEditCheckCloseTop = document.querySelector("#post-edit-check-close-top");
+const postEditCheckCloseButton = document.querySelector("#post-edit-check-close");
+const postEditCheckUrlInput = document.querySelector("#post-edit-check-url");
+const postEditCheckSubmitButton = document.querySelector("#post-edit-check-submit");
+const postEditCheckStatus = document.querySelector("#post-edit-check-status");
+const postEditCheckResult = document.querySelector("#post-edit-check-result");
+const postEditCheckCreated = document.querySelector("#post-edit-check-created");
+const postEditCheckUpdated = document.querySelector("#post-edit-check-updated");
+const postEditCheckOriginal = document.querySelector("#post-edit-check-original");
+const postEditCheckCurrent = document.querySelector("#post-edit-check-current");
 const helpDialog = document.querySelector("#help-dialog");
 const helpDialogEyebrow = document.querySelector("#help-dialog-eyebrow");
 const helpDialogTitle = document.querySelector("#help-dialog-title");
@@ -264,6 +276,7 @@ const archivePdfIndentToggle = document.querySelector("#archive-pdf-indent-toggl
 const archiveThreadUrlInput = document.querySelector("#archive-thread-url-input");
 const archiveThreadImportModeSelect = document.querySelector("#archive-thread-import-mode-select");
 const archiveLoadThreadUrlButton = document.querySelector("#archive-load-thread-url-button");
+const archiveCheckPostEditButton = document.querySelector("#archive-check-post-edit-button");
 const archiveThreadUrlNote = document.querySelector("#archive-thread-url-note");
 const archiveNextWaveButton = document.querySelector("#archive-next-wave-button");
 const archiveExportZipButton = document.querySelector("#archive-export-zip-button");
@@ -494,6 +507,7 @@ const NETWORK_STAGE_MAX_ZOOM = 5.6;
 const LOGIN_SERVICE_PRESETS = {
   "bsky.social": "https://bsky.social",
   "eurosky.social": "https://eurosky.social",
+  "mu.social": "https://mu.social",
 };
 const DESKTOP_LAYOUT_MEDIA = window.matchMedia("(min-width: 981px)");
 const VALID_HASHTAG_PLACEMENTS = new Set(["first", "last", "all-top", "all-bottom"]);
@@ -541,7 +555,7 @@ async function sendToServiceWorker(type, payload = {}, options = {}) {
   const worker = registration.active || navigator.serviceWorker.controller;
 
   if (!worker) {
-    throw new Error("Kein aktiver Service Worker verfügbar.");
+    throw new Error(t("statusNoWorker"));
   }
 
   return new Promise((resolve, reject) => {
@@ -571,7 +585,19 @@ async function sendToServiceWorker(type, payload = {}, options = {}) {
         return;
       }
 
-      const error = new Error(event.data?.error || "Unbekannter Fehler im Service Worker.");
+      const errorCode = String(event.data?.details?.code || "");
+      const localizedServiceWorkerErrors = {
+        POST_EDIT_URL_INVALID: "postEditCheckInvalidUrl",
+        POST_EDIT_ACTOR_NOT_FOUND: "postEditCheckActorNotFound",
+        POST_EDIT_RECORD_LOAD_FAILED: "postEditCheckLoadFailed",
+        POST_EDIT_RECORD_INVALID: "postEditCheckRecordInvalid",
+      };
+      const errorMessage = errorCode === "ARCHIVE_ASSET_LOAD_FAILED"
+        ? t("archiveAssetLoadFailed", { status: event.data?.details?.status || "?" })
+        : localizedServiceWorkerErrors[errorCode]
+        ? t(localizedServiceWorkerErrors[errorCode])
+        : event.data?.error || t("statusSwUnknownError");
+      const error = new Error(errorMessage);
       error.details = event.data?.details || null;
       reject(error);
     };
@@ -593,6 +619,18 @@ function buildPublishErrorMessage(error) {
 }
 
 function localizeLoginErrorMessage(error) {
+  const errorCode = String(error?.details?.code || "");
+  const localizedErrorKeys = {
+    AUTH_INVALID_CREDENTIALS: "statusLoginFailedInvalidCredentials",
+    LOGIN_MISSING_CREDENTIALS: "statusLoginFailedMissingCredentials",
+    CONNECTIVITY_FAILED: "statusLoginFailedConnection",
+    CONNECTIVITY_TIMEOUT: "statusLoginFailedConnection",
+    INSECURE_SERVICE_URL: "statusLoginFailedInsecureService",
+  };
+  if (localizedErrorKeys[errorCode]) {
+    return t(localizedErrorKeys[errorCode]);
+  }
+
   const raw = String(error?.message || "").trim();
   const normalized = raw.toLowerCase();
 
@@ -609,14 +647,13 @@ function localizeLoginErrorMessage(error) {
   }
 
   if (
-    normalized.includes("handle und app-passwort sind erforderlich")
-    || normalized.includes("app-password are required")
+    normalized.includes("app-password are required")
     || normalized.includes("identifier and app password are required")
   ) {
     return t("statusLoginFailedMissingCredentials");
   }
 
-  if (normalized.includes("keine verbindung zu bluesky möglich") || normalized.includes("could not connect to bluesky")) {
+  if (normalized.includes("could not connect to bluesky")) {
     return t("statusLoginFailedConnection");
   }
 
@@ -624,7 +661,7 @@ function localizeLoginErrorMessage(error) {
     return t("statusLoginFailedInsecureService");
   }
 
-  if (normalized.includes("bluesky-fehler: 401") || normalized.includes("bluesky error: 401")) {
+  if (normalized.includes("bluesky error: 401")) {
     return t("statusLoginFailedInvalidCredentials");
   }
 
@@ -5232,14 +5269,7 @@ function applyTheme() {
 }
 
 function getThreadIntroText() {
-  const introLocale = currentLocale === "de" || currentLocale === "fr" ? currentLocale : "en";
-  if (introLocale === "de") {
-    return "Ein Thread 🧵";
-  }
-  if (introLocale === "fr") {
-    return "Un fil 🧵";
-  }
-  return "A thread 🧵";
+  return t("threadIntroText");
 }
 
 function getNormalizedPostLanguagesOrDefault() {
@@ -5534,6 +5564,9 @@ function applyTranslations() {
   if (archiveThreadUrlInput) {
     archiveThreadUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
   }
+  if (postEditCheckUrlInput) {
+    postEditCheckUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
+  }
   if (archiveMediaActorInput) {
     archiveMediaActorInput.placeholder = t("archiveMediaActorPlaceholder");
   }
@@ -5558,6 +5591,12 @@ function applyTranslations() {
   archiveNextWaveButton.textContent = t("archiveNextWaveButton");
   if (archiveLoadThreadUrlButton) {
     archiveLoadThreadUrlButton.textContent = t("archiveLoadThreadUrlButton");
+  }
+  if (archiveCheckPostEditButton) {
+    archiveCheckPostEditButton.textContent = t("postEditCheckOpenButton");
+  }
+  if (postEditCheckSubmitButton) {
+    postEditCheckSubmitButton.textContent = t("postEditCheckButton");
   }
   archiveExportZipButton.textContent = t("archiveExportZipButton");
   if (archiveExportMediaZipButton) {
@@ -6160,7 +6199,7 @@ async function loadImageDimensions(dataUrl) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
-    image.onerror = () => reject(new Error("Image could not be loaded."));
+    image.onerror = () => reject(new Error(t("imageLoadFailed")));
     image.src = dataUrl;
   });
 }
@@ -6169,7 +6208,7 @@ async function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("File could not be read."));
+    reader.onerror = () => reject(new Error(t("fileReadFailed"), { cause: reader.error }));
     reader.readAsDataURL(file);
   });
 }
@@ -6378,7 +6417,7 @@ async function renderImageToBlob(image) {
     });
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", image.exportQuality || 0.88));
     if (!blob) {
-      throw new Error("Image blob could not be created.");
+      throw new Error(t("imageBlobCreateFailed"));
     }
     return {
       blob,
@@ -6406,7 +6445,7 @@ async function renderImageToBlob(image) {
   });
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", image.exportQuality || 0.88));
   if (!blob) {
-    throw new Error("Image blob could not be created.");
+    throw new Error(t("imageBlobCreateFailed"));
   }
   return {
     blob,
@@ -7464,7 +7503,7 @@ async function exportArchiveMediaZip() {
     fileHandle = await window.showSaveFilePicker({
       suggestedName,
       types: [{
-        description: "ZIP-Archiv",
+        description: t("archiveMediaFilePickerDescription"),
         accept: {
           "application/zip": [".zip"],
         },
@@ -7474,7 +7513,7 @@ async function exportArchiveMediaZip() {
     if (error?.name === "AbortError") {
       return;
     }
-    throw error;
+    throw new Error(t("archiveMediaFilePickerFailed"));
   }
 
   archiveTransientNotice = "";
@@ -7724,7 +7763,7 @@ function getAssetExtensionFromMimeType(mimeType = "") {
 async function downloadRemoteAssetForCatalog(url) {
   const response = await fetch(url, { method: "GET" });
   if (!response.ok) {
-    throw new Error(`Asset konnte nicht geladen werden (${response.status})`);
+    throw new Error(t("archiveAssetLoadFailed", { status: response.status }));
   }
   return {
     type: response.headers.get("content-type") || "application/octet-stream",
@@ -9877,7 +9916,7 @@ function getArchivePdfImagePreset(options) {
 }
 
 function getArchivePdfImageFrames(post, contentWidth, options, scale) {
-  const images = Array.isArray(post.images) ? post.images.slice(0, 4) : [];
+  const images = Array.isArray(post.images) ? post.images.slice(0, MAX_IMAGES_PER_SEGMENT) : [];
   if (images.length === 0) {
     return { frames: [], totalHeight: 0 };
   }
@@ -10768,6 +10807,119 @@ async function ensureArchiveCatalogLoaded(forceRefresh = false) {
   updateArchiveSummary(archiveCatalog);
   renderArchiveResults(archiveCatalog);
   return archiveCatalog;
+}
+
+function tokenizePostEditText(text) {
+  return String(text || "").match(/\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]+/gu) || [];
+}
+
+function getCurrentPostEditTokenStates(originalText, currentText) {
+  const originalTokens = tokenizePostEditText(originalText);
+  const currentTokens = tokenizePostEditText(currentText);
+  const rows = originalTokens.length + 1;
+  const columns = currentTokens.length + 1;
+  const matrix = Array.from({ length: rows }, () => new Uint16Array(columns));
+
+  for (let originalIndex = originalTokens.length - 1; originalIndex >= 0; originalIndex -= 1) {
+    for (let currentIndex = currentTokens.length - 1; currentIndex >= 0; currentIndex -= 1) {
+      matrix[originalIndex][currentIndex] = originalTokens[originalIndex] === currentTokens[currentIndex]
+        ? matrix[originalIndex + 1][currentIndex + 1] + 1
+        : Math.max(matrix[originalIndex + 1][currentIndex], matrix[originalIndex][currentIndex + 1]);
+    }
+  }
+
+  const unchangedCurrentIndexes = new Set();
+  let originalIndex = 0;
+  let currentIndex = 0;
+  while (originalIndex < originalTokens.length && currentIndex < currentTokens.length) {
+    if (originalTokens[originalIndex] === currentTokens[currentIndex]) {
+      unchangedCurrentIndexes.add(currentIndex);
+      originalIndex += 1;
+      currentIndex += 1;
+    } else if (matrix[originalIndex + 1][currentIndex] >= matrix[originalIndex][currentIndex + 1]) {
+      originalIndex += 1;
+    } else {
+      currentIndex += 1;
+    }
+  }
+
+  return currentTokens.map((token, index) => ({
+    token,
+    changed: !unchangedCurrentIndexes.has(index),
+  }));
+}
+
+function renderPostEditCurrentText(originalText, currentText) {
+  postEditCheckCurrent.replaceChildren();
+  const tokenStates = getCurrentPostEditTokenStates(originalText, currentText);
+  let changedRun = null;
+
+  tokenStates.forEach(({ token, changed }) => {
+    if (!changed) {
+      changedRun = null;
+      postEditCheckCurrent.append(document.createTextNode(token));
+      return;
+    }
+    if (!changedRun) {
+      changedRun = document.createElement("mark");
+      changedRun.className = "post-edit-difference";
+      postEditCheckCurrent.appendChild(changedRun);
+    }
+    changedRun.append(document.createTextNode(token));
+  });
+}
+
+function resetPostEditCheckResult() {
+  postEditCheckStatus.textContent = "";
+  postEditCheckStatus.className = "post-edit-check-status settings-note";
+  postEditCheckResult.hidden = true;
+  postEditCheckCreated.textContent = "";
+  postEditCheckUpdated.textContent = "";
+  postEditCheckOriginal.textContent = "";
+  postEditCheckCurrent.replaceChildren();
+}
+
+function openPostEditCheckDialog() {
+  resetPostEditCheckResult();
+  postEditCheckUrlInput.value = String(archiveThreadUrlInput?.value || "").trim();
+  postEditCheckDialog.showModal();
+  window.setTimeout(() => {
+    postEditCheckUrlInput.focus();
+    if (postEditCheckUrlInput.value) {
+      postEditCheckUrlInput.select();
+    }
+  }, 0);
+}
+
+function closePostEditCheckDialog() {
+  if (postEditCheckDialog.open) {
+    postEditCheckDialog.close();
+  }
+}
+
+async function checkPostEditMetadata() {
+  const url = String(postEditCheckUrlInput.value || "").trim();
+  if (!url) {
+    throw new Error(t("postEditCheckInvalidUrl"));
+  }
+
+  resetPostEditCheckResult();
+  postEditCheckStatus.textContent = t("postEditCheckLoading");
+  const result = await sendToServiceWorker("CHECK_POST_EDIT", { url }, { timeoutMs: 120000 });
+
+  if (!result?.isEdited) {
+    postEditCheckStatus.textContent = t("postEditCheckNotDetected");
+    postEditCheckStatus.classList.add("is-unedited");
+    return;
+  }
+
+  postEditCheckStatus.textContent = t("postEditCheckDetected");
+  postEditCheckStatus.classList.add("is-edited");
+  postEditCheckCreated.textContent = formatHistoryTimestamp(result.createdAt);
+  postEditCheckUpdated.textContent = formatHistoryTimestamp(result.updatedAt);
+  postEditCheckOriginal.textContent = result.originalText;
+  renderPostEditCurrentText(result.originalText, result.text);
+  postEditCheckResult.hidden = false;
 }
 
 async function importArchiveThreadFromUrl() {
@@ -11971,6 +12123,7 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicArchiveUnrollBullet1"),
           t("helpTopicArchiveUnrollBullet2"),
           t("helpTopicArchiveUnrollBullet3"),
+          t("helpTopicArchiveUnrollBullet4"),
         ],
       };
     case "archive_progress":
@@ -13524,6 +13677,44 @@ if (archiveLoadThreadUrlButton) {
     }
   });
 }
+
+if (archiveCheckPostEditButton) {
+  archiveCheckPostEditButton.addEventListener("click", () => {
+    openPostEditCheckDialog();
+  });
+}
+
+if (postEditCheckUrlInput) {
+  postEditCheckUrlInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      postEditCheckSubmitButton?.click();
+    }
+  });
+}
+
+if (postEditCheckSubmitButton) {
+  postEditCheckSubmitButton.addEventListener("click", async () => {
+    try {
+      setBusy(postEditCheckSubmitButton, true, t("postEditCheckBusy"), t("postEditCheckButton"));
+      await checkPostEditMetadata();
+    } catch (error) {
+      console.error(error);
+      postEditCheckResult.hidden = true;
+      postEditCheckStatus.textContent = error.message || t("postEditCheckLoadFailed");
+      postEditCheckStatus.className = "post-edit-check-status settings-note is-error";
+    } finally {
+      setBusy(postEditCheckSubmitButton, false, t("postEditCheckBusy"), t("postEditCheckButton"));
+    }
+  });
+}
+
+postEditCheckCloseTop?.addEventListener("click", closePostEditCheckDialog);
+postEditCheckCloseButton?.addEventListener("click", closePostEditCheckDialog);
+postEditCheckDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closePostEditCheckDialog();
+});
 
 dmLoadButton.addEventListener("click", async () => {
   try {

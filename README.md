@@ -98,7 +98,7 @@ Using a dedicated app password is recommended because you can revoke it later wi
 
 ## Images Per Thread Segment
 
-- Up to 4 images can be attached to each segment
+- Up to 10 images can be attached to each segment
 - Images are shown below their segment as compact previews
 - Each image stays assigned to its specific thread segment
 - Images can be reordered left or right within a segment
@@ -176,6 +176,7 @@ Using a dedicated app password is recommended because you can revoke it later wi
 - `Full archive`: loads all of your own posts and all of your own replies, including replies inside other people's threads
 - `Own posts only`: loads your own top-level posts and your own replies only inside your own threads, but skips your replies in foreign threads
 - `My threads complete`: loads your own posts, your own replies inside those threads, and replies from other accounts inside your own threads
+- `Check post changes` inspects a Bluesky or Mu post URL for Mu-compatible edit metadata and compares the original and current text
 - The normal user workflow is:
 1. Choose the range: all posts, a single year, or a custom date range
 2. Choose the archive type: full archive, own posts only, or my threads complete

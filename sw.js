@@ -23,6 +23,7 @@ const DB_NAME = "threadline-db";
 const DB_VERSION = 2;
 const STORE_NAME = "settings";
 const COMPOSER_IMAGE_STORE_NAME = "composer-images";
+const MAX_IMAGES_PER_SEGMENT = 10;
 const AUTH_KEY = "auth";
 const DRAFT_KEY = "draft";
 const LOCALE_KEY = "locale";
@@ -39,9 +40,10 @@ const DEFAULT_LOGIN_SERVICE = "https://bsky.social";
 const DEFAULT_POST_WEB_APP = "https://bsky.app";
 const CHAT_PROXY_DID = "did:web:api.bsky.chat#bsky_chat";
 const POST_WEB_FRONTENDS = {
-  "bsky.social": DEFAULT_POST_WEB_APP,
-  "eurosky.social": DEFAULT_POST_WEB_APP,
-  "bsky.app": DEFAULT_POST_WEB_APP,
+  "bsky.social": "https://bsky.app",
+  "bsky.app": "https://bsky.app",
+  "eurosky.social": "https://mu.social",
+  "mu.social": "https://mu.social",
 };
 const archiveRunControls = new Map();
 
@@ -225,7 +227,7 @@ function normalizeSegmentImages(segments) {
     (Array.isArray(images) ? images : [])
       .map((entry) => normalizeThreadImage(entry))
       .filter(Boolean)
-      .slice(0, 4),
+      .slice(0, MAX_IMAGES_PER_SEGMENT),
   );
 }
 
@@ -244,7 +246,7 @@ function normalizeSegmentImageMetadata(segments) {
     (Array.isArray(images) ? images : [])
       .map((entry) => stripThreadImageData(entry))
       .filter(Boolean)
-      .slice(0, 4),
+      .slice(0, MAX_IMAGES_PER_SEGMENT),
   );
 }
 
@@ -627,6 +629,8 @@ async function handleMessage(message, port) {
       return exportAccountArchiveWave(message.payload, (progress) => port.postMessage({ progress }));
     case "IMPORT_ARCHIVE_THREAD_FROM_URL":
       return importArchiveThreadFromUrl(message.payload, (progress) => port.postMessage({ progress }));
+    case "CHECK_POST_EDIT":
+      return checkPostEditMetadata(message.payload);
     case "CHECK_DM_ACCESS":
       return checkDmAccess();
     case "LOAD_NETWORK_SLICE":
@@ -648,6 +652,15 @@ async function handleMessage(message, port) {
     default:
       throw new Error("Unbekannter Service-Worker-Befehl.");
   }
+}
+
+function createServiceWorkerError(message, code, details = {}) {
+  const error = new Error(message);
+  error.details = {
+    ...details,
+    code,
+  };
+  return error;
 }
 
 function openDatabase() {
@@ -699,7 +712,10 @@ function isInsecureServiceUrl(value) {
 
 function assertSecureServiceUrl(value) {
   if (isInsecureServiceUrl(value)) {
-    throw new Error("Insecure service URLs are not allowed. Please use HTTPS.");
+    throw createServiceWorkerError(
+      "Insecure service URLs are not allowed. Please use HTTPS.",
+      "INSECURE_SERVICE_URL",
+    );
   }
 }
 
@@ -1117,7 +1133,14 @@ async function bskyFetch(endpoint, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(data.message || data.error || `Bluesky-Fehler: ${response.status}`);
+    const code = response.status === 401
+      ? "AUTH_INVALID_CREDENTIALS"
+      : "BSKY_REQUEST_FAILED";
+    throw createServiceWorkerError(
+      data.message || data.error || `Bluesky request failed (${response.status}).`,
+      code,
+      { status: response.status },
+    );
   }
 
   return data;
@@ -1898,7 +1921,10 @@ async function buildBlobDownloadError(response) {
 
 async function login({ identifier, appPassword, service } = {}) {
   if (!identifier || !appPassword) {
-    throw new Error("Handle und App-Passwort sind erforderlich.");
+    throw createServiceWorkerError(
+      "Identifier and app password are required.",
+      "LOGIN_MISSING_CREDENTIALS",
+    );
   }
 
   const normalizedService = normalizeServiceUrl(service || DEFAULT_LOGIN_SERVICE);
@@ -2216,15 +2242,26 @@ function setArchiveRunControl({ runId, action } = {}) {
   return { ok: true, state: current.state };
 }
 
-function isOfflineAuthErrorMessage(message = "") {
-  const normalized = String(message || "").toLowerCase();
-  return normalized.includes("keine verbindung zu bluesky möglich")
-    || normalized.includes("could not connect to bluesky")
+function isOfflineAuthError(error) {
+  if (error?.details?.code === "CONNECTIVITY_FAILED" || error?.details?.code === "CONNECTIVITY_TIMEOUT") {
+    return true;
+  }
+  const normalized = String(error?.message || "").toLowerCase();
+  return normalized.includes("could not connect to bluesky")
     || normalized.includes("fetch failed")
     || normalized.includes("networkerror")
     || normalized.includes("load failed")
-    || normalized.includes("failed to fetch")
-    || normalized.includes("verbindungscheck zu bluesky");
+    || normalized.includes("failed to fetch");
+}
+
+function isInvalidCredentialsError(error) {
+  if (error?.details?.code === "AUTH_INVALID_CREDENTIALS") {
+    return true;
+  }
+  const normalized = String(error?.message || "").toLowerCase();
+  return normalized.includes("invalid identifier or password")
+    || normalized.includes("invalid login credentials")
+    || normalized.includes("bluesky error: 401");
 }
 
 async function switchAccount({ did } = {}) {
@@ -2242,17 +2279,13 @@ async function switchAccount({ did } = {}) {
     const storedState = await writeStoredAuth(refreshedState);
     return buildAuthResponse(storedState, storedState.accounts.find((entry) => entry.did === (verified.did || did)));
   } catch (error) {
-    const normalized = String(error?.message || "").toLowerCase();
-    const reason = isOfflineAuthErrorMessage(normalized)
+    const reason = isOfflineAuthError(error)
       ? "offline"
       : !account.appPassword
       ? "missing_password"
-      : (normalized.includes("invalid identifier or password")
-        || normalized.includes("invalid login credentials")
-        || normalized.includes("bluesky-fehler: 401")
-        || normalized.includes("bluesky error: 401")
-        ? "invalid_password"
-        : "signed_out");
+      : isInvalidCredentialsError(error)
+      ? "invalid_password"
+      : "signed_out";
     return {
       authenticated: false,
       reason,
@@ -2353,18 +2386,14 @@ async function verifySession() {
   } catch (error) {
     const state = await readStoredAuth().catch(() => ({ activeDid: "", accounts: [] }));
     const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid) || null;
-    const normalized = String(error?.message || "").toLowerCase();
     const result = buildAuthResponse({ ...state, activeDid: "" }, null);
-    result.reason = isOfflineAuthErrorMessage(normalized)
+    result.reason = isOfflineAuthError(error)
       ? "offline"
       : !activeAccount?.appPassword
       ? "missing_password"
-      : (normalized.includes("invalid identifier or password")
-        || normalized.includes("invalid login credentials")
-        || normalized.includes("bluesky-fehler: 401")
-        || normalized.includes("bluesky error: 401")
-        ? "invalid_password"
-        : "signed_out");
+      : isInvalidCredentialsError(error)
+      ? "invalid_password"
+      : "signed_out";
     return result;
   }
 }
@@ -2462,16 +2491,29 @@ async function checkConnectivity() {
     });
 
     if (!response.ok) {
-      throw new Error(`Bluesky-Fehler: ${response.status}`);
+      throw createServiceWorkerError(
+        `Bluesky request failed (${response.status}).`,
+        "CONNECTIVITY_FAILED",
+        { status: response.status },
+      );
     }
 
     return { ok: true };
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error("Der Verbindungscheck zu Bluesky hat zu lange gedauert.");
+      throw createServiceWorkerError(
+        "The Bluesky connectivity check timed out.",
+        "CONNECTIVITY_TIMEOUT",
+      );
     }
 
-    throw new Error("Keine Verbindung zu Bluesky möglich.");
+    if (error?.details?.code === "INSECURE_SERVICE_URL") {
+      throw error;
+    }
+    throw createServiceWorkerError(
+      "Could not connect to Bluesky.",
+      "CONNECTIVITY_FAILED",
+    );
   } finally {
     clearTimeout(timeoutId);
   }
@@ -2570,7 +2612,11 @@ function getAssetExtensionFromMimeType(mimeType = "") {
 async function downloadRemoteAsset(url) {
   const response = await fetch(url, { method: "GET" });
   if (!response.ok) {
-    throw new Error(`Asset konnte nicht geladen werden (${response.status})`);
+    throw createServiceWorkerError(
+      `Archive asset could not be loaded (${response.status}).`,
+      "ARCHIVE_ASSET_LOAD_FAILED",
+      { status: response.status },
+    );
   }
   return {
     type: response.headers.get("content-type") || "application/octet-stream",
@@ -3293,7 +3339,7 @@ function extractArchiveEmbedImages(record = {}) {
   }
 
   if (Array.isArray(embed.images)) {
-    return embed.images.slice(0, 4);
+    return embed.images.slice(0, MAX_IMAGES_PER_SEGMENT);
   }
 
   if (embed.media && typeof embed.media === "object") {
@@ -4233,6 +4279,72 @@ function parseArchiveThreadSource(value = "") {
     actor: decodeURIComponent(segments[1] || ""),
     rkey: decodeURIComponent(segments[3] || ""),
     entryUri: "",
+  };
+}
+
+async function checkPostEditMetadata({ url } = {}) {
+  const auth = await ensureSession();
+  let parsedSource;
+  try {
+    parsedSource = parseArchiveThreadSource(url);
+  } catch {
+    throw createServiceWorkerError(
+      "The post URL is invalid.",
+      "POST_EDIT_URL_INVALID",
+    );
+  }
+
+  const resolveCache = new Map();
+  const actorDid = parsedSource.actor.startsWith("did:")
+    ? parsedSource.actor
+    : await resolveHandleToDid(parsedSource.actor, auth, resolveCache);
+  if (!actorDid) {
+    throw createServiceWorkerError(
+      "The post account could not be resolved.",
+      "POST_EDIT_ACTOR_NOT_FOUND",
+    );
+  }
+
+  const serviceUrl = await resolvePdsForDid(
+    actorDid,
+    auth.pdsUrl || auth.service || DEFAULT_LOGIN_SERVICE,
+    new Map(),
+  );
+
+  let recordResponse;
+  try {
+    recordResponse = await bskyGet("com.atproto.repo.getRecord", {
+      repo: actorDid,
+      collection: "app.bsky.feed.post",
+      rkey: parsedSource.rkey,
+    }, {
+      base: xrpcBaseForService(serviceUrl),
+    });
+  } catch (error) {
+    throw createServiceWorkerError(
+      error?.message || "The post record could not be loaded.",
+      "POST_EDIT_RECORD_LOAD_FAILED",
+    );
+  }
+
+  const record = recordResponse?.value;
+  if (!record || record.$type !== "app.bsky.feed.post") {
+    throw createServiceWorkerError(
+      "The URL does not point to a post record.",
+      "POST_EDIT_RECORD_INVALID",
+    );
+  }
+
+  return {
+    uri: `at://${actorDid}/app.bsky.feed.post/${parsedSource.rkey}`,
+    cid: String(recordResponse?.cid || ""),
+    actorDid,
+    sourceUrl: parsedSource.sourceUrl,
+    text: String(record.text || ""),
+    originalText: typeof record.originalText === "string" ? record.originalText : "",
+    createdAt: String(record.createdAt || ""),
+    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : "",
+    isEdited: typeof record.originalText === "string" && typeof record.updatedAt === "string",
   };
 }
 
@@ -5322,7 +5434,7 @@ async function publishThread({ segments, langs, postInteraction }, notifyProgres
         record.facets = facets;
       }
 
-      const images = Array.isArray(segment?.images) ? segment.images.slice(0, 4) : [];
+      const images = Array.isArray(segment?.images) ? segment.images.slice(0, MAX_IMAGES_PER_SEGMENT) : [];
       if (images.length > 0) {
         const embeddedImages = [];
         for (const [imageIndex, image] of images.entries()) {
