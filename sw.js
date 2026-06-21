@@ -207,13 +207,13 @@ function normalizeThreadImage(entry = {}, options = {}) {
     name: entry.name || "image",
     type: entry.type || "image/jpeg",
     ...(dataUrl ? { dataUrl } : {}),
-    alt: String(entry.alt || "").slice(0, 1000),
+    alt: String(entry.alt || "").slice(0, 2000),
     width: Number(entry.width) || 0,
     height: Number(entry.height) || 0,
     originalSizeBytes: Math.max(0, Number(entry.originalSizeBytes) || 0),
     edit: normalizeImageEdit(entry.edit),
     exportQuality: Math.min(0.92, Math.max(0.45, Number(entry.exportQuality) || 0.88)),
-    exportScale: Math.min(1, Math.max(0.35, Number(entry.exportScale) || 1)),
+    exportScale: Math.min(1, Math.max(0.05, Number(entry.exportScale) || 1)),
     validation: entry.validation && typeof entry.validation === "object"
       ? {
           sizeBytes: Number(entry.validation.sizeBytes) || 0,
@@ -249,6 +249,38 @@ function normalizeSegmentImageMetadata(segments) {
       .filter(Boolean)
       .slice(0, MAX_IMAGES_PER_SEGMENT),
   );
+}
+
+function normalizeLinkCard(card = null) {
+  if (!card || typeof card !== "object") {
+    return null;
+  }
+  const url = String(card.url || "").trim();
+  if (!/^https?:\/\//i.test(url)) {
+    return null;
+  }
+  return {
+    url,
+    title: String(card.title || url).trim().slice(0, 300),
+    description: String(card.description || "").trim().slice(0, 1000),
+    imageUrl: String(card.imageUrl || "").trim(),
+    imageDataUrl: String(card.imageDataUrl || "").trim(),
+    imageMimeType: String(card.imageMimeType || "").trim(),
+    createdAt: String(card.createdAt || new Date().toISOString()),
+  };
+}
+
+function normalizeSegmentLinkCards(cards = []) {
+  return (Array.isArray(cards) ? cards : []).map((card) => normalizeLinkCard(card));
+}
+
+function normalizeLinkCardProxySettings(settings = null) {
+  const endpoint = String(settings?.endpoint || "").trim();
+  const secret = String(settings?.secret || "").trim();
+  return {
+    endpoint: /^https?:\/\//i.test(endpoint) ? endpoint : "",
+    secret,
+  };
 }
 
 function normalizeSegmentOverrides(segments) {
@@ -2087,12 +2119,14 @@ async function getAppState({ browserLocale } = {}) {
     appendThreadEmoji: storedSettings?.appendThreadEmoji === true,
     addMarkerSpacing: storedSettings?.addMarkerSpacing === true,
     postInteraction: normalizePostInteractionSettings(storedSettings?.postInteraction),
+    linkCardProxy: normalizeLinkCardProxySettings(storedSettings?.linkCardProxy),
     hashtags,
     selectedHashtags,
     hashtagPlacement: ["first", "last", "all-top", "all-bottom"].includes(storedSettings?.hashtagPlacement)
       ? storedSettings.hashtagPlacement
       : "first",
     segmentImages: hydratedSegmentImages,
+    segmentLinkCards: normalizeSegmentLinkCards(draft?.segmentLinkCards || storedSettings?.segmentLinkCards),
     segmentOverrides: normalizeSegmentOverrides(draft?.segmentOverrides),
     postingHistory: normalizePostingHistory(storedSettings?.postingHistory),
     archivePreferences: storedSettings?.archivePreferences && typeof storedSettings.archivePreferences === "object"
@@ -2101,11 +2135,12 @@ async function getAppState({ browserLocale } = {}) {
   };
 }
 
-async function saveDraft({ draft, segmentImages, segmentOverrides } = {}) {
+async function saveDraft({ draft, segmentImages, segmentLinkCards, segmentOverrides } = {}) {
   const normalizedImages = await storeComposerImageBlobs(segmentImages);
   await writeStoredValue(DRAFT_KEY, {
     sourceText: draft || "",
     segmentImages: normalizeSegmentImageMetadata(normalizedImages),
+    segmentLinkCards: normalizeSegmentLinkCards(segmentLinkCards),
     segmentOverrides: normalizeSegmentOverrides(segmentOverrides),
   });
   await pruneComposerImageBlobs();
@@ -2149,6 +2184,7 @@ async function saveSettings(settings = {}) {
     appendThreadEmoji: settings.appendThreadEmoji === true,
     addMarkerSpacing: settings.addMarkerSpacing === true,
     postInteraction: normalizePostInteractionSettings(settings.postInteraction || existing.postInteraction),
+    linkCardProxy: normalizeLinkCardProxySettings(settings.linkCardProxy || existing.linkCardProxy),
     hashtags,
     selectedHashtags,
     hashtagPlacement: ["first", "last", "all-top", "all-bottom"].includes(settings.hashtagPlacement)
@@ -2157,6 +2193,9 @@ async function saveSettings(settings = {}) {
     segmentImages: Array.isArray(settings.segmentImages)
       ? normalizeSegmentImageMetadata(normalizedImages)
       : normalizeSegmentImageMetadata(existing.segmentImages),
+    segmentLinkCards: Array.isArray(settings.segmentLinkCards)
+      ? normalizeSegmentLinkCards(settings.segmentLinkCards)
+      : normalizeSegmentLinkCards(existing.segmentLinkCards),
     postingHistory: Array.isArray(settings.postingHistory)
       ? normalizePostingHistory(settings.postingHistory)
       : normalizePostingHistory(existing.postingHistory),
@@ -2761,7 +2800,7 @@ function buildMediaManifestEntriesForPost(post = {}, record = {}, options = {}) 
         authorHandle: post.authorHandle || "",
         rkey: post.rkey || "",
         cid,
-        alt: String(image.alt || "").slice(0, 1000),
+        alt: String(image.alt || "").slice(0, 2000),
         width: Number(image.aspectRatio?.width) || 0,
         height: Number(image.aspectRatio?.height) || 0,
         mimeTypeHint: String(image?.image?.mimeType || image?.mimeType || "").trim(),
@@ -2788,7 +2827,7 @@ function buildMediaManifestEntriesForPost(post = {}, record = {}, options = {}) 
         authorHandle: post.authorHandle || "",
         rkey: post.rkey || "",
         cid,
-        alt: String(videoEntry.alt || "").slice(0, 1000),
+        alt: String(videoEntry.alt || "").slice(0, 2000),
         width: Number(videoEntry.aspectRatio?.width) || 0,
         height: Number(videoEntry.aspectRatio?.height) || 0,
         mimeTypeHint: String(videoEntry?.video?.mimeType || "").trim(),
@@ -3071,7 +3110,7 @@ async function downloadAccountMediaAsset({ item } = {}, notifyProgress = () => {
     bytes: blob.bytes,
     createdAt: String(item.createdAt || "").trim(),
     postUri: String(item.postUri || "").trim(),
-    alt: String(item.alt || "").slice(0, 1000),
+    alt: String(item.alt || "").slice(0, 2000),
     width: Number(item.width) || 0,
     height: Number(item.height) || 0,
   };
@@ -4951,7 +4990,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
 
         post.images[imageIndex] = {
           path,
-          alt: String(image.alt || "").slice(0, 1000),
+          alt: String(image.alt || "").slice(0, 2000),
           width: Number(image.aspectRatio?.width) || 0,
           height: Number(image.aspectRatio?.height) || 0,
           sourceDid: blobDid,
@@ -5343,7 +5382,7 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
 
       post.images.push({
         path,
-        alt: String(image.alt || "").slice(0, 1000),
+        alt: String(image.alt || "").slice(0, 2000),
         width: Number(image.aspectRatio?.width) || 0,
         height: Number(image.aspectRatio?.height) || 0,
         sourceDid: post.authorDid || actorDid,
@@ -5502,13 +5541,31 @@ async function publishThread({ segments, langs, postInteraction }, notifyProgres
       }
 
       const images = Array.isArray(segment?.images) ? segment.images.slice(0, MAX_IMAGES_PER_SEGMENT) : [];
-      if (images.length > 0) {
+      const externalCard = normalizeLinkCard(segment?.externalCard);
+      if (externalCard && images.length > 0) {
+        throw new Error("Link-Card und Bilder koennen nicht im selben Abschnitt gepostet werden.");
+      }
+      if (externalCard) {
+        const external = {
+          uri: externalCard.url,
+          title: String(externalCard.title || externalCard.url).slice(0, 300),
+          description: String(externalCard.description || "").slice(0, 1000),
+        };
+        if (segment.externalCard?.thumb instanceof Blob) {
+          notifyProgress({ message: `Link-Card-Vorschaubild fuer Abschnitt ${segmentIndex + 1} wird hochgeladen …` });
+          external.thumb = await uploadBlob(auth, segment.externalCard.thumb);
+        }
+        record.embed = {
+          $type: "app.bsky.embed.external",
+          external,
+        };
+      } else if (images.length > 0) {
         const embeddedImages = [];
         for (const [imageIndex, image] of images.entries()) {
           notifyProgress({ message: `Bild ${imageIndex + 1}/${images.length} für Abschnitt ${segmentIndex + 1} wird hochgeladen …` });
           const blobRef = await uploadBlob(auth, image.blob);
           embeddedImages.push({
-            alt: String(image.alt || "").slice(0, 1000),
+            alt: String(image.alt || "").slice(0, 2000),
             image: blobRef,
             aspectRatio: image.width && image.height ? { width: image.width, height: image.height } : undefined,
           });

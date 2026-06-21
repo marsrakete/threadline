@@ -825,6 +825,7 @@
           <p class="eyebrow" data-i18n="appearanceEyebrow">Darstellung</p>
           <div class="settings-actions">
             <button type="button" id="theme-toggle-button" class="ghost-button" data-i18n="darkModeButton">Dark Mode</button>
+            <button type="button" id="reset-column-widths-button" class="ghost-button" data-i18n="resetColumnWidthsButton">Spaltenbreite zurücksetzen</button>
           </div>
           <p class="settings-note" id="theme-status-note" data-i18n="themeLightActive">
             Aktuell ist der helle Modus aktiv.
@@ -844,9 +845,24 @@
         </section>
 
         <section class="settings-block">
-          <p class="eyebrow" data-i18n="historyEyebrow">Historie</p>
+          <p class="eyebrow" data-i18n="linkCardSettingsEyebrow">Link-Cards</p>
+          <p class="settings-note" data-i18n="linkCardSettingsNote">Optionaler WordPress-Proxy fuer Link-Card-Metadaten.</p>
+          <label>
+            <span data-i18n="linkCardEndpointLabel">Proxy-Endpunkt</span>
+            <input id="link-card-endpoint-input" type="url" inputmode="url" placeholder="https://example.com/wp-json/threadline/v1/link-card">
+          </label>
+          <label>
+            <span data-i18n="linkCardSecretLabel">Secret</span>
+            <input id="link-card-secret-input" type="password" autocomplete="off">
+          </label>
+          <p id="link-card-settings-status" class="settings-note" hidden></p>
+        </section>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="historyTitle">Letzte Postings</p>
+          <p class="settings-note" data-i18n="historySettingsNote">Threadline speichert lokal die zuletzt erfolgreich veröffentlichten Postings, damit du sie schnell wieder öffnen kannst.</p>
           <div class="settings-actions">
-            <button type="button" id="clear-history-button" class="ghost-button" data-i18n="clearHistoryButton">Historie löschen</button>
+            <button type="button" id="clear-history-button" class="ghost-button" data-i18n="clearHistoryButton">Letzte Postings löschen</button>
           </div>
         </section>
 
@@ -1243,11 +1259,11 @@
 
         <label for="alt-text-input">
           <span data-i18n="altTextLabel">ALT-Text</span>
-          <textarea id="alt-text-input" rows="8" maxlength="1000"></textarea>
+          <textarea id="alt-text-input" rows="8" maxlength="2000"></textarea>
         </label>
 
         <div class="composer-meta">
-          <span id="alt-text-count">0/1000</span>
+          <span id="alt-text-count">0/2000</span>
         </div>
 
         <div class="settings-actions">
@@ -1264,6 +1280,7 @@
             <p class="eyebrow" data-i18n="imagesEyebrow">Bilder</p>
             <h2 data-i18n="imageEditorTitle">Bild bearbeiten</h2>
           </div>
+          <button type="button" class="help-trigger" data-help-topic="image_editor" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
           <button type="button" id="image-editor-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
 
@@ -1276,6 +1293,25 @@
           <input id="image-zoom-input" type="range" min="0.5" max="3" step="0.01" value="1">
         </label>
 
+        <div class="image-editor-metrics" aria-live="polite">
+          <div>
+            <span data-i18n="imageEditorOriginalDimensionsLabel">OriginalmaÃŸe</span>
+            <strong id="image-editor-original-dimensions">-</strong>
+          </div>
+          <div>
+            <span data-i18n="imageEditorOriginalSizeLabel">Originaldatei</span>
+            <strong id="image-editor-original-size">-</strong>
+          </div>
+          <div>
+            <span data-i18n="imageEditorExportDimensionsLabel">Aktuelle Maße</span>
+            <strong id="image-editor-export-dimensions">-</strong>
+          </div>
+          <div>
+            <span data-i18n="imageEditorExportSizeLabel">Aktuelle Datei</span>
+            <strong id="image-editor-export-size">-</strong>
+          </div>
+        </div>
+
         <div class="settings-actions">
           <button type="button" id="image-flip-horizontal-button" class="ghost-button" data-i18n="flipHorizontalButton">Horizontal spiegeln</button>
           <button type="button" id="image-flip-vertical-button" class="ghost-button" data-i18n="flipVerticalButton">Vertikal spiegeln</button>
@@ -1283,15 +1319,13 @@
           <button type="button" id="image-reset-button" class="ghost-button" data-i18n="resetImageButton">Zurücksetzen</button>
         </div>
 
-        <p class="settings-note" data-i18n="imageEditorHint">Bild im Ausschnitt verschieben, per Zoom anpassen und dann speichern.</p>
-        <p id="image-editor-suggestion" class="settings-note" hidden data-i18n="imageTooLargeEditorHint">
-          Reinzoomen und Ausschnitt festlegen.
-        </p>
         <p class="settings-note" data-i18n="lossyResizeHint">
           Reduziert Auflösung und JPEG-Qualität für den Bluesky-Upload.
         </p>
 
         <div class="settings-actions">
+          <p id="image-editor-status" class="settings-note" aria-live="polite"></p>
+          <button type="button" id="image-fit-dimensions-button" class="ghost-button" data-i18n="fitImageDimensionsButton">Auf 4000 px skalieren</button>
           <button type="button" id="image-lossy-resize-button" class="ghost-button" data-i18n="lossyResizeButton">Verkleinern (Verlustbehaftet)</button>
           <button type="button" id="image-editor-save-button" data-i18n="saveButton">Speichern</button>
           <button type="button" id="image-editor-cancel-button" class="ghost-button" data-i18n="cancelButton">Abbrechen</button>
@@ -1317,6 +1351,25 @@
       </form>
     </dialog>
 
+    <dialog id="link-card-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet link-card-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="linkCardDialogEyebrow">Link-Card</p>
+            <h2 data-i18n="linkCardDialogTitle">Link-Card erzeugen</h2>
+          </div>
+          <button type="button" id="link-card-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+        <p id="link-card-url" class="settings-note"></p>
+        <p id="link-card-warning" class="settings-note link-card-warning" hidden></p>
+        <p id="link-card-status" class="settings-note"></p>
+        <div class="settings-actions">
+          <button type="button" id="link-card-create-button" data-i18n="linkCardCreateButton">Link-Card erzeugen</button>
+          <button type="button" id="link-card-cancel-button" class="ghost-button" data-i18n="cancelButton">Abbrechen</button>
+        </div>
+      </form>
+    </dialog>
+
     <input id="thread-import-input" class="is-hidden" type="file" accept="application/json,application/gzip,.json,.gz,.threadline,.threadline.gz">
     <input id="archive-import-input" class="is-hidden" type="file" accept="application/json,application/gzip,application/zip,.json,.gz,.zip,.threadline-archive">
 
@@ -1329,7 +1382,9 @@
         <textarea class="segment-text" rows="5"></textarea>
         <div class="segment-image-actions">
           <button type="button" class="ghost-button segment-add-image-button" data-i18n="addImagesButton">Bilder laden</button>
+          <button type="button" class="ghost-button segment-link-card-button" data-i18n="linkCardSegmentButton">Link-Card</button>
         </div>
+        <div class="segment-link-card"></div>
         <div class="segment-images"></div>
       </article>
     </template>

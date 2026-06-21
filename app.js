@@ -4,9 +4,10 @@ import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./translations.
 const MAX_POST_LENGTH = 300;
 const MANUAL_SPLIT_MARKER = "%%";
 const MAX_IMAGES_PER_SEGMENT = 10;
-const MAX_ALT_TEXT_LENGTH = 1000;
+const MAX_ALT_TEXT_LENGTH = 2000;
 const IMAGE_BLOB_LIMIT = 2_000_000;
 const IMAGE_MAX_DIMENSION = 4_000;
+const IMAGE_MIN_EXPORT_SCALE = 0.05;
 const IMAGE_EDITOR_CANVAS_WIDTH = 980;
 const IMAGE_EDITOR_CANVAS_HEIGHT = 630;
 const IMAGE_EXPORT_WIDTH = 1400;
@@ -52,9 +53,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.143",
-  cacheVersion: "v162",
-  label: "Show active posting target",
+  appVersion: "0.4.158",
+  cacheVersion: "v177",
+  label: "Use original images until edited",
 });
 
 function clamp(value, min, max) {
@@ -139,6 +140,16 @@ const postEditCheckCreated = document.querySelector("#post-edit-check-created");
 const postEditCheckUpdated = document.querySelector("#post-edit-check-updated");
 const postEditCheckOriginal = document.querySelector("#post-edit-check-original");
 const postEditCheckCurrent = document.querySelector("#post-edit-check-current");
+const linkCardEndpointInput = document.querySelector("#link-card-endpoint-input");
+const linkCardSecretInput = document.querySelector("#link-card-secret-input");
+const linkCardSettingsStatus = document.querySelector("#link-card-settings-status");
+const linkCardDialog = document.querySelector("#link-card-dialog");
+const linkCardCloseTop = document.querySelector("#link-card-close-top");
+const linkCardCancelButton = document.querySelector("#link-card-cancel-button");
+const linkCardCreateButton = document.querySelector("#link-card-create-button");
+const linkCardUrlNode = document.querySelector("#link-card-url");
+const linkCardWarning = document.querySelector("#link-card-warning");
+const linkCardStatus = document.querySelector("#link-card-status");
 const helpDialog = document.querySelector("#help-dialog");
 const helpDialogEyebrow = document.querySelector("#help-dialog-eyebrow");
 const helpDialogTitle = document.querySelector("#help-dialog-title");
@@ -150,6 +161,7 @@ const imageEditorSheet = imageEditorDialog?.querySelector(".image-editor-sheet")
 const confirmDialog = document.querySelector("#confirm-dialog");
 const languageSelect = document.querySelector("#language-select");
 const themeToggleButton = document.querySelector("#theme-toggle-button");
+const resetColumnWidthsButton = document.querySelector("#reset-column-widths-button");
 const themeStatusNote = document.querySelector("#theme-status-note");
 const versionLabel = document.querySelector("#version-label");
 const checkUpdatesButton = document.querySelector("#check-updates-button");
@@ -198,8 +210,13 @@ const imageResetButton = document.querySelector("#image-reset-button");
 const imageEditorSaveButton = document.querySelector("#image-editor-save-button");
 const imageEditorCancelButton = document.querySelector("#image-editor-cancel-button");
 const imageEditorCloseTop = document.querySelector("#image-editor-close-top");
+const imageFitDimensionsButton = document.querySelector("#image-fit-dimensions-button");
 const imageLossyResizeButton = document.querySelector("#image-lossy-resize-button");
-const imageEditorSuggestion = document.querySelector("#image-editor-suggestion");
+const imageEditorStatus = document.querySelector("#image-editor-status");
+const imageEditorOriginalDimensions = document.querySelector("#image-editor-original-dimensions");
+const imageEditorOriginalSize = document.querySelector("#image-editor-original-size");
+const imageEditorExportDimensions = document.querySelector("#image-editor-export-dimensions");
+const imageEditorExportSize = document.querySelector("#image-editor-export-size");
 const confirmDialogTitle = document.querySelector("#confirm-dialog-title");
 const confirmDialogMessage = document.querySelector("#confirm-dialog-message");
 const confirmDialogConfirmButton = document.querySelector("#confirm-dialog-confirm-button");
@@ -423,13 +440,18 @@ let backupStatusTimer = null;
 let shareStatusTimer = null;
 let editingHashtagNormalized = null;
 let segmentImages = [];
+let segmentLinkCards = [];
 let segmentImageDragState = null;
+let pendingLinkCardSegmentIndex = -1;
+let pendingLinkCardUrl = "";
 let editingAltTarget = null;
 let editingImageTarget = null;
 let imageEditorSourceBitmap = null;
 let imageEditorDraft = null;
 let imageEditorDragging = false;
 let imageEditorDragStart = null;
+let imageEditorMetricsTimer = null;
+let imageEditorMetricsRequestId = 0;
 let confirmResolver = null;
 let ignoreNextConfirmClose = false;
 let imageValidationToken = 0;
@@ -5423,6 +5445,16 @@ function applyDesktopLayoutState() {
   scheduleSegmentTextareaResize();
 }
 
+async function resetDesktopColumnWidths() {
+  sidebarCollapsedDesktop = false;
+  sidebarWidthDesktop = DEFAULT_SIDEBAR_WIDTH_DESKTOP;
+  composerWidthDesktop = DEFAULT_COMPOSER_WIDTH_DESKTOP;
+  applyDesktopLayoutState();
+  applySidebarState();
+  await persistSettings();
+  setStatus(t("resetColumnWidthsDone"));
+}
+
 function applySidebarState() {
   const isDesktop = DESKTOP_LAYOUT_MEDIA.matches;
   const shouldCollapse = sidebarCollapsedDesktop;
@@ -5436,6 +5468,11 @@ function applySidebarState() {
   sidebarToggleGlyph.textContent = isDesktop
     ? (shouldCollapse ? "▶" : "◀")
     : (shouldCollapse ? "▼" : "▲");
+}
+
+function getDesktopResizeHandleWidth() {
+  const value = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--desktop-resize-handle-width"));
+  return Number.isFinite(value) ? value : 14;
 }
 
 function startDesktopColumnResize(target) {
@@ -5463,7 +5500,7 @@ function startDesktopColumnResize(target) {
           MAX_SIDEBAR_WIDTH_DESKTOP,
           DEFAULT_SIDEBAR_WIDTH_DESKTOP,
         );
-      const nextComposerWidth = event.clientX - bodyRect.left - sidebarWidth - 14;
+      const nextComposerWidth = event.clientX - bodyRect.left - sidebarWidth - getDesktopResizeHandleWidth();
       composerWidthDesktop = clampDesktopWidth(
         nextComposerWidth,
         MIN_COMPOSER_WIDTH_DESKTOP,
@@ -5479,12 +5516,14 @@ function startDesktopColumnResize(target) {
     document.body.classList.remove("desktop-resizing");
     window.removeEventListener("pointermove", handlePointerMove);
     window.removeEventListener("pointerup", handlePointerUp);
+    window.removeEventListener("pointercancel", handlePointerUp);
     await persistSettings();
   };
 
   document.body.classList.add("desktop-resizing");
   window.addEventListener("pointermove", handlePointerMove);
   window.addEventListener("pointerup", handlePointerUp, { once: true });
+  window.addEventListener("pointercancel", handlePointerUp, { once: true });
 }
 
 function renderPostLanguageSummary() {
@@ -5579,6 +5618,9 @@ function applyTranslations() {
   identifierField.placeholder = "z. B. name.bsky.social";
   passwordField.placeholder = "xxxx-xxxx-xxxx-xxxx";
   customServerField.placeholder = "https://example.com";
+  if (linkCardEndpointInput) {
+    linkCardEndpointInput.placeholder = "https://example.com/wp-json/threadline/v1/link-card";
+  }
   sourceText.placeholder = t("sourcePlaceholder");
   hashtagInput.placeholder = t("hashtagInputPlaceholder");
   if (networkSearchInput) {
@@ -5612,6 +5654,7 @@ function applyTranslations() {
   installButton.textContent = t("installButton");
   saveThreadButton.textContent = t("saveThreadButton");
   themeToggleButton.textContent = themeMode === "dark" ? t("lightModeButton") : t("darkModeButton");
+  resetColumnWidthsButton.textContent = t("resetColumnWidthsButton");
   themeStatusNote.textContent = themeMode === "dark" ? t("themeDarkActive") : t("themeLightActive");
   archiveButton.textContent = t("archiveLaunchButton");
   networkButton.textContent = t("networkLaunchButton");
@@ -5699,6 +5742,7 @@ function applyTranslations() {
   imageFlipVerticalButton.textContent = t("flipVerticalButton");
   imageRotateLeftButton.textContent = t("rotateLeftButton");
   imageResetButton.textContent = t("resetImageButton");
+  imageFitDimensionsButton.textContent = t("fitImageDimensionsButton");
   confirmDialogConfirmButton.textContent = t("confirmYes");
   confirmDialogCancelButton.textContent = t("confirmNo");
   publishResultLink.textContent = t("openPostLink");
@@ -6083,6 +6127,12 @@ function isImageUsingDefaultEdit(image) {
     && edit.fitMode === "contain";
 }
 
+function hasExplicitImageUploadTransform(image) {
+  return !isImageUsingDefaultEdit(image)
+    || Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image?.exportScale) || 1)) !== 1
+    || Math.abs((Number(image?.exportQuality) || 0.88) - 0.88) > 0.001;
+}
+
 function normalizeImageEdit(edit = {}) {
   const zoom = Math.min(3, Math.max(0.5, Number(edit.zoom) || 1));
   const offsetX = Number(edit.offsetX) || 0;
@@ -6124,7 +6174,7 @@ function normalizeThreadImage(entry = {}) {
     originalSizeBytes: Math.max(0, Number(entry.originalSizeBytes) || 0),
     edit: normalizeImageEdit(entry.edit),
     exportQuality: Math.min(0.92, Math.max(0.45, Number(entry.exportQuality) || 0.88)),
-    exportScale: Math.min(1, Math.max(0.35, Number(entry.exportScale) || 1)),
+    exportScale: Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(entry.exportScale) || 1)),
     validation: entry.validation && typeof entry.validation === "object"
       ? {
           sizeBytes: Number(entry.validation.sizeBytes) || 0,
@@ -6213,6 +6263,310 @@ function syncSegmentImages(segmentCount) {
   segmentImages = next;
 }
 
+function dataUrlToFile(dataUrl, fileName = "link-card.jpg") {
+  const match = String(dataUrl || "").match(/^data:([^;,]+)?;base64,(.+)$/);
+  if (!match) {
+    return null;
+  }
+  const mimeType = match[1] || "image/jpeg";
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new File([bytes], fileName, { type: mimeType });
+}
+
+function renderSegmentLinkCard(container, segmentIndex) {
+  container.innerHTML = "";
+  const card = normalizeLinkCard(segmentLinkCards[segmentIndex]);
+  if (!card) {
+    return;
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "segment-link-card-preview";
+  if (card.imageDataUrl) {
+    const image = document.createElement("img");
+    image.src = card.imageDataUrl;
+    image.alt = "";
+    image.loading = "lazy";
+    wrap.appendChild(image);
+  }
+  const body = document.createElement("div");
+  body.className = "segment-link-card-body";
+  const title = document.createElement("strong");
+  title.textContent = card.title || card.url;
+  const description = document.createElement("span");
+  description.textContent = card.description || card.url;
+  const url = document.createElement("small");
+  url.textContent = card.url;
+  body.append(title, description, url);
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "segment-image-tool danger";
+  removeButton.title = t("linkCardRemoveButton");
+  removeButton.setAttribute("aria-label", t("linkCardRemoveButton"));
+  removeButton.innerHTML = createIconSvg("M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z");
+  removeButton.addEventListener("click", async () => {
+    segmentLinkCards[segmentIndex] = null;
+    await persistSettings();
+    preserveScrollPosition(() => renderSegments({ preserveOverrides: true }));
+    queueDraftSave();
+  });
+  wrap.append(body, removeButton);
+  container.appendChild(wrap);
+}
+
+function openLinkCardDialog(segmentIndex, url) {
+  pendingLinkCardSegmentIndex = segmentIndex;
+  pendingLinkCardUrl = url;
+  linkCardUrlNode.textContent = url;
+  const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
+  linkCardWarning.hidden = !hasImages;
+  linkCardWarning.textContent = hasImages ? t("linkCardImageConflictWarning") : "";
+  linkCardStatus.textContent = "";
+  delete linkCardStatus.dataset.tone;
+  linkCardCreateButton.textContent = t("linkCardCreateButton");
+  linkCardDialog.showModal();
+}
+
+function closeLinkCardDialog() {
+  pendingLinkCardSegmentIndex = -1;
+  pendingLinkCardUrl = "";
+  if (linkCardDialog.open) {
+    linkCardDialog.close();
+  }
+}
+
+async function createLinkCardForPendingSegment() {
+  const segmentIndex = pendingLinkCardSegmentIndex;
+  const url = pendingLinkCardUrl;
+  if (segmentIndex < 0 || !url) {
+    return;
+  }
+  const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
+  if (hasImages) {
+    const confirmed = await openConfirmDialog({
+      title: t("linkCardImageConflictTitle"),
+      message: t("linkCardImageConflictWarning"),
+      confirmLabel: t("confirmYes"),
+      cancelLabel: t("confirmNo"),
+    });
+    if (!confirmed) {
+      return;
+    }
+  }
+  try {
+    setBusy(linkCardCreateButton, true, t("linkCardLoading"), t("linkCardCreateButton"));
+    linkCardStatus.textContent = t("linkCardLoading");
+    const card = await requestLinkCardFromProxy(url);
+    if (!card) {
+      throw new Error(t("linkCardProxyFailed"));
+    }
+    segmentLinkCards[segmentIndex] = card;
+    if (hasImages) {
+      segmentImages[segmentIndex] = [];
+    }
+    await persistSettings();
+    preserveScrollPosition(() => renderSegments({ preserveOverrides: true }));
+    queueDraftSave();
+    setStatus(t("linkCardCreated"));
+    closeLinkCardDialog();
+  } catch (error) {
+    console.error(error);
+    linkCardStatus.textContent = error.message || t("linkCardProxyFailed");
+    linkCardStatus.dataset.tone = "error";
+  } finally {
+    setBusy(linkCardCreateButton, false, t("linkCardLoading"), t("linkCardCreateButton"));
+  }
+}
+
+function normalizeLinkCard(card = null) {
+  if (!card || typeof card !== "object") {
+    return null;
+  }
+  const url = String(card.url || "").trim();
+  if (!/^https?:\/\//i.test(url)) {
+    return null;
+  }
+  return {
+    url,
+    title: String(card.title || url).trim().slice(0, 300),
+    description: String(card.description || "").trim().slice(0, 1000),
+    imageUrl: String(card.imageUrl || "").trim(),
+    imageDataUrl: String(card.imageDataUrl || "").trim(),
+    imageMimeType: String(card.imageMimeType || "").trim(),
+    createdAt: String(card.createdAt || new Date().toISOString()),
+  };
+}
+
+function normalizeSegmentLinkCards(cards = []) {
+  return (Array.isArray(cards) ? cards : []).map((card) => normalizeLinkCard(card));
+}
+
+function syncSegmentLinkCards(segmentCount) {
+  const next = [];
+  for (let index = 0; index < segmentCount; index += 1) {
+    next[index] = normalizeLinkCard(segmentLinkCards[index]);
+  }
+  segmentLinkCards = next;
+}
+
+function getFirstHttpUrl(text) {
+  return String(text || "").match(/https?:\/\/[^\s<>"')\]]+/i)?.[0]?.replace(/[.,;:!?]+$/, "") || "";
+}
+
+function isLinkCardProxyConfigured() {
+  return validateLinkCardProxySettings().ok;
+}
+
+function normalizeLinkCardProxyEndpoint(rawEndpoint) {
+  const endpoint = String(rawEndpoint || "").trim();
+  if (!endpoint) {
+    return "";
+  }
+  if (/^ttps:\/\//i.test(endpoint)) {
+    return `h${endpoint}`;
+  }
+  if (/^\/\//.test(endpoint)) {
+    return `https:${endpoint}`;
+  }
+  if (/^https?:\/\//i.test(endpoint)) {
+    return endpoint;
+  }
+  if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?\//i.test(endpoint)) {
+    return `https://${endpoint}`;
+  }
+  return "";
+}
+
+function normalizeLinkCardSettingsInputs() {
+  if (!linkCardEndpointInput) {
+    return;
+  }
+  const normalizedEndpoint = normalizeLinkCardProxyEndpoint(linkCardEndpointInput.value);
+  if (normalizedEndpoint && normalizedEndpoint !== linkCardEndpointInput.value.trim()) {
+    linkCardEndpointInput.value = normalizedEndpoint;
+  }
+}
+
+function validateLinkCardProxySettings() {
+  const rawEndpoint = String(linkCardEndpointInput?.value || "").trim();
+  const endpoint = normalizeLinkCardProxyEndpoint(rawEndpoint);
+  const secret = String(linkCardSecretInput?.value || "").trim();
+  if (!rawEndpoint && !secret) {
+    return { ok: false, message: t("linkCardProxyMissing"), tone: "error", isEmpty: true };
+  }
+  if (!endpoint) {
+    return { ok: false, message: t("linkCardProxyInvalidEndpoint"), tone: "error", isEmpty: false };
+  }
+  let parsedEndpoint = null;
+  try {
+    parsedEndpoint = new URL(endpoint);
+  } catch {
+    return { ok: false, message: t("linkCardProxyInvalidEndpoint"), tone: "error", isEmpty: false };
+  }
+  if (!["http:", "https:"].includes(parsedEndpoint.protocol)) {
+    return { ok: false, message: t("linkCardProxyInvalidEndpoint"), tone: "error", isEmpty: false };
+  }
+  if (!/\/wp-json\/threadline\/v1\/link-card\/?$/i.test(parsedEndpoint.pathname)) {
+    return { ok: false, message: t("linkCardProxyUnexpectedEndpoint"), tone: "error", isEmpty: false };
+  }
+  if (!secret) {
+    return { ok: false, message: t("linkCardProxyMissing"), tone: "error", isEmpty: false };
+  }
+  return { ok: true, message: t("linkCardSettingsSaved"), tone: "", isEmpty: false };
+}
+
+function updateLinkCardSettingsStatus({ show = true } = {}) {
+  const validation = validateLinkCardProxySettings();
+  linkCardEndpointInput?.setCustomValidity(validation.ok || validation.isEmpty ? "" : validation.message);
+  if (!linkCardSettingsStatus) {
+    return validation;
+  }
+  linkCardSettingsStatus.hidden = !show && validation.isEmpty;
+  linkCardSettingsStatus.textContent = validation.message;
+  if (validation.tone) {
+    linkCardSettingsStatus.dataset.tone = validation.tone;
+  } else {
+    delete linkCardSettingsStatus.dataset.tone;
+  }
+  return validation;
+}
+
+function getLinkCardSettings() {
+  const endpoint = normalizeLinkCardProxyEndpoint(linkCardEndpointInput?.value);
+  return {
+    endpoint,
+    secret: String(linkCardSecretInput?.value || "").trim(),
+  };
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function signLinkCardRequest(url, timestamp, nonce, secret) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`${url}\n${timestamp}\n${nonce}`),
+  );
+  return bytesToHex(new Uint8Array(signature));
+}
+
+function linkCardImageToDataUrl(image = {}) {
+  const bytesBase64 = String(image.bytesBase64 || "").trim();
+  if (!bytesBase64) {
+    return "";
+  }
+  const mimeType = String(image.mimeType || "image/jpeg").trim() || "image/jpeg";
+  return `data:${mimeType};base64,${bytesBase64}`;
+}
+
+async function requestLinkCardFromProxy(url) {
+  const validation = updateLinkCardSettingsStatus();
+  if (!validation.ok) {
+    throw new Error(validation.message);
+  }
+  const { endpoint, secret } = getLinkCardSettings();
+  if (!endpoint || !secret) {
+    throw new Error(t("linkCardProxyMissing"));
+  }
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const nonce = crypto.randomUUID();
+  const signature = await signLinkCardRequest(url, timestamp, nonce, secret);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-threadline-timestamp": timestamp,
+      "x-threadline-nonce": nonce,
+      "x-threadline-signature": signature,
+    },
+    body: JSON.stringify({ url }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.code || t("linkCardProxyFailed"));
+  }
+  return normalizeLinkCard({
+    url: payload.url || payload.finalUrl || url,
+    title: payload.title || payload.url || url,
+    description: payload.description || "",
+    imageUrl: payload.imageUrl || "",
+    imageDataUrl: linkCardImageToDataUrl(payload.image),
+    imageMimeType: payload.image?.mimeType || "",
+  });
+}
+
 function getSegmentTextPayloads() {
   return activeSegments.length > 0 ? activeSegments.map((entry) => entry.trim()) : [currentComposedText.trim()];
 }
@@ -6222,6 +6576,7 @@ function getSegmentPayloads() {
   return texts.map((text, index) => ({
     text,
     images: Array.isArray(segmentImages[index]) ? segmentImages[index] : [],
+    externalCard: normalizeLinkCard(segmentLinkCards[index]),
   }));
 }
 
@@ -6241,6 +6596,14 @@ async function fileToDataUrl(file) {
     reader.onerror = () => reject(new Error(t("fileReadFailed"), { cause: reader.error }));
     reader.readAsDataURL(file);
   });
+}
+
+async function dataUrlToBlob(dataUrl) {
+  const response = await fetch(dataUrl);
+  if (!response.ok) {
+    throw new Error(t("imageBlobCreateFailed"));
+  }
+  return response.blob();
 }
 
 async function createThreadImageFromFile(file) {
@@ -6434,10 +6797,17 @@ async function renderPreviewCanvas(image, canvas, options = {}) {
 }
 
 async function renderImageToBlob(image) {
+  if (!hasExplicitImageUploadTransform(image)) {
+    return {
+      blob: await dataUrlToBlob(image.dataUrl),
+      width: image.width,
+      height: image.height,
+    };
+  }
+
   if (isImageUsingDefaultEdit(image)) {
     const canvas = document.createElement("canvas");
-    const dimensionScale = Math.min(1, IMAGE_MAX_DIMENSION / Math.max(1, image.width || 1, image.height || 1));
-    const exportScale = Math.min(1, dimensionScale, Math.max(0.35, Number(image.exportScale) || 1));
+    const exportScale = Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image.exportScale) || 1));
     canvas.width = Math.max(1, Math.round((image.width || 1) * exportScale));
     canvas.height = Math.max(1, Math.round((image.height || 1) * exportScale));
     await renderImageToCanvas(image, canvas, {
@@ -6457,7 +6827,7 @@ async function renderImageToBlob(image) {
   }
 
   const canvas = document.createElement("canvas");
-  const exportScale = Math.min(1, Math.max(0.35, Number(image.exportScale) || 1));
+  const exportScale = Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image.exportScale) || 1));
   const exportDimensions = getEditedImageExportDimensions(image, image.edit, null, exportScale);
   const currentEditorFrame = getImageEditorCanvasDimensions(image, image.edit);
   const scale = exportDimensions.width / currentEditorFrame.width;
@@ -6585,6 +6955,28 @@ function closeAltTextDialog() {
   altTextDialog.close();
 }
 
+function updateSegmentImageAltDisplay(segmentIndex, imageIndex) {
+  const image = segmentImages[segmentIndex]?.[imageIndex];
+  const card = segmentsList.querySelector(
+    `.segment-image-card[data-segment-index="${segmentIndex}"][data-image-index="${imageIndex}"]`,
+  );
+  if (!image || !card) {
+    return;
+  }
+  const hasAlt = Boolean(String(image.alt || "").trim());
+  const preview = card.querySelector(".segment-image-preview");
+  const altState = card.querySelector(".segment-image-alt-state");
+  const altButton = card.querySelector('[data-image-action="alt"]');
+  if (preview) {
+    preview.title = hasAlt ? image.alt : t("altTextMissing");
+  }
+  if (altState) {
+    altState.textContent = hasAlt ? t("altTextAdded") : t("altTextMissing");
+    altState.classList.toggle("is-missing-alt", !hasAlt);
+  }
+  altButton?.classList.toggle("danger", !hasAlt);
+}
+
 async function saveAltText() {
   if (!editingAltTarget) {
     closeAltTextDialog();
@@ -6598,9 +6990,8 @@ async function saveAltText() {
   }
   image.alt = altTextInput.value.slice(0, MAX_ALT_TEXT_LENGTH);
   await persistSettings();
-  preserveScrollPosition(() => {
-    renderSegments({ preserveOverrides: true });
-  });
+  updateSegmentImageAltDisplay(segmentIndex, imageIndex);
+  updatePublishAvailability();
   queueDraftSave();
   closeAltTextDialog();
 }
@@ -6641,8 +7032,8 @@ async function openImageEditorDialog(segmentIndex, imageIndex) {
   imageEditorSheet?.classList.toggle("is-portrait-image", isPortraitEditorImage(image, imageEditorDraft, getImageEditorSourceDimensions()));
   imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
   imageZoomInput.value = String(imageEditorDraft.zoom);
-  imageEditorSuggestion.hidden = !image.validation?.tooBig;
-  imageLossyResizeButton.hidden = !image.validation?.tooBig;
+  setImageEditorStatus(image.validation?.tooBig ? t("imageEditorNeedsAttention") : "");
+  updateImageEditorActionState(image);
   drawImageEditor();
   imageEditorDialog.showModal();
 }
@@ -6652,6 +7043,9 @@ function closeImageEditorDialog() {
   imageEditorSourceBitmap?.close?.();
   imageEditorSourceBitmap = null;
   imageEditorDraft = null;
+  window.clearTimeout(imageEditorMetricsTimer);
+  imageEditorMetricsRequestId += 1;
+  setImageEditorStatus("");
   imageEditorSheet?.classList.remove("is-portrait-image");
   imageEditorDialog.close();
 }
@@ -6661,6 +7055,83 @@ function getEditedImage() {
     return null;
   }
   return segmentImages[editingImageTarget.segmentIndex]?.[editingImageTarget.imageIndex] || null;
+}
+
+function formatImageDimensions(width, height) {
+  const safeWidth = Math.max(0, Math.round(Number(width) || 0));
+  const safeHeight = Math.max(0, Math.round(Number(height) || 0));
+  return safeWidth && safeHeight ? `${safeWidth} x ${safeHeight} px` : "-";
+}
+
+function setImageEditorStatus(message = "", tone = "") {
+  if (!imageEditorStatus) {
+    return;
+  }
+  imageEditorStatus.textContent = message;
+  if (tone) {
+    imageEditorStatus.dataset.tone = tone;
+  } else {
+    delete imageEditorStatus.dataset.tone;
+  }
+}
+
+function getImageEditorDraftImage(image = getEditedImage()) {
+  if (!image || !imageEditorDraft) {
+    return null;
+  }
+  return {
+    ...image,
+    edit: clampImageEditorDraftToFrame(image, { ...imageEditorDraft }),
+  };
+}
+
+function updateImageEditorActionState(image = getEditedImage()) {
+  const validation = image?.validation || {};
+  const exceedsDimensions = Boolean(validation.exceedsDimensions);
+  imageFitDimensionsButton.disabled = !exceedsDimensions;
+  imageLossyResizeButton.hidden = !validation.tooBig;
+}
+
+async function updateImageEditorMetrics({ renderBlob = true } = {}) {
+  const image = getEditedImage();
+  const draftImage = getImageEditorDraftImage(image);
+  if (!image || !draftImage) {
+    return;
+  }
+  const requestId = ++imageEditorMetricsRequestId;
+  imageEditorOriginalDimensions.textContent = formatImageDimensions(image.width, image.height);
+  imageEditorOriginalSize.textContent = formatImageSize(image.originalSizeBytes);
+  const exportDimensions = isImageUsingDefaultEdit(draftImage)
+    ? {
+        width: Math.max(1, Math.round((draftImage.width || 1) * Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(draftImage.exportScale) || 1)))),
+        height: Math.max(1, Math.round((draftImage.height || 1) * Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(draftImage.exportScale) || 1)))),
+      }
+    : getEditedImageExportDimensions(draftImage, draftImage.edit, null, Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(draftImage.exportScale) || 1)));
+  imageEditorExportDimensions.textContent = formatImageDimensions(exportDimensions.width, exportDimensions.height);
+  imageEditorExportSize.textContent = renderBlob ? t("imageEditorCalculatingSize") : formatImageSize(image.validation?.sizeBytes);
+  updateImageEditorActionState(image);
+  if (!renderBlob) {
+    return;
+  }
+  try {
+    const rendered = await renderImageToBlob(draftImage);
+    if (requestId !== imageEditorMetricsRequestId) {
+      return;
+    }
+    imageEditorExportDimensions.textContent = formatImageDimensions(rendered.width, rendered.height);
+    imageEditorExportSize.textContent = formatImageSize(rendered.blob.size);
+  } catch {
+    if (requestId === imageEditorMetricsRequestId) {
+      imageEditorExportSize.textContent = t("imageEditorSizeUnknown");
+    }
+  }
+}
+
+function scheduleImageEditorMetricsUpdate() {
+  window.clearTimeout(imageEditorMetricsTimer);
+  imageEditorMetricsTimer = window.setTimeout(() => {
+    void updateImageEditorMetrics();
+  }, 180);
 }
 
 function drawImageEditor() {
@@ -6705,6 +7176,7 @@ function drawImageEditor() {
   ctx.strokeStyle = "rgba(20, 35, 61, 0.18)";
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, imageEditorCanvas.width - 2, imageEditorCanvas.height - 2);
+  scheduleImageEditorMetricsUpdate();
 }
 
 function startImageEditorDrag(event) {
@@ -6778,11 +7250,46 @@ async function applyLossyResize() {
   if (!image) {
     return;
   }
-  image.exportScale = Math.max(0.35, (image.exportScale || 1) * 0.82);
+  image.exportScale = Math.max(IMAGE_MIN_EXPORT_SCALE, (image.exportScale || 1) * 0.82);
   image.exportQuality = Math.max(0.45, (image.exportQuality || 0.88) * 0.86);
   await validateThreadImage(image);
-  imageEditorSuggestion.hidden = !image.validation?.tooBig;
-  imageLossyResizeButton.hidden = !image.validation?.tooBig;
+  updateImageEditorActionState(image);
+  setImageEditorStatus(
+    image.validation?.tooBig ? t("lossyResizeStillTooLarge") : t("lossyResizeApplied"),
+    image.validation?.tooBig ? "error" : "success",
+  );
+  await updateImageEditorMetrics();
+  await persistSettings();
+  preserveScrollPosition(() => {
+    renderSegments({ preserveOverrides: true });
+  });
+  queueDraftSave();
+}
+
+async function fitImageToAllowedDimensions() {
+  const image = getEditedImage();
+  if (!image || !imageEditorDraft) {
+    return;
+  }
+  const draftImage = getImageEditorDraftImage(image);
+  const rendered = await renderImageToBlob(draftImage);
+  const maxRenderedDimension = Math.max(rendered.width, rendered.height);
+  if (maxRenderedDimension <= IMAGE_MAX_DIMENSION) {
+    setImageEditorStatus(t("fitImageDimensionsNotNeeded"), "success");
+    updateImageEditorActionState(image);
+    await updateImageEditorMetrics();
+    return;
+  }
+  const currentScale = Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image.exportScale) || 1));
+  const nextScale = Math.max(IMAGE_MIN_EXPORT_SCALE, currentScale * (IMAGE_MAX_DIMENSION / maxRenderedDimension));
+  image.exportScale = nextScale;
+  await validateThreadImage(image);
+  updateImageEditorActionState(image);
+  setImageEditorStatus(
+    image.validation?.exceedsDimensions ? t("fitImageDimensionsStillTooLarge") : t("fitImageDimensionsApplied"),
+    image.validation?.exceedsDimensions ? "error" : "success",
+  );
+  await updateImageEditorMetrics();
   await persistSettings();
   preserveScrollPosition(() => {
     renderSegments({ preserveOverrides: true });
@@ -6799,6 +7306,10 @@ function createToolIcon(label) {
 }
 
 async function handleSegmentImageSelection(segmentIndex, files) {
+  if (normalizeLinkCard(segmentLinkCards[segmentIndex])) {
+    setStatus(t("linkCardBlocksImages"), "error");
+    return;
+  }
   const items = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
   if (items.length === 0) {
     return;
@@ -6904,6 +7415,10 @@ function moveSegmentImageToPosition(fromSegmentIndex, fromImageIndex, toSegmentI
   if (fromImageIndex < 0 || fromImageIndex >= sourceImages.length) {
     return false;
   }
+  if (fromSegmentIndex !== toSegmentIndex && normalizeLinkCard(segmentLinkCards[toSegmentIndex])) {
+    setStatus(t("linkCardBlocksImages"), "error");
+    return false;
+  }
   if (fromSegmentIndex !== toSegmentIndex && targetImages.length >= MAX_IMAGES_PER_SEGMENT) {
     setStatus(t("imagesLimitReached"), "error");
     return false;
@@ -6987,6 +7502,7 @@ function buildThreadExportPayload() {
       appendThreadEmoji,
       addMarkerSpacing,
       postInteraction: getCurrentPostInteractionSettings(),
+      linkCardProxy: getLinkCardSettings(),
       postLanguages: getNormalizedPostLanguagesOrDefault(),
       localePreference,
       hashtagPlacement,
@@ -6995,6 +7511,7 @@ function buildThreadExportPayload() {
       segments: segments.map((segment, index) => ({
         text: segment.text,
         images: normalizeSegmentImages([segment.images])[0] || [],
+        externalCard: normalizeLinkCard(segmentLinkCards[index]),
       })),
     },
   };
@@ -7071,6 +7588,9 @@ async function importThreadFile(file) {
   segmentImages = importedSegments.length > 0
     ? normalizeSegmentImages(importedSegments.map((segment) => segment?.images || []))
     : normalizeSegmentImages(thread.segmentImages);
+  segmentLinkCards = importedSegments.length > 0
+    ? normalizeSegmentLinkCards(importedSegments.map((segment) => segment?.externalCard || null))
+    : normalizeSegmentLinkCards(thread.segmentLinkCards);
 
   await persistSettings();
   applyTranslations();
@@ -11170,10 +11690,12 @@ async function persistSettings() {
       appendThreadEmoji,
       addMarkerSpacing,
       postInteraction: getCurrentPostInteractionSettings(),
+      linkCardProxy: getLinkCardSettings(),
       hashtags,
       selectedHashtags,
       hashtagPlacement,
       segmentImages,
+      segmentLinkCards,
       postingHistory,
       archivePreferences: getArchivePreferences(),
     }, { timeoutMs: 120000 });
@@ -11354,6 +11876,10 @@ async function importSettingsBackup(file) {
   addMarkerSpacing = imported.addMarkerSpacing === true;
   markerSpacingToggle.checked = addMarkerSpacing;
   applyPostInteractionSettings(imported.postInteraction || {});
+  if (imported.linkCardProxy && typeof imported.linkCardProxy === "object") {
+    linkCardEndpointInput.value = imported.linkCardProxy.endpoint || "";
+    linkCardSecretInput.value = imported.linkCardProxy.secret || "";
+  }
   localePreference = SUPPORTED_LOCALES.includes(imported.localePreference) || imported.localePreference === "auto"
     ? imported.localePreference
     : localePreference;
@@ -12103,6 +12629,18 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicComposerSegmentsBullet1"),
           t("helpTopicComposerSegmentsBullet2"),
           t("helpTopicComposerSegmentsBullet3"),
+          t("helpTopicComposerSegmentsBullet4"),
+        ],
+      };
+    case "image_editor":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicImageEditorTitle"),
+        text: t("helpTopicImageEditorText"),
+        bullets: [
+          t("helpTopicImageEditorBullet1"),
+          t("helpTopicImageEditorBullet2"),
+          t("helpTopicImageEditorBullet3"),
         ],
       };
     case "archive_workspace":
@@ -12622,6 +13160,7 @@ function renderSegmentImages(container, segmentIndex) {
     const name = document.createElement("span");
     name.textContent = image.name;
     const altState = document.createElement("span");
+    altState.className = "segment-image-alt-state";
     altState.textContent = image.alt ? t("altTextAdded") : t("altTextMissing");
     if (!image.alt) {
       altState.classList.add("is-missing-alt");
@@ -12664,6 +13203,7 @@ function renderSegmentImages(container, segmentIndex) {
         handler: () => moveSegmentImage(segmentIndex, imageIndex, 1),
       },
       {
+        action: "alt",
         className: `segment-image-tool${!image.alt ? " danger" : ""}`,
         icon: "M4 16.75V20h3.25L18.4 8.84l-3.24-3.24L4 16.75zm14.71-9.04a1 1 0 0 0 0-1.42l-1-1a1 1 0 0 0-1.42 0l-.88.88 3.24 3.24.06-.06z",
         label: t("editAltTextButton"),
@@ -12687,6 +13227,9 @@ function renderSegmentImages(container, segmentIndex) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = config.className;
+      if (config.action) {
+        button.dataset.imageAction = config.action;
+      }
       button.setAttribute("aria-label", config.label);
       button.title = config.label;
       button.innerHTML = createIconSvg(config.icon);
@@ -12727,6 +13270,7 @@ function renderSegments(options = {}) {
   activeSegments = preserveOverrides ? (normalizeSegmentOverrides(segmentOverrides) || generatedSegments) : generatedSegments;
   segmentOverrides = preserveOverrides ? normalizeSegmentOverrides(activeSegments) : null;
   syncSegmentImages(activeSegments.length);
+  syncSegmentLinkCards(activeSegments.length);
 
   characterCount.textContent = t("charCount", { count: text.length });
 
@@ -12748,6 +13292,8 @@ function renderSegments(options = {}) {
     const lengthLabel = fragment.querySelector(".segment-length");
     const textarea = fragment.querySelector(".segment-text");
     const addImagesButton = fragment.querySelector(".segment-add-image-button");
+    const linkCardButton = fragment.querySelector(".segment-link-card-button");
+    const linkCardContainer = fragment.querySelector(".segment-link-card");
     const imageContainer = fragment.querySelector(".segment-images");
     const input = document.createElement("input");
     input.type = "file";
@@ -12776,11 +13322,12 @@ function renderSegments(options = {}) {
         lengthLabel.style.color = "var(--muted)";
       }
       autoSizeTextarea(textarea);
+      segmentLinkCards[index] = null;
       updatePublishAvailability();
       queueDraftSave();
     });
     addImagesButton.textContent = t("addImagesButton");
-    addImagesButton.hidden = (segmentImages[index]?.length || 0) >= MAX_IMAGES_PER_SEGMENT;
+    addImagesButton.hidden = (segmentImages[index]?.length || 0) >= MAX_IMAGES_PER_SEGMENT || Boolean(normalizeLinkCard(segmentLinkCards[index]));
     addImagesButton.addEventListener("click", () => {
       input.click();
     });
@@ -12819,6 +13366,16 @@ function renderSegments(options = {}) {
       }
     });
     card.appendChild(input);
+    const detectedUrl = getFirstHttpUrl(segment);
+    linkCardButton.textContent = normalizeLinkCard(segmentLinkCards[index]) ? t("linkCardRefreshButton") : t("linkCardSegmentButton");
+    linkCardButton.disabled = !detectedUrl || !isLinkCardProxyConfigured();
+    linkCardButton.title = !detectedUrl
+      ? t("linkCardNoUrl")
+      : !isLinkCardProxyConfigured()
+      ? t("linkCardProxyMissing")
+      : t("linkCardSegmentButton");
+    linkCardButton.addEventListener("click", () => openLinkCardDialog(index, detectedUrl));
+    renderSegmentLinkCard(linkCardContainer, index);
     renderSegmentImages(imageContainer, index);
 
     segmentsList.appendChild(fragment);
@@ -12881,12 +13438,15 @@ async function hydrateAppState() {
     selectedHashtags = normalizeSelectedHashtagEntries(state.selectedHashtags, hashtags);
     hashtagPlacement = normalizeHashtagPlacement(state.hashtagPlacement);
     segmentImages = normalizeSegmentImages(state.segmentImages);
+    segmentLinkCards = normalizeSegmentLinkCards(state.segmentLinkCards);
     segmentOverrides = normalizeSegmentOverrides(state.segmentOverrides);
     selectedPostLanguages = normalizePostLanguageTags(state.postLanguages);
     appendThreadIntro = state.appendThreadIntro === true;
     appendThreadEmoji = state.appendThreadEmoji === true;
     addMarkerSpacing = state.addMarkerSpacing === true;
     applyPostInteractionSettings(state.postInteraction || {});
+    linkCardEndpointInput.value = state.linkCardProxy?.endpoint || "";
+    linkCardSecretInput.value = state.linkCardProxy?.secret || "";
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
     archiveSession = savedArchiveSession || null;
@@ -12938,6 +13498,7 @@ function queueDraftSave() {
       await sendToServiceWorker("SAVE_DRAFT", {
         draft: sourceText.value,
         segmentImages,
+        segmentLinkCards,
         segmentOverrides,
       }, { timeoutMs: 120000 });
     } catch (error) {
@@ -13102,6 +13663,10 @@ publishButton.addEventListener("click", async () => {
         t("progressPreparingSegment", { index: segmentIndex + 1, count: segments.length }),
       );
       const preparedImages = [];
+      const externalCard = normalizeLinkCard(segment.externalCard);
+      if (externalCard && segment.images.length > 0) {
+        throw new Error(t("linkCardImageConflictPublish"));
+      }
       for (const [imageIndex, image] of segment.images.entries()) {
         showProgressDialog(
           t("progressTitle"),
@@ -13127,6 +13692,12 @@ publishButton.addEventListener("click", async () => {
       preparedSegments.push({
         text: segment.text,
         images: preparedImages,
+        externalCard: externalCard
+          ? {
+              ...externalCard,
+              thumb: externalCard.imageDataUrl ? dataUrlToFile(externalCard.imageDataUrl, "link-card.jpg") : null,
+            }
+          : null,
       });
     }
     const result = await sendToServiceWorker("PUBLISH_THREAD", {
@@ -13266,12 +13837,13 @@ clearButton.addEventListener("click", async () => {
   sourceText.value = "";
   activeSegments = [];
   segmentImages = [];
+  segmentLinkCards = [];
   segmentOverrides = null;
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
 
   try {
-    await sendToServiceWorker("SAVE_DRAFT", { draft: "", segmentImages: [], segmentOverrides: null }, { timeoutMs: 120000 });
+    await sendToServiceWorker("SAVE_DRAFT", { draft: "", segmentImages: [], segmentLinkCards: [], segmentOverrides: null }, { timeoutMs: 120000 });
     await persistSettings();
     setStatus(t("clearConfirm"));
   } catch (error) {
@@ -14120,6 +14692,9 @@ themeToggleButton.addEventListener("click", async () => {
   applyTheme();
   await persistSettings();
 });
+resetColumnWidthsButton.addEventListener("click", () => {
+  void resetDesktopColumnWidths();
+});
 
 nextTipButton.addEventListener("click", () => {
   nextTip();
@@ -14321,6 +14896,9 @@ imageResetButton.addEventListener("click", () => {
 imageEditorSaveButton.addEventListener("click", async () => {
   await saveImageEditor();
 });
+imageFitDimensionsButton.addEventListener("click", async () => {
+  await fitImageToAllowedDimensions();
+});
 imageLossyResizeButton.addEventListener("click", async () => {
   await applyLossyResize();
 });
@@ -14390,6 +14968,26 @@ confirmDialog.addEventListener("close", () => {
     resolveConfirmDialog(false);
   }
 });
+
+[linkCardEndpointInput, linkCardSecretInput].forEach((input) => {
+  input?.addEventListener("input", () => {
+    updateLinkCardSettingsStatus();
+    renderSegments({ preserveOverrides: true, preserveView: true });
+  });
+  input?.addEventListener("change", async () => {
+    normalizeLinkCardSettingsInputs();
+    updateLinkCardSettingsStatus();
+    await persistSettings();
+    renderSegments({ preserveOverrides: true, preserveView: true });
+    linkCardEndpointInput?.reportValidity?.();
+  });
+});
+
+linkCardCreateButton?.addEventListener("click", () => {
+  void createLinkCardForPendingSegment();
+});
+linkCardCancelButton?.addEventListener("click", closeLinkCardDialog);
+linkCardCloseTop?.addEventListener("click", closeLinkCardDialog);
 
 postLanguagesDialog.addEventListener("close", () => {
   postLanguagesSearch.value = "";

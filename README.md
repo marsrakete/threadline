@@ -59,6 +59,7 @@ Using a dedicated app password is recommended because you can revoke it later wi
 - In-app help dialog based on the README
 - The app detects new versions, lets you check manually, and shows a reload button when needed
 - Status area and recent posting history
+- Optional WordPress link-card proxy for creating Bluesky link cards from URLs in individual thread segments
 
 ## Writing And Splitting
 
@@ -116,6 +117,19 @@ Using a dedicated app password is recommended because you can revoke it later wi
 - The editor then offers the hint `Zoom in and define a crop` plus `Reduce size (lossy)`
 - Both the original file size and the export size for Bluesky are shown
 - The ALT-text dialog also shows a small preview of the actual crop that will be posted
+- If the optional WordPress proxy is configured, a detected URL in a segment can be turned into a Bluesky link card
+- Link cards and images are mutually exclusive in the same Bluesky post; Threadline warns before removing images from that segment
+
+## Optional Link Cards With WordPress Proxy
+
+Threadline can create Bluesky external link cards for URLs inside individual thread segments. The PWA itself stays static, so metadata fetching runs through a small optional WordPress plugin.
+
+- Plugin package: `wordpress-plugin/threadline-link-card-proxy.zip`
+- Plugin documentation: `wordpress-plugin/threadline-link-card-proxy/README.md`
+- Requirements: admin access to your own WordPress installation, WordPress 6.0+, PHP 7.4+, a reachable REST API, and outbound HTTP(S) requests from the server
+- The plugin shows the proxy endpoint and secret in WordPress Admin under `Threadline`
+- In Threadline, paste both values into `Settings` -> `Link cards`
+- Link cards are created per segment; images and link cards are mutually exclusive in the same segment
 
 ## Inclusion And ALT Texts
 

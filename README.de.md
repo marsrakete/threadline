@@ -59,6 +59,7 @@ Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kanns
 - Hilfe-Dialog direkt aus dem README in der App
 - Die App erkennt neue Versionen, kann manuell danach suchen und zeigt bei Bedarf direkt einen Neu-laden-Button
 - Statusanzeige und Historie der letzten Postings
+- Optionaler WordPress-Link-Card-Proxy, um aus URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards zu erzeugen
 
 ## Schreiben Und Aufteilen
 
@@ -116,6 +117,19 @@ Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kanns
 - Im Editor gibt es dann den Hinweis `Reinzoomen und Ausschnitt festlegen` sowie `Verkleinern (Verlustbehaftet)`
 - Angezeigt werden sowohl die Originalgröße als auch die Exportgröße für Bluesky
 - Die ALT-Text-Eingabe zeigt zusätzlich eine kleine Vorschau des später geposteten Ausschnitts
+- Wenn der optionale WordPress-Proxy eingerichtet ist, kann eine erkannte URL in einem Abschnitt in eine Bluesky-Link-Card umgewandelt werden
+- Link-Cards und Bilder schließen sich im selben Bluesky-Posting aus; Threadline warnt, bevor Bilder aus diesem Abschnitt entfernt werden
+
+## Optionale Link-Cards Mit WordPress-Proxy
+
+Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erzeugen. Die PWA selbst bleibt statisch, deshalb läuft das Abrufen der Metadaten über ein kleines optionales WordPress-Plugin.
+
+- Plugin-Paket: `wordpress-plugin/threadline-link-card-proxy.zip`
+- Plugin-Dokumentation: `wordpress-plugin/threadline-link-card-proxy/README.md`
+- Voraussetzungen: Admin-Zugriff auf eine eigene WordPress-Installation, WordPress 6.0+, PHP 7.4+, eine erreichbare REST-API und ausgehende HTTP(S)-Requests vom Server
+- Das Plugin zeigt Proxy-Endpunkt und Secret im WordPress-Admin unter `Threadline`
+- In Threadline werden beide Werte unter `Einstellungen` -> `Link-Cards` eingetragen
+- Link-Cards werden pro Abschnitt erzeugt; Bilder und Link-Cards schließen sich im selben Abschnitt aus
 
 ## Inklusion Und ALT-Texte
 
