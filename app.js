@@ -53,9 +53,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.159",
-  cacheVersion: "v178",
-  label: "Clarify image size limits",
+  appVersion: "0.4.161",
+  cacheVersion: "v180",
+  label: "Avoid duplicate link card warning",
 });
 
 function clamp(value, min, max) {
@@ -6329,7 +6329,9 @@ function openLinkCardDialog(segmentIndex, url) {
   linkCardWarning.textContent = hasImages ? t("linkCardImageConflictWarning") : "";
   linkCardStatus.textContent = "";
   delete linkCardStatus.dataset.tone;
-  linkCardCreateButton.textContent = t("linkCardCreateButton");
+  linkCardCreateButton.textContent = hasImages
+    ? t("linkCardCreateAndRemoveImagesButton")
+    : t("linkCardCreateButton");
   linkCardDialog.showModal();
 }
 
@@ -6348,19 +6350,11 @@ async function createLinkCardForPendingSegment() {
     return;
   }
   const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
-  if (hasImages) {
-    const confirmed = await openConfirmDialog({
-      title: t("linkCardImageConflictTitle"),
-      message: t("linkCardImageConflictWarning"),
-      confirmLabel: t("confirmYes"),
-      cancelLabel: t("confirmNo"),
-    });
-    if (!confirmed) {
-      return;
-    }
-  }
+  const createButtonLabel = hasImages
+    ? t("linkCardCreateAndRemoveImagesButton")
+    : t("linkCardCreateButton");
   try {
-    setBusy(linkCardCreateButton, true, t("linkCardLoading"), t("linkCardCreateButton"));
+    setBusy(linkCardCreateButton, true, t("linkCardLoading"), createButtonLabel);
     linkCardStatus.textContent = t("linkCardLoading");
     const card = await requestLinkCardFromProxy(url);
     if (!card) {
@@ -6380,7 +6374,7 @@ async function createLinkCardForPendingSegment() {
     linkCardStatus.textContent = error.message || t("linkCardProxyFailed");
     linkCardStatus.dataset.tone = "error";
   } finally {
-    setBusy(linkCardCreateButton, false, t("linkCardLoading"), t("linkCardCreateButton"));
+    setBusy(linkCardCreateButton, false, t("linkCardLoading"), createButtonLabel);
   }
 }
 
@@ -13341,7 +13335,6 @@ function renderSegments(options = {}) {
         lengthLabel.style.color = "var(--muted)";
       }
       autoSizeTextarea(textarea);
-      segmentLinkCards[index] = null;
       updatePublishAvailability();
       queueDraftSave();
     });
@@ -13385,15 +13378,17 @@ function renderSegments(options = {}) {
       }
     });
     card.appendChild(input);
+    const existingLinkCard = normalizeLinkCard(segmentLinkCards[index]);
     const detectedUrl = getFirstHttpUrl(segment);
-    linkCardButton.textContent = normalizeLinkCard(segmentLinkCards[index]) ? t("linkCardRefreshButton") : t("linkCardSegmentButton");
-    linkCardButton.disabled = !detectedUrl || !isLinkCardProxyConfigured();
-    linkCardButton.title = !detectedUrl
+    const linkCardUrl = detectedUrl || existingLinkCard?.url || "";
+    linkCardButton.textContent = existingLinkCard ? t("linkCardRefreshButton") : t("linkCardSegmentButton");
+    linkCardButton.disabled = !linkCardUrl || !isLinkCardProxyConfigured();
+    linkCardButton.title = !linkCardUrl
       ? t("linkCardNoUrl")
       : !isLinkCardProxyConfigured()
       ? t("linkCardProxyMissing")
       : t("linkCardSegmentButton");
-    linkCardButton.addEventListener("click", () => openLinkCardDialog(index, detectedUrl));
+    linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl));
     renderSegmentLinkCard(linkCardContainer, index);
     renderSegmentImages(imageContainer, index);
 
