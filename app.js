@@ -53,9 +53,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.158",
-  cacheVersion: "v177",
-  label: "Use original images until edited",
+  appVersion: "0.4.159",
+  cacheVersion: "v178",
+  label: "Clarify image size limits",
 });
 
 function clamp(value, min, max) {
@@ -5834,8 +5834,11 @@ function preserveScrollPosition(callback) {
 }
 
 function formatImageSize(sizeBytes) {
-  const megabytes = Math.max(0, Number(sizeBytes) || 0) / (1024 * 1024);
-  return `${megabytes.toFixed(megabytes >= 10 ? 1 : 2)} MB`;
+  const megabytes = Math.max(0, Number(sizeBytes) || 0) / 1_000_000;
+  return `${new Intl.NumberFormat(currentLocale, {
+    minimumFractionDigits: megabytes >= 10 ? 1 : 2,
+    maximumFractionDigits: megabytes >= 10 ? 1 : 2,
+  }).format(megabytes)} MB`;
 }
 
 function pickRandomTipIndex() {
@@ -7032,7 +7035,7 @@ async function openImageEditorDialog(segmentIndex, imageIndex) {
   imageEditorSheet?.classList.toggle("is-portrait-image", isPortraitEditorImage(image, imageEditorDraft, getImageEditorSourceDimensions()));
   imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
   imageZoomInput.value = String(imageEditorDraft.zoom);
-  setImageEditorStatus(image.validation?.tooBig ? t("imageEditorNeedsAttention") : "");
+  setImageEditorStatus(getImageEditorValidationMessage(image), image.validation?.tooBig ? "error" : "");
   updateImageEditorActionState(image);
   drawImageEditor();
   imageEditorDialog.showModal();
@@ -7090,6 +7093,22 @@ function updateImageEditorActionState(image = getEditedImage()) {
   const exceedsDimensions = Boolean(validation.exceedsDimensions);
   imageFitDimensionsButton.disabled = !exceedsDimensions;
   imageLossyResizeButton.hidden = !validation.tooBig;
+}
+
+function getImageEditorValidationMessage(image = getEditedImage()) {
+  const validation = image?.validation || {};
+  if (validation.exceedsDimensions) {
+    return t("imageEditorDimensionsTooLarge", {
+      width: validation.width || image?.width || 0,
+      height: validation.height || image?.height || 0,
+    });
+  }
+  if ((Number(validation.sizeBytes) || 0) > IMAGE_BLOB_LIMIT) {
+    return t("imageEditorFileTooLarge", {
+      size: formatImageSize(validation.sizeBytes),
+    });
+  }
+  return "";
 }
 
 async function updateImageEditorMetrics({ renderBlob = true } = {}) {
