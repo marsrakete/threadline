@@ -789,13 +789,13 @@
     </div>
 
     <dialog id="settings-dialog" class="settings-dialog">
-      <form method="dialog" class="settings-sheet">
+      <form method="dialog" class="settings-sheet" novalidate>
         <div class="section-heading settings-heading">
           <div>
             <p class="eyebrow" data-i18n="settingsEyebrow">Einstellungen</p>
             <h2 data-i18n="settingsTitle">App anpassen</h2>
           </div>
-          <button type="submit" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+          <button type="button" id="settings-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
 
         <section class="settings-block">
@@ -849,7 +849,7 @@
           <p class="settings-note" data-i18n="linkCardSettingsNote">Optionaler WordPress-Proxy fuer Link-Card-Metadaten.</p>
           <label>
             <span data-i18n="linkCardEndpointLabel">Proxy-Endpunkt</span>
-            <input id="link-card-endpoint-input" type="url" inputmode="url" placeholder="https://example.com/wp-json/threadline/v1/link-card">
+            <input id="link-card-endpoint-input" type="text" inputmode="url" placeholder="https://example.com/wp-json/threadline/v1/link-card">
           </label>
           <label>
             <span data-i18n="linkCardSecretLabel">Secret</span>

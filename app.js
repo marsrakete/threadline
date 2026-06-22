@@ -53,9 +53,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.161",
-  cacheVersion: "v180",
-  label: "Avoid duplicate link card warning",
+  appVersion: "0.4.162",
+  cacheVersion: "v181",
+  label: "Improve proxy settings and auth errors",
 });
 
 function clamp(value, min, max) {
@@ -125,6 +125,7 @@ const dmButton = document.querySelector("#dm-button");
 const dmLaunchNote = document.querySelector("#dm-launch-note");
 const saveThreadButton = document.querySelector("#save-thread-button");
 const settingsDialog = document.querySelector("#settings-dialog");
+const settingsCloseTop = document.querySelector("#settings-close-top");
 const publishResultDialog = document.querySelector("#publish-result-dialog");
 const progressDialog = document.querySelector("#progress-dialog");
 const errorDialog = document.querySelector("#error-dialog");
@@ -6414,7 +6415,8 @@ function getFirstHttpUrl(text) {
 }
 
 function isLinkCardProxyConfigured() {
-  return validateLinkCardProxySettings().ok;
+  const { endpoint, secret } = getLinkCardSettings();
+  return Boolean(endpoint && secret) && validateLinkCardProxySettings().ok;
 }
 
 function normalizeLinkCardProxyEndpoint(rawEndpoint) {
@@ -6452,7 +6454,10 @@ function validateLinkCardProxySettings() {
   const endpoint = normalizeLinkCardProxyEndpoint(rawEndpoint);
   const secret = String(linkCardSecretInput?.value || "").trim();
   if (!rawEndpoint && !secret) {
-    return { ok: false, message: t("linkCardProxyMissing"), tone: "error", isEmpty: true };
+    return { ok: true, message: "", tone: "", isEmpty: true };
+  }
+  if (!rawEndpoint || !secret) {
+    return { ok: false, message: "", tone: "", isEmpty: true };
   }
   if (!endpoint) {
     return { ok: false, message: t("linkCardProxyInvalidEndpoint"), tone: "error", isEmpty: false };
@@ -6481,7 +6486,7 @@ function updateLinkCardSettingsStatus({ show = true } = {}) {
   if (!linkCardSettingsStatus) {
     return validation;
   }
-  linkCardSettingsStatus.hidden = !show && validation.isEmpty;
+  linkCardSettingsStatus.hidden = validation.isEmpty || !show;
   linkCardSettingsStatus.textContent = validation.message;
   if (validation.tone) {
     linkCardSettingsStatus.dataset.tone = validation.tone;
@@ -6489,6 +6494,10 @@ function updateLinkCardSettingsStatus({ show = true } = {}) {
     delete linkCardSettingsStatus.dataset.tone;
   }
   return validation;
+}
+
+function closeSettingsDialog() {
+  settingsDialog.close();
 }
 
 function getLinkCardSettings() {
@@ -6528,14 +6537,29 @@ function linkCardImageToDataUrl(image = {}) {
   return `data:${mimeType};base64,${bytesBase64}`;
 }
 
+function getLinkCardProxyErrorMessage(response, payload = {}) {
+  const code = String(payload?.code || "").trim().toLowerCase();
+  const message = String(payload?.message || "").trim().toLowerCase();
+  if (
+    response.status === 401
+    || code === "threadline_signature_invalid"
+    || code === "threadline_signature_missing"
+    || message === "invalid signature."
+    || message === "missing or expired signature."
+  ) {
+    return t("linkCardProxyAuthFailed");
+  }
+  return payload?.message || payload?.code || t("linkCardProxyFailed");
+}
+
 async function requestLinkCardFromProxy(url) {
+  const { endpoint, secret } = getLinkCardSettings();
+  if (!endpoint && !secret) {
+    throw new Error(t("linkCardProxyMissing"));
+  }
   const validation = updateLinkCardSettingsStatus();
   if (!validation.ok) {
     throw new Error(validation.message);
-  }
-  const { endpoint, secret } = getLinkCardSettings();
-  if (!endpoint || !secret) {
-    throw new Error(t("linkCardProxyMissing"));
   }
   const timestamp = String(Math.floor(Date.now() / 1000));
   const nonce = crypto.randomUUID();
@@ -6552,7 +6576,7 @@ async function requestLinkCardFromProxy(url) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.message || payload?.code || t("linkCardProxyFailed"));
+    throw new Error(getLinkCardProxyErrorMessage(response, payload));
   }
   return normalizeLinkCard({
     url: payload.url || payload.finalUrl || url,
@@ -13870,6 +13894,7 @@ settingsButton.addEventListener("click", () => {
   setUpdateStatus("", false);
   setBackupStatus("");
   setShareStatus("");
+  updateLinkCardSettingsStatus({ show: false });
   settingsDialog.showModal();
 });
 
@@ -14993,8 +15018,11 @@ confirmDialog.addEventListener("close", () => {
     updateLinkCardSettingsStatus();
     await persistSettings();
     renderSegments({ preserveOverrides: true, preserveView: true });
-    linkCardEndpointInput?.reportValidity?.();
   });
+});
+
+settingsCloseTop?.addEventListener("click", () => {
+  closeSettingsDialog();
 });
 
 linkCardCreateButton?.addEventListener("click", () => {
