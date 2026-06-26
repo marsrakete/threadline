@@ -59,6 +59,7 @@ Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kanns
 - Hilfe-Dialog direkt aus dem README in der App
 - Die App erkennt neue Versionen, kann manuell danach suchen und zeigt bei Bedarf direkt einen Neu-laden-Button
 - Statusanzeige und Historie der letzten Postings
+- Bestehende Threads lassen sich fortsetzen oder per Posting-URL gezielt beantworten
 - Optionaler WordPress-Link-Card-Proxy, um aus URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards zu erzeugen
 
 ## Schreiben Und Aufteilen
@@ -78,6 +79,20 @@ Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kanns
 - Die Thread-Abschnitte dürfen nachträglich bearbeitet werden
 - Sobald ein Abschnitt manuell verändert wurde, wird der Composer gesperrt, damit die Bearbeitung nicht versehentlich überschrieben wird
 - Mit `Änderung ignorieren` wird nur der Composer wieder freigegeben; die vorhandene Thread-Anzeige bleibt dabei unverändert
+
+## Antworten Und Thread Fortsetzen
+
+![Vergleichsgrafik fuer Thread fortsetzen und Auf Posting antworten](icons/readme-reply-targets-de.svg)
+
+- Über den Button neben `Post-Einstellungen` kann eine Posting-URL geprüft und als Antwortsziel gesetzt werden
+- Im Composer erscheint dann eine Ziel-Kachel mit Avatar, Name und Textausschnitt des Ziel-Postings oder Threads
+- `Auf Posting antworten` bedeutet: Threadline antwortet genau auf das angegebene Posting
+- `Thread fortsetzen` bedeutet: Threadline hängt den neuen Abschnitt an den letzten eigenen Post innerhalb dieses Threads an
+- Für `Thread fortsetzen` reicht ein Eintrag aus `Letzte Postings`; Threadline ermittelt daraus den letzten eigenen Post im Thread
+- Bei einer Thread-Fortsetzung zeigt die Kachel zur Orientierung den Thread-Einstieg, gepostet wird aber als Antwort auf den letzten eigenen Post
+- Bei einer Thread-Fortsetzung kann eine bestehende Nummerierung wie `1/x` nicht mehr konsistent bleiben, weil frühere Posts nicht nachträglich angepasst werden können
+- Das gewählte Ziel bleibt reload-sicher als Teil des lokalen Entwurfs erhalten
+- Vor dem Posten erscheint zusätzlich eine Sicherheitsabfrage, die klar benennt, ob geantwortet oder ein Thread fortgesetzt wird
 
 ## Post-Interaktionen
 
@@ -206,6 +221,7 @@ Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erz
 - Ein einzelner kurzer Text kann als normaler Post gesendet werden
 - Längere Texte werden als Thread veröffentlicht
 - Bilder werden gemeinsam mit den jeweiligen Segmenten hochgeladen
+- Der Composer kann wahlweise einen neuen Post senden, auf ein bestehendes Posting antworten oder einen eigenen Thread fortsetzen
 - Für Bilder berücksichtigt Threadline das aktuelle Bluesky-Limit von `2.000.000` Bytes und `4000 × 4000` Pixeln pro Bild
 - Zu große Bilder werden im Composer markiert und müssen vor dem Posten im Bildeditor verkleinert werden
 - Vor dem Posten gibt es eine Sicherheitsabfrage mit dem aktuell verwendeten Konto
@@ -229,8 +245,10 @@ Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erz
 - Zeitstempel
 - Bluesky-URL
 - verwendetes Konto
+- Textvorschau des ersten Abschnitts
 - Anzahl der Thread-Posts
 - Anzahl der verwendeten Bilder
+- Für passende Einträge gibt es dort einen Button `Thread fortsetzen`
 - Einzelne Einträge lassen sich löschen
 - Die komplette Historie kann in den Einstellungen geleert werden
 - Die Historie ist auch im Backup enthalten

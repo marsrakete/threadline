@@ -169,8 +169,36 @@ Used for:
 - archive modes that expand threads
 - hashtag checks at thread-root or whole-thread scope
 - single-thread export
+- resolving reply targets and thread continuation targets from a post URL
 
 This call is protected with timeout and retry logic because it can be slow.
+
+## Replies And Thread Continuation Internals
+
+Both features start from a post URL, but they intentionally resolve to different reply references.
+
+### Reply To Post URL
+
+- The URL is parsed and first resolved through `app.bsky.feed.getPosts`
+- Then `app.bsky.feed.getPostThread` loads the surrounding thread context
+- For the first new segment, Threadline sets `reply.root` to the thread root
+- `reply.parent` points to the exact post from the supplied URL
+- Threadgate rules are checked on a best-effort basis before publishing; clearly blocked replies fail early
+
+### Continue Thread
+
+- The URL is also resolved to a specific post and then to the full thread
+- Threadline then searches that thread for the latest own post of the currently active account
+- `reply.root` stays the thread root
+- But `reply.parent` is intentionally set to that latest own post, not to the post from the URL
+- This continues your own thread cleanly instead of accidentally replying in the middle of an older branch
+
+### Persistence And Publish Behavior
+
+- The resolved target is stored inside the composer draft in `IndexedDB`, so it survives reloads
+- `app.js` keeps the richer target card data for the UI
+- During actual publishing, only normalized `replyRoot` and `replyParent` references are passed to `sw.js`
+- Those references are applied to the first new segment; any following segments then chain normally from there
 
 ### `app.bsky.notification.listNotifications`
 
@@ -291,6 +319,8 @@ Mainly uses:
 - `com.atproto.identity.resolveHandle`
 - `com.atproto.repo.uploadBlob`
 - `com.atproto.repo.createRecord`
+- `app.bsky.feed.getPosts`
+- `app.bsky.feed.getPostThread`
 
 ### Archive
 

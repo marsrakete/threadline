@@ -1,0 +1,60 @@
+<svg width="1080" height="520" viewBox="0 0 1080 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1080" height="520" rx="28" fill="#F5F8FC"/>
+  <rect x="24" y="24" width="500" height="472" rx="24" fill="#FFFFFF" stroke="#D7E3F1"/>
+  <rect x="556" y="24" width="500" height="472" rx="24" fill="#FFFFFF" stroke="#D7E3F1"/>
+
+  <text x="56" y="78" fill="#15304B" font-family="Arial, sans-serif" font-size="30" font-weight="700">Thread fortsetzen</text>
+  <text x="56" y="112" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="18">Neuer Post haengt an deinem letzten eigenen Abschnitt.</text>
+  <text x="588" y="78" fill="#15304B" font-family="Arial, sans-serif" font-size="30" font-weight="700">Auf Posting antworten</text>
+  <text x="588" y="112" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="18">Neuer Post antwortet genau auf die URL.</text>
+
+  <rect x="56" y="148" width="188" height="84" rx="18" fill="#EAF4FF" stroke="#B8D6F3"/>
+  <circle cx="92" cy="190" r="18" fill="#8FD3FF"/>
+  <text x="122" y="184" fill="#15304B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Dein Thread</text>
+  <text x="122" y="208" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">Startpost</text>
+
+  <rect x="56" y="254" width="188" height="84" rx="18" fill="#EAF4FF" stroke="#B8D6F3"/>
+  <circle cx="92" cy="296" r="18" fill="#8FD3FF"/>
+  <text x="122" y="290" fill="#15304B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Dein Thread</text>
+  <text x="122" y="314" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">Mitte</text>
+
+  <rect x="56" y="360" width="188" height="84" rx="18" fill="#EAF4FF" stroke="#B8D6F3"/>
+  <circle cx="92" cy="402" r="18" fill="#8FD3FF"/>
+  <text x="122" y="396" fill="#15304B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Dein Thread</text>
+  <text x="122" y="420" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">Letzter eigener Post</text>
+
+  <path d="M150 232V254" stroke="#6E8AA8" stroke-width="4" stroke-linecap="round"/>
+  <path d="M150 338V360" stroke="#6E8AA8" stroke-width="4" stroke-linecap="round"/>
+
+  <rect x="314" y="360" width="160" height="84" rx="18" fill="#DFF7F2" stroke="#74D7C4"/>
+  <circle cx="350" cy="402" r="18" fill="#2CC2A8"/>
+  <text x="380" y="396" fill="#15304B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Neuer Post</text>
+  <text x="380" y="420" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">haengt hier an</text>
+
+  <path d="M244 402H291" stroke="#2CC2A8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M291 402L275 390" stroke="#2CC2A8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M291 402L275 414" stroke="#2CC2A8" stroke-width="6" stroke-linecap="round"/>
+
+  <text x="56" y="474" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">Die URL darf auf den Thread zeigen. Gepostet wird an den letzten eigenen Abschnitt.</text>
+
+  <rect x="588" y="190" width="188" height="84" rx="18" fill="#FFF2E5" stroke="#F3C58F"/>
+  <circle cx="624" cy="232" r="18" fill="#FFB65C"/>
+  <text x="654" y="226" fill="#15304B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Fremdes Posting</text>
+  <text x="654" y="250" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">genau diese URL</text>
+
+  <rect x="846" y="190" width="160" height="84" rx="18" fill="#DFF7F2" stroke="#74D7C4"/>
+  <circle cx="882" cy="232" r="18" fill="#2CC2A8"/>
+  <text x="912" y="226" fill="#15304B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Neuer Post</text>
+  <text x="912" y="250" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">antwortet hier</text>
+
+  <path d="M776 232H823" stroke="#2CC2A8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M823 232L807 220" stroke="#2CC2A8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M823 232L807 244" stroke="#2CC2A8" stroke-width="6" stroke-linecap="round"/>
+
+  <text x="588" y="326" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">Hier zeigt reply.parent direkt auf das angegebene Posting.</text>
+
+  <rect x="588" y="360" width="418" height="84" rx="18" fill="#F8FBFF" stroke="#D7E3F1"/>
+  <text x="616" y="392" fill="#15304B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Merksatz</text>
+  <text x="616" y="420" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">Fortsetzen = an deinen letzten eigenen Post im Thread.</text>
+  <text x="616" y="444" fill="#4F6B8A" font-family="Arial, sans-serif" font-size="16">Antworten = an genau das Posting aus der URL.</text>
+</svg>

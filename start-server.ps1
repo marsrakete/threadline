@@ -7,7 +7,7 @@ $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
 
-Write-Host "Foto-Collage laeuft auf http://localhost:$Port/"
+Write-Host "Threadline laeuft auf http://localhost:$Port/"
 Write-Host "Zum Beenden Strg+C druecken."
 
 $contentTypes = @{
@@ -23,7 +23,13 @@ $contentTypes = @{
 
 try {
   while ($listener.IsListening) {
-    $context = $listener.GetContext()
+    $pendingContext = $listener.BeginGetContext($null, $null)
+    while ($listener.IsListening -and -not $pendingContext.AsyncWaitHandle.WaitOne(200)) {
+    }
+    if (-not $listener.IsListening) {
+      break
+    }
+    $context = $listener.EndGetContext($pendingContext)
     $requestPath = $context.Request.Url.AbsolutePath.TrimStart("/")
 
     if ([string]::IsNullOrWhiteSpace($requestPath)) {

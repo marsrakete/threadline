@@ -175,11 +175,39 @@ Wird genutzt für:
 - Archiv-Typen, die Threads erweitern
 - Hashtag-Prüfung am Startpost oder im Thread
 - Single-Thread-Export
+- Auflösen von Antwortzielen und Thread-Fortsetzungen aus einer Posting-URL
 
 Wichtig:
 
 - Dieser Call kann teuer sein und ist deshalb mit Timeout/Retry abgesichert.
 - Gelöschte oder fehlende Posts werden möglichst übersprungen statt den Lauf komplett zu stoppen.
+
+## Antworten Und Thread Fortsetzen Technisch
+
+Beide Funktionen beginnen mit einer Posting-URL, laufen intern aber auf unterschiedliche Ziel-Referenzen hinaus.
+
+### Antwort auf Posting-URL
+
+- Die URL wird geparst und zunächst per `app.bsky.feed.getPosts` aufgelöst
+- Danach lädt `app.bsky.feed.getPostThread` den Thread-Kontext
+- Für das erste neue Segment setzt Threadline `reply.root` auf den Wurzel-Post des Threads
+- `reply.parent` zeigt auf genau das Posting, das in der URL angegeben wurde
+- Threadgate-Regeln werden vorab best effort geprüft; bei klar blockierten Antworten bricht Threadline schon vor dem Posten ab
+
+### Thread fortsetzen
+
+- Auch hier wird die URL zuerst in einen konkreten Post und dann in den ganzen Thread aufgelöst
+- Anschließend sucht Threadline innerhalb dieses Threads nach dem letzten eigenen Posting des aktuell aktiven Accounts
+- `reply.root` bleibt der Wurzel-Post des Threads
+- `reply.parent` wird aber bewusst auf den letzten eigenen Post gesetzt, nicht auf den in der URL verlinkten Post
+- Dadurch wird der eigene Thread sauber weitergeführt, statt versehentlich mitten auf einen älteren Abschnitt zu antworten
+
+### Speicher- Und Publish-Verhalten
+
+- Das aufgelöste Ziel wird im Composer-Draft in `IndexedDB` gespeichert und ist dadurch reload-fest
+- In `app.js` bleibt die ausführliche Zielkarte für die UI erhalten
+- An `sw.js` werden beim eigentlichen Posten nur die normalisierten `replyRoot`- und `replyParent`-Referenzen übergeben
+- Diese Referenzen gelten für das erste neue Segment; weitere Segmente werden anschließend wie gewohnt als Thread-Kette daran angehängt
 
 ### `app.bsky.notification.listNotifications`
 
@@ -306,6 +334,8 @@ Nutzen vor allem:
 - `com.atproto.identity.resolveHandle`
 - `com.atproto.repo.uploadBlob`
 - `com.atproto.repo.createRecord`
+- `app.bsky.feed.getPosts`
+- `app.bsky.feed.getPostThread`
 
 ### Archiv-Funktion
 

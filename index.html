@@ -165,6 +165,9 @@
 
                 <div class="toggle-stack">
                   <div class="help-heading">
+                    <button id="reply-target-button" type="button" class="ghost-button composer-language-button" data-i18n="replyTargetButton">
+                      Auf Posting antworten
+                    </button>
                     <button id="post-settings-button" type="button" class="ghost-button composer-language-button" data-i18n="postSettingsButton">
                       Post-Einstellungen
                     </button>
@@ -175,6 +178,22 @@
 
               <div class="composer-language-row">
                 <p id="post-languages-summary" class="composer-language-summary"></p>
+                <article id="reply-target-card" class="reply-target-card" hidden>
+                  <div class="reply-target-card-header">
+                    <p id="reply-target-card-eyebrow" class="eyebrow" data-i18n="replyTargetCardEyebrow">Antwortziel</p>
+                    <button id="reply-target-clear-button" type="button" class="ghost-button" data-i18n="replyTargetClearButton">Entfernen</button>
+                  </div>
+                  <div class="reply-target-card-body">
+                    <img id="reply-target-avatar" class="reply-target-avatar" alt="">
+                    <div class="reply-target-copy">
+                      <strong id="reply-target-name" class="reply-target-name"></strong>
+                      <p id="reply-target-handle" class="reply-target-handle"></p>
+                      <p id="reply-target-meta" class="reply-target-meta"></p>
+                      <p id="reply-target-warning" class="reply-target-warning" hidden></p>
+                      <p id="reply-target-text" class="reply-target-text"></p>
+                    </div>
+                  </div>
+                </article>
               </div>
 
               <div class="help-heading">
@@ -833,7 +852,7 @@
         </section>
 
         <section class="settings-block">
-          <p class="eyebrow" data-i18n="tipsSettingsEyebrow">Tipps</p>
+          <p class="eyebrow" data-i18n="tipsSettingsEyebrow">Hinweise</p>
           <label class="settings-check">
             <input id="tips-visible-toggle" type="checkbox" checked>
             <span data-i18n="showTipsSetting">Tipps wieder anzeigen</span>
@@ -849,11 +868,11 @@
           <p class="settings-note" data-i18n="linkCardSettingsNote">Optionaler WordPress-Proxy fuer Link-Card-Metadaten.</p>
           <label>
             <span data-i18n="linkCardEndpointLabel">Proxy-Endpunkt</span>
-            <input id="link-card-endpoint-input" type="text" inputmode="url" placeholder="https://example.com/wp-json/threadline/v1/link-card">
+            <input id="link-card-endpoint-input" name="threadline-proxy-endpoint" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="https://example.com/wp-json/threadline/v1/link-card">
           </label>
           <label>
             <span data-i18n="linkCardSecretLabel">Secret</span>
-            <input id="link-card-secret-input" type="password" autocomplete="off">
+            <input id="link-card-secret-input" name="threadline-proxy-secret" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true">
           </label>
           <p id="link-card-settings-status" class="settings-note" hidden></p>
         </section>
@@ -1343,10 +1362,50 @@
         </div>
 
         <p id="confirm-dialog-message" class="settings-note"></p>
+        <div id="confirm-dialog-preview" class="confirm-dialog-preview" hidden>
+          <img id="confirm-dialog-avatar" class="confirm-dialog-avatar" alt="">
+          <div class="confirm-dialog-preview-copy">
+            <strong id="confirm-dialog-preview-name"></strong>
+            <p id="confirm-dialog-preview-handle"></p>
+          </div>
+        </div>
 
         <div class="settings-actions">
           <button type="button" id="confirm-dialog-confirm-button" data-i18n="confirmYes">Ja</button>
           <button type="button" id="confirm-dialog-cancel-button" class="ghost-button" data-i18n="confirmNo">Nein</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="reply-target-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet post-edit-check-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="replyTargetDialogEyebrow">Antwort</p>
+            <h2 data-i18n="replyTargetDialogTitle">Auf bestehendes Posting antworten</h2>
+          </div>
+          <button type="button" id="reply-target-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <p class="settings-note" data-i18n="replyTargetDialogDescription">
+          Gib eine Posting-URL an. Threadline prüft das Ziel und schaltet den Composer danach in den Antwortmodus.
+        </p>
+
+        <label for="reply-target-url">
+          <span data-i18n="replyTargetUrlLabel">Posting-URL</span>
+          <input
+            id="reply-target-url"
+            type="url"
+            inputmode="url"
+            placeholder="https://bsky.app/profile/handle/post/..."
+          >
+        </label>
+
+        <p id="reply-target-status" class="post-edit-check-status settings-note"></p>
+
+        <div class="settings-actions">
+          <button type="button" id="reply-target-submit" data-i18n="replyTargetDialogConfirmButton">OK</button>
+          <button type="button" id="reply-target-close" class="ghost-button" data-i18n="closeButton">Schließen</button>
         </div>
       </form>
     </dialog>

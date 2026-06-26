@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.162",
-  cacheVersion: "v181",
-  label: "Improve proxy settings and auth errors",
+  appVersion: "0.4.174",
+  cacheVersion: "v193",
+  label: "Choose reply or thread continuation",
 });

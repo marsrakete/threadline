@@ -327,6 +327,7 @@ function normalizePostingHistory(entries) {
     const url = typeof entry?.url === "string" ? entry.url.trim() : "";
     const createdAt = typeof entry?.createdAt === "string" ? entry.createdAt : "";
     const account = typeof entry?.account === "string" ? entry.account.trim() : "";
+    const service = typeof entry?.service === "string" ? entry.service.trim() : "";
 
     if (!url || !createdAt) {
       continue;
@@ -343,6 +344,8 @@ function normalizePostingHistory(entries) {
       url,
       createdAt,
       account,
+      service,
+      firstSegmentText: typeof entry?.firstSegmentText === "string" ? entry.firstSegmentText.trim() : "",
       threadCount: Math.max(1, Number(entry.threadCount) || 1),
       imageCount: Math.max(0, Number(entry.imageCount) || 0),
     });
@@ -664,6 +667,8 @@ async function handleMessage(message, port) {
       return importArchiveThreadFromUrl(message.payload, (progress) => port.postMessage({ progress }));
     case "CHECK_POST_EDIT":
       return checkPostEditMetadata(message.payload);
+    case "CHECK_REPLY_TARGET":
+      return checkReplyTarget(message.payload);
     case "CHECK_DM_ACCESS":
       return checkDmAccess();
     case "LOAD_NETWORK_SLICE":
@@ -2128,6 +2133,7 @@ async function getAppState({ browserLocale } = {}) {
     segmentImages: hydratedSegmentImages,
     segmentLinkCards: normalizeSegmentLinkCards(draft?.segmentLinkCards || storedSettings?.segmentLinkCards),
     segmentOverrides: normalizeSegmentOverrides(draft?.segmentOverrides),
+    replyTarget: normalizeStoredReplyTarget(draft?.replyTarget),
     postingHistory: normalizePostingHistory(storedSettings?.postingHistory),
     archivePreferences: storedSettings?.archivePreferences && typeof storedSettings.archivePreferences === "object"
       ? storedSettings.archivePreferences
@@ -2135,13 +2141,25 @@ async function getAppState({ browserLocale } = {}) {
   };
 }
 
-async function saveDraft({ draft, segmentImages, segmentLinkCards, segmentOverrides } = {}) {
+function normalizeStoredReplyTarget(target) {
+  if (!target || typeof target !== "object") {
+    return null;
+  }
+  return {
+    ...target,
+    mode: target.mode === "thread" ? "thread" : "post",
+    sourceUrl: String(target.sourceUrl || ""),
+  };
+}
+
+async function saveDraft({ draft, segmentImages, segmentLinkCards, segmentOverrides, replyTarget } = {}) {
   const normalizedImages = await storeComposerImageBlobs(segmentImages);
   await writeStoredValue(DRAFT_KEY, {
     sourceText: draft || "",
     segmentImages: normalizeSegmentImageMetadata(normalizedImages),
     segmentLinkCards: normalizeSegmentLinkCards(segmentLinkCards),
     segmentOverrides: normalizeSegmentOverrides(segmentOverrides),
+    replyTarget: normalizeStoredReplyTarget(replyTarget),
   });
   await pruneComposerImageBlobs();
   return { ok: true };
@@ -4388,6 +4406,178 @@ function parseArchiveThreadSource(value = "") {
   };
 }
 
+function normalizeReplyTargetMode(mode) {
+  return mode === "thread" ? "thread" : "post";
+}
+
+function recordMentionsDid(record, did) {
+  return Array.isArray(record?.facets) && record.facets.some((facet) =>
+    Array.isArray(facet?.features) && facet.features.some((feature) =>
+      feature?.$type === "app.bsky.richtext.facet#mention" && feature.did === did,
+    )
+  );
+}
+
+function evaluateReplyEligibility(postView, authDid) {
+  const allowRules = Array.isArray(postView?.threadgate?.record?.allow) ? postView.threadgate.record.allow : null;
+  if (!allowRules) {
+    return { status: "allowed", hint: "" };
+  }
+  if (allowRules.length === 0) {
+    return { status: "blocked", hint: "Auf dieses Posting sind keine Antworten erlaubt." };
+  }
+
+  const viewer = postView?.author?.viewer && typeof postView.author.viewer === "object" ? postView.author.viewer : {};
+  let matched = false;
+  let hasUnknownRules = false;
+
+  for (const rule of allowRules) {
+    const type = String(rule?.$type || "");
+    if (type === "app.bsky.feed.threadgate#followerRule" && viewer.following) {
+      matched = true;
+      break;
+    }
+    if (type === "app.bsky.feed.threadgate#followingRule" && viewer.followedBy) {
+      matched = true;
+      break;
+    }
+    if (type === "app.bsky.feed.threadgate#mentionRule" && recordMentionsDid(postView?.record || {}, authDid)) {
+      matched = true;
+      break;
+    }
+    if (type === "app.bsky.feed.threadgate#listRule") {
+      hasUnknownRules = true;
+    }
+  }
+
+  if (matched) {
+    return { status: "allowed", hint: "" };
+  }
+  if (hasUnknownRules) {
+    return {
+      status: "unknown",
+      hint: "Die Antwortregeln dieses Postings nutzen Listen. Threadline kann vor dem Posten nicht sicher pruefen, ob Antworten erlaubt sind.",
+    };
+  }
+  return {
+    status: "blocked",
+    hint: "Die Antwortregeln dieses Postings erlauben dem aktuell aktiven Account keine Antwort.",
+  };
+}
+
+async function checkReplyTarget({ url, mode } = {}) {
+  const auth = await ensureSession();
+  const parsedSource = parseArchiveThreadSource(url);
+  const resolveCache = new Map();
+  const actorDid = parsedSource.actor.startsWith("did:")
+    ? parsedSource.actor
+    : await resolveHandleToDid(parsedSource.actor, auth, resolveCache);
+
+  if (!actorDid) {
+    throw new Error("Die Posting-URL konnte keinem Bluesky-Account zugeordnet werden.");
+  }
+
+  const entryUri = parsedSource.entryUri || `at://${actorDid}/app.bsky.feed.post/${parsedSource.rkey}`;
+  let entryResponse;
+  try {
+    entryResponse = await bskyGet("app.bsky.feed.getPosts", {
+      uris: [entryUri],
+    }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+      base: authXrpcBase(auth),
+    });
+  } catch (error) {
+    throw new Error(error?.message || "Das verlinkte Posting konnte nicht geladen werden.");
+  }
+
+  const entryPost = Array.isArray(entryResponse?.posts) ? entryResponse.posts[0] : null;
+  if (!entryPost?.uri) {
+    throw new Error("Das verlinkte Posting wurde nicht gefunden oder ist nicht mehr sichtbar.");
+  }
+
+  const entryRecord = entryPost.record || {};
+  const rootUri = getArchiveRootUri(entryRecord, entryPost.uri) || entryPost.uri;
+  let threadResponse;
+  try {
+    threadResponse = await archiveGetPostThread(auth, rootUri, {
+      depth: 100,
+      parentHeight: 0,
+      retries: 1,
+      timeoutMs: 20000,
+    });
+  } catch (error) {
+    throw new Error(error?.message || "Der zugehoerige Thread konnte nicht geladen werden.");
+  }
+
+  const threadRoot = threadResponse.thread || threadResponse.post || threadResponse;
+  const threadViews = collectThreadViewPosts(threadRoot);
+  const rootPost = threadViews.find((post) => post?.uri === rootUri) || entryPost;
+  const resolvedEntryPost = threadViews.find((post) => post?.uri === entryPost.uri) || entryPost;
+  const normalizedMode = normalizeReplyTargetMode(mode);
+  const ownPosts = threadViews
+    .filter((post) => post?.author?.did === auth.session.did)
+    .sort((left, right) => Date.parse(right?.record?.createdAt || 0) - Date.parse(left?.record?.createdAt || 0));
+
+  if (normalizedMode === "thread" && ownPosts.length === 0) {
+    throw new Error("Mit dem aktuell aktiven Account wurde in diesem Thread kein eigener Post gefunden.");
+  }
+
+  const replyParentPost = normalizedMode === "thread" ? ownPosts[0] : resolvedEntryPost;
+  const eligibility = evaluateReplyEligibility(replyParentPost, auth.session.did);
+  if (eligibility.status === "blocked") {
+    throw new Error(eligibility.hint);
+  }
+
+  return {
+    mode: normalizedMode,
+    sourceUrl: parsedSource.sourceUrl,
+    threadLength: Math.max(1, threadViews.length || 1),
+    replyHint: eligibility.hint,
+    replyRoot: {
+      uri: rootPost.uri,
+      cid: String(rootPost.cid || ""),
+    },
+    replyParent: {
+      uri: replyParentPost.uri,
+      cid: String(replyParentPost.cid || ""),
+    },
+    targetPost: {
+      uri: resolvedEntryPost.uri,
+      cid: String(resolvedEntryPost.cid || ""),
+      text: String(resolvedEntryPost.record?.text || ""),
+      createdAt: String(resolvedEntryPost.record?.createdAt || ""),
+    },
+    rootPost: {
+      uri: rootPost.uri,
+      cid: String(rootPost.cid || ""),
+      text: String(rootPost.record?.text || ""),
+      createdAt: String(rootPost.record?.createdAt || ""),
+    },
+    targetAccount: {
+      did: String(resolvedEntryPost.author?.did || ""),
+      handle: String(resolvedEntryPost.author?.handle || ""),
+      displayName: String(resolvedEntryPost.author?.displayName || resolvedEntryPost.author?.handle || ""),
+      avatar: String(resolvedEntryPost.author?.avatar || ""),
+    },
+    rootAccount: {
+      did: String(rootPost.author?.did || ""),
+      handle: String(rootPost.author?.handle || ""),
+      displayName: String(rootPost.author?.displayName || rootPost.author?.handle || ""),
+      avatar: String(rootPost.author?.avatar || ""),
+    },
+    lastOwnPost: ownPosts[0]
+      ? {
+          uri: ownPosts[0].uri,
+          cid: String(ownPosts[0].cid || ""),
+          text: String(ownPosts[0].record?.text || ""),
+          createdAt: String(ownPosts[0].record?.createdAt || ""),
+        }
+      : null,
+  };
+}
+
 async function checkPostEditMetadata({ url } = {}) {
   const auth = await ensureSession();
   let parsedSource;
@@ -5509,7 +5699,7 @@ async function applyPostInteractionGates(auth, postRef, settings) {
   }
 }
 
-async function publishThread({ segments, langs, postInteraction }, notifyProgress = () => {}) {
+async function publishThread({ segments, langs, postInteraction, replyTarget } = {}, notifyProgress = () => {}) {
   if (!Array.isArray(segments) || segments.length === 0) {
     throw new Error("Es gibt keine Segmente zum Posten.");
   }
@@ -5517,10 +5707,22 @@ async function publishThread({ segments, langs, postInteraction }, notifyProgres
   const auth = await ensureSession();
   const normalizedLangs = normalizePostLanguageTags(langs);
   const normalizedPostInteraction = normalizePostInteractionSettings(postInteraction);
+  const normalizedReplyTarget = replyTarget && typeof replyTarget === "object"
+    ? {
+        replyRoot: {
+          uri: String(replyTarget.replyRoot?.uri || "").trim(),
+          cid: String(replyTarget.replyRoot?.cid || "").trim(),
+        },
+        replyParent: {
+          uri: String(replyTarget.replyParent?.uri || "").trim(),
+          cid: String(replyTarget.replyParent?.cid || "").trim(),
+        },
+      }
+    : null;
   const resolveCache = new Map();
   const posts = [];
-  let root = null;
-  let parent = null;
+  let root = normalizedReplyTarget?.replyRoot?.uri && normalizedReplyTarget?.replyRoot?.cid ? normalizedReplyTarget.replyRoot : null;
+  let parent = normalizedReplyTarget?.replyParent?.uri && normalizedReplyTarget?.replyParent?.cid ? normalizedReplyTarget.replyParent : null;
 
   notifyProgress({ message: "Thread wird auf Bluesky gepostet …" });
 

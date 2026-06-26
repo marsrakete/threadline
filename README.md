@@ -59,6 +59,7 @@ Using a dedicated app password is recommended because you can revoke it later wi
 - In-app help dialog based on the README
 - The app detects new versions, lets you check manually, and shows a reload button when needed
 - Status area and recent posting history
+- Existing threads can be continued, or specific posts can be replied to by URL
 - Optional WordPress link-card proxy for creating Bluesky link cards from URLs in individual thread segments
 
 ## Writing And Splitting
@@ -78,6 +79,20 @@ Using a dedicated app password is recommended because you can revoke it later wi
 - Thread segments can be edited after splitting
 - As soon as a segment is edited manually, the composer is locked to prevent accidental overwrites
 - `Ignore change` only unlocks the composer; it does not rerender the existing thread preview
+
+## Replies And Thread Continuation
+
+![Comparison graphic for continuing a thread versus replying to a post](icons/readme-reply-targets-en.svg)
+
+- A button next to `Post settings` lets you check a post URL and set it as the reply target
+- The composer then shows a target card with avatar, name, and a text preview of the target post or thread
+- `Reply to post` means Threadline replies to exactly that specific post
+- `Continue thread` means Threadline appends the new content to your latest own post inside that thread
+- For `Continue thread`, you can start directly from an entry in `Recent posts`; Threadline resolves your latest own post in that thread
+- In continuation mode the card shows the thread entry post for orientation, but publishing replies to your latest own post
+- When continuing a thread, existing numbering such as `1/x` cannot remain fully consistent because earlier posts cannot be edited afterwards
+- The selected target persists across reloads as part of the local draft
+- Before publishing, an extra confirmation clearly states whether you are replying or continuing a thread
 
 ## Post Interactions
 
@@ -206,6 +221,7 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 - Short text can be sent as a single post
 - Longer text is published as a thread
 - Images are uploaded together with their assigned segment
+- The composer can either publish a new post, reply to an existing post, or continue one of your own threads
 - Threadline now enforces the current Bluesky image limit of `2,000,000` bytes and `4000 x 4000` pixels per image
 - Oversized images are highlighted in the composer and must be reduced in the image editor before publishing
 - Before publishing, there is a safety confirmation showing the currently selected account
@@ -229,8 +245,10 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 - timestamp
 - Bluesky URL
 - account used for publishing
+- preview text from the first segment
 - number of thread posts
 - number of attached images
+- Matching entries include a `Continue thread` action
 - Individual history entries can be deleted
 - The complete history can be cleared in settings
 - History is also part of the backup

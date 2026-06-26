@@ -7,6 +7,7 @@ const MAX_IMAGES_PER_SEGMENT = 10;
 const MAX_ALT_TEXT_LENGTH = 2000;
 const IMAGE_BLOB_LIMIT = 2_000_000;
 const IMAGE_MAX_DIMENSION = 4_000;
+const COMPOSER_SEGMENT_RENDER_DEBOUNCE_MS = 1000;
 const IMAGE_MIN_EXPORT_SCALE = 0.05;
 const IMAGE_EDITOR_CANVAS_WIDTH = 980;
 const IMAGE_EDITOR_CANVAS_HEIGHT = 630;
@@ -52,10 +53,11 @@ const APP_SHARE_TITLE = "Threadline";
 const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
+const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.162",
-  cacheVersion: "v181",
-  label: "Improve proxy settings and auth errors",
+  appVersion: "0.4.174",
+  cacheVersion: "v193",
+  label: "Choose reply or thread continuation",
 });
 
 function clamp(value, min, max) {
@@ -220,8 +222,28 @@ const imageEditorExportDimensions = document.querySelector("#image-editor-export
 const imageEditorExportSize = document.querySelector("#image-editor-export-size");
 const confirmDialogTitle = document.querySelector("#confirm-dialog-title");
 const confirmDialogMessage = document.querySelector("#confirm-dialog-message");
+const confirmDialogPreview = document.querySelector("#confirm-dialog-preview");
+const confirmDialogAvatar = document.querySelector("#confirm-dialog-avatar");
+const confirmDialogPreviewName = document.querySelector("#confirm-dialog-preview-name");
+const confirmDialogPreviewHandle = document.querySelector("#confirm-dialog-preview-handle");
 const confirmDialogConfirmButton = document.querySelector("#confirm-dialog-confirm-button");
 const confirmDialogCancelButton = document.querySelector("#confirm-dialog-cancel-button");
+const replyTargetButton = document.querySelector("#reply-target-button");
+const replyTargetCard = document.querySelector("#reply-target-card");
+const replyTargetCardEyebrow = document.querySelector("#reply-target-card-eyebrow");
+const replyTargetAvatar = document.querySelector("#reply-target-avatar");
+const replyTargetName = document.querySelector("#reply-target-name");
+const replyTargetHandle = document.querySelector("#reply-target-handle");
+const replyTargetMeta = document.querySelector("#reply-target-meta");
+const replyTargetWarning = document.querySelector("#reply-target-warning");
+const replyTargetText = document.querySelector("#reply-target-text");
+const replyTargetClearButton = document.querySelector("#reply-target-clear-button");
+const replyTargetDialog = document.querySelector("#reply-target-dialog");
+const replyTargetCloseTop = document.querySelector("#reply-target-close-top");
+const replyTargetCloseButton = document.querySelector("#reply-target-close");
+const replyTargetUrlInput = document.querySelector("#reply-target-url");
+const replyTargetStatus = document.querySelector("#reply-target-status");
+const replyTargetSubmitButton = document.querySelector("#reply-target-submit");
 const threadImportInput = document.querySelector("#thread-import-input");
 const archiveImportInput = document.querySelector("#archive-import-input");
 const historyList = document.querySelector("#history-list");
@@ -400,6 +422,7 @@ let savedAccounts = [];
 let appOnline = navigator.onLine !== false;
 let accountAvatarAssets = [];
 let composerSegmentRenderFrame = 0;
+let composerSegmentRenderTimer = 0;
 let draftSaveTimer = null;
 let serviceWorkerRegistration = null;
 let updateInProgress = false;
@@ -416,6 +439,12 @@ let currentTipIndex = 0;
 let tipsVisible = true;
 let altTextRequired = true;
 let themeMode = "light";
+let composerReplyTarget = null;
+let confirmDialogValues = {
+  confirm: true,
+  cancel: false,
+  dismiss: false,
+};
 let sidebarCollapsedDesktop = false;
 let sidebarWidthDesktop = DEFAULT_SIDEBAR_WIDTH_DESKTOP;
 let composerWidthDesktop = DEFAULT_COMPOSER_WIDTH_DESKTOP;
@@ -748,10 +777,22 @@ function getPostTargetName(webApp = authAccountWebApp) {
 }
 
 function getPublishButtonLabel() {
+  if (composerReplyTarget?.mode === "thread") {
+    return t("publishButtonThreadContinuation");
+  }
+  if (composerReplyTarget?.mode === "post") {
+    return t("publishButtonReplyTarget");
+  }
   return t("publishButtonTarget", { target: getPostTargetName() });
 }
 
 function getPublishBusyLabel() {
+  if (composerReplyTarget?.mode === "thread") {
+    return t("publishBusyThreadContinuation");
+  }
+  if (composerReplyTarget?.mode === "post") {
+    return t("publishBusyReplyTarget");
+  }
   return t("publishBusyTarget", { target: getPostTargetName() });
 }
 
@@ -5494,7 +5535,7 @@ function startDesktopColumnResize(target) {
       );
     } else {
       const sidebarWidth = sidebarCollapsedDesktop
-        ? DEFAULT_SIDEBAR_WIDTH_DESKTOP
+        ? DESKTOP_SIDEBAR_COLLAPSED_WIDTH
         : clampDesktopWidth(
           sidebarWidthDesktop,
           MIN_SIDEBAR_WIDTH_DESKTOP,
@@ -5640,6 +5681,9 @@ function applyTranslations() {
   if (postEditCheckUrlInput) {
     postEditCheckUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
   }
+  if (replyTargetUrlInput) {
+    replyTargetUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
+  }
   if (archiveMediaActorInput) {
     archiveMediaActorInput.placeholder = t("archiveMediaActorPlaceholder");
   }
@@ -5758,6 +5802,9 @@ function applyTranslations() {
   nextTipButton.textContent = t("nextTipButton");
   hideTipsButton.textContent = t("hideTipsButton");
   postSettingsButton.textContent = t("postSettingsButton");
+  if (replyTargetButton) {
+    replyTargetButton.textContent = t("replyTargetButton");
+  }
   postLanguagesSearch.placeholder = t("postLanguagesSearchPlaceholder");
   Array.from(hashtagPlacementSelect.options).forEach((option) => {
     if (option.value === "last") {
@@ -5819,6 +5866,7 @@ function applyTranslations() {
   renderPostLanguageDialog();
   applySidebarState();
 
+  renderReplyTargetCard();
   renderSegments();
   updateStatusForAuth();
   renderArchiveWorkspace();
@@ -6234,6 +6282,7 @@ function normalizePostingHistory(entries) {
       createdAt,
       account,
       service,
+      firstSegmentText: typeof entry?.firstSegmentText === "string" ? entry.firstSegmentText.trim() : "",
       threadCount: Math.max(1, Number(entry.threadCount) || 1),
       imageCount: Math.max(0, Number(entry.imageCount) || 0),
     });
@@ -6588,6 +6637,175 @@ async function requestLinkCardFromProxy(url) {
   });
 }
 
+function getHistoryPreviewText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim().slice(0, 220);
+}
+
+function normalizeReplyTarget(target = null) {
+  if (!target || typeof target !== "object") {
+    return null;
+  }
+  const replyRootUri = String(target.replyRoot?.uri || "").trim();
+  const replyRootCid = String(target.replyRoot?.cid || "").trim();
+  const replyParentUri = String(target.replyParent?.uri || "").trim();
+  const replyParentCid = String(target.replyParent?.cid || "").trim();
+  if (!replyRootUri || !replyRootCid || !replyParentUri || !replyParentCid) {
+    return null;
+  }
+  return {
+    mode: target.mode === "thread" ? "thread" : "post",
+    sourceUrl: String(target.sourceUrl || "").trim(),
+    threadLength: Math.max(1, Number(target.threadLength) || 1),
+    replyHint: String(target.replyHint || "").trim(),
+    targetPost: {
+      uri: String(target.targetPost?.uri || "").trim(),
+      cid: String(target.targetPost?.cid || "").trim(),
+      text: getHistoryPreviewText(target.targetPost?.text || ""),
+      createdAt: String(target.targetPost?.createdAt || "").trim(),
+    },
+    rootPost: {
+      uri: String(target.rootPost?.uri || "").trim(),
+      cid: String(target.rootPost?.cid || "").trim(),
+      text: getHistoryPreviewText(target.rootPost?.text || ""),
+      createdAt: String(target.rootPost?.createdAt || "").trim(),
+    },
+    targetAccount: {
+      did: String(target.targetAccount?.did || "").trim(),
+      handle: String(target.targetAccount?.handle || "").trim(),
+      displayName: String(target.targetAccount?.displayName || "").trim(),
+      avatar: String(target.targetAccount?.avatar || "").trim(),
+    },
+    rootAccount: {
+      did: String(target.rootAccount?.did || "").trim(),
+      handle: String(target.rootAccount?.handle || "").trim(),
+      displayName: String(target.rootAccount?.displayName || "").trim(),
+      avatar: String(target.rootAccount?.avatar || "").trim(),
+    },
+    lastOwnPost: target.lastOwnPost && typeof target.lastOwnPost === "object"
+      ? {
+          uri: String(target.lastOwnPost.uri || "").trim(),
+          cid: String(target.lastOwnPost.cid || "").trim(),
+          text: getHistoryPreviewText(target.lastOwnPost.text || ""),
+          createdAt: String(target.lastOwnPost.createdAt || "").trim(),
+        }
+      : null,
+    replyRoot: {
+      uri: replyRootUri,
+      cid: replyRootCid,
+    },
+    replyParent: {
+      uri: replyParentUri,
+      cid: replyParentCid,
+    },
+  };
+}
+
+function setReplyTargetStatus(message = "", tone = "") {
+  if (!replyTargetStatus) {
+    return;
+  }
+  replyTargetStatus.textContent = message;
+  replyTargetStatus.hidden = !message;
+  if (tone) {
+    replyTargetStatus.dataset.tone = tone;
+  } else {
+    delete replyTargetStatus.dataset.tone;
+  }
+}
+
+function closeReplyTargetDialog() {
+  replyTargetDialog?.close();
+}
+
+function clearComposerReplyTarget({ render = true } = {}) {
+  composerReplyTarget = null;
+  if (replyTargetUrlInput) {
+    replyTargetUrlInput.value = "";
+  }
+  setReplyTargetStatus("");
+  if (render) {
+    renderReplyTargetCard();
+    publishButton.textContent = getPublishButtonLabel();
+    updatePublishAvailability();
+  }
+}
+
+function getReplyTargetDisplayName(target = composerReplyTarget) {
+  const normalized = normalizeReplyTarget(target);
+  if (!normalized) {
+    return "";
+  }
+  const actor = normalized.mode === "thread" ? normalized.rootAccount : normalized.targetAccount;
+  return actor.displayName || actor.handle || actor.did || "";
+}
+
+function isOwnThreadReplyChoiceTarget(target = composerReplyTarget) {
+  const normalized = normalizeReplyTarget(target);
+  if (!normalized || normalized.mode !== "post") {
+    return false;
+  }
+  return Boolean(
+    authAccountDid
+    && normalized.rootAccount?.did
+    && normalized.rootAccount.did === authAccountDid
+    && normalized.lastOwnPost?.uri
+    && normalized.lastOwnPost?.cid,
+  );
+}
+
+function buildThreadContinuationTarget(target = composerReplyTarget) {
+  const normalized = normalizeReplyTarget(target);
+  if (!normalized?.lastOwnPost?.uri || !normalized?.lastOwnPost?.cid) {
+    return normalized;
+  }
+  return {
+    ...normalized,
+    mode: "thread",
+    replyParent: {
+      uri: normalized.lastOwnPost.uri,
+      cid: normalized.lastOwnPost.cid,
+    },
+  };
+}
+
+function renderReplyTargetCard() {
+  const target = normalizeReplyTarget(composerReplyTarget);
+  if (!replyTargetCard) {
+    return;
+  }
+  replyTargetCard.hidden = !target;
+  if (!target) {
+    return;
+  }
+  replyTargetCardEyebrow.textContent = target.mode === "thread"
+    ? t("replyTargetThreadCardEyebrow")
+    : t("replyTargetPostCardEyebrow");
+  const actor = target.mode === "thread" ? target.rootAccount : target.targetAccount;
+  replyTargetAvatar.src = actor.avatar || "icons/threadline-icon.svg";
+  replyTargetAvatar.alt = getReplyTargetDisplayName(target);
+  replyTargetName.textContent = getReplyTargetDisplayName(target);
+  replyTargetHandle.textContent = actor.handle ? `@${actor.handle}` : "";
+  const baseMeta = target.mode === "thread"
+    ? t("replyTargetThreadMeta", { count: target.threadLength })
+    : t("replyTargetPostMeta");
+  replyTargetMeta.textContent = target.replyHint ? `${baseMeta} ${target.replyHint}` : baseMeta;
+  if (replyTargetWarning) {
+    const showCounterWarning = target.mode === "thread" && counterToggle.checked;
+    if (showCounterWarning) {
+      replyTargetWarning.textContent = t("publishThreadContinuationCounterWarning");
+      replyTargetWarning.removeAttribute("hidden");
+      replyTargetWarning.style.display = "block";
+    } else {
+      replyTargetWarning.textContent = "";
+      replyTargetWarning.setAttribute("hidden", "");
+      replyTargetWarning.style.display = "none";
+    }
+  }
+  replyTargetText.textContent = target.mode === "thread"
+    ? (target.rootPost?.text || target.targetPost.text || "")
+    : (target.targetPost.text || "");
+}
+
 function getSegmentTextPayloads() {
   return activeSegments.length > 0 ? activeSegments.map((entry) => entry.trim()) : [currentComposedText.trim()];
 }
@@ -6795,6 +7013,21 @@ async function renderImageToCanvas(image, canvas, options = {}) {
   bitmap.close?.();
 }
 
+function getPreviewRenderEdit(image, width, height, edit = image.edit) {
+  const normalizedEdit = normalizeImageEdit(edit);
+  if (isImageUsingDefaultEdit({ ...image, edit: normalizedEdit })) {
+    return normalizedEdit;
+  }
+  const currentEditorFrame = getImageEditorCanvasDimensions(image, normalizedEdit);
+  const widthScale = width / Math.max(1, currentEditorFrame.width);
+  const heightScale = height / Math.max(1, currentEditorFrame.height);
+  return {
+    ...normalizedEdit,
+    offsetX: normalizedEdit.offsetX * widthScale,
+    offsetY: normalizedEdit.offsetY * heightScale,
+  };
+}
+
 async function renderPreviewCanvas(image, canvas, options = {}) {
   const rect = canvas.getBoundingClientRect();
   const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
@@ -6813,6 +7046,7 @@ async function renderPreviewCanvas(image, canvas, options = {}) {
   await renderImageToCanvas(image, canvas, {
     width: pixelWidth,
     height: pixelHeight,
+    edit: getPreviewRenderEdit(image, pixelWidth, pixelHeight, options.edit || image.edit),
     fit: normalizeImageEdit(image.edit).fitMode,
   });
 }
@@ -7282,6 +7516,29 @@ function resetImageEditor() {
   drawImageEditor();
 }
 
+function transformImageEditorDraftForFlip(draft, axis = "x") {
+  const normalized = normalizeImageEdit(draft);
+  return {
+    ...normalized,
+    flipX: axis === "x" ? !normalized.flipX : normalized.flipX,
+    flipY: axis === "y" ? !normalized.flipY : normalized.flipY,
+    offsetX: axis === "x" ? -normalized.offsetX : normalized.offsetX,
+    offsetY: axis === "y" ? -normalized.offsetY : normalized.offsetY,
+  };
+}
+
+function transformImageEditorDraftForQuarterTurn(draft, direction = "left") {
+  const normalized = normalizeImageEdit(draft);
+  const rotateLeft = direction !== "right";
+  const nextRotation = (normalized.rotation + (rotateLeft ? 270 : 90)) % 360;
+  return {
+    ...normalized,
+    rotation: nextRotation,
+    offsetX: rotateLeft ? normalized.offsetY : -normalized.offsetY,
+    offsetY: rotateLeft ? -normalized.offsetX : normalized.offsetX,
+  };
+}
+
 async function applyLossyResize() {
   const image = getEditedImage();
   if (!image) {
@@ -7359,6 +7616,9 @@ async function handleSegmentImageSelection(segmentIndex, files) {
   if (selectedItems.length === 0) {
     setStatus(t("imagesLimitReached"), "error");
     return;
+  }
+  if (items.length > selectedItems.length) {
+    setStatus(t("imagesSelectionTrimmed", { count: selectedItems.length }), "error");
   }
 
   const newImages = [];
@@ -7497,11 +7757,63 @@ function deleteSegmentImage(segmentIndex, imageIndex) {
   queueDraftSave();
 }
 
-async function openConfirmDialog({ title, message, confirmLabel, cancelLabel }) {
+function openReplyTargetDialog(presetUrl = "") {
+  if (!replyTargetDialog) {
+    return;
+  }
+  replyTargetUrlInput.value = String(presetUrl || "").trim();
+  setReplyTargetStatus("");
+  replyTargetDialog.showModal();
+}
+
+async function submitReplyTargetDialog() {
+  const url = String(replyTargetUrlInput?.value || "").trim();
+  if (!url) {
+    setReplyTargetStatus(t("replyTargetUrlMissing"), "error");
+    return;
+  }
+  try {
+    setBusy(replyTargetSubmitButton, true, t("replyTargetDialogCheckingButton"), t("replyTargetDialogConfirmButton"));
+    setReplyTargetStatus(t("replyTargetChecking"), "");
+    const target = await resolveComposerReplyTarget(url, "post");
+    if (!target) {
+      setReplyTargetStatus("");
+      return;
+    }
+    if (target?.mode === "thread") {
+      setStatus(t("replyTargetThreadReady"));
+    } else {
+      setStatus(t("replyTargetPostReady"));
+    }
+    closeReplyTargetDialog();
+  } catch (error) {
+    console.error(error);
+    setReplyTargetStatus(error.message || t("replyTargetResolveFailed"), "error");
+  } finally {
+    setBusy(replyTargetSubmitButton, false, t("replyTargetDialogCheckingButton"), t("replyTargetDialogConfirmButton"));
+  }
+}
+
+async function openConfirmDialog({ title, message, confirmLabel, cancelLabel, preview = null, confirmValue = true, cancelValue = false, dismissValue = false }) {
   confirmDialogTitle.textContent = title;
   confirmDialogMessage.textContent = message;
   confirmDialogConfirmButton.textContent = confirmLabel || t("confirmYes");
   confirmDialogCancelButton.textContent = cancelLabel || t("confirmNo");
+  confirmDialogValues = {
+    confirm: confirmValue,
+    cancel: cancelValue,
+    dismiss: dismissValue,
+  };
+  if (confirmDialogPreview) {
+    const hasPreview = preview && typeof preview === "object" && (preview.name || preview.handle || preview.avatar);
+    confirmDialogPreview.hidden = !hasPreview;
+    if (hasPreview) {
+      confirmDialogAvatar.src = preview.avatar || "icons/threadline-icon.svg";
+      confirmDialogAvatar.alt = preview.name || preview.handle || "";
+      confirmDialogPreviewName.textContent = preview.name || preview.handle || "";
+      confirmDialogPreviewHandle.textContent = preview.handle ? `@${preview.handle}` : "";
+    }
+  }
   if (confirmDialog.open) {
     ignoreNextConfirmClose = true;
     confirmDialog.close();
@@ -12299,13 +12611,17 @@ function renderHistoryList() {
     const meta = document.createElement("div");
     meta.className = "history-item-meta";
 
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "history-item-eyebrow";
+    eyebrow.textContent = entry.threadCount > 1 ? t("historyThreadEyebrow") : t("historyPostEyebrow");
+
     const timestamp = document.createElement("p");
     timestamp.className = "history-timestamp";
     timestamp.textContent = formatHistoryTimestamp(entry.createdAt);
 
-      const counts = document.createElement("p");
-      counts.className = "history-meta";
-      counts.textContent = formatHistoryMeta(entry.threadCount, entry.imageCount);
+    const counts = document.createElement("p");
+    counts.className = "history-meta";
+    counts.textContent = formatHistoryMeta(entry.threadCount, entry.imageCount);
 
     const accountLine = document.createElement("p");
     accountLine.className = "history-meta";
@@ -12313,7 +12629,20 @@ function renderHistoryList() {
       account: entry.account || t("historyUnknownAccount"),
     });
 
-    meta.append(timestamp, counts, accountLine);
+    meta.append(eyebrow);
+
+    if (entry.firstSegmentText) {
+      const preview = document.createElement("p");
+      preview.className = "history-preview";
+      preview.textContent = entry.firstSegmentText;
+      preview.title = entry.firstSegmentText;
+      meta.append(preview);
+    }
+
+    const metaRow = document.createElement("div");
+    metaRow.className = "history-meta-row";
+    metaRow.append(timestamp, counts, accountLine);
+    meta.append(metaRow);
 
     const actions = document.createElement("div");
     actions.className = "history-item-actions";
@@ -12324,6 +12653,34 @@ function renderHistoryList() {
     link.target = "_blank";
     link.rel = "noreferrer noopener";
     link.textContent = t("historyOpenLink");
+
+    const continueButton = document.createElement("button");
+    continueButton.type = "button";
+    continueButton.className = "ghost-button history-link";
+    continueButton.textContent = t("historyContinueThreadButton");
+    continueButton.addEventListener("click", async () => {
+      try {
+        setBusy(continueButton, true, t("historyContinueThreadBusy"), t("historyContinueThreadButton"));
+        const target = await sendToServiceWorker("CHECK_REPLY_TARGET", {
+          url: entry.url,
+          mode: "thread",
+        });
+        composerReplyTarget = normalizeReplyTarget(target);
+        renderReplyTargetCard();
+        publishButton.textContent = getPublishButtonLabel();
+        updatePublishAvailability();
+        queueDraftSave();
+        historyDialog.close();
+        showComposerWorkspace();
+        setStatus(t("replyTargetThreadReady"));
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message || t("replyTargetResolveFailed"), "error");
+        showErrorDialog(error.message || t("replyTargetResolveFailed"));
+      } finally {
+        setBusy(continueButton, false, t("historyContinueThreadBusy"), t("historyContinueThreadButton"));
+      }
+    });
 
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
@@ -12337,7 +12694,7 @@ function renderHistoryList() {
       setStatus(t("historyDeleted"));
     });
 
-    actions.append(link, deleteButton);
+    actions.append(link, continueButton, deleteButton);
     item.append(meta, actions);
     historyList.appendChild(item);
   });
@@ -12361,6 +12718,7 @@ async function recordPublishedThread(result, preparedSegments) {
       createdAt: new Date().toISOString(),
       account: handle || authAccount || "",
       service,
+      firstSegmentText: getHistoryPreviewText(preparedSegments[0]?.text || ""),
       threadCount: result.posts?.length || preparedSegments.length || 1,
       imageCount: preparedSegments.reduce((total, segment) => total + (segment.images?.length || 0), 0),
     },
@@ -12644,6 +13002,9 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicComposerPostSettingsBullet1"),
           t("helpTopicComposerPostSettingsBullet2"),
           t("helpTopicComposerPostSettingsBullet3"),
+          t("helpTopicComposerPostSettingsBullet4"),
+          t("helpTopicComposerPostSettingsBullet5"),
+          t("helpTopicComposerPostSettingsBullet6"),
         ],
       };
     case "composer_hashtags":
@@ -12678,6 +13039,18 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicImageEditorBullet1"),
           t("helpTopicImageEditorBullet2"),
           t("helpTopicImageEditorBullet3"),
+        ],
+      };
+    case "segment_images":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicSegmentImagesTitle"),
+        text: t("helpTopicSegmentImagesText"),
+        bullets: [
+          t("helpTopicSegmentImagesBullet1"),
+          t("helpTopicSegmentImagesBullet2"),
+          t("helpTopicSegmentImagesBullet3"),
+          t("helpTopicSegmentImagesBullet4"),
         ],
       };
     case "archive_workspace":
@@ -13332,10 +13705,12 @@ function renderSegments(options = {}) {
     const linkCardButton = fragment.querySelector(".segment-link-card-button");
     const linkCardContainer = fragment.querySelector(".segment-link-card");
     const imageContainer = fragment.querySelector(".segment-images");
+    const existingImages = Array.isArray(segmentImages[index]) ? segmentImages[index] : [];
+    const remainingSlots = Math.max(0, MAX_IMAGES_PER_SEGMENT - existingImages.length);
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
-    input.multiple = true;
+    input.multiple = remainingSlots > 1;
     input.className = "is-hidden";
 
     if (animate) {
@@ -13363,10 +13738,22 @@ function renderSegments(options = {}) {
       queueDraftSave();
     });
     addImagesButton.textContent = t("addImagesButton");
-    addImagesButton.hidden = (segmentImages[index]?.length || 0) >= MAX_IMAGES_PER_SEGMENT || Boolean(normalizeLinkCard(segmentLinkCards[index]));
+    addImagesButton.hidden = existingImages.length >= MAX_IMAGES_PER_SEGMENT || Boolean(normalizeLinkCard(segmentLinkCards[index]));
     addImagesButton.addEventListener("click", () => {
       input.click();
     });
+    if (index === 0) {
+      const imageHelpButton = document.createElement("button");
+      imageHelpButton.type = "button";
+      imageHelpButton.className = "help-trigger segment-image-help-trigger";
+      imageHelpButton.textContent = "?";
+      imageHelpButton.setAttribute("aria-label", t("contextHelpButtonLabel"));
+      imageHelpButton.setAttribute("title", t("contextHelpButtonLabel"));
+      imageHelpButton.addEventListener("click", () => {
+        openInlineHelpTopic("segment_images");
+      });
+      addImagesButton.insertAdjacentElement("afterend", imageHelpButton);
+    }
     input.addEventListener("change", async (event) => {
       await handleSegmentImageSelection(index, event.target.files);
       event.target.value = "";
@@ -13405,14 +13792,16 @@ function renderSegments(options = {}) {
     const existingLinkCard = normalizeLinkCard(segmentLinkCards[index]);
     const detectedUrl = getFirstHttpUrl(segment);
     const linkCardUrl = detectedUrl || existingLinkCard?.url || "";
-    linkCardButton.textContent = existingLinkCard ? t("linkCardRefreshButton") : t("linkCardSegmentButton");
-    linkCardButton.disabled = !linkCardUrl || !isLinkCardProxyConfigured();
-    linkCardButton.title = !linkCardUrl
-      ? t("linkCardNoUrl")
-      : !isLinkCardProxyConfigured()
-      ? t("linkCardProxyMissing")
-      : t("linkCardSegmentButton");
-    linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl));
+    const linkCardConfigured = isLinkCardProxyConfigured();
+    linkCardButton.hidden = !linkCardConfigured;
+    if (linkCardConfigured) {
+      linkCardButton.textContent = existingLinkCard ? t("linkCardRefreshButton") : t("linkCardSegmentButton");
+      linkCardButton.disabled = !linkCardUrl;
+      linkCardButton.title = !linkCardUrl
+        ? t("linkCardNoUrl")
+        : t("linkCardSegmentButton");
+      linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl));
+    }
     renderSegmentLinkCard(linkCardContainer, index);
     renderSegmentImages(imageContainer, index);
 
@@ -13434,18 +13823,27 @@ function renderSegments(options = {}) {
   updatePublishAvailability();
 }
 
-function scheduleComposerSegmentRender() {
+function scheduleComposerSegmentRender(delayMs = 0) {
+  window.clearTimeout(composerSegmentRenderTimer);
   if (composerSegmentRenderFrame) {
     cancelAnimationFrame(composerSegmentRenderFrame);
   }
-  composerSegmentRenderFrame = requestAnimationFrame(() => {
-    composerSegmentRenderFrame = 0;
-    renderSegments({
-      preserveOverrides: false,
-      preserveView: true,
-      animate: false,
+  const render = () => {
+    composerSegmentRenderTimer = 0;
+    composerSegmentRenderFrame = requestAnimationFrame(() => {
+      composerSegmentRenderFrame = 0;
+      renderSegments({
+        preserveOverrides: false,
+        preserveView: true,
+        animate: false,
+      });
     });
-  });
+  };
+  if (delayMs > 0) {
+    composerSegmentRenderTimer = window.setTimeout(render, delayMs);
+    return;
+  }
+  render();
 }
 
 async function hydrateAppState() {
@@ -13478,6 +13876,7 @@ async function hydrateAppState() {
     segmentImages = normalizeSegmentImages(state.segmentImages);
     segmentLinkCards = normalizeSegmentLinkCards(state.segmentLinkCards);
     segmentOverrides = normalizeSegmentOverrides(state.segmentOverrides);
+    composerReplyTarget = normalizeReplyTarget(state.replyTarget);
     selectedPostLanguages = normalizePostLanguageTags(state.postLanguages);
     appendThreadIntro = state.appendThreadIntro === true;
     appendThreadEmoji = state.appendThreadEmoji === true;
@@ -13538,6 +13937,7 @@ function queueDraftSave() {
         segmentImages,
         segmentLinkCards,
         segmentOverrides,
+        replyTarget: composerReplyTarget,
       }, { timeoutMs: 120000 });
     } catch (error) {
       console.error(error);
@@ -13675,6 +14075,37 @@ publishButton.addEventListener("click", async () => {
     }
   }
 
+  if (composerReplyTarget?.mode === "thread") {
+    const continueThread = await openConfirmDialog({
+      title: t("publishConfirmThreadContinuationTitle"),
+      message: t("publishConfirmThreadContinuationText"),
+      confirmLabel: t("confirmYes"),
+      cancelLabel: t("cancelButton"),
+    });
+    if (!continueThread) {
+      return;
+    }
+  }
+
+  if (composerReplyTarget?.mode === "post") {
+    const replyConfirmed = await openConfirmDialog({
+      title: t("publishConfirmReplyTargetTitle"),
+      message: t("publishConfirmReplyTargetText", {
+        target: getReplyTargetDisplayName() || "?",
+      }),
+      confirmLabel: t("confirmYes"),
+      cancelLabel: t("cancelButton"),
+      preview: {
+        avatar: composerReplyTarget.targetAccount.avatar,
+        name: getReplyTargetDisplayName(),
+        handle: composerReplyTarget.targetAccount.handle,
+      },
+    });
+    if (!replyConfirmed) {
+      return;
+    }
+  }
+
   const publishAccount = authAccount || identifierField.value.trim();
   const confirmed = await openConfirmDialog({
     title: t("publishConfirmTitle"),
@@ -13742,6 +14173,13 @@ publishButton.addEventListener("click", async () => {
       segments: preparedSegments,
       langs: getNormalizedPostLanguagesOrDefault(),
       postInteraction: getCurrentPostInteractionSettings(),
+      replyTarget: composerReplyTarget
+        ? {
+            mode: composerReplyTarget.mode,
+            replyRoot: composerReplyTarget.replyRoot,
+            replyParent: composerReplyTarget.replyParent,
+          }
+        : null,
     }, {
       onProgress(progress) {
         showProgressDialog(t("progressTitle"), progress.message || t("progressUploading"));
@@ -13749,6 +14187,8 @@ publishButton.addEventListener("click", async () => {
     });
     hideProgressDialog();
     await recordPublishedThread(result, preparedSegments);
+    clearComposerReplyTarget();
+    queueDraftSave();
     setStatus(result.posts.length === 1 ? t("statusPublishedOne") : t("statusPublishedMany", { count: result.posts.length }));
     showPublishResult(result);
   } catch (error) {
@@ -13766,13 +14206,14 @@ publishButton.addEventListener("click", async () => {
 sourceText.addEventListener("input", () => {
   segmentOverrides = null;
   setComposerLocked(false);
-  scheduleComposerSegmentRender();
+  scheduleComposerSegmentRender(COMPOSER_SEGMENT_RENDER_DEBOUNCE_MS);
   queueDraftSave();
 });
 counterToggle.addEventListener("change", () => {
   segmentOverrides = null;
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
+  renderReplyTargetCard();
   renderPostLanguageSummary();
   void persistSettings();
   queueDraftSave();
@@ -13877,11 +14318,14 @@ clearButton.addEventListener("click", async () => {
   segmentImages = [];
   segmentLinkCards = [];
   segmentOverrides = null;
+  clearComposerReplyTarget({ render: false });
   setComposerLocked(false);
   renderSegments({ preserveOverrides: false });
+  renderReplyTargetCard();
+  publishButton.textContent = getPublishButtonLabel();
 
   try {
-    await sendToServiceWorker("SAVE_DRAFT", { draft: "", segmentImages: [], segmentLinkCards: [], segmentOverrides: null }, { timeoutMs: 120000 });
+    await sendToServiceWorker("SAVE_DRAFT", { draft: "", segmentImages: [], segmentLinkCards: [], segmentOverrides: null, replyTarget: null }, { timeoutMs: 120000 });
     await persistSettings();
     setStatus(t("clearConfirm"));
   } catch (error) {
@@ -14330,6 +14774,45 @@ if (archiveLoadThreadUrlButton) {
   });
 }
 
+async function resolveComposerReplyTarget(url, mode = "post") {
+  const target = normalizeReplyTarget(await sendToServiceWorker("CHECK_REPLY_TARGET", {
+    url,
+    mode,
+  }));
+  let nextTarget = target;
+  if (isOwnThreadReplyChoiceTarget(target)) {
+    const pointsToThreadRoot = target.targetPost?.uri && target.targetPost.uri === target.rootPost?.uri;
+    const chosenMode = await openConfirmDialog({
+      title: t("replyTargetOwnThreadChoiceTitle"),
+      message: pointsToThreadRoot
+        ? t("replyTargetOwnThreadChoiceRootText")
+        : t("replyTargetOwnThreadChoiceMiddleText"),
+      confirmLabel: t("publishButtonThreadContinuation"),
+      cancelLabel: t("publishButtonReplyTarget"),
+      confirmValue: "thread",
+      cancelValue: "post",
+      dismissValue: null,
+      preview: {
+        avatar: target.rootAccount.avatar,
+        name: getReplyTargetDisplayName(target),
+        handle: target.rootAccount.handle,
+      },
+    });
+    if (chosenMode === null) {
+      return null;
+    }
+    nextTarget = chosenMode === "thread"
+      ? buildThreadContinuationTarget(target)
+      : target;
+  }
+  composerReplyTarget = nextTarget;
+  renderReplyTargetCard();
+  publishButton.textContent = getPublishButtonLabel();
+  updatePublishAvailability();
+  queueDraftSave();
+  return composerReplyTarget;
+}
+
 if (archiveCheckPostEditButton) {
   archiveCheckPostEditButton.addEventListener("click", () => {
     openPostEditCheckDialog();
@@ -14644,6 +15127,40 @@ postSettingsButton.addEventListener("click", () => {
   }
 });
 
+replyTargetButton?.addEventListener("click", () => {
+  openReplyTargetDialog(replyTargetUrlInput?.value || composerReplyTarget?.sourceUrl || "");
+});
+
+replyTargetClearButton?.addEventListener("click", () => {
+  clearComposerReplyTarget();
+  queueDraftSave();
+  setStatus(t("replyTargetCleared"));
+});
+
+replyTargetCloseTop?.addEventListener("click", () => {
+  closeReplyTargetDialog();
+});
+
+replyTargetCloseButton?.addEventListener("click", () => {
+  closeReplyTargetDialog();
+});
+
+replyTargetSubmitButton?.addEventListener("click", () => {
+  void submitReplyTargetDialog();
+});
+
+replyTargetUrlInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void submitReplyTargetDialog();
+  }
+});
+
+replyTargetDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeReplyTargetDialog();
+});
+
 postLanguagesSearch.addEventListener("input", () => {
   renderPostLanguageDialog();
 });
@@ -14905,21 +15422,29 @@ imageFlipHorizontalButton.addEventListener("click", () => {
   if (!imageEditorDraft) {
     return;
   }
-  imageEditorDraft.flipX = !imageEditorDraft.flipX;
+  imageEditorDraft = transformImageEditorDraftForFlip(imageEditorDraft, "x");
+  const image = getEditedImage();
+  if (image) {
+    imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
+  }
   drawImageEditor();
 });
 imageFlipVerticalButton.addEventListener("click", () => {
   if (!imageEditorDraft) {
     return;
   }
-  imageEditorDraft.flipY = !imageEditorDraft.flipY;
+  imageEditorDraft = transformImageEditorDraftForFlip(imageEditorDraft, "y");
+  const image = getEditedImage();
+  if (image) {
+    imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
+  }
   drawImageEditor();
 });
 imageRotateLeftButton.addEventListener("click", () => {
   if (!imageEditorDraft) {
     return;
   }
-  imageEditorDraft.rotation = (imageEditorDraft.rotation + 270) % 360;
+  imageEditorDraft = transformImageEditorDraftForQuarterTurn(imageEditorDraft, "left");
   const image = getEditedImage();
   if (image) {
     imageEditorDraft = clampImageEditorDraftToFrame(image, {
@@ -14989,14 +15514,14 @@ imageEditorCanvas.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 confirmDialogConfirmButton.addEventListener("click", () => {
-  resolveConfirmDialog(true);
+  resolveConfirmDialog(confirmDialogValues.confirm);
 });
 confirmDialogCancelButton.addEventListener("click", () => {
-  resolveConfirmDialog(false);
+  resolveConfirmDialog(confirmDialogValues.cancel);
 });
 confirmDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
-  resolveConfirmDialog(false);
+  resolveConfirmDialog(confirmDialogValues.dismiss);
 });
 confirmDialog.addEventListener("close", () => {
   if (ignoreNextConfirmClose) {
@@ -15004,7 +15529,7 @@ confirmDialog.addEventListener("close", () => {
     return;
   }
   if (confirmResolver) {
-    resolveConfirmDialog(false);
+    resolveConfirmDialog(confirmDialogValues.dismiss);
   }
 });
 
