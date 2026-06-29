@@ -677,6 +677,8 @@ async function handleMessage(message, port) {
       return loadNetworkActorFocus(message.payload, (progress) => port.postMessage({ progress }));
     case "LOAD_NETWORK_COMMON_MUTUALS":
       return loadNetworkCommonMutuals(message.payload, (progress) => port.postMessage({ progress }));
+    case "LOAD_ANALYSIS_ACCOUNT":
+      return loadAnalysisAccount(message.payload, (progress) => port.postMessage({ progress }));
     case "SCAN_ACCOUNT_MEDIA_EXPORT":
       return scanAccountMediaExport(message.payload, (progress) => port.postMessage({ progress }));
     case "DOWNLOAD_ACCOUNT_MEDIA_ASSET":
@@ -1833,6 +1835,157 @@ async function loadNetworkCommonMutuals({ centerActor, focusActor } = {}, notify
   };
 }
 
+function isAnalysisReplyRecord(record = {}) {
+  return Boolean(record?.reply?.root?.uri && record?.reply?.parent?.uri);
+}
+
+function isAnalysisQuoteRecord(record = {}, postView = {}) {
+  const recordEmbedType = String(record?.embed?.$type || "").trim();
+  const postEmbedType = String(postView?.embed?.$type || "").trim();
+  return (
+    recordEmbedType === "app.bsky.embed.record#view"
+    || recordEmbedType === "app.bsky.embed.recordWithMedia"
+    || postEmbedType === "app.bsky.embed.record#view"
+    || postEmbedType === "app.bsky.embed.recordWithMedia#view"
+    || Boolean(record?.embed?.record?.uri)
+    || Boolean(postView?.embed?.record?.uri)
+  );
+}
+
+async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const requestedActor = String(actor || "").trim() || auth.session.did;
+  const limit = Math.max(100, Math.min(1000, Number(options.limit) || 500));
+  const rangeDays = Math.max(0, Number(options.rangeDays) || 0);
+  const includeReplies = options.includeReplies === true;
+  const includeQuotes = options.includeQuotes === true;
+  const minTimestamp = rangeDays > 0 ? Date.now() - (rangeDays * 24 * 60 * 60 * 1000) : 0;
+  const headers = {
+    authorization: `Bearer ${auth.session.accessJwt}`,
+  };
+
+  notifyProgress({
+    title: "Analyse wird geladen",
+    step: "Profil wird geladen...",
+    percent: 8,
+    detail: requestedActor,
+  });
+
+  const profile = await bskyGet("app.bsky.actor.getProfile", {
+    actor: requestedActor,
+  }, {
+    headers,
+    base: authXrpcBase(auth),
+  });
+
+  const posts = [];
+  let cursor = "";
+  let pages = 0;
+  let scannedPosts = 0;
+  let reachedOlderPosts = false;
+  let newestPostAt = "";
+  let oldestPostAt = "";
+
+  while (posts.length < limit && pages < 40 && !reachedOlderPosts) {
+    const response = await bskyGet("app.bsky.feed.getAuthorFeed", {
+      actor: profile.did || requestedActor,
+      limit: 100,
+      cursor: cursor || undefined,
+    }, {
+      headers,
+      base: authXrpcBase(auth),
+    });
+
+    const feedItems = Array.isArray(response?.feed) ? response.feed : [];
+    pages += 1;
+    scannedPosts += feedItems.length;
+    let oldestSeenOnPage = "";
+
+    for (const item of feedItems) {
+      const postView = item?.post || null;
+      const record = postView?.record || {};
+      if (!postView?.uri || !postView?.author?.did || postView.author.did !== (profile.did || requestedActor)) {
+        continue;
+      }
+
+      const createdAt = String(record.createdAt || postView.indexedAt || "").trim();
+      const createdTimestamp = Date.parse(createdAt) || 0;
+      if (!newestPostAt && createdAt) {
+        newestPostAt = createdAt;
+      }
+      oldestSeenOnPage = createdAt || oldestSeenOnPage;
+
+      if (minTimestamp && createdTimestamp && createdTimestamp < minTimestamp) {
+        reachedOlderPosts = true;
+        continue;
+      }
+      if (!includeReplies && isAnalysisReplyRecord(record)) {
+        continue;
+      }
+      if (!includeQuotes && isAnalysisQuoteRecord(record, postView)) {
+        continue;
+      }
+
+      const text = String(record.text || "").replace(/\s+/g, " ").trim();
+      if (!text) {
+        continue;
+      }
+
+      posts.push({
+        uri: String(postView.uri || "").trim(),
+        cid: String(postView.cid || "").trim(),
+        createdAt,
+        text,
+      });
+      oldestPostAt = createdAt || oldestPostAt;
+      if (posts.length >= limit) {
+        break;
+      }
+    }
+
+    notifyProgress({
+      title: "Analyse wird geladen",
+      step: "Posts werden gelesen...",
+      percent: Math.min(92, 14 + Math.round((posts.length / Math.max(limit, 1)) * 70)),
+      detail: `${posts.length} nutzbar - Seite ${pages}`,
+    });
+
+    cursor = String(response?.cursor || "").trim();
+    if (!cursor || !feedItems.length) {
+      break;
+    }
+    if (reachedOlderPosts && oldestSeenOnPage) {
+      break;
+    }
+  }
+
+  return {
+    profile: {
+      did: String(profile?.did || "").trim(),
+      handle: String(profile?.handle || requestedActor).trim(),
+      displayName: String(profile?.displayName || profile?.handle || requestedActor).trim(),
+      avatar: String(profile?.avatar || "").trim(),
+      postsCount: Number(profile?.postsCount) || 0,
+      followersCount: Number(profile?.followersCount) || 0,
+      followsCount: Number(profile?.followsCount) || 0,
+    },
+    filters: {
+      limit,
+      rangeDays,
+      includeReplies,
+      includeQuotes,
+    },
+    stats: {
+      fetchedPosts: posts.length,
+      scannedPosts,
+      pages,
+      newestPostAt,
+      oldestPostAt,
+    },
+    posts,
+  };
+}
+
 async function getRelationshipRecordCreatedAt(auth, recordUri) {
   const parsed = parseAtUri(recordUri);
   if (!parsed.did || !parsed.collection || !parsed.rkey) {
@@ -2108,6 +2261,7 @@ async function getAppState({ browserLocale } = {}) {
     localePreference: localePreference || "auto",
     tipsVisible: storedSettings?.tipsVisible !== false,
       altTextRequired: storedSettings?.altTextRequired !== false,
+      imageAutoResizeMode: normalizeImageAutoResizeMode(storedSettings?.imageAutoResizeMode),
       themeMode: storedSettings?.themeMode === "dark" ? "dark" : "light",
       sidebarCollapsedDesktop: storedSettings?.sidebarCollapsedDesktop === true,
       desktopLayoutVersion: Number.isFinite(Number(storedSettings?.desktopLayoutVersion))
@@ -2138,6 +2292,7 @@ async function getAppState({ browserLocale } = {}) {
     archivePreferences: storedSettings?.archivePreferences && typeof storedSettings.archivePreferences === "object"
       ? storedSettings.archivePreferences
       : null,
+    analysisState: normalizeStoredAnalysisState(storedSettings?.analysisState),
   };
 }
 
@@ -2149,6 +2304,72 @@ function normalizeStoredReplyTarget(target) {
     ...target,
     mode: target.mode === "thread" ? "thread" : "post",
     sourceUrl: String(target.sourceUrl || ""),
+  };
+}
+
+function normalizeImageAutoResizeMode(value) {
+  return value === "fit" || value === "lossy" ? value : "off";
+}
+
+function normalizeStoredAnalysisState(value = null) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const normalizeStoredAccount = (account) => {
+    if (!account || typeof account !== "object") {
+      return null;
+    }
+    return {
+      profile: {
+        did: String(account.profile?.did || "").trim(),
+        handle: String(account.profile?.handle || "").trim(),
+        displayName: String(account.profile?.displayName || "").trim(),
+        avatar: String(account.profile?.avatar || "").trim(),
+        postsCount: Math.max(0, Number(account.profile?.postsCount) || 0),
+        followersCount: Math.max(0, Number(account.profile?.followersCount) || 0),
+        followsCount: Math.max(0, Number(account.profile?.followsCount) || 0),
+      },
+      filters: {
+        rangeDays: Math.max(0, Number(account.filters?.rangeDays) || 0),
+        includeReplies: account.filters?.includeReplies === true,
+        includeQuotes: account.filters?.includeQuotes === true,
+        limit: Math.max(1, Number(account.filters?.limit) || 1),
+      },
+      stats: {
+        fetchedPosts: Math.max(0, Number(account.stats?.fetchedPosts) || 0),
+        scannedPosts: Math.max(0, Number(account.stats?.scannedPosts) || 0),
+        pages: Math.max(0, Number(account.stats?.pages) || 0),
+        oldestPostAt: String(account.stats?.oldestPostAt || "").trim(),
+        newestPostAt: String(account.stats?.newestPostAt || "").trim(),
+      },
+      posts: (Array.isArray(account.posts) ? account.posts : []).map((post) => ({
+        uri: String(post?.uri || "").trim(),
+        cid: String(post?.cid || "").trim(),
+        createdAt: String(post?.createdAt || "").trim(),
+        text: String(post?.text || "").trim(),
+      })),
+    };
+  };
+  return {
+    inputs: {
+      accountA: String(value.inputs?.accountA || "").trim(),
+      accountB: String(value.inputs?.accountB || "").trim(),
+    },
+    options: {
+      rangeDays: Math.max(0, Number(value.options?.rangeDays) || 0),
+      limit: Math.max(1, Number(value.options?.limit) || 500),
+      includeReplies: value.options?.includeReplies === true,
+      includeQuotes: value.options?.includeQuotes === true,
+    },
+    accountA: normalizeStoredAccount(value.accountA),
+    accountB: normalizeStoredAccount(value.accountB),
+    comparison: value.comparison && typeof value.comparison === "object"
+      ? {
+          score: Math.max(0, Number(value.comparison.score) || 0),
+          labelKey: String(value.comparison.labelKey || "").trim(),
+          confidenceKey: String(value.comparison.confidenceKey || "").trim(),
+        }
+      : null,
   };
 }
 
@@ -2182,6 +2403,7 @@ async function saveSettings(settings = {}) {
     localePreference: settings.localePreference || existing.localePreference || "auto",
     tipsVisible: settings.tipsVisible !== undefined ? settings.tipsVisible : (existing.tipsVisible !== false),
     altTextRequired: settings.altTextRequired !== false,
+      imageAutoResizeMode: normalizeImageAutoResizeMode(settings.imageAutoResizeMode ?? existing.imageAutoResizeMode),
       themeMode: settings.themeMode === "dark"
         ? "dark"
         : (settings.themeMode === "light" ? "light" : (existing.themeMode === "dark" ? "dark" : "light")),
@@ -2220,6 +2442,7 @@ async function saveSettings(settings = {}) {
     archivePreferences: settings.archivePreferences && typeof settings.archivePreferences === "object"
       ? settings.archivePreferences
       : (existing.archivePreferences && typeof existing.archivePreferences === "object" ? existing.archivePreferences : null),
+    analysisState: normalizeStoredAnalysisState(settings.analysisState ?? existing.analysisState),
   };
   await writeStoredValue(SETTINGS_KEY, nextSettings);
   await writeStoredValue(LOCALE_KEY, nextSettings.localePreference);

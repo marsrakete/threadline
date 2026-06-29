@@ -55,9 +55,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.174",
-  cacheVersion: "v193",
-  label: "Choose reply or thread continuation",
+  appVersion: "0.4.176",
+  cacheVersion: "v195",
+  label: "Add analysis patterns and PDF export",
 });
 
 function clamp(value, min, max) {
@@ -122,6 +122,8 @@ const archiveButton = document.querySelector("#archive-button");
 const archiveLaunchNote = document.querySelector("#archive-launch-note");
 const networkButton = document.querySelector("#network-button");
 const networkLaunchNote = document.querySelector("#network-launch-note");
+const analysisButton = document.querySelector("#analysis-button");
+const analysisLaunchNote = document.querySelector("#analysis-launch-note");
 const dmLaunchPanel = document.querySelector(".dm-launch-panel");
 const dmButton = document.querySelector("#dm-button");
 const dmLaunchNote = document.querySelector("#dm-launch-note");
@@ -184,6 +186,7 @@ const hideTipsButton = document.querySelector("#hide-tips-button");
 const tipsPanel = document.querySelector(".tips-panel");
 const tipsVisibleToggle = document.querySelector("#tips-visible-toggle");
 const altTextRequiredToggle = document.querySelector("#alt-text-required-toggle");
+const imageAutoResizeSelect = document.querySelector("#image-auto-resize-select");
 const exportSettingsButton = document.querySelector("#export-settings-button");
 const importSettingsButton = document.querySelector("#import-settings-button");
 const importSettingsInput = document.querySelector("#import-settings-input");
@@ -298,6 +301,7 @@ const passwordField = document.querySelector("#password");
 const composerWorkspace = document.querySelector("#composer-workspace");
 const archiveWorkspace = document.querySelector("#archive-workspace");
 const networkWorkspace = document.querySelector("#network-workspace");
+const analysisWorkspace = document.querySelector("#analysis-workspace");
 const dmWorkspace = document.querySelector("#dm-workspace");
 const archiveScopeSelect = document.querySelector("#archive-scope-select");
 const archiveContentModeSelect = document.querySelector("#archive-content-mode-select");
@@ -405,6 +409,24 @@ const networkInsightsGroupToggles = document.querySelector("#network-insights-gr
 const networkInsightsGroupButtons = Array.from(document.querySelectorAll("[data-network-insights-group]"));
 const networkStageCard = document.querySelector(".network-stage-card");
 const networkInsightsCard = document.querySelector(".network-insights-card");
+const analysisAccountAInput = document.querySelector("#analysis-account-a-input");
+const analysisAccountBInput = document.querySelector("#analysis-account-b-input");
+const analysisAccountAOwnButton = document.querySelector("#analysis-account-a-own-button");
+const analysisAccountBOwnButton = document.querySelector("#analysis-account-b-own-button");
+const analysisAccountALoadButton = document.querySelector("#analysis-account-a-load-button");
+const analysisAccountBLoadButton = document.querySelector("#analysis-account-b-load-button");
+const analysisRangeSelect = document.querySelector("#analysis-range-select");
+const analysisPostLimitSelect = document.querySelector("#analysis-post-limit-select");
+const analysisIncludeRepliesToggle = document.querySelector("#analysis-include-replies-toggle");
+const analysisIncludeQuotesToggle = document.querySelector("#analysis-include-quotes-toggle");
+const analysisCompareButton = document.querySelector("#analysis-compare-button");
+const analysisResetButton = document.querySelector("#analysis-reset-button");
+const analysisExportPdfButton = document.querySelector("#analysis-export-pdf-button");
+const analysisStatusLineNode = document.querySelector("#analysis-status-line");
+const analysisSummary = document.querySelector("#analysis-summary");
+const analysisResultCard = document.querySelector("#analysis-result-card");
+const analysisMetrics = document.querySelector("#analysis-metrics");
+const analysisPatterns = document.querySelector("#analysis-patterns");
 const serverPresetField = document.querySelector("#server-preset");
 const customServerWrap = document.querySelector("#custom-server-wrap");
 const customServerField = document.querySelector("#custom-server");
@@ -438,6 +460,7 @@ let helpCache = {
 let currentTipIndex = 0;
 let tipsVisible = true;
 let altTextRequired = true;
+let imageAutoResizeMode = "off";
 let themeMode = "light";
 let composerReplyTarget = null;
 let confirmDialogValues = {
@@ -445,6 +468,10 @@ let confirmDialogValues = {
   cancel: false,
   dismiss: false,
 };
+let replyTargetRequestToken = 0;
+let confirmDialogQueue = Promise.resolve();
+let settingsSaveQueue = Promise.resolve();
+let draftSaveQueue = Promise.resolve();
 let sidebarCollapsedDesktop = false;
 let sidebarWidthDesktop = DEFAULT_SIDEBAR_WIDTH_DESKTOP;
 let composerWidthDesktop = DEFAULT_COMPOSER_WIDTH_DESKTOP;
@@ -553,10 +580,42 @@ let networkCommonMutualsTargetDid = "";
 let networkCommonMutualsDids = new Set();
 let networkCommonMutualsLoadingDid = "";
 let networkCommonMutualsHasMore = false;
+let analysisLoading = false;
+let analysisStatusLine = "";
+let analysisAccountDataA = null;
+let analysisAccountDataB = null;
+let analysisComparisonResult = null;
+let analysisRequestToken = 0;
 let workspaceRestorePending = true;
 let appStateHydrated = false;
 const NETWORK_STAGE_MIN_ZOOM = 0.42;
 const NETWORK_STAGE_MAX_ZOOM = 5.6;
+const ANALYSIS_METRIC_DEFINITIONS = [
+  { key: "avgWordLength", labelKey: "analysisMetricAvgWordLength", scale: 4, formatter: "number" },
+  { key: "avgSentenceLength", labelKey: "analysisMetricAvgSentenceLength", scale: 18, formatter: "number" },
+  { key: "uniqueWordShare", labelKey: "analysisMetricUniqueWordShare", scale: 0.35, formatter: "percent" },
+  { key: "uppercaseRate", labelKey: "analysisMetricUppercaseRate", scale: 0.3, formatter: "percent" },
+  { key: "emojiRate", labelKey: "analysisMetricEmojiRate", scale: 0.2, formatter: "percent" },
+  { key: "exclamationRate", labelKey: "analysisMetricExclamationRate", scale: 0.25, formatter: "percent" },
+  { key: "questionRate", labelKey: "analysisMetricQuestionRate", scale: 0.2, formatter: "percent" },
+  { key: "commaRate", labelKey: "analysisMetricCommaRate", scale: 0.35, formatter: "percent" },
+  { key: "shortWordShare", labelKey: "analysisMetricShortWordShare", scale: 0.35, formatter: "percent" },
+  { key: "longWordShare", labelKey: "analysisMetricLongWordShare", scale: 0.25, formatter: "percent" },
+];
+const ANALYSIS_FUNCTION_WORDS = [
+  "ich", "du", "wir", "ihr", "er", "sie", "es", "man", "aber", "oder", "und", "denn", "doch", "halt", "eben",
+  "auch", "schon", "noch", "nur", "mal", "nicht", "kein", "eine", "einer", "einem", "einen", "der", "die", "das",
+  "dass", "weil", "wenn", "als", "wie", "so", "hier", "da", "dann", "eigentlich", "irgendwie",
+  "i", "you", "we", "they", "he", "she", "it", "and", "or", "but", "the", "a", "an", "to", "for", "with", "that",
+  "this", "these", "those", "because", "if", "then", "just", "really", "maybe", "still",
+  "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "et", "ou", "mais", "donc", "car", "pour", "avec",
+  "que", "qui", "dans", "sur", "pas", "plus", "encore", "comme", "alors",
+];
+const ANALYSIS_NUMBER_WORDS = new Set([
+  "null", "eins", "ein", "eine", "zwei", "drei", "vier", "fuenf", "funf", "sechs", "sieben", "acht", "neun", "zehn",
+  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+  "zero", "un", "une", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix",
+]);
 const LOGIN_SERVICE_PRESETS = {
   "bsky.social": "https://bsky.social",
   "eurosky.social": "https://eurosky.social",
@@ -1803,11 +1862,13 @@ function updateAuthButtons() {
   composerButton.disabled = false;
   archiveButton.disabled = !isAuthenticated;
   networkButton.disabled = !isAuthenticated;
+  analysisButton.disabled = !isAuthenticated;
   dmButton.disabled = !isAuthenticated || !isDmAccessAvailable();
   [
     [composerButton, currentWorkspace === "composer"],
     [archiveButton, currentWorkspace === "archive"],
     [networkButton, currentWorkspace === "network"],
+    [analysisButton, currentWorkspace === "analysis"],
     [dmButton, currentWorkspace === "dm"],
   ].forEach(([button, isActive]) => {
     button.classList.toggle("is-active", isActive);
@@ -1816,9 +1877,11 @@ function updateAuthButtons() {
   composerLaunchNote.textContent = t("composerLaunchNote");
   archiveLaunchNote.textContent = isAuthenticated ? t("archiveLaunchEnabledNote") : t("archiveLaunchDisabledNote");
   networkLaunchNote.textContent = isAuthenticated ? t("networkLaunchEnabledNote") : t("networkLaunchDisabledNote");
+  analysisLaunchNote.textContent = isAuthenticated ? t("analysisLaunchEnabledNote") : t("analysisLaunchDisabledNote");
   dmLaunchNote.textContent = isAuthenticated ? t("dmLaunchEnabledNote") : t("dmLaunchDisabledNote");
   renderAccountSwitcher();
   renderArchiveBackgroundNotice();
+  updateAnalysisControls();
 }
 
 function applyDisconnectedState(showStatus = true) {
@@ -1826,7 +1889,7 @@ function applyDisconnectedState(showStatus = true) {
   authAccountDid = "";
   resetNetworkState();
   updateAuthButtons();
-  if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network") {
+  if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network" || currentWorkspace === "analysis") {
     showComposerWorkspace({ persist: false });
   }
 
@@ -1945,6 +2008,10 @@ function restorePreferredWorkspaceIfPossible() {
   }
   if (preferred === "network") {
     showNetworkWorkspace();
+    return;
+  }
+  if (preferred === "analysis") {
+    showAnalysisWorkspace();
     return;
   }
   if (preferred === "dm" && isDmAccessAvailable()) {
@@ -2076,6 +2143,7 @@ function showArchiveWorkspace() {
   persistWorkspacePreference(currentWorkspace);
   composerWorkspace.hidden = true;
   networkWorkspace.hidden = true;
+  analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   archiveWorkspace.hidden = false;
   applyHashtagPaneContext();
@@ -2093,6 +2161,7 @@ function showNetworkWorkspace() {
   persistWorkspacePreference(currentWorkspace);
   composerWorkspace.hidden = true;
   archiveWorkspace.hidden = true;
+  analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   networkWorkspace.hidden = false;
   applyHashtagPaneContext();
@@ -2101,6 +2170,23 @@ function showNetworkWorkspace() {
   if (!networkNodes.size && !networkLoading) {
     void loadNetworkWave({ silentErrors: false });
   }
+}
+
+function showAnalysisWorkspace() {
+  if (!authAccount) {
+    return;
+  }
+
+  currentWorkspace = "analysis";
+  persistWorkspacePreference(currentWorkspace);
+  composerWorkspace.hidden = true;
+  archiveWorkspace.hidden = true;
+  networkWorkspace.hidden = true;
+  dmWorkspace.hidden = true;
+  analysisWorkspace.hidden = false;
+  applyHashtagPaneContext();
+  updateAuthButtons();
+  renderAnalysisWorkspace();
 }
 
 function showDmWorkspace() {
@@ -2113,6 +2199,7 @@ function showDmWorkspace() {
   composerWorkspace.hidden = true;
   archiveWorkspace.hidden = true;
   networkWorkspace.hidden = true;
+  analysisWorkspace.hidden = true;
   dmWorkspace.hidden = false;
   applyHashtagPaneContext();
   updateAuthButtons();
@@ -2133,6 +2220,7 @@ function showComposerWorkspace(options = {}) {
   }
   archiveWorkspace.hidden = true;
   networkWorkspace.hidden = true;
+  analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   composerWorkspace.hidden = false;
   applyHashtagPaneContext();
@@ -2182,6 +2270,1334 @@ function formatNetworkActivityLastPost(value) {
   return new Intl.DateTimeFormat(currentLocale, {
     dateStyle: "medium",
   }).format(new Date(timestamp));
+}
+
+function normalizeAnalysisActor(value = "") {
+  return String(value || "").trim().replace(/^@+/, "");
+}
+
+function getActiveAnalysisActor() {
+  const activeAccount = savedAccounts.find((account) => account?.did && account.did === authAccountDid) || null;
+  const actor = String(
+    activeAccount?.handle
+    || activeAccount?.identifier
+    || authAccount
+    || authAccountDid
+    || "",
+  ).trim();
+  return actor.replace(/^@+/, "");
+}
+
+function getAnalysisOptions() {
+  return {
+    rangeDays: Math.max(0, Number(analysisRangeSelect?.value) || 0),
+    limit: Math.max(100, Math.min(1000, Number(analysisPostLimitSelect?.value) || 500)),
+    includeReplies: analysisIncludeRepliesToggle?.checked === true,
+    includeQuotes: analysisIncludeQuotesToggle?.checked === true,
+  };
+}
+
+function setAnalysisStatus(message = "") {
+  analysisStatusLine = String(message || "").trim() || t("analysisStatusIdle");
+  if (analysisStatusLineNode) {
+    analysisStatusLineNode.textContent = analysisStatusLine;
+  }
+}
+
+function formatAnalysisNumber(value, digits = 2) {
+  return new Intl.NumberFormat(currentLocale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(Number(value) || 0);
+}
+
+function formatAnalysisPercent(value) {
+  return `${formatAnalysisNumber((Number(value) || 0) * 100, 1)}%`;
+}
+
+function countRegexMatches(text, regex) {
+  const matches = String(text || "").match(regex);
+  return matches ? matches.length : 0;
+}
+
+function getAnalysisTopEntriesFromMap(frequencyMap, denominator, limit = 10, minimumCount = 1) {
+  const safeDenominator = Math.max(1, Number(denominator) || 1);
+  return Array.from(frequencyMap.entries())
+    .filter(([, count]) => (Number(count) || 0) >= minimumCount)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], currentLocale))
+    .slice(0, limit)
+    .map(([label, count]) => ({
+      label,
+      count,
+      share: count / safeDenominator,
+    }));
+}
+
+function createAnalysisCorpus(texts = []) {
+  const normalizedPosts = (Array.isArray(texts) ? texts : [])
+    .map((text) => String(text || "").trim())
+    .filter(Boolean);
+  const joinedText = normalizedPosts.join("\n");
+  const withoutUrls = joinedText.replace(/https?:\/\/\S+/giu, " ");
+  const lowercase = withoutUrls.toLowerCase();
+  const words = lowercase.match(/\p{L}+(?:['’-]\p{L}+)*/gu) || [];
+  const tokensWithNumbers = lowercase.match(/\p{L}+(?:['’-]\p{L}+)*|\p{N}+/gu) || [];
+  const sentences = withoutUrls
+    .split(/[.!?]+/u)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const characters = Array.from(withoutUrls);
+  const letters = characters.filter((character) => /\p{L}/u.test(character));
+  const uppercaseLetters = characters.filter((character) => /\p{Lu}/u.test(character));
+  const emojiMatches = withoutUrls.match(/\p{Extended_Pictographic}/gu) || [];
+  const wordFrequency = new Map();
+  const trigramFrequency = new Map();
+  const emojiFrequency = new Map();
+  const bigramFrequency = new Map();
+  const phraseFrequency = new Map();
+  const postStartFrequency = new Map();
+  const postEndFrequency = new Map();
+  const punctuationFrequency = new Map();
+  const functionWordFrequency = new Map();
+
+  emojiMatches.forEach((emoji) => {
+    emojiFrequency.set(emoji, (emojiFrequency.get(emoji) || 0) + 1);
+  });
+
+  for (const word of words) {
+    if (word.length >= 2 && word.length <= 12) {
+      wordFrequency.set(word, (wordFrequency.get(word) || 0) + 1);
+    }
+    if (word.length >= 3) {
+      for (let index = 0; index <= word.length - 3; index += 1) {
+        const trigram = word.slice(index, index + 3);
+        trigramFrequency.set(trigram, (trigramFrequency.get(trigram) || 0) + 1);
+      }
+    }
+  }
+
+  for (let index = 0; index < words.length - 1; index += 1) {
+    const bigram = `${words[index]} ${words[index + 1]}`;
+    bigramFrequency.set(bigram, (bigramFrequency.get(bigram) || 0) + 1);
+  }
+
+  for (let index = 0; index < words.length - 2; index += 1) {
+    const phrase = `${words[index]} ${words[index + 1]} ${words[index + 2]}`;
+    phraseFrequency.set(phrase, (phraseFrequency.get(phrase) || 0) + 1);
+  }
+
+  ANALYSIS_FUNCTION_WORDS.forEach((word) => {
+    const count = wordFrequency.get(word) || 0;
+    if (count > 0) {
+      functionWordFrequency.set(word, count);
+    }
+  });
+
+  const punctuationDefinitions = [
+    ["...", /\.\.\./g],
+    ["?!", /\?!/g],
+    ["!?", /!\?/g],
+    ["!!", /!!+/g],
+    ["??", /\?\?+/g],
+    ["!", /!/g],
+    ["?", /\?/g],
+    [",", /,/g],
+    [":", /:/g],
+    [";", /;/g],
+    ["()", /[()]/g],
+    ["-", /[-–—]/g],
+    ['"', /["“”„]/g],
+  ];
+  punctuationDefinitions.forEach(([label, regex]) => {
+    punctuationFrequency.set(label, countRegexMatches(joinedText, regex));
+  });
+
+  normalizedPosts.forEach((post) => {
+    const postWords = post.toLowerCase().match(/\p{L}+(?:['’-]\p{L}+)*/gu) || [];
+    if (postWords.length > 0) {
+      const start = postWords.slice(0, Math.min(2, postWords.length)).join(" ");
+      const end = postWords.slice(Math.max(0, postWords.length - 2)).join(" ");
+      postStartFrequency.set(start, (postStartFrequency.get(start) || 0) + 1);
+      postEndFrequency.set(end, (postEndFrequency.get(end) || 0) + 1);
+    }
+  });
+
+  const totalWords = Math.max(words.length, 1);
+  const totalSentences = Math.max(sentences.length, 1);
+  const totalLetters = Math.max(letters.length, 1);
+  const uniqueWords = new Set(words);
+  const totalPosts = Math.max(normalizedPosts.length, 1);
+  const wordLengthBuckets = [
+    { labelKey: "analysisWordLengthShort", count: words.filter((word) => word.length <= 3).length },
+    { labelKey: "analysisWordLengthMedium", count: words.filter((word) => word.length >= 4 && word.length <= 6).length },
+    { labelKey: "analysisWordLengthLong", count: words.filter((word) => word.length >= 7 && word.length <= 9).length },
+    { labelKey: "analysisWordLengthVeryLong", count: words.filter((word) => word.length >= 10).length },
+  ].map((entry) => ({
+    ...entry,
+    share: entry.count / totalWords,
+  }));
+
+  const postsWithLinks = normalizedPosts.filter((post) => /https?:\/\/\S+/iu.test(post)).length;
+  const postsWithHashtags = normalizedPosts.filter((post) => /(^|\s)#[\p{L}\p{N}_]+/u.test(post)).length;
+  const postsWithMentions = normalizedPosts.filter((post) => /(^|\s)@[a-z0-9._:-]+/iu.test(post)).length;
+  const blankLinePosts = normalizedPosts.filter((post) => /\n\s*\n/u.test(post)).length;
+  const oneSentencePosts = normalizedPosts.filter((post) => {
+    const postSentences = post.split(/[.!?]+/u).map((entry) => entry.trim()).filter(Boolean);
+    return postSentences.length <= 1;
+  }).length;
+  const questionEndingPosts = normalizedPosts.filter((post) => /\?\s*$/u.test(post)).length;
+  const hashtagEndingPosts = normalizedPosts.filter((post) => /#[\p{L}\p{N}_]+\s*$/u.test(post)).length;
+  const linkEndingPosts = normalizedPosts.filter((post) => /https?:\/\/\S+\s*$/iu.test(post)).length;
+
+  const lineCounts = normalizedPosts.map((post) => Math.max(1, post.split(/\n/u).length));
+  const paragraphCounts = normalizedPosts.map((post) => Math.max(1, post.split(/\n\s*\n/u).length));
+
+  const digitsAsTokens = tokensWithNumbers.filter((token) => /^\p{N}+$/u.test(token)).length;
+  const numberWords = words.filter((word) => ANALYSIS_NUMBER_WORDS.has(word)).length;
+  const allCapsWords = (joinedText.match(/\b\p{Lu}{2,}\b/gu) || []).length;
+
+  return {
+    text: withoutUrls,
+    words,
+    wordCount: words.length,
+    sentenceCount: sentences.length,
+    letterCount: letters.length,
+    emojiCount: emojiMatches.length,
+    topWords: getAnalysisTopEntriesFromMap(wordFrequency, totalWords, 10, 2),
+    topTrigrams: getAnalysisTopEntriesFromMap(trigramFrequency, totalWords, 12, 2),
+    topBigrams: getAnalysisTopEntriesFromMap(bigramFrequency, totalWords, 10, 2),
+    topPhrases: getAnalysisTopEntriesFromMap(phraseFrequency, totalWords, 10, 2),
+    topEmojis: getAnalysisTopEntriesFromMap(emojiFrequency, totalPosts, 12, 1),
+    postStarts: getAnalysisTopEntriesFromMap(postStartFrequency, totalPosts, 8, 1),
+    postEnds: getAnalysisTopEntriesFromMap(postEndFrequency, totalPosts, 8, 1),
+    functionWords: getAnalysisTopEntriesFromMap(functionWordFrequency, totalWords, 16, 1),
+    punctuationProfile: getAnalysisTopEntriesFromMap(punctuationFrequency, totalPosts, 12, 1),
+    wordLengthProfile: wordLengthBuckets,
+    writingConventions: [
+      { labelKey: "analysisConventionUppercaseWords", share: allCapsWords / totalWords },
+      { labelKey: "analysisConventionSpaceBeforePunctuation", share: countRegexMatches(joinedText, /\s[,:;!?]/g) / totalPosts },
+      { labelKey: "analysisConventionAmpersandUsage", share: countRegexMatches(joinedText, /&/g) / totalPosts },
+      { labelKey: "analysisConventionDigitUsage", share: digitsAsTokens / Math.max(tokensWithNumbers.length, 1) },
+      { labelKey: "analysisConventionNumberWords", share: numberWords / totalWords },
+    ],
+    linkBehavior: [
+      { labelKey: "analysisBehaviorLinks", share: postsWithLinks / totalPosts },
+      { labelKey: "analysisBehaviorHashtags", share: postsWithHashtags / totalPosts },
+      { labelKey: "analysisBehaviorMentions", share: postsWithMentions / totalPosts },
+      { labelKey: "analysisBehaviorLinkEnding", share: linkEndingPosts / totalPosts },
+      { labelKey: "analysisBehaviorHashtagEnding", share: hashtagEndingPosts / totalPosts },
+    ],
+    structureProfile: [
+      {
+        labelKey: "analysisStructureLinesPerPost",
+        value: lineCounts.reduce((sum, count) => sum + count, 0) / totalPosts,
+        formatter: "number",
+      },
+      {
+        labelKey: "analysisStructureParagraphsPerPost",
+        value: paragraphCounts.reduce((sum, count) => sum + count, 0) / totalPosts,
+        formatter: "number",
+      },
+      { labelKey: "analysisStructureBlankLines", value: blankLinePosts / totalPosts, formatter: "percent" },
+      { labelKey: "analysisStructureOneSentence", value: oneSentencePosts / totalPosts, formatter: "percent" },
+      { labelKey: "analysisStructureQuestionEnding", value: questionEndingPosts / totalPosts, formatter: "percent" },
+    ],
+    frequency: {
+      words: wordFrequency,
+      trigrams: trigramFrequency,
+      bigrams: bigramFrequency,
+      phrases: phraseFrequency,
+    },
+    metrics: {
+      avgWordLength: words.reduce((sum, word) => sum + word.length, 0) / totalWords,
+      avgSentenceLength: words.length / totalSentences,
+      uniqueWordShare: uniqueWords.size / totalWords,
+      uppercaseRate: uppercaseLetters.length / totalLetters,
+      emojiRate: emojiMatches.length / totalWords,
+      exclamationRate: ((withoutUrls.match(/!/g) || []).length) / totalWords,
+      questionRate: ((withoutUrls.match(/\?/g) || []).length) / totalWords,
+      commaRate: ((withoutUrls.match(/,/g) || []).length) / totalWords,
+      shortWordShare: words.filter((word) => word.length <= 3).length / totalWords,
+      longWordShare: words.filter((word) => word.length >= 8).length / totalWords,
+    },
+  };
+}
+
+function cosineSimilarityFromMaps(leftMap, rightMap) {
+  const keys = new Set([...leftMap.keys(), ...rightMap.keys()]);
+  if (!keys.size) {
+    return 0;
+  }
+  let numerator = 0;
+  let leftMagnitude = 0;
+  let rightMagnitude = 0;
+  keys.forEach((key) => {
+    const leftValue = Number(leftMap.get(key) || 0);
+    const rightValue = Number(rightMap.get(key) || 0);
+    numerator += leftValue * rightValue;
+    leftMagnitude += leftValue * leftValue;
+    rightMagnitude += rightValue * rightValue;
+  });
+  if (!leftMagnitude || !rightMagnitude) {
+    return 0;
+  }
+  return numerator / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
+}
+
+function buildAnalysisWordRateMap(words = [], features = []) {
+  const frequency = new Map();
+  const validWords = Array.isArray(words) ? words : [];
+  validWords.forEach((word) => {
+    frequency.set(word, (frequency.get(word) || 0) + 1);
+  });
+  const totalWords = Math.max(validWords.length, 1);
+  return new Map(features.map((feature) => [feature, (frequency.get(feature) || 0) / totalWords]));
+}
+
+function splitAnalysisTextsIntoWordChunks(texts = [], minWords = 180, maxChunks = 12) {
+  const chunks = [];
+  let buffer = [];
+  let wordCount = 0;
+  (Array.isArray(texts) ? texts : []).forEach((text) => {
+    const normalized = String(text || "").trim();
+    if (!normalized) {
+      return;
+    }
+    const words = normalized.toLowerCase().match(/\p{L}+(?:['’-]\p{L}+)*/gu) || [];
+    if (!words.length) {
+      return;
+    }
+    buffer.push(normalized);
+    wordCount += words.length;
+    if (wordCount >= minWords) {
+      chunks.push(buffer.join("\n"));
+      buffer = [];
+      wordCount = 0;
+    }
+  });
+  if (buffer.length) {
+    chunks.push(buffer.join("\n"));
+  }
+  while (chunks.length > maxChunks) {
+    const tail = chunks.pop();
+    chunks[chunks.length - 1] = `${chunks[chunks.length - 1]}\n${tail}`;
+  }
+  return chunks;
+}
+
+function computeBurrowsDelta(leftAccount, rightAccount) {
+  const combinedWordCounts = new Map();
+  [leftAccount, rightAccount].forEach((account) => {
+    account.corpus.frequency.words.forEach((count, word) => {
+      if (word.length < 2 || word.length > 12) {
+        return;
+      }
+      combinedWordCounts.set(word, (combinedWordCounts.get(word) || 0) + count);
+    });
+  });
+  const features = Array.from(combinedWordCounts.entries())
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], currentLocale))
+    .slice(0, 40)
+    .map(([word]) => word);
+  if (features.length < 8) {
+    return {
+      delta: Number.NaN,
+      similarity: 0,
+      featureCount: features.length,
+      chunkCount: 0,
+    };
+  }
+
+  const leftChunks = splitAnalysisTextsIntoWordChunks(leftAccount.texts);
+  const rightChunks = splitAnalysisTextsIntoWordChunks(rightAccount.texts);
+  const chunkRates = [...leftChunks, ...rightChunks]
+    .map((text) => createAnalysisCorpus([text]).words)
+    .map((words) => buildAnalysisWordRateMap(words, features));
+  if (chunkRates.length < 4) {
+    return {
+      delta: Number.NaN,
+      similarity: 0,
+      featureCount: features.length,
+      chunkCount: chunkRates.length,
+    };
+  }
+
+  const leftRates = buildAnalysisWordRateMap(leftAccount.corpus.words, features);
+  const rightRates = buildAnalysisWordRateMap(rightAccount.corpus.words, features);
+  const zLeft = [];
+  const zRight = [];
+
+  features.forEach((feature) => {
+    const values = chunkRates.map((rates) => Number(rates.get(feature) || 0));
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const variance = values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    if (!stdDev || !Number.isFinite(stdDev)) {
+      return;
+    }
+    zLeft.push((Number(leftRates.get(feature) || 0) - mean) / stdDev);
+    zRight.push((Number(rightRates.get(feature) || 0) - mean) / stdDev);
+  });
+
+  if (!zLeft.length || zLeft.length !== zRight.length) {
+    return {
+      delta: Number.NaN,
+      similarity: 0,
+      featureCount: features.length,
+      chunkCount: chunkRates.length,
+    };
+  }
+
+  const delta = zLeft.reduce((sum, value, index) => sum + Math.abs(value - zRight[index]), 0) / zLeft.length;
+  return {
+    delta,
+    similarity: 1 / (1 + Math.max(0, delta)),
+    featureCount: zLeft.length,
+    chunkCount: chunkRates.length,
+  };
+}
+
+function normalizeAnalysisAccountData(result = null) {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  const profile = result.profile && typeof result.profile === "object" ? result.profile : {};
+  const posts = Array.isArray(result.posts) ? result.posts : [];
+  const texts = posts
+    .map((post) => String(post?.text || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const corpus = createAnalysisCorpus(texts);
+  return {
+    profile: {
+      did: String(profile.did || "").trim(),
+      handle: String(profile.handle || "").trim(),
+      displayName: String(profile.displayName || profile.handle || profile.did || "").trim(),
+      avatar: String(profile.avatar || "").trim(),
+      postsCount: Number(profile.postsCount) || 0,
+      followersCount: Number(profile.followersCount) || 0,
+      followsCount: Number(profile.followsCount) || 0,
+    },
+    filters: {
+      rangeDays: Math.max(0, Number(result.filters?.rangeDays) || 0),
+      includeReplies: result.filters?.includeReplies === true,
+      includeQuotes: result.filters?.includeQuotes === true,
+      limit: Math.max(1, Number(result.filters?.limit) || posts.length || 1),
+    },
+    stats: {
+      fetchedPosts: Math.max(0, Number(result.stats?.fetchedPosts) || 0),
+      scannedPosts: Math.max(0, Number(result.stats?.scannedPosts) || posts.length),
+      pages: Math.max(0, Number(result.stats?.pages) || 0),
+      oldestPostAt: String(result.stats?.oldestPostAt || "").trim(),
+      newestPostAt: String(result.stats?.newestPostAt || "").trim(),
+    },
+    posts,
+    texts,
+    corpus,
+  };
+}
+
+function getPersistableAnalysisAccount(account = null) {
+  if (!account || typeof account !== "object") {
+    return null;
+  }
+  return {
+    profile: {
+      did: String(account.profile?.did || "").trim(),
+      handle: String(account.profile?.handle || "").trim(),
+      displayName: String(account.profile?.displayName || "").trim(),
+      avatar: String(account.profile?.avatar || "").trim(),
+      postsCount: Number(account.profile?.postsCount) || 0,
+      followersCount: Number(account.profile?.followersCount) || 0,
+      followsCount: Number(account.profile?.followsCount) || 0,
+    },
+    filters: {
+      rangeDays: Math.max(0, Number(account.filters?.rangeDays) || 0),
+      includeReplies: account.filters?.includeReplies === true,
+      includeQuotes: account.filters?.includeQuotes === true,
+      limit: Math.max(1, Number(account.filters?.limit) || 1),
+    },
+    stats: {
+      fetchedPosts: Math.max(0, Number(account.stats?.fetchedPosts) || 0),
+      scannedPosts: Math.max(0, Number(account.stats?.scannedPosts) || 0),
+      pages: Math.max(0, Number(account.stats?.pages) || 0),
+      oldestPostAt: String(account.stats?.oldestPostAt || "").trim(),
+      newestPostAt: String(account.stats?.newestPostAt || "").trim(),
+    },
+    posts: (Array.isArray(account.posts) ? account.posts : []).map((post) => ({
+      uri: String(post?.uri || "").trim(),
+      cid: String(post?.cid || "").trim(),
+      createdAt: String(post?.createdAt || "").trim(),
+      text: String(post?.text || "").trim(),
+    })),
+  };
+}
+
+function getPersistableAnalysisState() {
+  return {
+    inputs: {
+      accountA: String(analysisAccountAInput?.value || "").trim(),
+      accountB: String(analysisAccountBInput?.value || "").trim(),
+    },
+    options: getAnalysisOptions(),
+    accountA: getPersistableAnalysisAccount(analysisAccountDataA),
+    accountB: getPersistableAnalysisAccount(analysisAccountDataB),
+    comparison: analysisComparisonResult && typeof analysisComparisonResult === "object"
+      ? {
+          score: Math.max(0, Number(analysisComparisonResult.score) || 0),
+          labelKey: String(analysisComparisonResult.labelKey || "").trim(),
+          confidenceKey: String(analysisComparisonResult.confidenceKey || "").trim(),
+        }
+      : null,
+  };
+}
+
+function restorePersistedAnalysisState(state = null) {
+  const persisted = state && typeof state === "object" ? state : {};
+  if (analysisAccountAInput) {
+    analysisAccountAInput.value = String(persisted.inputs?.accountA || "").trim();
+  }
+  if (analysisAccountBInput) {
+    analysisAccountBInput.value = String(persisted.inputs?.accountB || "").trim();
+  }
+  if (analysisRangeSelect) {
+    analysisRangeSelect.value = String(
+      Number.isFinite(Number(persisted.options?.rangeDays))
+        ? Number(persisted.options.rangeDays)
+        : 90,
+    );
+  }
+  if (analysisPostLimitSelect) {
+    analysisPostLimitSelect.value = String(
+      Number.isFinite(Number(persisted.options?.limit))
+        ? Number(persisted.options.limit)
+        : 500,
+    );
+  }
+  if (analysisIncludeRepliesToggle) {
+    analysisIncludeRepliesToggle.checked = persisted.options?.includeReplies === true;
+  }
+  if (analysisIncludeQuotesToggle) {
+    analysisIncludeQuotesToggle.checked = persisted.options?.includeQuotes === true;
+  }
+  analysisAccountDataA = normalizeAnalysisAccountData(persisted.accountA);
+  analysisAccountDataB = normalizeAnalysisAccountData(persisted.accountB);
+  analysisComparisonResult = (analysisAccountDataA && analysisAccountDataB)
+    ? compareAnalysisAccountsData(analysisAccountDataA, analysisAccountDataB)
+    : null;
+}
+
+function compareAnalysisAccountsData(leftAccount, rightAccount) {
+  if (!leftAccount || !rightAccount) {
+    return null;
+  }
+  const metricRows = ANALYSIS_METRIC_DEFINITIONS.map((definition) => {
+    const leftValue = Number(leftAccount.corpus.metrics[definition.key] || 0);
+    const rightValue = Number(rightAccount.corpus.metrics[definition.key] || 0);
+    const normalizedDifference = Math.abs(leftValue - rightValue) / Math.max(definition.scale, 0.0001);
+    return {
+      ...definition,
+      leftValue,
+      rightValue,
+      normalizedDifference,
+    };
+  });
+  const numericDistance = Math.sqrt(
+    metricRows.reduce((sum, row) => sum + (row.normalizedDifference ** 2), 0) / Math.max(metricRows.length, 1),
+  );
+  const numericSimilarity = 1 / (1 + numericDistance * 1.35);
+  const wordSimilarity = cosineSimilarityFromMaps(
+    leftAccount.corpus.frequency.words,
+    rightAccount.corpus.frequency.words,
+  );
+  const trigramSimilarity = cosineSimilarityFromMaps(
+    leftAccount.corpus.frequency.trigrams,
+    rightAccount.corpus.frequency.trigrams,
+  );
+  const burrowsDelta = computeBurrowsDelta(leftAccount, rightAccount);
+  const score = Math.round(100 * (
+    (numericSimilarity * 0.45)
+    + (wordSimilarity * 0.2)
+    + (trigramSimilarity * 0.15)
+    + (burrowsDelta.similarity * 0.2)
+  ));
+  const minWords = Math.min(leftAccount.corpus.wordCount, rightAccount.corpus.wordCount);
+  const labelKey = score >= 98
+    ? "analysisSimilarityIdentical"
+    : score >= 78
+    ? "analysisSimilarityHigh"
+    : score >= 58
+    ? "analysisSimilarityMedium"
+    : "analysisSimilarityLow";
+  const confidenceKey = minWords < 2000
+    ? "analysisConfidenceLow"
+    : minWords < 5000
+    ? "analysisConfidenceMedium"
+    : "analysisConfidenceHigh";
+
+  return {
+    score,
+    labelKey,
+    confidenceKey,
+    numericSimilarity,
+    wordSimilarity,
+    trigramSimilarity,
+    burrowsDelta,
+    metricRows,
+  };
+}
+
+function createAnalysisPatternList(entries = [], emptyKey = "analysisPatternsEmpty") {
+  const list = document.createElement("div");
+  list.className = "analysis-token-list";
+  if (!entries.length) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t(emptyKey);
+    list.appendChild(note);
+    return list;
+  }
+  entries.forEach((entry) => {
+    const chip = document.createElement("span");
+    chip.className = "analysis-token-chip";
+    chip.textContent = `${entry.label} - ${formatAnalysisPercent(entry.share)}`;
+    list.appendChild(chip);
+  });
+  return list;
+}
+
+function createAnalysisStatList(items = [], formatter = "percent", emptyKey = "analysisPatternsEmpty") {
+  const list = document.createElement("div");
+  list.className = "analysis-stat-list";
+  if (!items.length) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t(emptyKey);
+    list.appendChild(note);
+    return list;
+  }
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "analysis-stat-row";
+    const label = document.createElement("span");
+    label.className = "analysis-stat-label";
+    label.textContent = item.labelKey ? t(item.labelKey) : item.label;
+    const value = document.createElement("strong");
+    value.className = "analysis-stat-value";
+    if ((item.formatter || formatter) === "number") {
+      value.textContent = formatAnalysisNumber(item.value, 2);
+    } else {
+      value.textContent = formatAnalysisPercent(item.share ?? item.value);
+    }
+    row.append(label, value);
+    list.appendChild(row);
+  });
+  return list;
+}
+
+function createAnalysisBarList(items = [], emptyKey = "analysisPatternsEmpty") {
+  const list = document.createElement("div");
+  list.className = "analysis-bar-list";
+  if (!items.length) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t(emptyKey);
+    list.appendChild(note);
+    return list;
+  }
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "analysis-bar-row";
+    const head = document.createElement("div");
+    head.className = "analysis-bar-head";
+    const label = document.createElement("span");
+    label.textContent = item.labelKey ? t(item.labelKey) : item.label;
+    const value = document.createElement("strong");
+    value.textContent = formatAnalysisPercent(item.share ?? item.value);
+    head.append(label, value);
+    const track = document.createElement("div");
+    track.className = "analysis-bar-track";
+    const fill = document.createElement("span");
+    fill.className = "analysis-bar-fill";
+    fill.style.width = `${Math.max(0, Math.min(100, (item.share ?? item.value ?? 0) * 100))}%`;
+    track.appendChild(fill);
+    row.append(head, track);
+    list.appendChild(row);
+  });
+  return list;
+}
+
+function createAnalysisPatternCard(title, children = []) {
+  const card = document.createElement("article");
+  card.className = "analysis-pattern-card";
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  card.appendChild(heading);
+  children.forEach((child) => {
+    if (child) {
+      card.appendChild(child);
+    }
+  });
+  return card;
+}
+
+function renderAnalysisSummaryCard(slotLabel, account) {
+  const card = document.createElement("article");
+  card.className = "analysis-account-card";
+  if (!account) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = slotLabel === "A" ? t("analysisAccountAEmpty") : t("analysisAccountBEmpty");
+    card.appendChild(note);
+    return card;
+  }
+
+  const head = document.createElement("div");
+  head.className = "analysis-account-card-head";
+  const avatar = document.createElement("img");
+  avatar.className = "analysis-account-avatar";
+  avatar.src = account.profile.avatar || "icons/threadline-icon.svg";
+  avatar.alt = account.profile.displayName || account.profile.handle || account.profile.did;
+  const identity = document.createElement("div");
+  identity.className = "analysis-account-identity";
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "eyebrow";
+  eyebrow.textContent = slotLabel === "A" ? t("analysisAccountALabel") : t("analysisAccountBLabel");
+  const name = document.createElement("strong");
+  name.textContent = account.profile.displayName || account.profile.handle || account.profile.did;
+  const handle = document.createElement("span");
+  handle.className = "reply-target-handle";
+  handle.textContent = account.profile.handle ? `@${account.profile.handle}` : account.profile.did;
+  identity.append(eyebrow, name, handle);
+  head.append(avatar, identity);
+
+  const stats = document.createElement("div");
+  stats.className = "analysis-account-stats";
+  const rangeText = account.filters.rangeDays > 0
+    ? t("analysisSummaryRangeDays", { count: account.filters.rangeDays })
+    : t("analysisSummaryRangeAll");
+  [
+    t("analysisSummaryPostsLoaded", { count: formatCount(account.posts.length) }),
+    t("analysisSummaryWordsLoaded", { count: formatCount(account.corpus.wordCount) }),
+    rangeText,
+    t("analysisSummaryPagesLoaded", { count: formatCount(account.stats.pages) }),
+  ].forEach((text) => {
+    const item = document.createElement("span");
+    item.textContent = text;
+    stats.appendChild(item);
+  });
+
+  const preview = document.createElement("p");
+  preview.className = "analysis-account-preview";
+  preview.textContent = account.posts[0]?.text || t("analysisSummaryNoPreview");
+
+  card.append(head, stats, preview);
+  return card;
+}
+
+function renderAnalysisSummary() {
+  if (!analysisSummary) {
+    return;
+  }
+  analysisSummary.replaceChildren(
+    renderAnalysisSummaryCard("A", analysisAccountDataA),
+    renderAnalysisSummaryCard("B", analysisAccountDataB),
+  );
+}
+
+function renderAnalysisResult() {
+  if (!analysisResultCard) {
+    return;
+  }
+  const comparison = analysisComparisonResult;
+  analysisResultCard.hidden = !comparison;
+  analysisResultCard.replaceChildren();
+  if (!comparison) {
+    return;
+  }
+
+  const headline = document.createElement("div");
+  headline.className = "analysis-result-head";
+  const score = document.createElement("strong");
+  score.className = "analysis-result-score";
+  score.textContent = `${comparison.score}/100`;
+  const label = document.createElement("span");
+  label.className = "analysis-result-label";
+  label.textContent = t(comparison.labelKey);
+  headline.append(score, label);
+
+  const confidence = document.createElement("p");
+  confidence.className = "analysis-result-confidence";
+  confidence.textContent = t(comparison.confidenceKey);
+
+  const details = document.createElement("div");
+  details.className = "analysis-result-details";
+  [
+    t("analysisSimilarityNumeric", { value: formatAnalysisPercent(comparison.numericSimilarity) }),
+    t("analysisSimilarityWords", { value: formatAnalysisPercent(comparison.wordSimilarity) }),
+    t("analysisSimilarityTrigrams", { value: formatAnalysisPercent(comparison.trigramSimilarity) }),
+    Number.isFinite(comparison.burrowsDelta?.delta)
+      ? t("analysisSimilarityBurrowsDelta", {
+          value: formatAnalysisNumber(comparison.burrowsDelta.delta, 2),
+          score: formatAnalysisPercent(comparison.burrowsDelta.similarity),
+        })
+      : t("analysisSimilarityBurrowsDeltaUnavailable"),
+  ].forEach((text) => {
+    const item = document.createElement("span");
+    item.textContent = text;
+    details.appendChild(item);
+  });
+
+  const note = document.createElement("p");
+  note.className = "settings-note";
+  note.textContent = t("analysisResultNote");
+
+  analysisResultCard.append(headline, confidence, details, note);
+}
+
+function renderAnalysisMetrics() {
+  if (!analysisMetrics) {
+    return;
+  }
+  analysisMetrics.replaceChildren();
+  if (!analysisComparisonResult) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t("analysisMetricsEmpty");
+    analysisMetrics.appendChild(note);
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "analysis-table";
+  const head = document.createElement("thead");
+  head.innerHTML = `<tr><th>${escapeHtml(t("analysisMetricsColumnMetric"))}</th><th>${escapeHtml(t("analysisAccountALabel"))}</th><th>${escapeHtml(t("analysisAccountBLabel"))}</th><th>${escapeHtml(t("analysisMetricsColumnDiff"))}</th></tr>`;
+  table.appendChild(head);
+
+  const body = document.createElement("tbody");
+  analysisComparisonResult.metricRows.forEach((row) => {
+    const tr = document.createElement("tr");
+    const formatValue = (value) => (row.formatter === "percent" ? formatAnalysisPercent(value) : formatAnalysisNumber(value, 2));
+    tr.innerHTML = `<td>${escapeHtml(t(row.labelKey))}</td><td>${escapeHtml(formatValue(row.leftValue))}</td><td>${escapeHtml(formatValue(row.rightValue))}</td><td>${escapeHtml(formatAnalysisPercent(Math.min(1, row.normalizedDifference)))} </td>`;
+    body.appendChild(tr);
+  });
+  table.appendChild(body);
+  analysisMetrics.appendChild(table);
+}
+
+function renderAnalysisPatterns() {
+  if (!analysisPatterns) {
+    return;
+  }
+  analysisPatterns.replaceChildren();
+  if (!analysisAccountDataA && !analysisAccountDataB) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t("analysisPatternsEmpty");
+    analysisPatterns.appendChild(note);
+    return;
+  }
+
+  const buildCardsForAccount = (labelA, accountA, labelB, accountB) => {
+    if (!accountA) {
+      return [];
+    }
+    if (!accountB) {
+      return [];
+    }
+    return [
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternWordsTitle")}`, [
+        createAnalysisPatternList(accountA.corpus.topWords, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternWordsTitle")}`, [
+        createAnalysisPatternList(accountB.corpus.topWords, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternTrigramsTitle")}`, [
+        createAnalysisPatternList(accountA.corpus.topTrigrams, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternTrigramsTitle")}`, [
+        createAnalysisPatternList(accountB.corpus.topTrigrams, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternBigramsTitle")}`, [
+        createAnalysisPatternList(accountA.corpus.topBigrams, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternBigramsTitle")}`, [
+        createAnalysisPatternList(accountB.corpus.topBigrams, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternPhrasesTitle")}`, [
+        createAnalysisPatternList(accountA.corpus.topPhrases, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternPhrasesTitle")}`, [
+        createAnalysisPatternList(accountB.corpus.topPhrases, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternFunctionWordsTitle")}`, [
+        createAnalysisPatternList(accountA.corpus.functionWords, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternFunctionWordsTitle")}`, [
+        createAnalysisPatternList(accountB.corpus.functionWords, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternEmojiTitle")}`, [
+        createAnalysisPatternList(accountA.corpus.topEmojis, "analysisPatternsNoEmoji"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternEmojiTitle")}`, [
+        createAnalysisPatternList(accountB.corpus.topEmojis, "analysisPatternsNoEmoji"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternPunctuationTitle")}`, [
+        createAnalysisPatternList(accountA.corpus.punctuationProfile, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternPunctuationTitle")}`, [
+        createAnalysisPatternList(accountB.corpus.punctuationProfile, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternStartsEndsTitle")}`, [
+        createAnalysisPatternList(accountA.corpus.postStarts, "analysisPatternsNoData"),
+        createAnalysisPatternList(accountA.corpus.postEnds, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternStartsEndsTitle")}`, [
+        createAnalysisPatternList(accountB.corpus.postStarts, "analysisPatternsNoData"),
+        createAnalysisPatternList(accountB.corpus.postEnds, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternWordLengthTitle")}`, [
+        createAnalysisBarList(accountA.corpus.wordLengthProfile, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternWordLengthTitle")}`, [
+        createAnalysisBarList(accountB.corpus.wordLengthProfile, "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternConventionsTitle")}`, [
+        createAnalysisStatList(accountA.corpus.writingConventions, "percent", "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternConventionsTitle")}`, [
+        createAnalysisStatList(accountB.corpus.writingConventions, "percent", "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternBehaviorTitle")}`, [
+        createAnalysisStatList(accountA.corpus.linkBehavior, "percent", "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternBehaviorTitle")}`, [
+        createAnalysisStatList(accountB.corpus.linkBehavior, "percent", "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternStructureTitle")}`, [
+        createAnalysisStatList(accountA.corpus.structureProfile, "mixed", "analysisPatternsNoData"),
+      ]),
+      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternStructureTitle")}`, [
+        createAnalysisStatList(accountB.corpus.structureProfile, "mixed", "analysisPatternsNoData"),
+      ]),
+    ];
+  };
+
+  [
+    ...buildCardsForAccount(t("analysisAccountALabel"), analysisAccountDataA, t("analysisAccountBLabel"), analysisAccountDataB),
+    // ...buildCardsForAccount(t("analysisAccountBLabel"), analysisAccountDataB),
+  ].forEach((card) => {
+    analysisPatterns.appendChild(card);
+  });
+}
+
+function makeAnalysisExportFileName() {
+  const left = String(analysisAccountDataA?.profile?.handle || "account-a").replace(/[^\w.-]+/g, "-");
+  const right = String(analysisAccountDataB?.profile?.handle || "account-b").replace(/[^\w.-]+/g, "-");
+  const datePart = new Date().toISOString().slice(0, 10);
+  return `threadline-analysis-${left}-vs-${right}-${datePart}.pdf`;
+}
+
+function getAnalysisPdfMetricRows() {
+  if (!analysisComparisonResult) {
+    return [];
+  }
+  return [
+    ...analysisComparisonResult.metricRows.map((row) => ({
+      label: t(row.labelKey),
+      left: row.formatter === "percent" ? formatAnalysisPercent(row.leftValue) : formatAnalysisNumber(row.leftValue, 2),
+      right: row.formatter === "percent" ? formatAnalysisPercent(row.rightValue) : formatAnalysisNumber(row.rightValue, 2),
+      diff: formatAnalysisPercent(Math.min(1, row.normalizedDifference)),
+    })),
+    {
+      label: "Burrows's Delta",
+      left: Number.isFinite(analysisComparisonResult.burrowsDelta?.delta)
+        ? formatAnalysisNumber(analysisComparisonResult.burrowsDelta.delta, 2)
+        : "-",
+      right: Number.isFinite(analysisComparisonResult.burrowsDelta?.similarity)
+        ? formatAnalysisPercent(analysisComparisonResult.burrowsDelta.similarity)
+        : "-",
+      diff: Number.isFinite(analysisComparisonResult.burrowsDelta?.chunkCount)
+        ? t("analysisPdfChunkCount", { count: analysisComparisonResult.burrowsDelta.chunkCount })
+        : "-",
+    },
+  ];
+}
+
+async function renderAnalysisPdfCanvasPage(pageIndex, pageCount) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1190;
+  canvas.height = 1684;
+  const context = canvas.getContext("2d");
+  const scale = canvas.width / 595;
+  const margin = 28 * scale;
+  const pageWidth = canvas.width - (margin * 2);
+  const pageHeight = canvas.height - (margin * 2);
+  let cursorY = margin + (22 * scale);
+
+  const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, "#f3f8ff");
+  gradient.addColorStop(1, "#e7eef9");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  fillRoundedRect(context, margin, margin, pageWidth, pageHeight, 22 * scale, "rgba(255,255,255,0.52)");
+  strokeRoundedRect(context, margin, margin, pageWidth, pageHeight, 22 * scale, "#d5e1f3", 1.2 * scale);
+
+  context.textBaseline = "top";
+  context.fillStyle = "#10233e";
+  context.font = `700 ${18 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(t("analysisPdfTitle"), margin + (18 * scale), cursorY);
+  cursorY += 24 * scale;
+  context.fillStyle = "#587192";
+  context.font = `${9.5 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(
+    `${formatCompactArchiveTimestamp(new Date().toISOString())} - ${t("analysisPdfPage", { index: pageIndex + 1, count: pageCount })}`,
+    margin + (18 * scale),
+    cursorY,
+  );
+  cursorY += 22 * scale;
+
+  const cardX = margin + (18 * scale);
+  const cardWidth = pageWidth - (36 * scale);
+  const columnGap = 14 * scale;
+  const columnWidth = (cardWidth - columnGap) / 2;
+
+  const drawAccountCard = (account, x, y, label) => {
+    const cardHeight = 190 * scale;
+    fillRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#ffffff");
+    strokeRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#d7e3f5", 1 * scale);
+    context.fillStyle = "#27b6a0";
+    context.font = `700 ${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(label, x + (14 * scale), y + (14 * scale));
+    context.fillStyle = "#13213c";
+    context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(account.profile.displayName || account.profile.handle || account.profile.did, x + (14 * scale), y + (34 * scale));
+    context.fillStyle = "#577194";
+    context.font = `${10 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(`@${account.profile.handle || account.profile.did}`, x + (14 * scale), y + (52 * scale));
+
+    const statRows = [
+      t("analysisSummaryPostsLoaded", { count: formatCount(account.posts.length) }),
+      t("analysisSummaryWordsLoaded", { count: formatCount(account.corpus.wordCount) }),
+      account.filters.rangeDays > 0 ? t("analysisSummaryRangeDays", { count: account.filters.rangeDays }) : t("analysisSummaryRangeAll"),
+      t("analysisSummaryPagesLoaded", { count: formatCount(account.stats.pages) }),
+    ];
+    let statY = y + (78 * scale);
+    statRows.forEach((row) => {
+      fillRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), 22 * scale, 11 * scale, "#edf4ff");
+      strokeRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), 22 * scale, 11 * scale, "#d0ddf6", 1 * scale);
+      context.fillStyle = "#3d5f8f";
+      context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
+      context.fillText(row, x + (24 * scale), statY + (6 * scale));
+      statY += 28 * scale;
+    });
+    context.fillStyle = "#17233a";
+    context.font = `${10 * scale}px "Segoe UI", Aptos, sans-serif`;
+    const previewLines = buildWrappedPdfLines(context, account.posts[0]?.text || t("analysisSummaryNoPreview"), columnWidth - (28 * scale)).slice(0, 3);
+    drawArchivePdfTextBlock(context, previewLines, x + (14 * scale), y + (160 * scale), 12 * scale);
+  };
+
+  if (pageIndex === 0) {
+    drawAccountCard(analysisAccountDataA, cardX, cursorY, t("analysisAccountALabel"));
+    drawAccountCard(analysisAccountDataB, cardX + columnWidth + columnGap, cursorY, t("analysisAccountBLabel"));
+    cursorY += 206 * scale;
+
+    fillRoundedRect(context, cardX, cursorY, cardWidth, 250 * scale, 18 * scale, "#ffffff");
+    strokeRoundedRect(context, cardX, cursorY, cardWidth, 250 * scale, 18 * scale, "#d7e3f5", 1 * scale);
+    context.fillStyle = "#13213c";
+    context.font = `700 ${22 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(`${analysisComparisonResult.score}/100`, cardX + (18 * scale), cursorY + (18 * scale));
+    fillRoundedRect(context, cardX + (108 * scale), cursorY + (16 * scale), 200 * scale, 26 * scale, 13 * scale, "#e8fbf7");
+    context.fillStyle = "#27b6a0";
+    context.font = `700 ${11 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(t(analysisComparisonResult.labelKey), cardX + (122 * scale), cursorY + (23 * scale));
+    context.fillStyle = "#415b81";
+    context.font = `${10.5 * scale}px "Segoe UI", Aptos, sans-serif`;
+    const noteLines = buildWrappedPdfLines(context, t(analysisComparisonResult.confidenceKey), cardWidth - (36 * scale)).slice(0, 3);
+    drawArchivePdfTextBlock(context, noteLines, cardX + (18 * scale), cursorY + (54 * scale), 13 * scale);
+
+    const detailRows = [
+      t("analysisSimilarityNumeric", { value: formatAnalysisPercent(analysisComparisonResult.numericSimilarity) }),
+      t("analysisSimilarityWords", { value: formatAnalysisPercent(analysisComparisonResult.wordSimilarity) }),
+      t("analysisSimilarityTrigrams", { value: formatAnalysisPercent(analysisComparisonResult.trigramSimilarity) }),
+      Number.isFinite(analysisComparisonResult.burrowsDelta?.delta)
+        ? t("analysisSimilarityBurrowsDelta", {
+            value: formatAnalysisNumber(analysisComparisonResult.burrowsDelta.delta, 2),
+            score: formatAnalysisPercent(analysisComparisonResult.burrowsDelta.similarity),
+          })
+        : t("analysisSimilarityBurrowsDeltaUnavailable"),
+    ];
+    let detailY = cursorY + (108 * scale);
+    detailRows.forEach((row) => {
+      fillRoundedRect(context, cardX + (18 * scale), detailY, cardWidth - (36 * scale), 28 * scale, 14 * scale, "#edf4ff");
+      strokeRoundedRect(context, cardX + (18 * scale), detailY, cardWidth - (36 * scale), 28 * scale, 14 * scale, "#d0ddf6", 1 * scale);
+      context.fillStyle = "#3d5f8f";
+      context.font = `${9 * scale}px "Segoe UI", Aptos, sans-serif`;
+      context.fillText(row, cardX + (30 * scale), detailY + (8 * scale));
+      detailY += 36 * scale;
+    });
+    return canvas;
+  }
+
+  const rows = getAnalysisPdfMetricRows();
+  fillRoundedRect(context, cardX, cursorY, cardWidth, 520 * scale, 18 * scale, "#ffffff");
+  strokeRoundedRect(context, cardX, cursorY, cardWidth, 520 * scale, 18 * scale, "#d7e3f5", 1 * scale);
+  context.fillStyle = "#13213c";
+  context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(t("analysisMetricsTitle"), cardX + (18 * scale), cursorY + (18 * scale));
+  const tableY = cursorY + (48 * scale);
+  const col1 = cardX + (18 * scale);
+  const col2 = cardX + (360 * scale);
+  const col3 = cardX + (500 * scale);
+  const col4 = cardX + (640 * scale);
+  context.fillStyle = "#587192";
+  context.font = `700 ${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(t("analysisMetricsColumnMetric"), col1, tableY);
+  context.fillText(t("analysisAccountALabel"), col2, tableY);
+  context.fillText(t("analysisAccountBLabel"), col3, tableY);
+  context.fillText(t("analysisMetricsColumnDiff"), col4, tableY);
+  let rowY = tableY + (18 * scale);
+  rows.slice(0, 12).forEach((row, index) => {
+    if (index % 2 === 0) {
+      fillRoundedRect(context, cardX + (12 * scale), rowY - (4 * scale), cardWidth - (24 * scale), 24 * scale, 10 * scale, "#f7faff");
+    }
+    context.fillStyle = "#17233a";
+    context.font = `${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(row.label, col1, rowY);
+    context.fillText(row.left, col2, rowY);
+    context.fillText(row.right, col3, rowY);
+    context.fillText(row.diff, col4, rowY);
+    rowY += 26 * scale;
+  });
+
+  cursorY += 540 * scale;
+  const patternWidth = (cardWidth - columnGap) / 2;
+  const patternCards = [
+    { title: `${t("analysisAccountALabel")} - ${t("analysisPatternWordsTitle")}`, entries: analysisAccountDataA?.corpus.topWords || [] },
+    { title: `${t("analysisAccountBLabel")} - ${t("analysisPatternWordsTitle")}`, entries: analysisAccountDataB?.corpus.topWords || [] },
+    { title: `${t("analysisAccountALabel")} - ${t("analysisPatternTrigramsTitle")}`, entries: analysisAccountDataA?.corpus.topTrigrams || [] },
+    { title: `${t("analysisAccountBLabel")} - ${t("analysisPatternTrigramsTitle")}`, entries: analysisAccountDataB?.corpus.topTrigrams || [] },
+  ];
+  patternCards.forEach((pattern, index) => {
+    const x = cardX + ((index % 2) * (patternWidth + columnGap));
+    const y = cursorY + (Math.floor(index / 2) * (148 * scale));
+    fillRoundedRect(context, x, y, patternWidth, 132 * scale, 18 * scale, "#ffffff");
+    strokeRoundedRect(context, x, y, patternWidth, 132 * scale, 18 * scale, "#d7e3f5", 1 * scale);
+    context.fillStyle = "#13213c";
+    context.font = `700 ${10 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(pattern.title, x + (14 * scale), y + (14 * scale));
+    const tokenText = pattern.entries.slice(0, 6).map((entry) => `${entry.label} (${formatAnalysisPercent(entry.share)})`).join("   ");
+    context.fillStyle = "#415b81";
+    context.font = `${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
+    const lines = buildWrappedPdfLines(context, tokenText || "-", patternWidth - (28 * scale)).slice(0, 5);
+    drawArchivePdfTextBlock(context, lines, x + (14 * scale), y + (38 * scale), 11 * scale);
+  });
+  return canvas;
+}
+
+async function exportAnalysisPdfReport() {
+  if (!analysisAccountDataA || !analysisAccountDataB || !analysisComparisonResult) {
+    throw new Error(t("analysisNeedComparison"));
+  }
+  const pageCanvases = await Promise.all([
+    renderAnalysisPdfCanvasPage(0, 2),
+    renderAnalysisPdfCanvasPage(1, 2),
+  ]);
+  const pages = [];
+  for (const [pageIndex, canvas] of pageCanvases.entries()) {
+    const jpegBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    const bytes = new Uint8Array(await jpegBlob.arrayBuffer());
+    pages.push({
+      content: `q 595 0 0 842 0 0 cm /PageImage${pageIndex + 1} Do Q`,
+      images: [{
+        name: `PageImage${pageIndex + 1}`,
+        width: canvas.width,
+        height: canvas.height,
+        bytes,
+      }],
+      annotations: [],
+    });
+  }
+  const blob = buildPdfFile(pages);
+  const fileName = makeAnalysisExportFileName();
+  const file = new File([blob], fileName, { type: "application/pdf" });
+  await shareOrDownloadFile(file, fileName, { preferDownload: true });
+  setAnalysisStatus(t("analysisExportDone"));
+}
+
+function updateAnalysisControls() {
+  const hasAuth = Boolean(authAccount);
+  const actorA = normalizeAnalysisActor(analysisAccountAInput?.value || "");
+  const actorB = normalizeAnalysisActor(analysisAccountBInput?.value || "");
+  if (analysisAccountALoadButton) {
+    analysisAccountALoadButton.disabled = analysisLoading || !hasAuth || !actorA;
+  }
+  if (analysisAccountBLoadButton) {
+    analysisAccountBLoadButton.disabled = analysisLoading || !hasAuth || !actorB;
+  }
+  if (analysisAccountAOwnButton) {
+    analysisAccountAOwnButton.disabled = analysisLoading || !hasAuth;
+  }
+  if (analysisAccountBOwnButton) {
+    analysisAccountBOwnButton.disabled = analysisLoading || !hasAuth;
+  }
+  if (analysisCompareButton) {
+    analysisCompareButton.disabled = analysisLoading || !hasAuth || !actorA || !actorB;
+    analysisCompareButton.textContent = analysisLoading ? t("analysisLoadingButton") : t("analysisCompareButton");
+  }
+  if (analysisResetButton) {
+    analysisResetButton.disabled = analysisLoading || (!analysisAccountDataA && !analysisAccountDataB && !analysisComparisonResult && !actorA && !actorB);
+  }
+  if (analysisExportPdfButton) {
+    analysisExportPdfButton.disabled = analysisLoading || !analysisComparisonResult;
+  }
+}
+
+function renderAnalysisWorkspace() {
+  renderAnalysisSummary();
+  renderAnalysisResult();
+  renderAnalysisMetrics();
+  renderAnalysisPatterns();
+  updateAnalysisControls();
+  setAnalysisStatus(analysisStatusLine || t("analysisStatusIdle"));
+}
+
+async function loadAnalysisAccountForSlot(slot, { actor, requestToken } = {}) {
+  const normalizedActor = normalizeAnalysisActor(actor);
+  if (!normalizedActor) {
+    throw new Error(t(slot === "a" ? "analysisAccountAMissing" : "analysisAccountBMissing"));
+  }
+  const slotLabel = slot === "a" ? t("analysisAccountALabel") : t("analysisAccountBLabel");
+  const result = await sendToServiceWorker("LOAD_ANALYSIS_ACCOUNT", {
+    actor: normalizedActor,
+    options: getAnalysisOptions(),
+  }, {
+    timeoutMs: 180000,
+    onProgress(progress) {
+      if (requestToken !== analysisRequestToken) {
+        return;
+      }
+      const step = String(progress?.step || "").trim();
+      const detail = String(progress?.detail || "").trim();
+      setAnalysisStatus([slotLabel, step, detail].filter(Boolean).join(" - "));
+    },
+  });
+  if (requestToken !== analysisRequestToken) {
+    return null;
+  }
+  return normalizeAnalysisAccountData(result);
+}
+
+async function handleAnalysisAccountLoad(slot) {
+  if (!authAccount || analysisLoading) {
+    return;
+  }
+  const actor = slot === "a" ? analysisAccountAInput?.value : analysisAccountBInput?.value;
+  const requestToken = ++analysisRequestToken;
+  analysisLoading = true;
+  analysisComparisonResult = null;
+  updateAnalysisControls();
+  try {
+    const loaded = await loadAnalysisAccountForSlot(slot, { actor, requestToken });
+    if (!loaded || requestToken !== analysisRequestToken) {
+      return;
+    }
+    if (slot === "a") {
+      analysisAccountDataA = loaded;
+    } else {
+      analysisAccountDataB = loaded;
+    }
+    setAnalysisStatus(t("analysisAccountLoadedStatus", {
+      slot: slot === "a" ? "A" : "B",
+      account: loaded.profile.handle || loaded.profile.displayName || loaded.profile.did,
+    }));
+    renderAnalysisWorkspace();
+    await persistSettings();
+  } catch (error) {
+    console.error(error);
+    setAnalysisStatus(error.message || t("analysisLoadFailed"));
+    showErrorDialog(error.message || t("analysisLoadFailed"), t("archiveErrorTitle"));
+  } finally {
+    if (requestToken === analysisRequestToken) {
+      analysisLoading = false;
+      updateAnalysisControls();
+    }
+  }
+}
+
+async function runAnalysisComparison() {
+  if (!authAccount || analysisLoading) {
+    return;
+  }
+  const actorA = analysisAccountAInput?.value || "";
+  const actorB = analysisAccountBInput?.value || "";
+  if (!normalizeAnalysisActor(actorA)) {
+    showErrorDialog(t("analysisAccountAMissing"), t("archiveErrorTitle"));
+    return;
+  }
+  if (!normalizeAnalysisActor(actorB)) {
+    showErrorDialog(t("analysisAccountBMissing"), t("archiveErrorTitle"));
+    return;
+  }
+
+  const requestToken = ++analysisRequestToken;
+  analysisLoading = true;
+  analysisComparisonResult = null;
+  updateAnalysisControls();
+
+  try {
+    const loadedA = await loadAnalysisAccountForSlot("a", { actor: actorA, requestToken });
+    const loadedB = await loadAnalysisAccountForSlot("b", { actor: actorB, requestToken });
+    if (!loadedA || !loadedB || requestToken !== analysisRequestToken) {
+      return;
+    }
+    analysisAccountDataA = loadedA;
+    analysisAccountDataB = loadedB;
+    analysisComparisonResult = compareAnalysisAccountsData(loadedA, loadedB);
+    setAnalysisStatus(t("analysisComparisonReady", {
+      left: loadedA.profile.handle || loadedA.profile.displayName || loadedA.profile.did,
+      right: loadedB.profile.handle || loadedB.profile.displayName || loadedB.profile.did,
+    }));
+    renderAnalysisWorkspace();
+    await persistSettings();
+  } catch (error) {
+    console.error(error);
+    setAnalysisStatus(error.message || t("analysisLoadFailed"));
+    showErrorDialog(error.message || t("analysisLoadFailed"), t("archiveErrorTitle"));
+  } finally {
+    if (requestToken === analysisRequestToken) {
+      analysisLoading = false;
+      updateAnalysisControls();
+    }
+  }
+}
+
+function resetAnalysisWorkspace() {
+  analysisRequestToken += 1;
+  analysisLoading = false;
+  analysisStatusLine = "";
+  analysisAccountDataA = null;
+  analysisAccountDataB = null;
+  analysisComparisonResult = null;
+  if (analysisAccountAInput) {
+    analysisAccountAInput.value = "";
+  }
+  if (analysisAccountBInput) {
+    analysisAccountBInput.value = "";
+  }
+  if (analysisRangeSelect) {
+    analysisRangeSelect.value = "90";
+  }
+  if (analysisPostLimitSelect) {
+    analysisPostLimitSelect.value = "500";
+  }
+  if (analysisIncludeRepliesToggle) {
+    analysisIncludeRepliesToggle.checked = false;
+  }
+  if (analysisIncludeQuotesToggle) {
+    analysisIncludeQuotesToggle.checked = false;
+  }
+  renderAnalysisWorkspace();
+  void persistSettings();
 }
 
 function updateNetworkFilterButtons() {
@@ -5273,16 +6689,17 @@ function updatePublishAvailability() {
     (segment.images || []).some((image) => !String(image.alt || "").trim()));
   const hasOversizedImage = getSegmentPayloads().some((segment) =>
     (segment.images || []).some((image) => image.validation?.tooBig));
+  const shouldBlockOversizedImages = !isImageAutoResizeEnabled();
   const canPublish = Boolean(baseText) && !hasTooLongSegment && !hasMissingAltText;
-  const canPublishWithImages = canPublish && !hasOversizedImage;
+  const canPublishWithImages = canPublish && (!shouldBlockOversizedImages || !hasOversizedImage);
 
   publishButton.disabled = !canPublishWithImages;
-  publishButton.classList.toggle("is-danger", hasTooLongSegment || hasMissingAltText || hasOversizedImage);
+  publishButton.classList.toggle("is-danger", hasTooLongSegment || hasMissingAltText || (shouldBlockOversizedImages && hasOversizedImage));
   const publishWarnings = [];
   if (hasMissingAltText) {
     publishWarnings.push(t("publishAltTextWarning"));
   }
-  if (hasOversizedImage) {
+  if (shouldBlockOversizedImages && hasOversizedImage) {
     publishWarnings.push(t("publishImageTooLargeWarning"));
   }
   publishWarning.hidden = publishWarnings.length === 0;
@@ -5687,6 +7104,12 @@ function applyTranslations() {
   if (archiveMediaActorInput) {
     archiveMediaActorInput.placeholder = t("archiveMediaActorPlaceholder");
   }
+  if (analysisAccountAInput) {
+    analysisAccountAInput.placeholder = t("analysisAccountPlaceholder");
+  }
+  if (analysisAccountBInput) {
+    analysisAccountBInput.placeholder = t("analysisAccountPlaceholder");
+  }
   loginButton.textContent = t("loginButton");
   loginDialogCancelButton.textContent = t("cancelButton");
   loginDialogCloseTop.textContent = t("closeButton");
@@ -5703,7 +7126,11 @@ function applyTranslations() {
   themeStatusNote.textContent = themeMode === "dark" ? t("themeDarkActive") : t("themeLightActive");
   archiveButton.textContent = t("archiveLaunchButton");
   networkButton.textContent = t("networkLaunchButton");
+  analysisButton.textContent = t("analysisLaunchButton");
   dmButton.textContent = t("dmLaunchButton");
+  if (analysisExportPdfButton) {
+    analysisExportPdfButton.textContent = t("analysisExportPdfButton");
+  }
   networkLoadButton.textContent = networkLoading ? t("networkLoadingButton") : t("networkLoadButton");
   networkResetButton.textContent = t("networkResetButton");
   archiveNextWaveButton.textContent = t("archiveNextWaveButton");
@@ -5868,6 +7295,7 @@ function applyTranslations() {
 
   renderReplyTargetCard();
   renderSegments();
+  renderAnalysisWorkspace();
   updateStatusForAuth();
   renderArchiveWorkspace();
   applyTheme();
@@ -6291,6 +7719,14 @@ function normalizePostingHistory(entries) {
   return result
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
     .slice(0, MAX_POSTING_HISTORY);
+}
+
+function normalizeImageAutoResizeMode(value) {
+  return value === "fit" || value === "lossy" ? value : "off";
+}
+
+function isImageAutoResizeEnabled(mode = imageAutoResizeMode) {
+  return normalizeImageAutoResizeMode(mode) !== "off";
 }
 
 function mergePostingHistoryEntries(existing, imported) {
@@ -6718,6 +8154,7 @@ function closeReplyTargetDialog() {
 }
 
 function clearComposerReplyTarget({ render = true } = {}) {
+  replyTargetRequestToken += 1;
   composerReplyTarget = null;
   if (replyTargetUrlInput) {
     replyTargetUrlInput.value = "";
@@ -7119,6 +8556,52 @@ async function validateThreadImage(image) {
     tooBig: rendered.blob.size > IMAGE_BLOB_LIMIT || rendered.width > IMAGE_MAX_DIMENSION || rendered.height > IMAGE_MAX_DIMENSION,
   };
   return image.validation;
+}
+
+async function autoFitImageToAllowedDimensions(image) {
+  const rendered = await renderImageToBlob(image);
+  const maxRenderedDimension = Math.max(rendered.width, rendered.height);
+  if (maxRenderedDimension <= IMAGE_MAX_DIMENSION) {
+    return false;
+  }
+  const currentScale = Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image.exportScale) || 1));
+  image.exportScale = Math.max(IMAGE_MIN_EXPORT_SCALE, currentScale * (IMAGE_MAX_DIMENSION / maxRenderedDimension));
+  return true;
+}
+
+async function autoApplyLossyResize(image) {
+  image.exportScale = Math.max(IMAGE_MIN_EXPORT_SCALE, (image.exportScale || 1) * 0.82);
+  image.exportQuality = Math.max(0.45, (image.exportQuality || 0.88) * 0.86);
+}
+
+async function prepareImageForUpload(image, autoMode = imageAutoResizeMode) {
+  const workingImage = normalizeThreadImage(image);
+  if (!workingImage) {
+    throw new Error(t("imageBlobCreateFailed"));
+  }
+  await validateThreadImage(workingImage);
+  const normalizedMode = normalizeImageAutoResizeMode(autoMode);
+  if (workingImage.validation?.tooBig && normalizedMode === "fit") {
+    await autoFitImageToAllowedDimensions(workingImage);
+    await validateThreadImage(workingImage);
+  }
+  if (workingImage.validation?.tooBig && normalizedMode === "lossy") {
+    await autoFitImageToAllowedDimensions(workingImage);
+    await validateThreadImage(workingImage);
+    let attempts = 0;
+    while (workingImage.validation?.tooBig && attempts < 8) {
+      await autoApplyLossyResize(workingImage);
+      await validateThreadImage(workingImage);
+      attempts += 1;
+    }
+  }
+  const rendered = await renderImageToBlob(workingImage);
+  return {
+    blob: rendered.blob,
+    width: rendered.width,
+    height: rendered.height,
+    validation: workingImage.validation,
+  };
 }
 
 async function validateSegmentImages() {
@@ -7795,33 +9278,38 @@ async function submitReplyTargetDialog() {
 }
 
 async function openConfirmDialog({ title, message, confirmLabel, cancelLabel, preview = null, confirmValue = true, cancelValue = false, dismissValue = false }) {
-  confirmDialogTitle.textContent = title;
-  confirmDialogMessage.textContent = message;
-  confirmDialogConfirmButton.textContent = confirmLabel || t("confirmYes");
-  confirmDialogCancelButton.textContent = cancelLabel || t("confirmNo");
-  confirmDialogValues = {
-    confirm: confirmValue,
-    cancel: cancelValue,
-    dismiss: dismissValue,
-  };
-  if (confirmDialogPreview) {
-    const hasPreview = preview && typeof preview === "object" && (preview.name || preview.handle || preview.avatar);
-    confirmDialogPreview.hidden = !hasPreview;
-    if (hasPreview) {
-      confirmDialogAvatar.src = preview.avatar || "icons/threadline-icon.svg";
-      confirmDialogAvatar.alt = preview.name || preview.handle || "";
-      confirmDialogPreviewName.textContent = preview.name || preview.handle || "";
-      confirmDialogPreviewHandle.textContent = preview.handle ? `@${preview.handle}` : "";
+  const queuedOpen = async () => {
+    confirmDialogTitle.textContent = title;
+    confirmDialogMessage.textContent = message;
+    confirmDialogConfirmButton.textContent = confirmLabel || t("confirmYes");
+    confirmDialogCancelButton.textContent = cancelLabel || t("confirmNo");
+    confirmDialogValues = {
+      confirm: confirmValue,
+      cancel: cancelValue,
+      dismiss: dismissValue,
+    };
+    if (confirmDialogPreview) {
+      const hasPreview = preview && typeof preview === "object" && (preview.name || preview.handle || preview.avatar);
+      confirmDialogPreview.hidden = !hasPreview;
+      if (hasPreview) {
+        confirmDialogAvatar.src = preview.avatar || "icons/threadline-icon.svg";
+        confirmDialogAvatar.alt = preview.name || preview.handle || "";
+        confirmDialogPreviewName.textContent = preview.name || preview.handle || "";
+        confirmDialogPreviewHandle.textContent = preview.handle ? `@${preview.handle}` : "";
+      }
     }
-  }
-  if (confirmDialog.open) {
-    ignoreNextConfirmClose = true;
-    confirmDialog.close();
-  }
-  return new Promise((resolve) => {
-    confirmResolver = resolve;
-    confirmDialog.showModal();
-  });
+    if (confirmDialog.open) {
+      ignoreNextConfirmClose = true;
+      confirmDialog.close();
+    }
+    return new Promise((resolve) => {
+      confirmResolver = resolve;
+      confirmDialog.showModal();
+    });
+  };
+  const resultPromise = confirmDialogQueue.catch(() => {}).then(queuedOpen);
+  confirmDialogQueue = resultPromise.then(() => {}, () => {});
+  return resultPromise;
 }
 
 function resolveConfirmDialog(value) {
@@ -12024,30 +13512,36 @@ function renderHashtagCloud() {
 }
 
 async function persistSettings() {
+  const payload = {
+    localePreference,
+    tipsVisible,
+    altTextRequired,
+    imageAutoResizeMode,
+    themeMode,
+    sidebarCollapsedDesktop,
+    desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
+    sidebarWidthDesktop,
+    composerWidthDesktop,
+    postLanguages: getNormalizedPostLanguagesOrDefault(),
+    appendThreadIntro,
+    appendThreadEmoji,
+    addMarkerSpacing,
+    postInteraction: getCurrentPostInteractionSettings(),
+    linkCardProxy: getLinkCardSettings(),
+    hashtags,
+    selectedHashtags,
+    hashtagPlacement,
+    segmentImages,
+    segmentLinkCards,
+    postingHistory,
+    archivePreferences: getArchivePreferences(),
+    analysisState: getPersistableAnalysisState(),
+  };
   try {
-    await sendToServiceWorker("SAVE_SETTINGS", {
-      localePreference,
-      tipsVisible,
-      altTextRequired,
-      themeMode,
-      sidebarCollapsedDesktop,
-      desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
-      sidebarWidthDesktop,
-      composerWidthDesktop,
-      postLanguages: getNormalizedPostLanguagesOrDefault(),
-      appendThreadIntro,
-      appendThreadEmoji,
-      addMarkerSpacing,
-      postInteraction: getCurrentPostInteractionSettings(),
-      linkCardProxy: getLinkCardSettings(),
-      hashtags,
-      selectedHashtags,
-      hashtagPlacement,
-      segmentImages,
-      segmentLinkCards,
-      postingHistory,
-      archivePreferences: getArchivePreferences(),
-    }, { timeoutMs: 120000 });
+    settingsSaveQueue = settingsSaveQueue
+      .catch(() => {})
+      .then(() => sendToServiceWorker("SAVE_SETTINGS", payload, { timeoutMs: 120000 }));
+    await settingsSaveQueue;
   } catch (error) {
     console.error(error);
     setStatus(error.message, "error");
@@ -12157,6 +13651,7 @@ async function createSettingsBackupPayload() {
       selectedHashtags,
       postingHistory,
       archivePreferences: getArchivePreferences(),
+      analysisState: getPersistableAnalysisState(),
     },
   };
 }
@@ -12207,6 +13702,7 @@ async function importSettingsBackup(file) {
   hashtagPlacementSelect.value = hashtagPlacement;
   tipsVisible = imported.tipsVisible !== false;
   altTextRequired = imported.altTextRequired === true;
+  imageAutoResizeMode = normalizeImageAutoResizeMode(imported.imageAutoResizeMode);
   themeMode = imported.themeMode === "dark" ? "dark" : "light";
   sidebarCollapsedDesktop = imported.sidebarCollapsedDesktop === true;
   ({
@@ -12224,6 +13720,9 @@ async function importSettingsBackup(file) {
   threadEmojiToggle.checked = appendThreadEmoji;
   addMarkerSpacing = imported.addMarkerSpacing === true;
   markerSpacingToggle.checked = addMarkerSpacing;
+  if (imageAutoResizeSelect) {
+    imageAutoResizeSelect.value = imageAutoResizeMode;
+  }
   applyPostInteractionSettings(imported.postInteraction || {});
   if (imported.linkCardProxy && typeof imported.linkCardProxy === "object") {
     linkCardEndpointInput.value = imported.linkCardProxy.endpoint || "";
@@ -12235,6 +13734,7 @@ async function importSettingsBackup(file) {
   currentLocale = localePreference === "auto" ? detectBrowserLocale() : localePreference;
   languageSelect.value = localePreference;
   applyArchivePreferences(imported.archivePreferences || {});
+  restorePersistedAnalysisState(imported.analysisState);
   applyDesktopLayoutState();
   applySidebarState();
 
@@ -13483,7 +14983,8 @@ function renderSegmentImages(container, segmentIndex) {
     card.draggable = true;
     card.dataset.segmentIndex = String(segmentIndex);
     card.dataset.imageIndex = String(imageIndex);
-    if (image.validation?.tooBig) {
+    const highlightOversizedImage = image.validation?.tooBig && !isImageAutoResizeEnabled();
+    if (highlightOversizedImage) {
       card.classList.add("is-too-large");
     }
 
@@ -13583,7 +15084,7 @@ function renderSegmentImages(container, segmentIndex) {
     exportSize.textContent = t("exportSizeLabel", {
       size: formatImageSize(image.validation?.sizeBytes),
     });
-    if (image.validation?.tooBig) {
+    if (highlightOversizedImage) {
       exportSize.classList.add("is-too-large");
     }
     const exportDimensions = document.createElement("span");
@@ -13591,7 +15092,7 @@ function renderSegmentImages(container, segmentIndex) {
       width: image.validation?.width || image.width || 0,
       height: image.validation?.height || image.height || 0,
     });
-    if (image.validation?.exceedsDimensions) {
+    if (image.validation?.exceedsDimensions && !isImageAutoResizeEnabled()) {
       exportDimensions.classList.add("is-too-large");
     }
     meta.append(name, altState, originalSize, exportSize, exportDimensions);
@@ -13620,7 +15121,7 @@ function renderSegmentImages(container, segmentIndex) {
         handler: () => openAltTextDialog(segmentIndex, imageIndex),
       },
       {
-        className: `segment-image-tool${image.validation?.tooBig ? " danger" : ""}`,
+        className: `segment-image-tool${highlightOversizedImage ? " danger" : ""}`,
         icon: "M3 5h18v14H3V5zm2 2v10h14V7H5zm2 8 2.5-3 2 2.5 3-4L19 15H7z",
         label: t("editImageButton"),
         handler: () => void openImageEditorDialog(segmentIndex, imageIndex),
@@ -13859,6 +15360,7 @@ async function hydrateAppState() {
     localePreference = state.localePreference || "auto";
     tipsVisible = state.tipsVisible !== false;
     altTextRequired = state.altTextRequired !== false;
+    imageAutoResizeMode = normalizeImageAutoResizeMode(state.imageAutoResizeMode);
     themeMode = state.themeMode === "dark" ? "dark" : "light";
     sidebarCollapsedDesktop = state.sidebarCollapsedDesktop === true;
     const needsDesktopLayoutMigration = state.desktopLayoutVersion !== DESKTOP_LAYOUT_STATE_VERSION;
@@ -13877,6 +15379,7 @@ async function hydrateAppState() {
     segmentLinkCards = normalizeSegmentLinkCards(state.segmentLinkCards);
     segmentOverrides = normalizeSegmentOverrides(state.segmentOverrides);
     composerReplyTarget = normalizeReplyTarget(state.replyTarget);
+    restorePersistedAnalysisState(state.analysisState);
     selectedPostLanguages = normalizePostLanguageTags(state.postLanguages);
     appendThreadIntro = state.appendThreadIntro === true;
     appendThreadEmoji = state.appendThreadEmoji === true;
@@ -13884,6 +15387,9 @@ async function hydrateAppState() {
     applyPostInteractionSettings(state.postInteraction || {});
     linkCardEndpointInput.value = state.linkCardProxy?.endpoint || "";
     linkCardSecretInput.value = state.linkCardProxy?.secret || "";
+    if (imageAutoResizeSelect) {
+      imageAutoResizeSelect.value = imageAutoResizeMode;
+    }
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
     archiveSession = savedArchiveSession || null;
@@ -13931,14 +15437,18 @@ async function hydrateAppState() {
 function queueDraftSave() {
   window.clearTimeout(draftSaveTimer);
   draftSaveTimer = window.setTimeout(async () => {
+    const payload = {
+      draft: sourceText.value,
+      segmentImages,
+      segmentLinkCards,
+      segmentOverrides,
+      replyTarget: composerReplyTarget,
+    };
     try {
-      await sendToServiceWorker("SAVE_DRAFT", {
-        draft: sourceText.value,
-        segmentImages,
-        segmentLinkCards,
-        segmentOverrides,
-        replyTarget: composerReplyTarget,
-      }, { timeoutMs: 120000 });
+      draftSaveQueue = draftSaveQueue
+        .catch(() => {})
+        .then(() => sendToServiceWorker("SAVE_DRAFT", payload, { timeoutMs: 120000 }));
+      await draftSaveQueue;
     } catch (error) {
       console.error(error);
       setStatus(error.message, "error");
@@ -14051,7 +15561,7 @@ publishButton.addEventListener("click", async () => {
     return;
   }
 
-  if (segments.some((entry) => entry.images.some((image) => image.validation?.tooBig))) {
+  if (!isImageAutoResizeEnabled() && segments.some((entry) => entry.images.some((image) => image.validation?.tooBig))) {
     setStatus(t("statusImageTooLarge"), "error");
     showErrorDialog(t("statusImageTooLarge"));
     return;
@@ -14145,17 +15655,23 @@ publishButton.addEventListener("click", async () => {
             index: segmentIndex + 1,
           }),
         );
-        const rendered = await renderImageToBlob(image);
-        if (rendered.blob.size > IMAGE_BLOB_LIMIT) {
-          image.validation = { sizeBytes: rendered.blob.size, tooBig: true };
+        const preparedImage = await prepareImageForUpload(image, imageAutoResizeMode);
+        if (preparedImage.validation?.tooBig || preparedImage.blob.size > IMAGE_BLOB_LIMIT || preparedImage.width > IMAGE_MAX_DIMENSION || preparedImage.height > IMAGE_MAX_DIMENSION) {
+          image.validation = {
+            sizeBytes: preparedImage.blob.size,
+            width: preparedImage.width,
+            height: preparedImage.height,
+            exceedsDimensions: preparedImage.width > IMAGE_MAX_DIMENSION || preparedImage.height > IMAGE_MAX_DIMENSION,
+            tooBig: true,
+          };
           renderSegments({ preserveOverrides: true });
           throw new Error(t("statusImageTooLarge"));
         }
         preparedImages.push({
-          blob: new File([rendered.blob], image.name || "image.jpg", { type: rendered.blob.type || image.type || "image/jpeg" }),
+          blob: new File([preparedImage.blob], image.name || "image.jpg", { type: preparedImage.blob.type || image.type || "image/jpeg" }),
           alt: image.alt || "",
-          width: rendered.width,
-          height: rendered.height,
+          width: preparedImage.width,
+          height: preparedImage.height,
         });
       }
       preparedSegments.push({
@@ -14359,8 +15875,84 @@ networkButton.addEventListener("click", () => {
   showNetworkWorkspace();
 });
 
+analysisButton.addEventListener("click", () => {
+  showAnalysisWorkspace();
+});
+
 dmButton.addEventListener("click", () => {
   showDmWorkspace();
+});
+
+analysisAccountAOwnButton?.addEventListener("click", () => {
+  const actor = getActiveAnalysisActor();
+  if (analysisAccountAInput && actor) {
+    analysisAccountAInput.value = actor;
+    updateAnalysisControls();
+    setAnalysisStatus(t("analysisAccountLoadedStatus", { slot: "A", account: actor }));
+    void persistSettings();
+  }
+});
+
+analysisAccountBOwnButton?.addEventListener("click", () => {
+  const actor = getActiveAnalysisActor();
+  if (analysisAccountBInput && actor) {
+    analysisAccountBInput.value = actor;
+    updateAnalysisControls();
+    setAnalysisStatus(t("analysisAccountLoadedStatus", { slot: "B", account: actor }));
+    void persistSettings();
+  }
+});
+
+analysisAccountALoadButton?.addEventListener("click", () => {
+  void handleAnalysisAccountLoad("a");
+});
+
+analysisAccountBLoadButton?.addEventListener("click", () => {
+  void handleAnalysisAccountLoad("b");
+});
+
+analysisCompareButton?.addEventListener("click", () => {
+  void runAnalysisComparison();
+});
+
+analysisResetButton?.addEventListener("click", () => {
+  resetAnalysisWorkspace();
+});
+
+analysisExportPdfButton?.addEventListener("click", async () => {
+  try {
+    setBusy(analysisExportPdfButton, true, t("analysisExportPdfWorking"), t("analysisExportPdfButton"));
+    await exportAnalysisPdfReport();
+  } catch (error) {
+    console.error(error);
+    setAnalysisStatus(error.message || t("analysisExportFailed"));
+    showErrorDialog(error.message || t("analysisExportFailed"), t("archiveErrorTitle"));
+  } finally {
+    setBusy(analysisExportPdfButton, false, t("analysisExportPdfWorking"), t("analysisExportPdfButton"));
+  }
+});
+
+[analysisAccountAInput, analysisAccountBInput].forEach((input) => {
+  input?.addEventListener("input", () => {
+    analysisComparisonResult = null;
+    updateAnalysisControls();
+    renderAnalysisResult();
+    void persistSettings();
+  });
+  input?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void runAnalysisComparison();
+    }
+  });
+});
+
+[analysisRangeSelect, analysisPostLimitSelect, analysisIncludeRepliesToggle, analysisIncludeQuotesToggle].forEach((control) => {
+  control?.addEventListener("change", () => {
+    analysisComparisonResult = null;
+    renderAnalysisWorkspace();
+    void persistSettings();
+  });
 });
 
 networkFilterButtons.forEach((button) => {
@@ -14775,10 +16367,14 @@ if (archiveLoadThreadUrlButton) {
 }
 
 async function resolveComposerReplyTarget(url, mode = "post") {
+  const requestToken = ++replyTargetRequestToken;
   const target = normalizeReplyTarget(await sendToServiceWorker("CHECK_REPLY_TARGET", {
     url,
     mode,
   }));
+  if (requestToken !== replyTargetRequestToken) {
+    return null;
+  }
   let nextTarget = target;
   if (isOwnThreadReplyChoiceTarget(target)) {
     const pointsToThreadRoot = target.targetPost?.uri && target.targetPost.uri === target.rootPost?.uri;
@@ -14801,9 +16397,15 @@ async function resolveComposerReplyTarget(url, mode = "post") {
     if (chosenMode === null) {
       return null;
     }
+    if (requestToken !== replyTargetRequestToken) {
+      return null;
+    }
     nextTarget = chosenMode === "thread"
       ? buildThreadContinuationTarget(target)
       : target;
+  }
+  if (requestToken !== replyTargetRequestToken) {
+    return null;
   }
   composerReplyTarget = nextTarget;
   renderReplyTargetCard();
@@ -15240,6 +16842,15 @@ tipsVisibleToggle.addEventListener("change", async () => {
 altTextRequiredToggle.addEventListener("change", async () => {
   altTextRequired = altTextRequiredToggle.checked;
   renderSegments({ preserveOverrides: true });
+  await persistSettings();
+});
+
+imageAutoResizeSelect?.addEventListener("change", async () => {
+  imageAutoResizeMode = normalizeImageAutoResizeMode(imageAutoResizeSelect.value);
+  preserveScrollPosition(() => {
+    renderSegments({ preserveOverrides: true });
+  });
+  updatePublishAvailability();
   await persistSettings();
 });
 

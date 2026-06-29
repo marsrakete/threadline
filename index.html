@@ -111,6 +111,15 @@
               </p>
             </div>
 
+            <div class="workspace-launch-chip">
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="analysis-button" data-i18n="analysisLaunchButton" disabled>
+                Analyse
+              </button>
+              <p id="analysis-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="analysisLaunchDisabledNote">
+                Zum Vergleichen bitte zuerst verbinden.
+              </p>
+            </div>
+
             <div class="workspace-launch-chip dm-launch-panel" hidden>
               <button type="button" class="ghost-button status-history-button workspace-chip-button" id="dm-button" data-i18n="dmLaunchButton" disabled>
                 DM-Archiv
@@ -184,14 +193,16 @@
                     <button id="reply-target-clear-button" type="button" class="ghost-button" data-i18n="replyTargetClearButton">Entfernen</button>
                   </div>
                   <div class="reply-target-card-body">
-                    <img id="reply-target-avatar" class="reply-target-avatar" alt="">
-                    <div class="reply-target-copy">
-                      <strong id="reply-target-name" class="reply-target-name"></strong>
-                      <p id="reply-target-handle" class="reply-target-handle"></p>
-                      <p id="reply-target-meta" class="reply-target-meta"></p>
-                      <p id="reply-target-warning" class="reply-target-warning" hidden></p>
+                    <div class="reply-target-quote-card">
+                      <img id="reply-target-avatar" class="reply-target-avatar" alt="">
+                      <div class="reply-target-identity">
+                        <strong id="reply-target-name" class="reply-target-name"></strong>
+                        <p id="reply-target-handle" class="reply-target-handle"></p>
+                      </div>
                       <p id="reply-target-text" class="reply-target-text"></p>
                     </div>
+                    <p id="reply-target-meta" class="reply-target-meta"></p>
+                    <p id="reply-target-warning" class="reply-target-warning" hidden></p>
                   </div>
                 </article>
               </div>
@@ -707,6 +718,120 @@
           </div>
         </section>
 
+        <section id="analysis-workspace" class="archive-workspace analysis-workspace workspace-view" hidden>
+          <div class="archive-header-panel">
+            <div>
+              <p class="eyebrow" data-i18n="analysisHeaderEyebrow">Analyse</p>
+              <h2 data-i18n="analysisHeaderTitle">Zwei Accounts stilistisch vergleichen</h2>
+              <p class="section-note" data-i18n="analysisHeaderNote">
+                Lade aktuelle Posts von zwei Accounts, vergleiche typische Schreibmuster und bewerte die Ähnlichkeit vorsichtig. Das Ergebnis ist nur eine grobe Stilometrie, kein Beweis.
+              </p>
+            </div>
+          </div>
+
+          <div class="archive-grid analysis-grid">
+            <section class="archive-card analysis-config-card">
+              <p class="eyebrow" data-i18n="analysisConfigEyebrow">Quelle</p>
+              <h3 data-i18n="analysisConfigTitle">Accounts und Vergleichsrahmen wählen</h3>
+              <div class="analysis-account-grid">
+                <div class="analysis-account-field">
+                  <label for="analysis-account-a-input">
+                    <span data-i18n="analysisAccountALabel">Account A</span>
+                    <input id="analysis-account-a-input" type="search" inputmode="text" placeholder="@handle oder did:plc:..." autocomplete="off" autocapitalize="off" spellcheck="false">
+                  </label>
+                  <div class="archive-actions">
+                    <button type="button" class="ghost-button" id="analysis-account-a-own-button" data-i18n="analysisUseOwnAccountButton">Mein Account</button>
+                    <button type="button" class="ghost-button" id="analysis-account-a-load-button" data-i18n="analysisLoadAccountAButton">Profil A laden</button>
+                  </div>
+                </div>
+
+                <div class="analysis-account-field">
+                  <label for="analysis-account-b-input">
+                    <span data-i18n="analysisAccountBLabel">Account B</span>
+                    <input id="analysis-account-b-input" type="search" inputmode="text" placeholder="@handle oder did:plc:..." autocomplete="off" autocapitalize="off" spellcheck="false">
+                  </label>
+                  <div class="archive-actions">
+                    <button type="button" class="ghost-button" id="analysis-account-b-own-button" data-i18n="analysisUseOwnAccountButton">Mein Account</button>
+                    <button type="button" class="ghost-button" id="analysis-account-b-load-button" data-i18n="analysisLoadAccountBButton">Profil B laden</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="analysis-options-grid">
+                <label>
+                  <span data-i18n="analysisRangeLabel">Zeitraum</span>
+                  <select id="analysis-range-select">
+                    <option value="30" data-i18n="analysisRange30">Letzte 30 Tage</option>
+                    <option value="90" selected data-i18n="analysisRange90">Letzte 90 Tage</option>
+                    <option value="180" data-i18n="analysisRange180">Letzte 180 Tage</option>
+                    <option value="365" data-i18n="analysisRange365">Letzte 365 Tage</option>
+                    <option value="0" data-i18n="analysisRangeAll">Alles, was geladen werden kann</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span data-i18n="analysisPostLimitLabel">Maximale Posts je Account</span>
+                  <select id="analysis-post-limit-select">
+                    <option value="100">100</option>
+                    <option value="250">250</option>
+                    <option value="500" selected>500</option>
+                    <option value="1000">1000</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="analysis-toggles">
+                <label class="settings-check">
+                  <input id="analysis-include-replies-toggle" type="checkbox">
+                  <span data-i18n="analysisIncludeRepliesToggle">Replies einbeziehen</span>
+                </label>
+                <label class="settings-check">
+                  <input id="analysis-include-quotes-toggle" type="checkbox">
+                  <span data-i18n="analysisIncludeQuotesToggle">Quote-Posts einbeziehen</span>
+                </label>
+              </div>
+
+              <div class="archive-actions">
+                <button type="button" id="analysis-compare-button" data-i18n="analysisCompareButton">Accounts vergleichen</button>
+                <button type="button" class="ghost-button" id="analysis-reset-button" data-i18n="analysisResetButton">Analyse zurücksetzen</button>
+                <button type="button" class="ghost-button" id="analysis-export-pdf-button" data-i18n="analysisExportPdfButton">Analyse als PDF</button>
+              </div>
+
+              <p id="analysis-status-line" class="archive-run-status-line" data-i18n="analysisStatusIdle">
+                Noch keine Analyse gestartet.
+              </p>
+              <p class="settings-note" data-i18n="analysisNote">
+                Je mehr eigener Fließtext pro Account vorliegt, desto sinnvoller wird der Vergleich. Sehr kurze, stark bebilderte oder absichtlich verstellte Accounts liefern wackelige Ergebnisse.
+              </p>
+            </section>
+
+            <section class="archive-card analysis-summary-card">
+              <p class="eyebrow" data-i18n="analysisResultsEyebrow">Überblick</p>
+              <h3 data-i18n="analysisResultsTitle">Geladene Accounts und Ergebnis</h3>
+              <div id="analysis-summary" class="analysis-summary-grid">
+                <p class="settings-note" data-i18n="analysisSummaryEmpty">Lade zwei Accounts, um die Stilometrie zu vergleichen.</p>
+              </div>
+              <div id="analysis-result-card" class="archive-result-card analysis-result-card" hidden></div>
+            </section>
+
+            <section class="archive-card analysis-metrics-card">
+              <p class="eyebrow" data-i18n="analysisMetricsEyebrow">Metriken</p>
+              <h3 data-i18n="analysisMetricsTitle">Messbare Schreibmuster</h3>
+              <div id="analysis-metrics" class="analysis-metrics-table">
+                <p class="settings-note" data-i18n="analysisMetricsEmpty">Nach dem Vergleich erscheinen hier die wichtigsten Stilmerkmale beider Accounts.</p>
+              </div>
+            </section>
+
+            <section class="archive-card analysis-patterns-card">
+              <p class="eyebrow" data-i18n="analysisPatternsEyebrow">Muster</p>
+              <h3 data-i18n="analysisPatternsTitle">Häufige Wörter und Zeichenmuster</h3>
+              <div id="analysis-patterns" class="analysis-pattern-grid">
+                <p class="settings-note" data-i18n="analysisPatternsEmpty">Hier siehst du nach dem Vergleich typische kurze Wörter und Zeichen-Trigramme beider Accounts.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
         <section id="dm-workspace" class="archive-workspace dm-workspace workspace-view" hidden>
           <div class="archive-header-panel">
             <div>
@@ -861,6 +986,19 @@
             <input id="alt-text-required-toggle" type="checkbox">
             <span data-i18n="altTextRequiredSetting">ALT-Text Pflicht: Ich möchte inklusive Postings erstellen</span>
           </label>
+        </section>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="imageSettingsEyebrow">Bilder</p>
+          <label>
+            <span data-i18n="imageAutoResizeModeLabel">Bildstrategie vor dem Posten</span>
+            <select id="image-auto-resize-select">
+              <option value="off" data-i18n="imageAutoResizeModeOff">Manuell prüfen und anpassen</option>
+              <option value="fit" data-i18n="imageAutoResizeModeFit">Automatisch auf 4000 px anpassen</option>
+              <option value="lossy" data-i18n="imageAutoResizeModeLossy">Automatisch verlustbehaftet verkleinern</option>
+            </select>
+          </label>
+          <p class="settings-note" data-i18n="imageAutoResizeModeNote">Wenn eine automatische Strategie aktiv ist, blockieren zu große Bilder den Composer nicht mehr. Vor dem Posten werden sie im Speicher noch einmal geprüft und bei Bedarf automatisch angepasst.</p>
         </section>
 
         <section class="settings-block">
