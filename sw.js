@@ -14,6 +14,7 @@ const APP_SHELL = [
   "./README.md",
   "./README.de.md",
   "./og-image.jpg",
+  "./icons/threadline-og-workspaces.png",
   "./icons/icon.svg",
   "./icons/maskable-icon.svg",
   "./icons/kofi-button.svg",
@@ -1855,7 +1856,7 @@ function isAnalysisQuoteRecord(record = {}, postView = {}) {
 async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProgress = () => {}) {
   const auth = await ensureSession();
   const requestedActor = String(actor || "").trim() || auth.session.did;
-  const limit = Math.max(100, Math.min(1000, Number(options.limit) || 500));
+  const limit = Math.max(100, Math.min(2000, Number(options.limit) || 500));
   const rangeDays = Math.max(0, Number(options.rangeDays) || 0);
   const includeReplies = options.includeReplies === true;
   const includeQuotes = options.includeQuotes === true;

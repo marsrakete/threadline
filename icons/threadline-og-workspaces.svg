@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">Threadline Workspaces</title>
-  <desc id="desc">Sachliche Open-Graph-Grafik mit Threadline-Logo und vier Workspaces: Composer, Archiv-Funktion, Netzwerk und DM-Archiv.</desc>
+  <desc id="desc">Sachliche Open-Graph-Grafik mit Threadline-Logo und fünf Workspaces: Composer, Archiv-Funktion, Netzwerk, Analyse und DM-Archiv.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
       <stop offset="0%" stop-color="#f9fcff"/>
@@ -22,12 +22,11 @@
       <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#84a8d8" flood-opacity=".12"/>
     </filter>
     <style>
-      .eyebrow { font: 700 15px/1.2 Arial, sans-serif; letter-spacing: 2.8px; text-transform: uppercase; fill: #4dc9bb; }
-      .title { font: 700 56px/1.05 Arial, sans-serif; fill: #203454; }
-      .subtitle { font: 400 24px/1.45 Arial, sans-serif; fill: #5d79a5; }
-      .card-title { font: 700 26px/1.15 Arial, sans-serif; fill: #203454; }
-      .card-text { font: 400 19px/1.45 Arial, sans-serif; fill: #6582ab; }
-      .label { font: 700 18px/1 Arial, sans-serif; fill: #203454; }
+      .eyebrow { font-family: "Segoe UI", Arial, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 2.8px; text-transform: uppercase; fill: #4dc9bb; }
+      .title { font-family: "Segoe UI", Arial, sans-serif; font-size: 56px; font-weight: 700; fill: #203454; }
+      .subtitle { font-family: "Segoe UI", Arial, sans-serif; font-size: 24px; font-weight: 400; fill: #5d79a5; }
+      .card-title { font-family: "Segoe UI", Arial, sans-serif; font-size: 21px; font-weight: 700; fill: #203454; }
+      .card-text { font-family: "Segoe UI", Arial, sans-serif; font-size: 15px; font-weight: 400; fill: #6582ab; }
     </style>
   </defs>
 
@@ -48,52 +47,62 @@
 
   <g transform="translate(286 86)">
     <text class="eyebrow" x="0" y="0">THREADLINE</text>
-    <text class="title" x="0" y="68">Vier Arbeitsbereiche für Bluesky</text>
-    <text class="subtitle" x="0" y="118">Schreiben, sichern, erkunden und Direct Messages lokal verwalten.</text>
+    <text class="title" x="0" y="68">Fünf Arbeitsbereiche für Bluesky</text>
+    <text class="subtitle" x="0" y="118">Schreiben, sichern, erkunden, vergleichen und Direct Messages lokal verwalten.</text>
   </g>
 
-  <g transform="translate(76 272)">
+  <g transform="translate(76 264)">
     <g transform="translate(0 0)" filter="url(#soft)">
-      <rect width="492" height="118" rx="28" fill="url(#panel)"/>
-      <circle cx="52" cy="44" r="28" fill="#f2fcfa" stroke="#9ce5da" stroke-width="2.2"/>
-      <g transform="translate(52 48) rotate(-45) translate(-52 -48)">
-        <rect x="42.5" y="36.5" width="19" height="9" rx="4.2" fill="none" stroke="#16a795" stroke-width="3.6"/>
-        <rect x="58.5" y="36.5" width="8.5" height="9" rx="3.2" fill="none" stroke="#16a795" stroke-width="3.6"/>
-        <path d="M42.5 36.5l-6.5 4.5 6.5 4.5" fill="none" stroke="#16a795" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect width="320" height="110" rx="28" fill="url(#panel)"/>
+      <circle cx="46" cy="42" r="26" fill="#f2fcfa" stroke="#9ce5da" stroke-width="2.2"/>
+      <g transform="translate(46 46) rotate(-45) translate(-46 -46)">
+        <rect x="37.5" y="35" width="17" height="8" rx="4" fill="none" stroke="#16a795" stroke-width="3.4"/>
+        <rect x="51.5" y="35" width="7.5" height="8" rx="3" fill="none" stroke="#16a795" stroke-width="3.4"/>
+        <path d="M37.5 35l-6 4 6 4" fill="none" stroke="#16a795" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
-      <path d="M40.5 60.5h23" fill="none" stroke="#16a795" stroke-width="3.6" stroke-linecap="round"/>
-      <text class="card-title" x="92" y="50">Composer</text>
-      <text class="card-text" x="92" y="86">Threads entwerfen und Bilder zufügen</text>
+      <path d="M36 57h20" fill="none" stroke="#16a795" stroke-width="3.4" stroke-linecap="round"/>
+      <text class="card-title" x="76" y="45">Composer</text>
+      <text class="card-text" x="76" y="78">Threads entwerfen und Bilder anordnen</text>
     </g>
 
-    <g transform="translate(0 136)" filter="url(#soft)">
-      <rect width="492" height="118" rx="28" fill="url(#panel)"/>
-      <circle cx="52" cy="44" r="28" fill="#f5f9ff" stroke="#bfd8f6" stroke-width="2.2"/>
-      <path d="M36 39c0-3.3 2.7-6 6-6h20c3.3 0 6 2.7 6 6v20c0 3.3-2.7 6-6 6H42c-3.3 0-6-2.7-6-6V39Zm4 6h24M48 54h8" fill="none" stroke="#2d84df" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
-      <text class="card-title" x="92" y="50">Archiv-Funktion</text>
-      <text class="card-text" x="92" y="86">Posts, Medien und Exporte sichern</text>
+    <g transform="translate(344 0)" filter="url(#soft)">
+      <rect width="320" height="110" rx="28" fill="url(#panel)"/>
+      <circle cx="46" cy="42" r="26" fill="#f5f9ff" stroke="#bfd8f6" stroke-width="2.2"/>
+      <path d="M31 38c0-3 2.5-5.5 5.5-5.5h19c3 0 5.5 2.5 5.5 5.5v18.5c0 3-2.5 5.5-5.5 5.5h-19c-3 0-5.5-2.5-5.5-5.5V38Zm4 5h22M42 51h7" fill="none" stroke="#2d84df" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="card-title" x="76" y="45">Archiv-Funktion</text>
+      <text class="card-text" x="76" y="78">Posts, Medien und Exporte sichern</text>
     </g>
 
-    <g transform="translate(556 0)" filter="url(#soft)">
-      <rect width="492" height="118" rx="28" fill="url(#panel)"/>
-      <circle cx="52" cy="44" r="28" fill="#f5f9ff" stroke="#bfd8f6" stroke-width="2.2"/>
-      <circle cx="52" cy="28" r="7" fill="#ffffff" stroke="#2d84df" stroke-width="3.6"/>
-      <circle cx="36" cy="54" r="7" fill="#ffffff" stroke="#2d84df" stroke-width="3.6"/>
-      <circle cx="68" cy="54" r="7" fill="#ffffff" stroke="#2d84df" stroke-width="3.6"/>
-      <path d="M46.1 34.1 40.2 47.6M57.9 34.1 63.8 47.6M43.8 54h16.4" fill="none" stroke="#2d84df" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
-      <text class="card-title" x="92" y="50">Netzwerk</text>
-      <text class="card-text" x="92" y="86">Follower, Following und Mutuals erkunden</text>
+    <g transform="translate(688 0)" filter="url(#soft)">
+      <rect width="360" height="110" rx="28" fill="url(#panel)"/>
+      <circle cx="46" cy="42" r="26" fill="#f5f9ff" stroke="#bfd8f6" stroke-width="2.2"/>
+      <circle cx="46" cy="27.5" r="6.5" fill="#ffffff" stroke="#2d84df" stroke-width="3.4"/>
+      <circle cx="31.5" cy="51.5" r="6.5" fill="#ffffff" stroke="#2d84df" stroke-width="3.4"/>
+      <circle cx="60.5" cy="51.5" r="6.5" fill="#ffffff" stroke="#2d84df" stroke-width="3.4"/>
+      <path d="M40.8 33.2 35.5 45.4M51.2 33.2 56.5 45.4M38.8 51.5h14.4" fill="none" stroke="#2d84df" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="card-title" x="76" y="45">Netzwerk</text>
+      <text class="card-text" x="76" y="78">Follower, Following und Mutuals erkunden</text>
     </g>
 
-    <g transform="translate(556 136)" filter="url(#soft)">
-      <rect width="492" height="118" rx="28" fill="url(#panel)"/>
-      <circle cx="52" cy="44" r="28" fill="#f2fcfa" stroke="#9ce5da" stroke-width="2.2"/>
-      <path d="M42 31h20c5 0 9 4 9 9v11c0 5-4 9-9 9H54l-8 8v-8h-4c-5 0-9-4-9-9V40c0-5 4-9 9-9Z" fill="none" stroke="#16a795" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="46" cy="45.5" r="2.2" fill="#16a795"/>
-      <circle cx="52" cy="45.5" r="2.2" fill="#16a795"/>
-      <circle cx="58" cy="45.5" r="2.2" fill="#16a795"/>
-      <text class="card-title" x="92" y="50">DM-Archiv</text>
-      <text class="card-text" x="92" y="86">Direct Messages lokal laden und sichern</text>
+    <g transform="translate(0 130)" filter="url(#soft)">
+      <rect width="492" height="110" rx="28" fill="url(#panel)"/>
+      <circle cx="52" cy="42" r="28" fill="#f2fcfa" stroke="#9ce5da" stroke-width="2.2"/>
+      <circle cx="47" cy="39" r="11.5" fill="none" stroke="#16a795" stroke-width="3.6"/>
+      <path d="M55.5 47.5 65 57" fill="none" stroke="#16a795" stroke-width="3.6" stroke-linecap="round"/>
+      <path d="M42 40h10M42 47h8M42 33h7" fill="none" stroke="#79a7dc" stroke-width="3" stroke-linecap="round"/>
+      <text class="card-title" x="92" y="45">Analyse</text>
+      <text class="card-text" x="92" y="78">Zeitmuster und Stil von zwei Accounts vergleichen</text>
+    </g>
+
+    <g transform="translate(556 130)" filter="url(#soft)">
+      <rect width="492" height="110" rx="28" fill="url(#panel)"/>
+      <circle cx="52" cy="42" r="28" fill="#f2fcfa" stroke="#9ce5da" stroke-width="2.2"/>
+      <path d="M42 29h20c5 0 9 4 9 9v10c0 5-4 9-9 9H54l-8 8v-8h-4c-5 0-9-4-9-9V38c0-5 4-9 9-9Z" fill="none" stroke="#16a795" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="46" cy="43.5" r="2.2" fill="#16a795"/>
+      <circle cx="52" cy="43.5" r="2.2" fill="#16a795"/>
+      <circle cx="58" cy="43.5" r="2.2" fill="#16a795"/>
+      <text class="card-title" x="86" y="45">DM-Archiv</text>
+      <text class="card-text" x="86" y="78">Direct Messages lokal laden und sichern</text>
     </g>
   </g>
 

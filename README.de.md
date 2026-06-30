@@ -23,7 +23,7 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 
 ## Kurz
 
-Threadline ist inzwischen deutlich mehr als ein Thread-Composer. Mit eigenen Workspaces für Archiv-Funktion, Netzwerk und DM-Archiv, direkter In-App-Hilfe, robusterem Export, besserer mobiler HTML-Lesbarkeit und Drag-and-Drop für Bilder wird die App zu einer kleinen Bluesky-Arbeitsumgebung.
+Threadline ist inzwischen deutlich mehr als ein Thread-Composer. Mit eigenen Workspaces für Archiv-Funktion, Analyse, Netzwerk und DM-Archiv, direkter In-App-Hilfe, robusterem Export, besserer mobiler HTML-Lesbarkeit und Drag-and-Drop für Bilder wird die App zu einer kleinen Bluesky-Arbeitsumgebung.
 
 ## In 3 Schritten Zum Ersten Thread-Post
 
@@ -61,6 +61,7 @@ Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kanns
 - Statusanzeige und Historie der letzten Postings
 - Bestehende Threads lassen sich fortsetzen oder per Posting-URL gezielt beantworten
 - Optionaler WordPress-Link-Card-Proxy, um aus URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards zu erzeugen
+- Eigener Workspace `Analyse`, um zwei Accounts stilometrisch und zeitlich miteinander zu vergleichen
 
 ## Schreiben Und Aufteilen
 
@@ -238,6 +239,16 @@ Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erz
 - `Relevant` hebt Accounts mit einem internen Score hervor, der aktuell vor allem Beziehungstyp, Follower-Zahl dieses Accounts und dessen Posting-Aktivität kombiniert
 - Der Aktivitätsblock zeigt zurzeit den letzten Post sowie Posts und Likes auf diese aktuellen Posts in den letzten 14 und 60 Tagen
 
+## Analyse-Workspace
+
+- Der Bereich `Analyse` lädt zwei Accounts und vergleicht sie als zusätzlichen Indikator darauf, ob beide möglicherweise von derselben Person betrieben werden
+- Die Analyse kombiniert sprachliche Merkmale wie Funktionswörter, Character n-grams, Jaccard-Ähnlichkeit, Cosine Similarity, Burrows's Delta und ein Kennzahlen-Profil
+- Zusätzlich wird ein Zeitprofil aus Posting-Zeiten, Wochenrhythmus, Pausenverhalten und zeitlicher Nähe beider Accounts berechnet
+- Für jeden Account werden ein Überblick, typische Stunden, typische Wochentage, eine Wochen-Heatmap und eine 30-Tage-Ansicht mit Aktivitätspunkten gezeigt
+- Im Vergleichsteil erscheinen Gesamtwertung, Einzelverfahren, Zeitvergleich sowie Stilmuster pro Kategorie nebeneinander
+- Die Analyse ist nur ein Indiz. Sehr kurze Textbasis, Scheduling, stark wechselnde Themen oder absichtliche Stiländerungen können das Bild deutlich verzerren
+- Die Ergebnisse lassen sich als PDF exportieren
+
 ## Letzte Postings
 
 - Unterhalb des Statusbereichs gibt es einen Bereich `Letzte Postings`
@@ -299,7 +310,19 @@ Hinweis: Unter iOS kann die Installation nicht automatisch ausgelöst werden. In
 
 ## Technische Hinweise
 
-Ausführlichere technische Informationen zu Archiv, Netzwerk-Datenbasis, Link-Cards, lokalem Start, Update-Erkennung und empfohlenen Tests stehen in [TECHNICAL.de.md](TECHNICAL.de.md).
+Ausführlichere technische Informationen zu Archiv, Analyse-Verfahren, Netzwerk-Datenbasis, Link-Cards, lokalem Start, Update-Erkennung und empfohlenen Tests stehen in [TECHNICAL.de.md](TECHNICAL.de.md).
+
+## OpenGraph-Bild
+
+Die maßgebliche Quelle für das OpenGraph-Bild ist [icons/threadline-og-workspaces.svg](/C:/Projekte/threadline/icons/threadline-og-workspaces.svg).
+
+Die abgeleiteten Rasterdateien erzeugst du mit:
+
+```bash
+npm run build:og-image
+```
+
+Render-Parameter und Ausgabeziele stehen in [og-image.config.json](/C:/Projekte/threadline/og-image.config.json).
 
 ## Lizenz
 

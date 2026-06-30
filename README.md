@@ -23,7 +23,7 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 
 ## In Short
 
-Threadline has grown far beyond a thread composer. With dedicated workspaces for archive functions, network exploration, and DM archiving, direct in-app help, more robust exports, better mobile HTML readability, and drag-and-drop image handling, it now feels like a small Bluesky workbench.
+Threadline has grown far beyond a thread composer. With dedicated workspaces for archive functions, analysis, network exploration, and DM archiving, direct in-app help, more robust exports, better mobile HTML readability, and drag-and-drop image handling, it now feels like a small Bluesky workbench.
 
 ## First Thread Post In 3 Steps
 
@@ -61,6 +61,7 @@ Using a dedicated app password is recommended because you can revoke it later wi
 - Status area and recent posting history
 - Existing threads can be continued, or specific posts can be replied to by URL
 - Optional WordPress link-card proxy for creating Bluesky link cards from URLs in individual thread segments
+- Dedicated `Analysis` workspace for comparing two accounts stylistically and temporally
 
 ## Writing And Splitting
 
@@ -238,6 +239,16 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 - `Relevant` highlights accounts with an internal score that currently combines relationship type, that account's follower count, and that account's posting activity
 - The activity block currently shows the latest post plus posts and likes on those recent posts in the last 14 and 60 days
 
+## Analysis Workspace
+
+- The `Analysis` area loads two accounts and compares them as an additional indicator of whether both may be operated by the same person
+- The analysis combines language-focused signals such as function words, character n-grams, Jaccard similarity, cosine similarity, Burrows's Delta, and a metrics profile
+- It also builds a temporal profile from posting times, weekly rhythm, pause behavior, and temporal proximity between both accounts
+- For each account, the workspace shows an overview, typical hours, typical weekdays, a weekly heatmap, and a 30-day activity view with timeline dots
+- The comparison section shows the overall score, individual methods, temporal comparison, and style-pattern cards side by side by category
+- The analysis is only an indicator. Very small text bases, scheduling, topic shifts, or intentional style changes can skew the result substantially
+- Results can be exported as PDF
+
 ## Recent Posts
 
 - Below the status area there is a `Recent posts` section
@@ -299,7 +310,19 @@ Note: on iOS the installation cannot be triggered automatically. The app include
 
 ## Technical Notes
 
-More detailed technical information about the archive, the network data model, link-card limits, running locally, update detection, and recommended testing is available in [TECHNICAL.md](TECHNICAL.md).
+More detailed technical information about the archive, analysis methods, the network data model, link-card limits, running locally, update detection, and recommended testing is available in [TECHNICAL.md](TECHNICAL.md).
+
+## OpenGraph Image
+
+The OpenGraph source of truth is [icons/threadline-og-workspaces.svg](/C:/Projekte/threadline/icons/threadline-og-workspaces.svg).
+
+Build the derived raster files with:
+
+```bash
+npm run build:og-image
+```
+
+Rendering parameters and output targets are stored in [og-image.config.json](/C:/Projekte/threadline/og-image.config.json).
 
 ## License
 

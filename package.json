@@ -1,0 +1,12 @@
+{
+  "name": "threadline",
+  "version": "0.4.177",
+  "private": true,
+  "scripts": {
+    "build:og-image": "node scripts/build-og-images.js"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "sharp": "^0.35.2"
+  }
+}

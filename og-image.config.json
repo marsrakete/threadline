@@ -1,0 +1,20 @@
+{
+  "source": "icons/threadline-og-workspaces.svg",
+  "render": {
+    "width": 1200,
+    "height": 630,
+    "loadSystemFonts": true,
+    "background": "rgba(255,255,255,0)"
+  },
+  "outputs": [
+    {
+      "format": "png",
+      "path": "icons/threadline-og-workspaces.png"
+    },
+    {
+      "format": "jpeg",
+      "path": "og-image.jpg",
+      "quality": 92
+    }
+  ]
+}

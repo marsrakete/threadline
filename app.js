@@ -425,6 +425,7 @@ const analysisExportPdfButton = document.querySelector("#analysis-export-pdf-but
 const analysisStatusLineNode = document.querySelector("#analysis-status-line");
 const analysisSummary = document.querySelector("#analysis-summary");
 const analysisResultCard = document.querySelector("#analysis-result-card");
+const analysisTemporal = document.querySelector("#analysis-temporal");
 const analysisMetrics = document.querySelector("#analysis-metrics");
 const analysisPatterns = document.querySelector("#analysis-patterns");
 const serverPresetField = document.querySelector("#server-preset");
@@ -601,6 +602,13 @@ const ANALYSIS_METRIC_DEFINITIONS = [
   { key: "commaRate", labelKey: "analysisMetricCommaRate", scale: 0.35, formatter: "percent" },
   { key: "shortWordShare", labelKey: "analysisMetricShortWordShare", scale: 0.35, formatter: "percent" },
   { key: "longWordShare", labelKey: "analysisMetricLongWordShare", scale: 0.25, formatter: "percent" },
+];
+const ANALYSIS_TEMPORAL_GAP_BUCKETS = [
+  { key: "underTenMinutes", maxMinutes: 10, labelKey: "analysisTemporalGapUnderTenMinutes" },
+  { key: "underOneHour", maxMinutes: 60, labelKey: "analysisTemporalGapUnderOneHour" },
+  { key: "underSixHours", maxMinutes: 360, labelKey: "analysisTemporalGapUnderSixHours" },
+  { key: "underOneDay", maxMinutes: 1440, labelKey: "analysisTemporalGapUnderOneDay" },
+  { key: "overOneDay", maxMinutes: Number.POSITIVE_INFINITY, labelKey: "analysisTemporalGapOverOneDay" },
 ];
 const ANALYSIS_FUNCTION_WORDS = [
   "ich", "du", "wir", "ihr", "er", "sie", "es", "man", "aber", "oder", "und", "denn", "doch", "halt", "eben",
@@ -2291,7 +2299,7 @@ function getActiveAnalysisActor() {
 function getAnalysisOptions() {
   return {
     rangeDays: Math.max(0, Number(analysisRangeSelect?.value) || 0),
-    limit: Math.max(100, Math.min(1000, Number(analysisPostLimitSelect?.value) || 500)),
+    limit: Math.max(100, Math.min(2000, Number(analysisPostLimitSelect?.value) || 500)),
     includeReplies: analysisIncludeRepliesToggle?.checked === true,
     includeQuotes: analysisIncludeQuotesToggle?.checked === true,
   };
@@ -2507,6 +2515,7 @@ function createAnalysisCorpus(texts = []) {
       trigrams: trigramFrequency,
       bigrams: bigramFrequency,
       phrases: phraseFrequency,
+      functionWords: functionWordFrequency,
     },
     metrics: {
       avgWordLength: words.reduce((sum, word) => sum + word.length, 0) / totalWords,
@@ -2542,6 +2551,447 @@ function cosineSimilarityFromMaps(leftMap, rightMap) {
     return 0;
   }
   return numerator / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
+}
+
+function jaccardSimilarityFromSets(leftSet, rightSet) {
+  const left = leftSet instanceof Set ? leftSet : new Set(leftSet || []);
+  const right = rightSet instanceof Set ? rightSet : new Set(rightSet || []);
+  if (!left.size && !right.size) {
+    return 1;
+  }
+  let intersection = 0;
+  left.forEach((item) => {
+    if (right.has(item)) {
+      intersection += 1;
+    }
+  });
+  const union = new Set([...left, ...right]).size;
+  return union ? (intersection / union) : 0;
+}
+
+function cosineSimilarityFromArrays(leftValues = [], rightValues = []) {
+  const length = Math.max(leftValues.length, rightValues.length);
+  if (!length) {
+    return 0;
+  }
+  let numerator = 0;
+  let leftMagnitude = 0;
+  let rightMagnitude = 0;
+  for (let index = 0; index < length; index += 1) {
+    const left = Number(leftValues[index] || 0);
+    const right = Number(rightValues[index] || 0);
+    numerator += left * right;
+    leftMagnitude += left * left;
+    rightMagnitude += right * right;
+  }
+  if (!leftMagnitude || !rightMagnitude) {
+    return 0;
+  }
+  return numerator / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
+}
+
+function shareArray(values = []) {
+  const total = values.reduce((sum, value) => sum + (Number(value) || 0), 0);
+  if (!total) {
+    return values.map(() => 0);
+  }
+  return values.map((value) => (Number(value) || 0) / total);
+}
+
+function formatUtcHourLabel(hour) {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+function getWeekdayLabel(index) {
+  const mondayAnchors = [
+    "2026-06-29T00:00:00Z",
+    "2026-06-30T00:00:00Z",
+    "2026-07-01T00:00:00Z",
+    "2026-07-02T00:00:00Z",
+    "2026-07-03T00:00:00Z",
+    "2026-07-04T00:00:00Z",
+    "2026-07-05T00:00:00Z",
+  ];
+  try {
+    return new Intl.DateTimeFormat(currentLocale, {
+      weekday: "short",
+      timeZone: "UTC",
+    }).format(new Date(mondayAnchors[index] || mondayAnchors[0]));
+  } catch {
+    return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][index] || "";
+  }
+}
+
+function getTopLabelsFromHistogram(values = [], labelFactory = (index) => String(index), limit = 3) {
+  return values
+    .map((count, index) => ({
+      index,
+      count: Number(count) || 0,
+    }))
+    .filter((entry) => entry.count > 0)
+    .sort((left, right) => right.count - left.count || left.index - right.index)
+    .slice(0, limit)
+    .map((entry) => labelFactory(entry.index));
+}
+
+function getTopChronologicalLabelsFromHistogram(values = [], labelFactory = (index) => String(index), limit = 3) {
+  return values
+    .map((count, index) => ({
+      index,
+      count: Number(count) || 0,
+    }))
+    .filter((entry) => entry.count > 0)
+    .sort((left, right) => right.count - left.count || left.index - right.index)
+    .slice(0, limit)
+    .sort((left, right) => left.index - right.index)
+    .map((entry) => labelFactory(entry.index));
+}
+
+function getTopChronologicalEntriesFromHistogram(values = [], labelFactory = (index) => String(index), limit = 3) {
+  const total = values.reduce((sum, value) => sum + (Number(value) || 0), 0);
+  return values
+    .map((count, index) => ({
+      index,
+      count: Number(count) || 0,
+      share: total ? ((Number(count) || 0) / total) : 0,
+    }))
+    .filter((entry) => entry.count > 0)
+    .sort((left, right) => right.count - left.count || left.index - right.index)
+    .slice(0, limit)
+    .sort((left, right) => left.index - right.index)
+    .map((entry) => ({
+      label: labelFactory(entry.index),
+      share: entry.share,
+    }));
+}
+
+function formatAnalysisTopTemporalEntries(entries = []) {
+  if (!entries.length) {
+    return t("analysisTemporalNoDataShort");
+  }
+  return entries
+    .map((entry) => `${entry.label} ${formatAnalysisPercent(entry.share)}`)
+    .join(" · ");
+}
+
+function startOfUtcDay(timestamp) {
+  const date = new Date(timestamp);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function createAnalysisTemporalProfile(posts = []) {
+  const timestamps = (Array.isArray(posts) ? posts : [])
+    .map((post) => Date.parse(String(post?.createdAt || "").trim()))
+    .filter((timestamp) => Number.isFinite(timestamp))
+    .sort((left, right) => left - right);
+  const hourCounts = Array.from({ length: 24 }, () => 0);
+  const weekdayCounts = Array.from({ length: 7 }, () => 0);
+  const gapCounts = ANALYSIS_TEMPORAL_GAP_BUCKETS.map(() => 0);
+  const heatmap = Array.from({ length: 12 }, () => Array.from({ length: 7 }, () => 0));
+
+  timestamps.forEach((timestamp) => {
+    const date = new Date(timestamp);
+    const hour = date.getUTCHours();
+    hourCounts[hour] += 1;
+    const weekdayIndex = (date.getUTCDay() + 6) % 7;
+    weekdayCounts[weekdayIndex] += 1;
+    heatmap[Math.floor(hour / 2)][weekdayIndex] += 1;
+  });
+
+  const gapsMinutes = [];
+  for (let index = 1; index < timestamps.length; index += 1) {
+    const diffMinutes = Math.max(0, (timestamps[index] - timestamps[index - 1]) / 60000);
+    gapsMinutes.push(diffMinutes);
+    const bucketIndex = ANALYSIS_TEMPORAL_GAP_BUCKETS.findIndex((bucket) => diffMinutes <= bucket.maxMinutes);
+    gapCounts[Math.max(0, bucketIndex)] += 1;
+  }
+
+  const totalPosts = Math.max(timestamps.length, 1);
+  const medianGapMinutes = gapsMinutes.length
+    ? gapsMinutes.slice().sort((left, right) => left - right)[Math.floor(gapsMinutes.length / 2)]
+    : Number.NaN;
+  const latestTimestamp = timestamps[timestamps.length - 1] || Date.now();
+  const dayBuckets = new Map();
+  timestamps.forEach((timestamp) => {
+    const dayKey = startOfUtcDay(timestamp);
+    if (!dayBuckets.has(dayKey)) {
+      dayBuckets.set(dayKey, []);
+    }
+    dayBuckets.get(dayKey).push(new Date(timestamp).getUTCHours() + (new Date(timestamp).getUTCMinutes() / 60));
+  });
+  const recentDays = [];
+  const latestDay = startOfUtcDay(latestTimestamp);
+  for (let offset = 29; offset >= 0; offset -= 1) {
+    const dayStart = latestDay - (offset * 86400000);
+    const date = new Date(dayStart);
+    recentDays.push({
+      key: dayStart,
+      label: `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.`,
+      weekdayLabel: getWeekdayLabel((date.getUTCDay() + 6) % 7),
+      hours: (dayBuckets.get(dayStart) || []).slice().sort((left, right) => left - right),
+    });
+  }
+
+  return {
+    timestamps,
+    hourCounts,
+    hourShares: shareArray(hourCounts),
+    weekdayCounts,
+    weekdayShares: shareArray(weekdayCounts),
+    gapCounts,
+    gapShares: shareArray(gapCounts),
+    gapProfile: ANALYSIS_TEMPORAL_GAP_BUCKETS.map((bucket, index) => ({
+      labelKey: bucket.labelKey,
+      share: gapCounts[index] / Math.max(gapsMinutes.length, 1),
+    })),
+    medianGapMinutes,
+    topHours: getTopChronologicalLabelsFromHistogram(hourCounts, (hour) => formatUtcHourLabel(hour), 3),
+    topWeekdays: getTopChronologicalLabelsFromHistogram(weekdayCounts, (weekday) => getWeekdayLabel(weekday), 3),
+    topHourEntries: getTopChronologicalEntriesFromHistogram(hourCounts, (hour) => formatUtcHourLabel(hour), 3),
+    topWeekdayEntries: getTopChronologicalEntriesFromHistogram(weekdayCounts, (weekday) => getWeekdayLabel(weekday), 3),
+    activeHourCount: hourCounts.filter((count) => count > 0).length,
+    totalPosts,
+    heatmap,
+    recentDays,
+  };
+}
+
+function computeAnalysisTemporalProximityScore(leftTimestamps = [], rightTimestamps = [], windowMinutes = 5) {
+  const left = Array.isArray(leftTimestamps) ? leftTimestamps : [];
+  const right = Array.isArray(rightTimestamps) ? rightTimestamps : [];
+  if (!left.length || !right.length) {
+    return 0;
+  }
+  const windowMs = windowMinutes * 60000;
+  const countMatches = (source, target) => {
+    let matches = 0;
+    let pointer = 0;
+    source.forEach((timestamp) => {
+      while (pointer < target.length && target[pointer] < timestamp - windowMs) {
+        pointer += 1;
+      }
+      const before = pointer > 0 ? Math.abs(target[pointer - 1] - timestamp) : Number.POSITIVE_INFINITY;
+      const current = pointer < target.length ? Math.abs(target[pointer] - timestamp) : Number.POSITIVE_INFINITY;
+      if (Math.min(before, current) <= windowMs) {
+        matches += 1;
+      }
+    });
+    return matches / source.length;
+  };
+  return (countMatches(left, right) + countMatches(right, left)) / 2;
+}
+
+function computeAnalysisTemporalOverlapHeatmap(leftTimestamps = [], rightTimestamps = [], windowMinutes = 10) {
+  const heatmap = Array.from({ length: 12 }, () => Array.from({ length: 7 }, () => 0));
+  const left = Array.isArray(leftTimestamps) ? leftTimestamps : [];
+  const right = Array.isArray(rightTimestamps) ? rightTimestamps : [];
+  if (!left.length || !right.length) {
+    return heatmap;
+  }
+  const windowMs = windowMinutes * 60000;
+  let pointer = 0;
+  left.forEach((timestamp) => {
+    while (pointer < right.length && right[pointer] < timestamp - windowMs) {
+      pointer += 1;
+    }
+    const candidateIndexes = [pointer - 1, pointer, pointer + 1];
+    let bestTimestamp = null;
+    let bestDiff = Number.POSITIVE_INFINITY;
+    candidateIndexes.forEach((index) => {
+      if (index < 0 || index >= right.length) {
+        return;
+      }
+      const diff = Math.abs(right[index] - timestamp);
+      if (diff <= windowMs && diff < bestDiff) {
+        bestDiff = diff;
+        bestTimestamp = Math.round((right[index] + timestamp) / 2);
+      }
+    });
+    if (bestTimestamp !== null) {
+      const date = new Date(bestTimestamp);
+      const weekdayIndex = (date.getUTCDay() + 6) % 7;
+      const bucketIndex = Math.floor(date.getUTCHours() / 2);
+      heatmap[bucketIndex][weekdayIndex] += 1;
+    }
+  });
+  return heatmap;
+}
+
+function buildAnalysisTemporalSummaryItems(profile = null) {
+  if (!profile) {
+    return [];
+  }
+  return [
+    {
+      label: t("analysisTemporalTopHours"),
+      value: profile.topHours.length ? profile.topHours.join(", ") : t("analysisTemporalNoDataShort"),
+    },
+    {
+      label: t("analysisTemporalTopWeekdays"),
+      value: profile.topWeekdays.length ? profile.topWeekdays.join(", ") : t("analysisTemporalNoDataShort"),
+    },
+    {
+      label: t("analysisTemporalMedianGap"),
+      value: Number.isFinite(profile.medianGapMinutes)
+        ? t("analysisTemporalMedianGapValue", { value: formatAnalysisNumber(profile.medianGapMinutes, 0) })
+        : t("analysisTemporalNoDataShort"),
+    },
+    {
+      label: t("analysisTemporalActiveHours"),
+      value: t("analysisTemporalActiveHoursValue", { count: formatCount(profile.activeHourCount) }),
+    },
+  ];
+}
+
+function createAnalysisTemporalHeatmap(profile = null) {
+  const wrap = document.createElement("div");
+  wrap.className = "analysis-temporal-heatmap";
+  if (!profile?.heatmap) {
+    return wrap;
+  }
+
+  const title = document.createElement("strong");
+  title.className = "analysis-temporal-chart-title";
+  title.textContent = t("analysisTemporalHeatmapTitle");
+  wrap.appendChild(title);
+
+  const grid = document.createElement("div");
+  grid.className = "analysis-temporal-heatmap-grid";
+  const maxValue = Math.max(1, ...profile.heatmap.flat());
+
+  const emptyCorner = document.createElement("span");
+  emptyCorner.className = "analysis-temporal-axis-label analysis-temporal-axis-corner";
+  grid.appendChild(emptyCorner);
+  for (let weekday = 0; weekday < 7; weekday += 1) {
+    const label = document.createElement("span");
+    label.className = "analysis-temporal-axis-label";
+    label.textContent = getWeekdayLabel(weekday);
+    grid.appendChild(label);
+  }
+
+  profile.heatmap.forEach((row, rowIndex) => {
+    const hourLabel = document.createElement("span");
+    hourLabel.className = "analysis-temporal-axis-label";
+    hourLabel.textContent = `${String(rowIndex * 2).padStart(2, "0")}-${String((rowIndex * 2) + 1).padStart(2, "0")}`;
+    grid.appendChild(hourLabel);
+    row.forEach((value) => {
+      const cell = document.createElement("span");
+      cell.className = "analysis-temporal-heatmap-cell";
+      const intensity = Math.max(0.08, value / maxValue);
+      cell.style.setProperty("--heat", intensity.toFixed(3));
+      cell.title = `${value} ${t("analysisTemporalHeatmapPosts")}`;
+      grid.appendChild(cell);
+    });
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+function createAnalysisTemporalComparisonHeatmap(leftProfile = null, rightProfile = null, windowMinutes = 10) {
+  const wrap = document.createElement("div");
+  wrap.className = "analysis-temporal-heatmap";
+  const heatmap = computeAnalysisTemporalOverlapHeatmap(
+    leftProfile?.timestamps || [],
+    rightProfile?.timestamps || [],
+    windowMinutes,
+  );
+  const hasAny = heatmap.some((row) => row.some((value) => value > 0));
+  if (!hasAny) {
+    return wrap;
+  }
+
+  const title = document.createElement("strong");
+  title.className = "analysis-temporal-chart-title";
+  title.textContent = t("analysisTemporalOverlapHeatmapTitle", { count: windowMinutes });
+  wrap.appendChild(title);
+
+  const note = document.createElement("p");
+  note.className = "settings-note";
+  note.textContent = t("analysisTemporalOverlapHeatmapNote");
+  wrap.appendChild(note);
+
+  const grid = document.createElement("div");
+  grid.className = "analysis-temporal-heatmap-grid";
+  const maxValue = Math.max(1, ...heatmap.flat());
+  const emptyCorner = document.createElement("span");
+  emptyCorner.className = "analysis-temporal-axis-label analysis-temporal-axis-corner";
+  grid.appendChild(emptyCorner);
+  for (let weekday = 0; weekday < 7; weekday += 1) {
+    const label = document.createElement("span");
+    label.className = "analysis-temporal-axis-label";
+    label.textContent = getWeekdayLabel(weekday);
+    grid.appendChild(label);
+  }
+  heatmap.forEach((row, rowIndex) => {
+    const hourLabel = document.createElement("span");
+    hourLabel.className = "analysis-temporal-axis-label";
+    hourLabel.textContent = `${String(rowIndex * 2).padStart(2, "0")}-${String((rowIndex * 2) + 1).padStart(2, "0")}`;
+    grid.appendChild(hourLabel);
+    row.forEach((value) => {
+      const cell = document.createElement("span");
+      cell.className = "analysis-temporal-heatmap-cell analysis-temporal-heatmap-cell-overlap";
+      const intensity = Math.max(0.08, value / maxValue);
+      cell.style.setProperty("--heat", intensity.toFixed(3));
+      cell.title = `${value} ${t("analysisTemporalHeatmapPosts")}`;
+      grid.appendChild(cell);
+    });
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+function createAnalysisTemporalTimeline(profile = null) {
+  const wrap = document.createElement("div");
+  wrap.className = "analysis-temporal-timeline";
+  if (!profile?.recentDays?.length) {
+    return wrap;
+  }
+
+  const title = document.createElement("strong");
+  title.className = "analysis-temporal-chart-title";
+  title.textContent = t("analysisTemporalTimelineTitle");
+  wrap.appendChild(title);
+
+  const axis = document.createElement("div");
+  axis.className = "analysis-temporal-timeline-axis";
+  const axisSpacer = document.createElement("span");
+  axisSpacer.className = "analysis-temporal-timeline-date";
+  axisSpacer.textContent = "";
+  axis.appendChild(axisSpacer);
+  const axisTrack = document.createElement("div");
+  axisTrack.className = "analysis-temporal-timeline-axis-track";
+  [0, 6, 12, 18, 24].forEach((hour) => {
+    const tick = document.createElement("span");
+    tick.className = "analysis-temporal-timeline-tick";
+    tick.style.left = `${Math.max(0, Math.min(100, (hour / 24) * 100))}%`;
+    tick.textContent = `${String(hour).padStart(2, "0")}:00`;
+    axisTrack.appendChild(tick);
+  });
+  axis.appendChild(axisTrack);
+  wrap.appendChild(axis);
+
+  const rows = document.createElement("div");
+  rows.className = "analysis-temporal-timeline-rows";
+  profile.recentDays.forEach((day) => {
+    const row = document.createElement("div");
+    row.className = "analysis-temporal-timeline-row";
+    const label = document.createElement("span");
+    label.className = "analysis-temporal-timeline-date";
+    label.textContent = `${day.weekdayLabel} ${day.label}`;
+    const track = document.createElement("div");
+    track.className = "analysis-temporal-timeline-track";
+    day.hours.forEach((hour) => {
+      const point = document.createElement("span");
+      point.className = "analysis-temporal-timeline-point";
+      point.style.left = `${Math.max(0, Math.min(100, (hour / 24) * 100))}%`;
+      point.title = formatUtcHourLabel(Math.floor(hour));
+      track.appendChild(point);
+    });
+    row.append(label, track);
+    rows.appendChild(row);
+  });
+  wrap.appendChild(rows);
+  return wrap;
 }
 
 function buildAnalysisWordRateMap(words = [], features = []) {
@@ -2667,6 +3117,7 @@ function normalizeAnalysisAccountData(result = null) {
     .map((post) => String(post?.text || "").replace(/\s+/g, " ").trim())
     .filter(Boolean);
   const corpus = createAnalysisCorpus(texts);
+  const temporal = createAnalysisTemporalProfile(posts);
   return {
     profile: {
       did: String(profile.did || "").trim(),
@@ -2693,6 +3144,7 @@ function normalizeAnalysisAccountData(result = null) {
     posts,
     texts,
     corpus,
+    temporal,
   };
 }
 
@@ -2804,22 +3256,45 @@ function compareAnalysisAccountsData(leftAccount, rightAccount) {
   const numericDistance = Math.sqrt(
     metricRows.reduce((sum, row) => sum + (row.normalizedDifference ** 2), 0) / Math.max(metricRows.length, 1),
   );
-  const numericSimilarity = 1 / (1 + numericDistance * 1.35);
-  const wordSimilarity = cosineSimilarityFromMaps(
+  const metricsSimilarity = 1 / (1 + numericDistance * 1.35);
+  const cosineSimilarity = cosineSimilarityFromMaps(
     leftAccount.corpus.frequency.words,
     rightAccount.corpus.frequency.words,
   );
-  const trigramSimilarity = cosineSimilarityFromMaps(
+  const functionWordSimilarity = cosineSimilarityFromMaps(
+    leftAccount.corpus.frequency.functionWords || new Map(),
+    rightAccount.corpus.frequency.functionWords || new Map(),
+  );
+  const characterNgramSimilarity = cosineSimilarityFromMaps(
     leftAccount.corpus.frequency.trigrams,
     rightAccount.corpus.frequency.trigrams,
   );
+  const jaccardSimilarity = jaccardSimilarityFromSets(
+    new Set(leftAccount.corpus.words.filter((word) => word.length >= 3)),
+    new Set(rightAccount.corpus.words.filter((word) => word.length >= 3)),
+  );
   const burrowsDelta = computeBurrowsDelta(leftAccount, rightAccount);
-  const score = Math.round(100 * (
-    (numericSimilarity * 0.45)
-    + (wordSimilarity * 0.2)
-    + (trigramSimilarity * 0.15)
-    + (burrowsDelta.similarity * 0.2)
-  ));
+  const temporalProfileSimilarity = (
+    (cosineSimilarityFromArrays(leftAccount.temporal.hourShares, rightAccount.temporal.hourShares) * 0.5)
+    + (cosineSimilarityFromArrays(leftAccount.temporal.weekdayShares, rightAccount.temporal.weekdayShares) * 0.3)
+    + (cosineSimilarityFromArrays(leftAccount.temporal.gapShares, rightAccount.temporal.gapShares) * 0.2)
+  );
+  const temporalProximityScore = computeAnalysisTemporalProximityScore(
+    leftAccount.temporal.timestamps,
+    rightAccount.temporal.timestamps,
+    5,
+  );
+  const robustnessMix = (
+    (burrowsDelta.similarity * 0.22)
+    + (characterNgramSimilarity * 0.22)
+    + (functionWordSimilarity * 0.17)
+    + (cosineSimilarity * 0.14)
+    + (jaccardSimilarity * 0.07)
+    + (metricsSimilarity * 0.08)
+    + (temporalProfileSimilarity * 0.06)
+    + (temporalProximityScore * 0.04)
+  );
+  const score = Math.round(100 * robustnessMix);
   const minWords = Math.min(leftAccount.corpus.wordCount, rightAccount.corpus.wordCount);
   const labelKey = score >= 98
     ? "analysisSimilarityIdentical"
@@ -2838,9 +3313,14 @@ function compareAnalysisAccountsData(leftAccount, rightAccount) {
     score,
     labelKey,
     confidenceKey,
-    numericSimilarity,
-    wordSimilarity,
-    trigramSimilarity,
+    robustnessMix,
+    metricsSimilarity,
+    cosineSimilarity,
+    jaccardSimilarity,
+    functionWordSimilarity,
+    characterNgramSimilarity,
+    temporalProfileSimilarity,
+    temporalProximityScore,
     burrowsDelta,
     metricRows,
   };
@@ -2883,7 +3363,9 @@ function createAnalysisStatList(items = [], formatter = "percent", emptyKey = "a
     label.textContent = item.labelKey ? t(item.labelKey) : item.label;
     const value = document.createElement("strong");
     value.className = "analysis-stat-value";
-    if ((item.formatter || formatter) === "number") {
+    if ((item.formatter || formatter) === "text") {
+      value.textContent = String(item.value ?? item.share ?? "");
+    } else if ((item.formatter || formatter) === "number") {
       value.textContent = formatAnalysisNumber(item.value, 2);
     } else {
       value.textContent = formatAnalysisPercent(item.share ?? item.value);
@@ -2988,7 +3470,9 @@ function renderAnalysisSummaryCard(slotLabel, account) {
 
   const preview = document.createElement("p");
   preview.className = "analysis-account-preview";
-  preview.textContent = account.posts[0]?.text || t("analysisSummaryNoPreview");
+  preview.textContent = account.posts[0]?.createdAt
+    ? t("analysisSummaryLatestPost", { value: formatHistoryTimestamp(account.posts[0].createdAt) })
+    : t("analysisSummaryNoPreview");
 
   card.append(head, stats, preview);
   return card;
@@ -3015,6 +3499,11 @@ function renderAnalysisResult() {
     return;
   }
 
+  const overall = document.createElement("div");
+  overall.className = "analysis-result-overall";
+  const overallEyebrow = document.createElement("p");
+  overallEyebrow.className = "eyebrow";
+  overallEyebrow.textContent = t("analysisOverallScoreLabel");
   const headline = document.createElement("div");
   headline.className = "analysis-result-head";
   const score = document.createElement("strong");
@@ -3024,23 +3513,37 @@ function renderAnalysisResult() {
   label.className = "analysis-result-label";
   label.textContent = t(comparison.labelKey);
   headline.append(score, label);
+  const overallSummary = document.createElement("p");
+  overallSummary.className = "analysis-result-summary";
+  overallSummary.textContent = t("analysisOverallScoreSummary", {
+    value: formatAnalysisPercent(comparison.robustnessMix),
+  });
+  overall.append(overallEyebrow, headline, overallSummary);
 
   const confidence = document.createElement("p");
   confidence.className = "analysis-result-confidence";
   confidence.textContent = t(comparison.confidenceKey);
 
+  const detailHeading = document.createElement("p");
+  detailHeading.className = "analysis-result-section-title";
+  detailHeading.textContent = t("analysisSubscoresLabel");
+
   const details = document.createElement("div");
   details.className = "analysis-result-details";
   [
-    t("analysisSimilarityNumeric", { value: formatAnalysisPercent(comparison.numericSimilarity) }),
-    t("analysisSimilarityWords", { value: formatAnalysisPercent(comparison.wordSimilarity) }),
-    t("analysisSimilarityTrigrams", { value: formatAnalysisPercent(comparison.trigramSimilarity) }),
     Number.isFinite(comparison.burrowsDelta?.delta)
       ? t("analysisSimilarityBurrowsDelta", {
           value: formatAnalysisNumber(comparison.burrowsDelta.delta, 2),
           score: formatAnalysisPercent(comparison.burrowsDelta.similarity),
         })
       : t("analysisSimilarityBurrowsDeltaUnavailable"),
+    t("analysisSimilarityCosine", { value: formatAnalysisPercent(comparison.cosineSimilarity) }),
+    t("analysisSimilarityJaccard", { value: formatAnalysisPercent(comparison.jaccardSimilarity) }),
+    t("analysisSimilarityFunctionWords", { value: formatAnalysisPercent(comparison.functionWordSimilarity) }),
+    t("analysisSimilarityCharacterNgrams", { value: formatAnalysisPercent(comparison.characterNgramSimilarity) }),
+    t("analysisSimilarityMetrics", { value: formatAnalysisPercent(comparison.metricsSimilarity) }),
+    t("analysisSimilarityTemporalProfile", { value: formatAnalysisPercent(comparison.temporalProfileSimilarity) }),
+    t("analysisSimilarityTemporalProximity", { value: formatAnalysisPercent(comparison.temporalProximityScore) }),
   ].forEach((text) => {
     const item = document.createElement("span");
     item.textContent = text;
@@ -3051,7 +3554,81 @@ function renderAnalysisResult() {
   note.className = "settings-note";
   note.textContent = t("analysisResultNote");
 
-  analysisResultCard.append(headline, confidence, details, note);
+  analysisResultCard.append(overall, confidence, detailHeading, details, note);
+}
+
+function renderAnalysisTemporalAccountCard(slotLabel, account) {
+  const card = document.createElement("article");
+  card.className = "analysis-pattern-card";
+  if (!account?.temporal) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = slotLabel === "A" ? t("analysisAccountAEmpty") : t("analysisAccountBEmpty");
+    card.appendChild(note);
+    return card;
+  }
+
+  const heading = document.createElement("strong");
+  heading.textContent = slotLabel === "A" ? t("analysisTemporalAccountATitle") : t("analysisTemporalAccountBTitle");
+  const note = document.createElement("p");
+  note.className = "settings-note";
+  note.textContent = t("analysisTemporalUtcHint");
+  card.append(
+    heading,
+    note,
+    createAnalysisStatList(buildAnalysisTemporalSummaryItems(account.temporal), "text", "analysisPatternsNoData"),
+    createAnalysisTemporalHeatmap(account.temporal),
+    createAnalysisTemporalTimeline(account.temporal),
+  );
+  return card;
+}
+
+function renderAnalysisTemporal() {
+  if (!analysisTemporal) {
+    return;
+  }
+  analysisTemporal.replaceChildren();
+  if (!analysisAccountDataA && !analysisAccountDataB) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t("analysisTemporalEmpty");
+    analysisTemporal.appendChild(note);
+    return;
+  }
+
+  analysisTemporal.append(
+    renderAnalysisTemporalAccountCard("A", analysisAccountDataA),
+    renderAnalysisTemporalAccountCard("B", analysisAccountDataB),
+  );
+
+  if (analysisComparisonResult) {
+    const comparisonCard = document.createElement("article");
+    comparisonCard.className = "analysis-account-card analysis-temporal-comparison-card";
+    const heading = document.createElement("strong");
+    heading.textContent = t("analysisTemporalComparisonTitle");
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t("analysisTemporalNote");
+    const table = document.createElement("table");
+    table.className = "analysis-table";
+    const head = document.createElement("thead");
+    head.innerHTML = `<tr><th>${escapeHtml(t("analysisMetricsColumnMetric"))}</th><th>${escapeHtml(t("analysisAccountALabel"))}</th><th>${escapeHtml(t("analysisAccountBLabel"))}</th><th>${escapeHtml(t("analysisTemporalColumnAssessment"))}</th></tr>`;
+    table.appendChild(head);
+    const body = document.createElement("tbody");
+    getAnalysisTemporalTableRows().forEach((row) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.left)}</td><td>${escapeHtml(row.right)}</td><td>${escapeHtml(row.diff)}</td>`;
+      body.appendChild(tr);
+    });
+    table.appendChild(body);
+    comparisonCard.append(
+      heading,
+      note,
+      createAnalysisTemporalComparisonHeatmap(analysisAccountDataA?.temporal, analysisAccountDataB?.temporal, 10),
+      table,
+    );
+    analysisTemporal.appendChild(comparisonCard);
+  }
 }
 
 function renderAnalysisMetrics() {
@@ -3097,96 +3674,92 @@ function renderAnalysisPatterns() {
     return;
   }
 
-  const buildCardsForAccount = (labelA, accountA, labelB, accountB) => {
-    if (!accountA) {
-      return [];
+  const buildPatternCard = (label, account, patternTitle, children) => {
+    if (!account) {
+      const emptyCard = document.createElement("article");
+      emptyCard.className = "analysis-pattern-card";
+      const heading = document.createElement("strong");
+      heading.textContent = `${label} - ${patternTitle}`;
+      const note = document.createElement("p");
+      note.className = "settings-note";
+      note.textContent = t(label === t("analysisAccountALabel") ? "analysisAccountAEmpty" : "analysisAccountBEmpty");
+      emptyCard.append(heading, note);
+      return emptyCard;
     }
-    if (!accountB) {
-      return [];
-    }
-    return [
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternWordsTitle")}`, [
-        createAnalysisPatternList(accountA.corpus.topWords, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternWordsTitle")}`, [
-        createAnalysisPatternList(accountB.corpus.topWords, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternTrigramsTitle")}`, [
-        createAnalysisPatternList(accountA.corpus.topTrigrams, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternTrigramsTitle")}`, [
-        createAnalysisPatternList(accountB.corpus.topTrigrams, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternBigramsTitle")}`, [
-        createAnalysisPatternList(accountA.corpus.topBigrams, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternBigramsTitle")}`, [
-        createAnalysisPatternList(accountB.corpus.topBigrams, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternPhrasesTitle")}`, [
-        createAnalysisPatternList(accountA.corpus.topPhrases, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternPhrasesTitle")}`, [
-        createAnalysisPatternList(accountB.corpus.topPhrases, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternFunctionWordsTitle")}`, [
-        createAnalysisPatternList(accountA.corpus.functionWords, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternFunctionWordsTitle")}`, [
-        createAnalysisPatternList(accountB.corpus.functionWords, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternEmojiTitle")}`, [
-        createAnalysisPatternList(accountA.corpus.topEmojis, "analysisPatternsNoEmoji"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternEmojiTitle")}`, [
-        createAnalysisPatternList(accountB.corpus.topEmojis, "analysisPatternsNoEmoji"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternPunctuationTitle")}`, [
-        createAnalysisPatternList(accountA.corpus.punctuationProfile, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternPunctuationTitle")}`, [
-        createAnalysisPatternList(accountB.corpus.punctuationProfile, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternStartsEndsTitle")}`, [
-        createAnalysisPatternList(accountA.corpus.postStarts, "analysisPatternsNoData"),
-        createAnalysisPatternList(accountA.corpus.postEnds, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternStartsEndsTitle")}`, [
-        createAnalysisPatternList(accountB.corpus.postStarts, "analysisPatternsNoData"),
-        createAnalysisPatternList(accountB.corpus.postEnds, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternWordLengthTitle")}`, [
-        createAnalysisBarList(accountA.corpus.wordLengthProfile, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternWordLengthTitle")}`, [
-        createAnalysisBarList(accountB.corpus.wordLengthProfile, "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternConventionsTitle")}`, [
-        createAnalysisStatList(accountA.corpus.writingConventions, "percent", "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternConventionsTitle")}`, [
-        createAnalysisStatList(accountB.corpus.writingConventions, "percent", "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternBehaviorTitle")}`, [
-        createAnalysisStatList(accountA.corpus.linkBehavior, "percent", "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternBehaviorTitle")}`, [
-        createAnalysisStatList(accountB.corpus.linkBehavior, "percent", "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelA} - ${t("analysisPatternStructureTitle")}`, [
-        createAnalysisStatList(accountA.corpus.structureProfile, "mixed", "analysisPatternsNoData"),
-      ]),
-      createAnalysisPatternCard(`${labelB} - ${t("analysisPatternStructureTitle")}`, [
-        createAnalysisStatList(accountB.corpus.structureProfile, "mixed", "analysisPatternsNoData"),
-      ]),
-    ];
+    return createAnalysisPatternCard(`${label} - ${patternTitle}`, children);
   };
 
-  [
-    ...buildCardsForAccount(t("analysisAccountALabel"), analysisAccountDataA, t("analysisAccountBLabel"), analysisAccountDataB),
-    // ...buildCardsForAccount(t("analysisAccountBLabel"), analysisAccountDataB),
-  ].forEach((card) => {
-    analysisPatterns.appendChild(card);
+  const patternDefinitions = [
+    {
+      title: t("analysisPatternWordsTitle"),
+      createChildren: (account) => [createAnalysisPatternList(account.corpus.topWords, "analysisPatternsNoData")],
+    },
+    {
+      title: t("analysisPatternTrigramsTitle"),
+      createChildren: (account) => [createAnalysisPatternList(account.corpus.topTrigrams, "analysisPatternsNoData")],
+    },
+    {
+      title: t("analysisPatternBigramsTitle"),
+      createChildren: (account) => [createAnalysisPatternList(account.corpus.topBigrams, "analysisPatternsNoData")],
+    },
+    {
+      title: t("analysisPatternPhrasesTitle"),
+      createChildren: (account) => [createAnalysisPatternList(account.corpus.topPhrases, "analysisPatternsNoData")],
+    },
+    {
+      title: t("analysisPatternFunctionWordsTitle"),
+      createChildren: (account) => [createAnalysisPatternList(account.corpus.functionWords, "analysisPatternsNoData")],
+    },
+    {
+      title: t("analysisPatternEmojiTitle"),
+      createChildren: (account) => [createAnalysisPatternList(account.corpus.topEmojis, "analysisPatternsNoEmoji")],
+    },
+    {
+      title: t("analysisPatternPunctuationTitle"),
+      createChildren: (account) => [createAnalysisPatternList(account.corpus.punctuationProfile, "analysisPatternsNoData")],
+    },
+    {
+      title: t("analysisPatternStartsEndsTitle"),
+      createChildren: (account) => [
+        createAnalysisPatternList(account.corpus.postStarts, "analysisPatternsNoData"),
+        createAnalysisPatternList(account.corpus.postEnds, "analysisPatternsNoData"),
+      ],
+    },
+    {
+      title: t("analysisPatternWordLengthTitle"),
+      createChildren: (account) => [createAnalysisBarList(account.corpus.wordLengthProfile, "analysisPatternsNoData")],
+    },
+    {
+      title: t("analysisPatternConventionsTitle"),
+      createChildren: (account) => [createAnalysisStatList(account.corpus.writingConventions, "percent", "analysisPatternsNoData")],
+    },
+    {
+      title: t("analysisPatternBehaviorTitle"),
+      createChildren: (account) => [createAnalysisStatList(account.corpus.linkBehavior, "percent", "analysisPatternsNoData")],
+    },
+    {
+      title: t("analysisPatternStructureTitle"),
+      createChildren: (account) => [createAnalysisStatList(account.corpus.structureProfile, "mixed", "analysisPatternsNoData")],
+    },
+  ];
+
+  patternDefinitions.forEach((definition) => {
+    analysisPatterns.appendChild(
+      buildPatternCard(
+        t("analysisAccountALabel"),
+        analysisAccountDataA,
+        definition.title,
+        analysisAccountDataA ? definition.createChildren(analysisAccountDataA) : [],
+      ),
+    );
+    analysisPatterns.appendChild(
+      buildPatternCard(
+        t("analysisAccountBLabel"),
+        analysisAccountDataB,
+        definition.title,
+        analysisAccountDataB ? definition.createChildren(analysisAccountDataB) : [],
+      ),
+    );
   });
 }
 
@@ -3223,7 +3796,112 @@ function getAnalysisPdfMetricRows() {
   ];
 }
 
-async function renderAnalysisPdfCanvasPage(pageIndex, pageCount) {
+function getAnalysisPdfTemporalRows() {
+  if (!analysisComparisonResult) {
+    return [];
+  }
+  return getAnalysisTemporalTableRows();
+}
+
+function getAnalysisTemporalTableRows() {
+  const hourSimilarity = cosineSimilarityFromArrays(
+    analysisAccountDataA?.temporal?.hourShares || [],
+    analysisAccountDataB?.temporal?.hourShares || [],
+  );
+  const weekdaySimilarity = cosineSimilarityFromArrays(
+    analysisAccountDataA?.temporal?.weekdayShares || [],
+    analysisAccountDataB?.temporal?.weekdayShares || [],
+  );
+  const gapSimilarity = cosineSimilarityFromArrays(
+    analysisAccountDataA?.temporal?.gapShares || [],
+    analysisAccountDataB?.temporal?.gapShares || [],
+  );
+  return [
+    {
+      label: t("analysisTemporalHourSimilarity"),
+      left: formatAnalysisTopTemporalEntries(analysisAccountDataA?.temporal?.topHourEntries || []),
+      right: formatAnalysisTopTemporalEntries(analysisAccountDataB?.temporal?.topHourEntries || []),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(hourSimilarity) }),
+    },
+    {
+      label: t("analysisTemporalWeekdaySimilarity"),
+      left: formatAnalysisTopTemporalEntries(analysisAccountDataA?.temporal?.topWeekdayEntries || []),
+      right: formatAnalysisTopTemporalEntries(analysisAccountDataB?.temporal?.topWeekdayEntries || []),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(weekdaySimilarity) }),
+    },
+    {
+      label: t("analysisTemporalGapSimilarity"),
+      left: Number.isFinite(analysisAccountDataA?.temporal?.medianGapMinutes)
+        ? t("analysisTemporalMedianGapValue", { value: formatAnalysisNumber(analysisAccountDataA.temporal.medianGapMinutes, 0) })
+        : "-",
+      right: Number.isFinite(analysisAccountDataB?.temporal?.medianGapMinutes)
+        ? t("analysisTemporalMedianGapValue", { value: formatAnalysisNumber(analysisAccountDataB.temporal.medianGapMinutes, 0) })
+        : "-",
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(gapSimilarity) }),
+    },
+    {
+      label: t("analysisTemporalProfileScore"),
+      left: t("analysisTemporalActiveHoursValue", { count: formatCount(analysisAccountDataA?.temporal?.activeHourCount || 0) }),
+      right: t("analysisTemporalActiveHoursValue", { count: formatCount(analysisAccountDataB?.temporal?.activeHourCount || 0) }),
+      diff: t("analysisTemporalAssessmentScore", { value: formatAnalysisPercent(analysisComparisonResult?.temporalProfileSimilarity || 0) }),
+    },
+    {
+      label: t("analysisTemporalProximityScore"),
+      left: t("analysisTemporalWindowValue", { count: 5 }),
+      right: t("analysisTemporalWindowValue", { count: 5 }),
+      diff: t("analysisTemporalAssessmentMatches", { value: formatAnalysisPercent(analysisComparisonResult?.temporalProximityScore || 0) }),
+    },
+  ];
+}
+
+function getAnalysisPdfScoreRows() {
+  if (!analysisComparisonResult) {
+    return [];
+  }
+  return [
+    {
+      label: t("analysisOverallScoreLabel"),
+      value: `${analysisComparisonResult.score}/100`,
+      accent: true,
+    },
+    {
+      label: t("analysisSimilarityRobustnessMix", {
+        value: formatAnalysisPercent(analysisComparisonResult.robustnessMix),
+      }),
+    },
+    {
+      label: Number.isFinite(analysisComparisonResult.burrowsDelta?.delta)
+        ? t("analysisSimilarityBurrowsDelta", {
+            value: formatAnalysisNumber(analysisComparisonResult.burrowsDelta.delta, 2),
+            score: formatAnalysisPercent(analysisComparisonResult.burrowsDelta.similarity),
+          })
+        : t("analysisSimilarityBurrowsDeltaUnavailable"),
+    },
+    {
+      label: t("analysisSimilarityCosine", { value: formatAnalysisPercent(analysisComparisonResult.cosineSimilarity) }),
+    },
+    {
+      label: t("analysisSimilarityJaccard", { value: formatAnalysisPercent(analysisComparisonResult.jaccardSimilarity) }),
+    },
+    {
+      label: t("analysisSimilarityFunctionWords", { value: formatAnalysisPercent(analysisComparisonResult.functionWordSimilarity) }),
+    },
+    {
+      label: t("analysisSimilarityCharacterNgrams", { value: formatAnalysisPercent(analysisComparisonResult.characterNgramSimilarity) }),
+    },
+    {
+      label: t("analysisSimilarityMetrics", { value: formatAnalysisPercent(analysisComparisonResult.metricsSimilarity) }),
+    },
+    {
+      label: t("analysisSimilarityTemporalProfile", { value: formatAnalysisPercent(analysisComparisonResult.temporalProfileSimilarity) }),
+    },
+    {
+      label: t("analysisSimilarityTemporalProximity", { value: formatAnalysisPercent(analysisComparisonResult.temporalProximityScore) }),
+    },
+  ];
+}
+
+function createAnalysisPdfBasePage(pageIndex, pageCount) {
   const canvas = document.createElement("canvas");
   canvas.width = 1190;
   canvas.height = 1684;
@@ -3261,8 +3939,334 @@ async function renderAnalysisPdfCanvasPage(pageIndex, pageCount) {
   const columnGap = 14 * scale;
   const columnWidth = (cardWidth - columnGap) / 2;
 
+  return {
+    canvas,
+    context,
+    scale,
+    margin,
+    pageWidth,
+    pageHeight,
+    cursorY,
+    cardX,
+    cardWidth,
+    columnGap,
+    columnWidth,
+    contentBottom: margin + pageHeight - (18 * scale),
+  };
+}
+
+function formatAnalysisPdfListEntries(entries = [], emptyKey = "analysisPatternsNoData") {
+  if (!entries.length) {
+    return [t(emptyKey)];
+  }
+  return entries.slice(0, 8).map((entry) => `${entry.label}: ${formatAnalysisPercent(entry.share)}`);
+}
+
+function formatAnalysisPdfStatEntries(items = [], formatter = "percent", emptyKey = "analysisPatternsNoData") {
+  if (!items.length) {
+    return [t(emptyKey)];
+  }
+  return items.map((item) => {
+    const label = item.labelKey ? t(item.labelKey) : item.label;
+    const value = (item.formatter || formatter) === "number"
+      ? formatAnalysisNumber(item.value, 2)
+      : formatAnalysisPercent(item.share ?? item.value);
+    return `${label}: ${value}`;
+  });
+}
+
+function buildAnalysisPdfPatternRows() {
+  const buildCard = (label, account, title, lines) => ({
+    title: `${label} - ${title}`,
+    lines: account ? lines : [t(label === t("analysisAccountALabel") ? "analysisAccountAEmpty" : "analysisAccountBEmpty")],
+  });
+
+  const definitions = [
+    {
+      title: t("analysisPatternWordsTitle"),
+      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topWords, "analysisPatternsNoData"),
+    },
+    {
+      title: t("analysisPatternTrigramsTitle"),
+      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topTrigrams, "analysisPatternsNoData"),
+    },
+    {
+      title: t("analysisPatternBigramsTitle"),
+      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topBigrams, "analysisPatternsNoData"),
+    },
+    {
+      title: t("analysisPatternPhrasesTitle"),
+      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topPhrases, "analysisPatternsNoData"),
+    },
+    {
+      title: t("analysisPatternFunctionWordsTitle"),
+      lines: (account) => formatAnalysisPdfListEntries(account.corpus.functionWords, "analysisPatternsNoData"),
+    },
+    {
+      title: t("analysisPatternEmojiTitle"),
+      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topEmojis, "analysisPatternsNoEmoji"),
+    },
+    {
+      title: t("analysisPatternPunctuationTitle"),
+      lines: (account) => formatAnalysisPdfListEntries(account.corpus.punctuationProfile, "analysisPatternsNoData"),
+    },
+    {
+      title: t("analysisPatternStartsEndsTitle"),
+      lines: (account) => [
+        t("analysisPdfPostStartsLabel"),
+        ...formatAnalysisPdfListEntries(account.corpus.postStarts, "analysisPatternsNoData"),
+        t("analysisPdfPostEndsLabel"),
+        ...formatAnalysisPdfListEntries(account.corpus.postEnds, "analysisPatternsNoData"),
+      ],
+    },
+    {
+      title: t("analysisPatternWordLengthTitle"),
+      lines: (account) => formatAnalysisPdfStatEntries(account.corpus.wordLengthProfile, "percent", "analysisPatternsNoData"),
+    },
+    {
+      title: t("analysisPatternConventionsTitle"),
+      lines: (account) => formatAnalysisPdfStatEntries(account.corpus.writingConventions, "percent", "analysisPatternsNoData"),
+    },
+    {
+      title: t("analysisPatternBehaviorTitle"),
+      lines: (account) => formatAnalysisPdfStatEntries(account.corpus.linkBehavior, "percent", "analysisPatternsNoData"),
+    },
+    {
+      title: t("analysisPatternStructureTitle"),
+      lines: (account) => formatAnalysisPdfStatEntries(account.corpus.structureProfile, "mixed", "analysisPatternsNoData"),
+    },
+  ];
+
+  return definitions.map((definition) => ({
+    left: buildCard(
+      t("analysisAccountALabel"),
+      analysisAccountDataA,
+      definition.title,
+      analysisAccountDataA ? definition.lines(analysisAccountDataA) : [],
+    ),
+    right: buildCard(
+      t("analysisAccountBLabel"),
+      analysisAccountDataB,
+      definition.title,
+      analysisAccountDataB ? definition.lines(analysisAccountDataB) : [],
+    ),
+  }));
+}
+
+function buildAnalysisPdfPatternPageLayouts(scale, cardWidth, columnGap, contentHeight) {
+  const measureCanvas = document.createElement("canvas");
+  measureCanvas.width = 1190;
+  measureCanvas.height = 1684;
+  const measureContext = measureCanvas.getContext("2d");
+  const patternWidth = (cardWidth - columnGap) / 2;
+  const rowGap = 14 * scale;
+  const rows = buildAnalysisPdfPatternRows().map((row) => {
+    const leftHeight = measureAnalysisPdfPatternCard(measureContext, scale, patternWidth, row.left);
+    const rightHeight = measureAnalysisPdfPatternCard(measureContext, scale, patternWidth, row.right);
+    return {
+      ...row,
+      height: Math.max(leftHeight, rightHeight),
+    };
+  });
+  const pages = [];
+  let currentPage = [];
+  let usedHeight = 0;
+  rows.forEach((row) => {
+    const nextHeight = row.height + (currentPage.length ? rowGap : 0);
+    if (currentPage.length && usedHeight + nextHeight > contentHeight) {
+      pages.push(currentPage);
+      currentPage = [];
+      usedHeight = 0;
+    }
+    currentPage.push(row);
+    usedHeight += row.height + (currentPage.length > 1 ? rowGap : 0);
+  });
+  if (currentPage.length) {
+    pages.push(currentPage);
+  }
+  return pages;
+}
+function measureAnalysisPdfPatternCard(context, scale, width, card) {
+  const lineWidth = width - (28 * scale);
+  context.font = `700 ${10 * scale}px "Segoe UI", Aptos, sans-serif`;
+  const titleLineCount = Math.max(1, buildWrappedPdfLines(context, card.title, lineWidth).length);
+  context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
+  const lineCount = Math.max(
+    1,
+    card.lines.reduce((sum, line) => sum + Math.max(1, buildWrappedPdfLines(context, line, lineWidth).length), 0),
+  );
+  return (26 * scale) + (titleLineCount * 12 * scale) + (lineCount * 11 * scale) + (24 * scale);
+}
+
+function drawAnalysisPdfPatternCard(context, scale, x, y, width, cardHeight, card) {
+  fillRoundedRect(context, x, y, width, cardHeight, 18 * scale, "#ffffff");
+  strokeRoundedRect(context, x, y, width, cardHeight, 18 * scale, "#d7e3f5", 1 * scale);
+  context.fillStyle = "#13213c";
+  context.font = `700 ${10 * scale}px "Segoe UI", Aptos, sans-serif`;
+  const maxWidth = width - (28 * scale);
+  const titleLines = buildWrappedPdfLines(context, card.title, maxWidth);
+  drawArchivePdfTextBlock(context, titleLines, x + (14 * scale), y + (14 * scale), 12 * scale);
+  context.fillStyle = "#415b81";
+  context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
+  let lineY = y + (20 * scale) + (titleLines.length * 12 * scale);
+  card.lines.forEach((line) => {
+    const wrapped = buildWrappedPdfLines(context, line, maxWidth);
+    drawArchivePdfTextBlock(context, wrapped, x + (14 * scale), lineY, 11 * scale);
+    lineY += Math.max(1, wrapped.length) * 11 * scale;
+  });
+}
+
+function measureAnalysisPdfScoreRow(context, scale, width, row) {
+  context.font = `${row.accent ? "700" : "400"} ${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+  const text = row.accent ? `${row.label}: ${row.value}` : row.label;
+  const lines = buildWrappedPdfLines(context, text, width - (24 * scale));
+  return {
+    lines,
+    height: Math.max(26 * scale, (lines.length * 11 * scale) + (14 * scale)),
+  };
+}
+
+function drawAnalysisPdfScoreRow(context, scale, x, y, width, row, measured) {
+  const boxColor = row.accent ? "#e8fbf7" : "#edf4ff";
+  const borderColor = row.accent ? "#bfeee3" : "#d0ddf6";
+  fillRoundedRect(context, x, y, width, measured.height, 13 * scale, boxColor);
+  strokeRoundedRect(context, x, y, width, measured.height, 13 * scale, borderColor, 1 * scale);
+  context.fillStyle = row.accent ? "#17927f" : "#3d5f8f";
+  context.font = `${row.accent ? "700" : "400"} ${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+  drawArchivePdfTextBlock(context, measured.lines, x + (12 * scale), y + (7 * scale), 11 * scale);
+}
+
+function measureAnalysisPdfInfoRow(context, scale, width, text, fontSize = 8.1, minHeight = 22 * scale) {
+  context.font = `${fontSize * scale}px "Segoe UI", Aptos, sans-serif`;
+  const lines = buildWrappedPdfLines(context, text, width);
+  return {
+    lines,
+    height: Math.max(minHeight, (Math.max(1, lines.length) * 11 * scale) + (10 * scale)),
+  };
+}
+
+function measureAnalysisPdfHeatmapHeight(scale, rowCount = 12) {
+  return (12 * scale) + (rowCount * 10 * scale) + (Math.max(0, rowCount - 1) * 4 * scale);
+}
+
+function drawAnalysisPdfHeatmapGrid(context, scale, x, y, width, heatmap = [], accent = "#27b6a0") {
+  const labelWidth = 34 * scale;
+  const gap = 4 * scale;
+  const innerWidth = width - labelWidth - gap;
+  const cellGap = 4 * scale;
+  const cellWidth = (innerWidth - (6 * cellGap)) / 7;
+  const cellHeight = 10 * scale;
+  const rowGap = 4 * scale;
+  const maxValue = Math.max(1, ...(Array.isArray(heatmap) ? heatmap.flat() : [0]));
+
+  context.fillStyle = "#587192";
+  context.font = `${7 * scale}px "Segoe UI", Aptos, sans-serif`;
+  for (let weekday = 0; weekday < 7; weekday += 1) {
+    context.fillText(getWeekdayLabel(weekday), x + labelWidth + (weekday * (cellWidth + cellGap)), y);
+  }
+
+  let rowY = y + (12 * scale);
+  (Array.isArray(heatmap) ? heatmap : []).forEach((row, rowIndex) => {
+    context.fillStyle = "#587192";
+    context.font = `${6.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(`${String(rowIndex * 2).padStart(2, "0")}`, x, rowY + (1 * scale));
+    row.forEach((value, columnIndex) => {
+      const alpha = Math.max(0.08, (Number(value) || 0) / maxValue);
+      fillRoundedRect(
+        context,
+        x + labelWidth + (columnIndex * (cellWidth + cellGap)),
+        rowY,
+        cellWidth,
+        cellHeight,
+        3 * scale,
+        accent === "#3f7cd6"
+          ? `rgba(63, 124, 214, ${alpha * 0.92})`
+          : `rgba(39, 182, 160, ${alpha * 0.92})`,
+      );
+    });
+    rowY += cellHeight + rowGap;
+  });
+  return rowY - y;
+}
+
+function measureAnalysisPdfTableRows(context, scale, rows, widths) {
+  return rows.map((row) => {
+    context.font = `${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
+    const labelLines = buildWrappedPdfLines(context, row.label, widths.label);
+    const leftLines = buildWrappedPdfLines(context, row.left, widths.value);
+    const rightLines = buildWrappedPdfLines(context, row.right, widths.value);
+    const diffLines = buildWrappedPdfLines(context, row.diff, widths.diff);
+    const lineCount = Math.max(labelLines.length, leftLines.length, rightLines.length, diffLines.length, 1);
+    return {
+      ...row,
+      labelLines,
+      leftLines,
+      rightLines,
+      diffLines,
+      height: Math.max(24 * scale, (lineCount * 11 * scale) + (10 * scale)),
+    };
+  });
+}
+
+function buildAnalysisPdfTablePageLayouts(scale, cardWidth, contentHeight, rows, columns) {
+  const measureCanvas = document.createElement("canvas");
+  measureCanvas.width = 1190;
+  measureCanvas.height = 1684;
+  const measureContext = measureCanvas.getContext("2d");
+  const tableWidth = cardWidth - (36 * scale);
+  const widths = {
+    label: tableWidth * columns.label,
+    value: tableWidth * columns.value,
+    diff: tableWidth * columns.diff,
+  };
+  const measuredRows = measureAnalysisPdfTableRows(measureContext, scale, rows, widths);
+  const availableBodyHeight = Math.max(80 * scale, contentHeight - (92 * scale));
+  const pages = [];
+  let currentPage = [];
+  let usedHeight = 0;
+
+  measuredRows.forEach((row) => {
+    if (currentPage.length && (usedHeight + row.height) > availableBodyHeight) {
+      pages.push(currentPage);
+      currentPage = [];
+      usedHeight = 0;
+    }
+    currentPage.push(row);
+    usedHeight += row.height;
+  });
+
+  if (currentPage.length) {
+    pages.push(currentPage);
+  }
+  return { pages, widths };
+}
+
+async function renderAnalysisPdfOverviewPage(pageIndex, pageCount) {
+  const {
+    canvas,
+    context,
+    scale,
+    cursorY: initialCursorY,
+    cardX,
+    cardWidth,
+    columnGap,
+    columnWidth,
+  } = createAnalysisPdfBasePage(pageIndex, pageCount);
+  let cursorY = initialCursorY;
+
   const drawAccountCard = (account, x, y, label) => {
-    const cardHeight = 190 * scale;
+    const statRows = [
+      t("analysisSummaryPostsLoaded", { count: formatCount(account.posts.length) }),
+      t("analysisSummaryWordsLoaded", { count: formatCount(account.corpus.wordCount) }),
+      account.filters.rangeDays > 0 ? t("analysisSummaryRangeDays", { count: account.filters.rangeDays }) : t("analysisSummaryRangeAll"),
+      t("analysisSummaryPagesLoaded", { count: formatCount(account.stats.pages) }),
+      account.posts[0]?.createdAt
+        ? t("analysisSummaryLatestPost", { value: formatHistoryTimestamp(account.posts[0].createdAt) })
+        : t("analysisSummaryNoPreview"),
+    ];
+    const measuredRows = statRows.map((row) => measureAnalysisPdfInfoRow(context, scale, columnWidth - (48 * scale), row));
+    const rowsHeight = measuredRows.reduce((sum, row) => sum + row.height, 0) + (Math.max(0, measuredRows.length - 1) * 6 * scale);
+    const cardHeight = (78 * scale) + rowsHeight + (14 * scale);
     fillRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#ffffff");
     strokeRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#d7e3f5", 1 * scale);
     context.fillStyle = "#27b6a0";
@@ -3275,121 +4279,229 @@ async function renderAnalysisPdfCanvasPage(pageIndex, pageCount) {
     context.font = `${10 * scale}px "Segoe UI", Aptos, sans-serif`;
     context.fillText(`@${account.profile.handle || account.profile.did}`, x + (14 * scale), y + (52 * scale));
 
-    const statRows = [
-      t("analysisSummaryPostsLoaded", { count: formatCount(account.posts.length) }),
-      t("analysisSummaryWordsLoaded", { count: formatCount(account.corpus.wordCount) }),
-      account.filters.rangeDays > 0 ? t("analysisSummaryRangeDays", { count: account.filters.rangeDays }) : t("analysisSummaryRangeAll"),
-      t("analysisSummaryPagesLoaded", { count: formatCount(account.stats.pages) }),
-    ];
     let statY = y + (78 * scale);
-    statRows.forEach((row) => {
-      fillRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), 22 * scale, 11 * scale, "#edf4ff");
-      strokeRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), 22 * scale, 11 * scale, "#d0ddf6", 1 * scale);
+    measuredRows.forEach((row) => {
+      fillRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), row.height, 11 * scale, "#edf4ff");
+      strokeRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), row.height, 11 * scale, "#d0ddf6", 1 * scale);
       context.fillStyle = "#3d5f8f";
-      context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-      context.fillText(row, x + (24 * scale), statY + (6 * scale));
-      statY += 28 * scale;
+      context.font = `${8.1 * scale}px "Segoe UI", Aptos, sans-serif`;
+      drawArchivePdfTextBlock(context, row.lines, x + (24 * scale), statY + (6 * scale), 11 * scale);
+      statY += row.height + (6 * scale);
     });
-    context.fillStyle = "#17233a";
-    context.font = `${10 * scale}px "Segoe UI", Aptos, sans-serif`;
-    const previewLines = buildWrappedPdfLines(context, account.posts[0]?.text || t("analysisSummaryNoPreview"), columnWidth - (28 * scale)).slice(0, 3);
-    drawArchivePdfTextBlock(context, previewLines, x + (14 * scale), y + (160 * scale), 12 * scale);
+    return cardHeight;
   };
 
-  if (pageIndex === 0) {
-    drawAccountCard(analysisAccountDataA, cardX, cursorY, t("analysisAccountALabel"));
-    drawAccountCard(analysisAccountDataB, cardX + columnWidth + columnGap, cursorY, t("analysisAccountBLabel"));
-    cursorY += 206 * scale;
+  const leftCardHeight = drawAccountCard(analysisAccountDataA, cardX, cursorY, t("analysisAccountALabel"));
+  const rightCardHeight = drawAccountCard(analysisAccountDataB, cardX + columnWidth + columnGap, cursorY, t("analysisAccountBLabel"));
+  cursorY += Math.max(leftCardHeight, rightCardHeight) + (16 * scale);
 
-    fillRoundedRect(context, cardX, cursorY, cardWidth, 250 * scale, 18 * scale, "#ffffff");
-    strokeRoundedRect(context, cardX, cursorY, cardWidth, 250 * scale, 18 * scale, "#d7e3f5", 1 * scale);
-    context.fillStyle = "#13213c";
-    context.font = `700 ${22 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(`${analysisComparisonResult.score}/100`, cardX + (18 * scale), cursorY + (18 * scale));
-    fillRoundedRect(context, cardX + (108 * scale), cursorY + (16 * scale), 200 * scale, 26 * scale, 13 * scale, "#e8fbf7");
-    context.fillStyle = "#27b6a0";
-    context.font = `700 ${11 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(t(analysisComparisonResult.labelKey), cardX + (122 * scale), cursorY + (23 * scale));
-    context.fillStyle = "#415b81";
-    context.font = `${10.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-    const noteLines = buildWrappedPdfLines(context, t(analysisComparisonResult.confidenceKey), cardWidth - (36 * scale)).slice(0, 3);
-    drawArchivePdfTextBlock(context, noteLines, cardX + (18 * scale), cursorY + (54 * scale), 13 * scale);
+  const summaryTextWidth = cardWidth - (36 * scale);
+  context.font = `${10 * scale}px "Segoe UI", Aptos, sans-serif`;
+  const overallLines = buildWrappedPdfLines(
+    context,
+    t("analysisOverallScoreSummary", { value: formatAnalysisPercent(analysisComparisonResult.robustnessMix) }),
+    summaryTextWidth,
+  ).slice(0, 3);
+  const noteLines = buildWrappedPdfLines(context, t(analysisComparisonResult.confidenceKey), summaryTextWidth).slice(0, 4);
+  const scoreRows = getAnalysisPdfScoreRows().slice(1);
+  const measuredScoreRows = scoreRows.map((row) => measureAnalysisPdfScoreRow(context, scale, cardWidth - (36 * scale), row));
+  const scoreRowsHeight = measuredScoreRows.reduce((sum, item) => sum + item.height, 0) + (Math.max(0, measuredScoreRows.length - 1) * 8 * scale);
+  const overallCardHeight = (140 * scale)
+    + (overallLines.length * 13 * scale)
+    + (noteLines.length * 13 * scale)
+    + scoreRowsHeight;
 
-    const detailRows = [
-      t("analysisSimilarityNumeric", { value: formatAnalysisPercent(analysisComparisonResult.numericSimilarity) }),
-      t("analysisSimilarityWords", { value: formatAnalysisPercent(analysisComparisonResult.wordSimilarity) }),
-      t("analysisSimilarityTrigrams", { value: formatAnalysisPercent(analysisComparisonResult.trigramSimilarity) }),
-      Number.isFinite(analysisComparisonResult.burrowsDelta?.delta)
-        ? t("analysisSimilarityBurrowsDelta", {
-            value: formatAnalysisNumber(analysisComparisonResult.burrowsDelta.delta, 2),
-            score: formatAnalysisPercent(analysisComparisonResult.burrowsDelta.similarity),
-          })
-        : t("analysisSimilarityBurrowsDeltaUnavailable"),
-    ];
-    let detailY = cursorY + (108 * scale);
-    detailRows.forEach((row) => {
-      fillRoundedRect(context, cardX + (18 * scale), detailY, cardWidth - (36 * scale), 28 * scale, 14 * scale, "#edf4ff");
-      strokeRoundedRect(context, cardX + (18 * scale), detailY, cardWidth - (36 * scale), 28 * scale, 14 * scale, "#d0ddf6", 1 * scale);
-      context.fillStyle = "#3d5f8f";
-      context.font = `${9 * scale}px "Segoe UI", Aptos, sans-serif`;
-      context.fillText(row, cardX + (30 * scale), detailY + (8 * scale));
-      detailY += 36 * scale;
-    });
-    return canvas;
-  }
+  fillRoundedRect(context, cardX, cursorY, cardWidth, overallCardHeight, 18 * scale, "#ffffff");
+  strokeRoundedRect(context, cardX, cursorY, cardWidth, overallCardHeight, 18 * scale, "#d7e3f5", 1 * scale);
+  context.fillStyle = "#27b6a0";
+  context.font = `700 ${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(t("analysisOverallScoreLabel"), cardX + (18 * scale), cursorY + (18 * scale));
+  context.fillStyle = "#13213c";
+  context.font = `700 ${22 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(`${analysisComparisonResult.score}/100`, cardX + (18 * scale), cursorY + (34 * scale));
+  fillRoundedRect(context, cardX + (108 * scale), cursorY + (32 * scale), 220 * scale, 26 * scale, 13 * scale, "#e8fbf7");
+  context.fillStyle = "#27b6a0";
+  context.font = `700 ${11 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(t(analysisComparisonResult.labelKey), cardX + (122 * scale), cursorY + (39 * scale));
+  context.fillStyle = "#415b81";
+  context.font = `${10 * scale}px "Segoe UI", Aptos, sans-serif`;
+  drawArchivePdfTextBlock(context, overallLines, cardX + (18 * scale), cursorY + (70 * scale), 13 * scale);
+  const noteY = cursorY + (76 * scale) + (overallLines.length * 13 * scale);
+  drawArchivePdfTextBlock(context, noteLines, cardX + (18 * scale), noteY, 13 * scale);
 
-  const rows = getAnalysisPdfMetricRows();
-  fillRoundedRect(context, cardX, cursorY, cardWidth, 520 * scale, 18 * scale, "#ffffff");
-  strokeRoundedRect(context, cardX, cursorY, cardWidth, 520 * scale, 18 * scale, "#d7e3f5", 1 * scale);
+  let detailY = noteY + (noteLines.length * 13 * scale) + (16 * scale);
+  scoreRows.forEach((row, index) => {
+    drawAnalysisPdfScoreRow(
+      context,
+      scale,
+      cardX + (18 * scale),
+      detailY,
+      cardWidth - (36 * scale),
+      row,
+      measuredScoreRows[index],
+    );
+    detailY += measuredScoreRows[index].height + (8 * scale);
+  });
+  return canvas;
+}
+
+async function renderAnalysisPdfTablePage(pageIndex, pageCount, config) {
+  const {
+    canvas,
+    context,
+    scale,
+    cursorY: initialCursorY,
+    cardX,
+    cardWidth,
+  } = createAnalysisPdfBasePage(pageIndex, pageCount);
+  const {
+    title,
+    rows,
+    columns,
+    column4Title,
+  } = config;
+  const cursorY = initialCursorY;
+
+  const tableWidth = cardWidth - (36 * scale);
+  const tableColumns = {
+    label: tableWidth * columns.label,
+    value: tableWidth * columns.value,
+    diff: tableWidth * columns.diff,
+  };
+  const measuredRows = measureAnalysisPdfTableRows(context, scale, rows, tableColumns);
+  const tableBodyHeight = measuredRows.reduce((sum, row) => sum + row.height, 0);
+  const tableCardHeight = (74 * scale) + tableBodyHeight + (18 * scale);
+  fillRoundedRect(context, cardX, cursorY, cardWidth, tableCardHeight, 18 * scale, "#ffffff");
+  strokeRoundedRect(context, cardX, cursorY, cardWidth, tableCardHeight, 18 * scale, "#d7e3f5", 1 * scale);
   context.fillStyle = "#13213c";
   context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(t("analysisMetricsTitle"), cardX + (18 * scale), cursorY + (18 * scale));
+  context.fillText(title, cardX + (18 * scale), cursorY + (18 * scale));
   const tableY = cursorY + (48 * scale);
   const col1 = cardX + (18 * scale);
-  const col2 = cardX + (360 * scale);
-  const col3 = cardX + (500 * scale);
-  const col4 = cardX + (640 * scale);
+  const col2 = col1 + tableColumns.label + (12 * scale);
+  const col3 = col2 + tableColumns.value + (12 * scale);
+  const col4 = col3 + tableColumns.value + (12 * scale);
   context.fillStyle = "#587192";
   context.font = `700 ${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
   context.fillText(t("analysisMetricsColumnMetric"), col1, tableY);
   context.fillText(t("analysisAccountALabel"), col2, tableY);
   context.fillText(t("analysisAccountBLabel"), col3, tableY);
-  context.fillText(t("analysisMetricsColumnDiff"), col4, tableY);
+  context.fillText(column4Title, col4, tableY);
   let rowY = tableY + (18 * scale);
-  rows.slice(0, 12).forEach((row, index) => {
+  measuredRows.forEach((row, index) => {
     if (index % 2 === 0) {
-      fillRoundedRect(context, cardX + (12 * scale), rowY - (4 * scale), cardWidth - (24 * scale), 24 * scale, 10 * scale, "#f7faff");
+      fillRoundedRect(context, cardX + (12 * scale), rowY - (4 * scale), cardWidth - (24 * scale), row.height, 10 * scale, "#f7faff");
     }
     context.fillStyle = "#17233a";
-    context.font = `${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(row.label, col1, rowY);
-    context.fillText(row.left, col2, rowY);
-    context.fillText(row.right, col3, rowY);
-    context.fillText(row.diff, col4, rowY);
-    rowY += 26 * scale;
-  });
-
-  cursorY += 540 * scale;
-  const patternWidth = (cardWidth - columnGap) / 2;
-  const patternCards = [
-    { title: `${t("analysisAccountALabel")} - ${t("analysisPatternWordsTitle")}`, entries: analysisAccountDataA?.corpus.topWords || [] },
-    { title: `${t("analysisAccountBLabel")} - ${t("analysisPatternWordsTitle")}`, entries: analysisAccountDataB?.corpus.topWords || [] },
-    { title: `${t("analysisAccountALabel")} - ${t("analysisPatternTrigramsTitle")}`, entries: analysisAccountDataA?.corpus.topTrigrams || [] },
-    { title: `${t("analysisAccountBLabel")} - ${t("analysisPatternTrigramsTitle")}`, entries: analysisAccountDataB?.corpus.topTrigrams || [] },
-  ];
-  patternCards.forEach((pattern, index) => {
-    const x = cardX + ((index % 2) * (patternWidth + columnGap));
-    const y = cursorY + (Math.floor(index / 2) * (148 * scale));
-    fillRoundedRect(context, x, y, patternWidth, 132 * scale, 18 * scale, "#ffffff");
-    strokeRoundedRect(context, x, y, patternWidth, 132 * scale, 18 * scale, "#d7e3f5", 1 * scale);
-    context.fillStyle = "#13213c";
-    context.font = `700 ${10 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(pattern.title, x + (14 * scale), y + (14 * scale));
-    const tokenText = pattern.entries.slice(0, 6).map((entry) => `${entry.label} (${formatAnalysisPercent(entry.share)})`).join("   ");
-    context.fillStyle = "#415b81";
     context.font = `${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-    const lines = buildWrappedPdfLines(context, tokenText || "-", patternWidth - (28 * scale)).slice(0, 5);
-    drawArchivePdfTextBlock(context, lines, x + (14 * scale), y + (38 * scale), 11 * scale);
+    drawArchivePdfTextBlock(context, row.labelLines, col1, rowY, 11 * scale);
+    drawArchivePdfTextBlock(context, row.leftLines, col2, rowY, 11 * scale);
+    drawArchivePdfTextBlock(context, row.rightLines, col3, rowY, 11 * scale);
+    drawArchivePdfTextBlock(context, row.diffLines, col4, rowY, 11 * scale);
+    rowY += row.height;
+  });
+  return canvas;
+}
+
+async function renderAnalysisPdfTemporalPage(pageIndex, pageCount) {
+  const {
+    canvas,
+    context,
+    scale,
+    cursorY: initialCursorY,
+    cardX,
+    cardWidth,
+    columnGap,
+    columnWidth,
+  } = createAnalysisPdfBasePage(pageIndex, pageCount);
+  let cursorY = initialCursorY;
+
+  const drawTemporalAccountCard = (account, x, y, title) => {
+    const noteLines = buildWrappedPdfLines(context, t("analysisTemporalUtcHint"), columnWidth - (28 * scale)).slice(0, 2);
+    const statRows = buildAnalysisTemporalSummaryItems(account?.temporal || null);
+    const measuredRows = statRows.map((item) => measureAnalysisPdfInfoRow(context, scale, columnWidth - (44 * scale), `${item.label}: ${item.value}`, 7.8, 22 * scale));
+    const rowsHeight = measuredRows.reduce((sum, row) => sum + row.height, 0) + (Math.max(0, measuredRows.length - 1) * 6 * scale);
+    const heatmapHeight = measureAnalysisPdfHeatmapHeight(scale);
+    const heatmapTitleY = y + (50 * scale) + (noteLines.length * 10 * scale) + rowsHeight + (12 * scale);
+    const heatmapY = heatmapTitleY + (16 * scale);
+    const cardHeight = (heatmapY - y) + heatmapHeight + (14 * scale);
+    fillRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#ffffff");
+    strokeRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#d7e3f5", 1 * scale);
+    context.fillStyle = "#13213c";
+    context.font = `700 ${12 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(title, x + (14 * scale), y + (14 * scale));
+    context.fillStyle = "#587192";
+    context.font = `${8 * scale}px "Segoe UI", Aptos, sans-serif`;
+    drawArchivePdfTextBlock(context, noteLines, x + (14 * scale), y + (32 * scale), 10 * scale);
+
+    let statY = y + (50 * scale) + (noteLines.length * 10 * scale);
+    measuredRows.forEach((item) => {
+      fillRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), item.height, 11 * scale, "#edf4ff");
+      strokeRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), item.height, 11 * scale, "#d0ddf6", 1 * scale);
+      context.fillStyle = "#3d5f8f";
+      context.font = `${7.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+      drawArchivePdfTextBlock(context, item.lines, x + (22 * scale), statY + (6 * scale), 11 * scale);
+      statY += item.height + (6 * scale);
+    });
+
+    context.fillStyle = "#284a78";
+    context.font = `700 ${9 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(t("analysisTemporalHeatmapTitle"), x + (14 * scale), heatmapTitleY);
+    drawAnalysisPdfHeatmapGrid(context, scale, x + (14 * scale), heatmapY, columnWidth - (28 * scale), account?.temporal?.heatmap || [], "#27b6a0");
+    return cardHeight;
+  };
+
+  const leftCardHeight = drawTemporalAccountCard(analysisAccountDataA, cardX, cursorY, t("analysisTemporalAccountATitle"));
+  const rightCardHeight = drawTemporalAccountCard(analysisAccountDataB, cardX + columnWidth + columnGap, cursorY, t("analysisTemporalAccountBTitle"));
+  cursorY += Math.max(leftCardHeight, rightCardHeight) + (16 * scale);
+
+  const overlapNoteLines = buildWrappedPdfLines(context, t("analysisTemporalOverlapHeatmapNote"), cardWidth - (36 * scale)).slice(0, 3);
+  const overlapHeatmapHeight = measureAnalysisPdfHeatmapHeight(scale);
+  const overlapCardHeight = (70 * scale) + (overlapNoteLines.length * 10 * scale) + overlapHeatmapHeight + (14 * scale);
+  fillRoundedRect(context, cardX, cursorY, cardWidth, overlapCardHeight, 18 * scale, "#ffffff");
+  strokeRoundedRect(context, cardX, cursorY, cardWidth, overlapCardHeight, 18 * scale, "#d7e3f5", 1 * scale);
+  context.fillStyle = "#13213c";
+  context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(t("analysisTemporalOverlapHeatmapTitle", { count: 10 }), cardX + (18 * scale), cursorY + (18 * scale));
+  context.fillStyle = "#587192";
+  context.font = `${8.2 * scale}px "Segoe UI", Aptos, sans-serif`;
+  drawArchivePdfTextBlock(context, overlapNoteLines, cardX + (18 * scale), cursorY + (38 * scale), 10 * scale);
+  const overlapHeatmap = computeAnalysisTemporalOverlapHeatmap(
+    analysisAccountDataA?.temporal?.timestamps || [],
+    analysisAccountDataB?.temporal?.timestamps || [],
+    10,
+  );
+  drawAnalysisPdfHeatmapGrid(context, scale, cardX + (18 * scale), cursorY + (50 * scale) + (overlapNoteLines.length * 10 * scale), cardWidth - (36 * scale), overlapHeatmap, "#3f7cd6");
+  return canvas;
+}
+
+async function renderAnalysisPdfPatternPage(pageIndex, pageCount, rows) {
+  const {
+    canvas,
+    context,
+    scale,
+    cursorY: initialCursorY,
+    cardX,
+    cardWidth,
+    columnGap,
+  } = createAnalysisPdfBasePage(pageIndex, pageCount);
+  const patternWidth = (cardWidth - columnGap) / 2;
+  const rowGap = 14 * scale;
+  let cursorY = initialCursorY;
+
+  fillRoundedRect(context, cardX, cursorY, cardWidth, 46 * scale, 18 * scale, "#ffffff");
+  strokeRoundedRect(context, cardX, cursorY, cardWidth, 46 * scale, 18 * scale, "#d7e3f5", 1 * scale);
+  context.fillStyle = "#13213c";
+  context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
+  context.fillText(t("analysisPdfPatternsTitle"), cardX + (18 * scale), cursorY + (16 * scale));
+  cursorY += 60 * scale;
+
+  rows.forEach((row) => {
+    drawAnalysisPdfPatternCard(context, scale, cardX, cursorY, patternWidth, row.height, row.left);
+    if (row.right) {
+      drawAnalysisPdfPatternCard(context, scale, cardX + patternWidth + columnGap, cursorY, patternWidth, row.height, row.right);
+    }
+    cursorY += row.height + rowGap;
   });
   return canvas;
 }
@@ -3398,9 +4510,45 @@ async function exportAnalysisPdfReport() {
   if (!analysisAccountDataA || !analysisAccountDataB || !analysisComparisonResult) {
     throw new Error(t("analysisNeedComparison"));
   }
+  const previewPage = createAnalysisPdfBasePage(0, 1);
+  const contentHeight = previewPage.contentBottom - previewPage.cursorY;
+  const temporalTablePages = buildAnalysisPdfTablePageLayouts(
+    previewPage.scale,
+    previewPage.cardWidth,
+    contentHeight,
+    getAnalysisPdfTemporalRows(),
+    { label: 0.34, value: 0.2, diff: 0.23 },
+  );
+  const metricTablePages = buildAnalysisPdfTablePageLayouts(
+    previewPage.scale,
+    previewPage.cardWidth,
+    contentHeight,
+    getAnalysisPdfMetricRows(),
+    { label: 0.41, value: 0.16, diff: 0.27 },
+  );
+  const patternPageRows = buildAnalysisPdfPatternPageLayouts(
+    previewPage.scale,
+    previewPage.cardWidth,
+    previewPage.columnGap,
+    previewPage.contentBottom - (previewPage.cursorY + (60 * previewPage.scale)),
+  );
+  const totalPages = 2 + temporalTablePages.pages.length + metricTablePages.pages.length + patternPageRows.length;
   const pageCanvases = await Promise.all([
-    renderAnalysisPdfCanvasPage(0, 2),
-    renderAnalysisPdfCanvasPage(1, 2),
+    renderAnalysisPdfOverviewPage(0, totalPages),
+    renderAnalysisPdfTemporalPage(1, totalPages),
+    ...temporalTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2, totalPages, {
+      title: t("analysisTemporalTitle"),
+      rows,
+      columns: { label: 0.34, value: 0.2, diff: 0.23 },
+      column4Title: t("analysisTemporalColumnAssessment"),
+    })),
+    ...metricTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2 + temporalTablePages.pages.length, totalPages, {
+      title: t("analysisMetricsTitle"),
+      rows,
+      columns: { label: 0.41, value: 0.16, diff: 0.27 },
+      column4Title: t("analysisMetricsColumnDiff"),
+    })),
+    ...patternPageRows.map((rows, index) => renderAnalysisPdfPatternPage(index + 2 + temporalTablePages.pages.length + metricTablePages.pages.length, totalPages, rows)),
   ]);
   const pages = [];
   for (const [pageIndex, canvas] of pageCanvases.entries()) {
@@ -3455,6 +4603,7 @@ function updateAnalysisControls() {
 function renderAnalysisWorkspace() {
   renderAnalysisSummary();
   renderAnalysisResult();
+  renderAnalysisTemporal();
   renderAnalysisMetrics();
   renderAnalysisPatterns();
   updateAnalysisControls();
@@ -14640,6 +15789,32 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicNetworkStageBullet1"),
           t("helpTopicNetworkStageBullet2"),
           t("helpTopicNetworkStageBullet3"),
+        ],
+      };
+    case "analysis_scores":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicAnalysisScoresTitle"),
+        text: t("helpTopicAnalysisScoresText"),
+        bullets: [
+          t("helpTopicAnalysisScoresBullet1"),
+          t("helpTopicAnalysisScoresBullet2"),
+          t("helpTopicAnalysisScoresBullet3"),
+          t("helpTopicAnalysisScoresBullet4"),
+          t("helpTopicAnalysisScoresBullet5"),
+          t("helpTopicAnalysisScoresBullet6"),
+          t("helpTopicAnalysisScoresBullet7"),
+        ],
+      };
+    case "analysis_patterns":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicAnalysisPatternsTitle"),
+        text: t("helpTopicAnalysisPatternsText"),
+        bullets: [
+          t("helpTopicAnalysisPatternsBullet1"),
+          t("helpTopicAnalysisPatternsBullet2"),
+          t("helpTopicAnalysisPatternsBullet3"),
         ],
       };
     case "dm_workspace":

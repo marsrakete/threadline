@@ -12,10 +12,10 @@
     <meta property="og:description" content="App zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archiv-Funktion.">
     <meta property="og:url" content="https://marsrakete.github.io/threadline/">
     <meta property="og:image" content="https://marsrakete.github.io/threadline/icons/threadline-og-workspaces.png">
-    <meta property="og:image:type" content="image/svg+xml">
+    <meta property="og:image:type" content="image/png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="Threadline Vorschau">
+    <meta property="og:image:alt" content="Threadline Vorschau mit den Bereichen Composer, Archiv-Funktion, Netzwerk, Analyse und DM-Archiv">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Threadline">
     <meta name="twitter:description" content="App zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archiv-Funktion.">
@@ -776,6 +776,7 @@
                     <option value="250">250</option>
                     <option value="500" selected>500</option>
                     <option value="1000">1000</option>
+                    <option value="2000">2000</option>
                   </select>
                 </label>
               </div>
@@ -807,11 +808,22 @@
 
             <section class="archive-card analysis-summary-card">
               <p class="eyebrow" data-i18n="analysisResultsEyebrow">Überblick</p>
-              <h3 data-i18n="analysisResultsTitle">Geladene Accounts und Ergebnis</h3>
+              <div class="help-heading">
+                <h3 data-i18n="analysisResultsTitle">Geladene Accounts und Ergebnis</h3>
+                <button type="button" class="help-trigger" data-help-topic="analysis_scores" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
               <div id="analysis-summary" class="analysis-summary-grid">
                 <p class="settings-note" data-i18n="analysisSummaryEmpty">Lade zwei Accounts, um die Stilometrie zu vergleichen.</p>
               </div>
               <div id="analysis-result-card" class="archive-result-card analysis-result-card" hidden></div>
+            </section>
+
+            <section class="archive-card analysis-temporal-card">
+              <p class="eyebrow" data-i18n="analysisTemporalEyebrow">Zeitmuster</p>
+              <h3 data-i18n="analysisTemporalTitle">Zeitliche Aktivität</h3>
+              <div id="analysis-temporal" class="analysis-summary-grid">
+                <p class="settings-note" data-i18n="analysisTemporalEmpty">Nach dem Vergleich erscheinen hier Aktivitätsfenster, Wochenrhythmus und zeitliche Nähe beider Accounts.</p>
+              </div>
             </section>
 
             <section class="archive-card analysis-metrics-card">
@@ -824,7 +836,10 @@
 
             <section class="archive-card analysis-patterns-card">
               <p class="eyebrow" data-i18n="analysisPatternsEyebrow">Muster</p>
-              <h3 data-i18n="analysisPatternsTitle">Häufige Wörter und Zeichenmuster</h3>
+              <div class="help-heading">
+                <h3 data-i18n="analysisPatternsTitle">Häufige Wörter und Zeichenmuster</h3>
+                <button type="button" class="help-trigger" data-help-topic="analysis_patterns" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
               <div id="analysis-patterns" class="analysis-pattern-grid">
                 <p class="settings-note" data-i18n="analysisPatternsEmpty">Hier siehst du nach dem Vergleich typische kurze Wörter und Zeichen-Trigramme beider Accounts.</p>
               </div>

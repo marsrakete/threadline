@@ -4,6 +4,15 @@
 
 Diese Datei bündelt die technischeren Hintergrundinformationen, die nicht im schnellen Einstieg des Haupt-README stehen sollen.
 
+## OpenGraph-Asset-Pipeline
+
+Die maßgebliche Quelle für das OpenGraph-Bild ist `icons/threadline-og-workspaces.svg`. Die abgeleiteten Rasterdateien werden mit `npm run build:og-image` anhand der Einstellungen in `og-image.config.json` erzeugt.
+
+Aktuelle Ausgaben:
+
+- `icons/threadline-og-workspaces.png`
+- `og-image.jpg`
+
 ## Schnittstellen-Überblick
 
 Threadline ist eine statische PWA ohne eigenes Backend. Fast alle Datenflüsse laufen direkt vom Browser zum jeweils zuständigen Bluesky- oder AT-Protocol-Endpunkt. Der Service Worker in [sw.js](sw.js) bündelt dabei Login, API-Zugriffe, Caching und Archiv-Logik.
@@ -30,11 +39,15 @@ flowchart TD
     I --> I3["Metriken nachladen<br/>app.bsky.feed.getPosts"]
     I --> I4["Bilder laden<br/>com.atproto.sync.getBlob"]
 
-    C --> J["Netzwerk"]
-    J --> J1["Profil<br/>app.bsky.actor.getProfile"]
-    J --> J2["Follower / Following<br/>app.bsky.graph.getFollowers / getFollows"]
-    J --> J3["Aktuelle Posts<br/>app.bsky.feed.getAuthorFeed"]
-    J --> J4["Likes auf aktuelle Posts<br/>app.bsky.notification.listNotifications"]
+    C --> J["Analyse"]
+    J --> J1["Profile<br/>app.bsky.actor.getProfile"]
+    J --> J2["Account-Feed<br/>app.bsky.feed.getAuthorFeed"]
+
+    C --> L["Netzwerk"]
+    L --> L1["Profil<br/>app.bsky.actor.getProfile"]
+    L --> L2["Follower / Following<br/>app.bsky.graph.getFollowers / getFollows"]
+    L --> L3["Aktuelle Posts<br/>app.bsky.feed.getAuthorFeed"]
+    L --> L4["Likes auf aktuelle Posts<br/>app.bsky.notification.listNotifications"]
 
     C --> K["DM-Archiv"]
     K --> K1["Konversationen<br/>chat.bsky.convo.listConvos"]
@@ -124,6 +137,7 @@ Wird genutzt für:
 - Handles
 - Follower-/Following-Zahlen
 - Fokus-Ansicht im Netzwerk
+- Profilbasis im Analyse-Workspace für die beiden Vergleichsaccounts
 
 ### `app.bsky.graph.getFollowers`
 
@@ -155,6 +169,117 @@ Wird genutzt für:
 - Posts in den letzten 14 / 60 Tagen
 - Likes auf aktuelle Posts
 - Medienexport für einen anderen Actor
+- Laden der Post-Basis für den Analyse-Workspace
+
+## Analyse-Workspace Technisch
+
+Der Analyse-Workspace lädt für zwei Accounts jeweils einen Ausschnitt des Author-Feeds und berechnet darauf zwei Gruppen von Signalen:
+
+- sprachliche Signale
+- zeitliche Signale
+
+Die Analyse ist bewusst heuristisch. Sie liefert keine Identitätsaussage, sondern nur zusätzliche Indikatoren.
+
+### Sprachliche Signale
+
+Aktuell fließen unter anderem diese Verfahren ein:
+
+- Kennzahlen-Profil aus Durchschnittswerten wie Wortlänge, Satzlänge, Emoji-Quote und Großbuchstabenquote
+- Cosine Similarity über Wortverteilungen
+- Jaccard-Ähnlichkeit über Wortmengen
+- Funktionswort-Profil
+- Character n-grams
+- Burrows's Delta
+
+### Zeitliche Signale
+
+Zusätzlich berechnet Threadline ein Zeitprofil aus:
+
+- Stundenverteilung
+- Wochentagsverteilung
+- Pausen-/Burst-Profil zwischen zwei Posts desselben Accounts
+- zeitlicher Nähe beider Accounts in kleinen Fenstern
+
+Daraus entstehen Wochen-Heatmaps, 30-Tage-Punktansichten und zwei zusätzliche Vergleichswerte:
+
+- `Zeitprofil-Score`
+- `Zeitliche Nähe`
+
+### Verwendete Verfahren Und Quellen
+
+#### Cosine Similarity
+
+Threadline vergleicht Häufigkeitsvektoren mit dem Kosinus der beiden Vektoren.
+
+Grundidee:
+
+`cos(theta) = (A · B) / (||A|| ||B||)`
+
+Nützliche Quelle:
+
+- Salton, G.; McGill, M. J. *Introduction to Modern Information Retrieval*. McGraw-Hill, 1983.
+
+#### Jaccard-Ähnlichkeit
+
+Für Wortmengen wird die Schnittmenge relativ zur Vereinigungsmenge betrachtet.
+
+Grundidee:
+
+`J(A, B) = |A ∩ B| / |A ∪ B|`
+
+Historische Quelle:
+
+- Jaccard, P. "Étude comparative de la distribution florale dans une portion des Alpes et des Jura." *Bulletin de la Société Vaudoise des Sciences Naturelles* 37, 1901, S. 547–579.
+
+#### Burrows's Delta
+
+Burrows's Delta ist ein klassisches stilometrisches Distanzmaß über z-normalisierte Häufigkeiten häufiger Wörter. Threadline nutzt daraus eine vorsichtige Ähnlichkeitsableitung für den Gesamtscore.
+
+Grundlegende Quelle:
+
+- Burrows, J. F. "'Delta': a Measure of Stylistic Difference and a Guide to Likely Authorship." *Literary and Linguistic Computing* 17(3), 2002, S. 267–287.
+
+#### Character n-grams
+
+Character n-grams erfassen wiederkehrende Zeichenfolgen und damit Schreibgewohnheiten, Endungen und orthografische Muster.
+
+Ein oft zitierter Überblick:
+
+- Stamatatos, E. "A Survey of Modern Authorship Attribution Methods." *Journal of the American Society for Information Science and Technology* 60(3), 2009, S. 538–556.
+
+#### Funktionswörter
+
+Funktionswörter sind in der Stilometrie nützlich, weil sie oft weniger themenabhängig sind als Inhaltswörter.
+
+Einführende Quelle:
+
+- Mosteller, F.; Wallace, D. L. *Inference and Disputed Authorship: The Federalist*. Addison-Wesley, 1964.
+
+#### Zeitprofil Und Zeitliche Nähe
+
+Die zeitlichen Merkmale in Threadline sind derzeit keine aus der Literatur exakt übernommene Einzelmethode, sondern eine pragmatische Eigenkombination aus Histogramm-Ähnlichkeiten und kleinen Zeitfenstern für Aktivitätsnähe.
+
+Zur Einordnung ähnlicher forensischer und verhaltensbezogener Ansätze:
+
+- Grant, T. *Analyzing Language in Context: A Reader in Forensic Linguistics*. Routledge, 2010.
+- Stamatatos, E. "Author Identification: Using Text Sampling to Handle the Class Imbalance Problem." *Information Processing and Management* 44(2), 2008, S. 790–799.
+
+### Robustheitsmix
+
+Der aktuelle Gesamtscore ist absichtlich ein Mischwert und kein einzelnes „Wahrheitsmaß“.
+
+Zurzeit werden ungefähr diese Gewichte verwendet:
+
+- Burrows's Delta: 22 %
+- Character n-grams: 22 %
+- Funktionswort-Profil: 17 %
+- Cosine Similarity: 14 %
+- Jaccard-Ähnlichkeit: 7 %
+- Kennzahlen-Profil: 8 %
+- Zeitprofil: 6 %
+- Zeitliche Nähe: 4 %
+
+Die Gewichte sind Produktentscheidungen und nicht aus einer einzelnen wissenschaftlichen Quelle übernommen.
 
 ### `app.bsky.feed.getPosts`
 
@@ -165,6 +290,10 @@ Wird genutzt für:
 - Metriken im Archiv nachladen
 - Single-Thread-Import
 - gezielte Post-Auflösung, wenn ein Archiv oder Import URIs gesammelt hat
+
+Wichtig:
+
+- Der Analyse-Workspace nutzt diesen Call derzeit **nicht**. Für die Analyse wird aktuell direkt aus `app.bsky.feed.getAuthorFeed` gelesen.
 
 ### `app.bsky.feed.getPostThread`
 
@@ -179,6 +308,7 @@ Wird genutzt für:
 
 Wichtig:
 
+- Der Analyse-Workspace nutzt diesen Call derzeit **nicht**.
 - Dieser Call kann teuer sein und ist deshalb mit Timeout/Retry abgesichert.
 - Gelöschte oder fehlende Posts werden möglichst übersprungen statt den Lauf komplett zu stoppen.
 
@@ -346,6 +476,13 @@ Nutzen vor allem:
 - `app.bsky.feed.getPosts`
 - `com.atproto.sync.getBlob`
 
+### Analyse
+
+Nutzen vor allem:
+
+- `app.bsky.actor.getProfile`
+- `app.bsky.feed.getAuthorFeed`
+
 ### Netzwerk
 
 Nutzen vor allem:
@@ -375,7 +512,7 @@ Das ist wichtig für:
 - Spezialfälle wie eurosky
 - Archiv- und Netzwerk-Calls, die sonst auf dem falschen Host landen würden
 
-Die App ist damit deutlich PDS-tauglicher als ein reines `bsky.social`-Frontend. Trotzdem lohnt sich bei ungewöhnlichen Hosts immer ein gezielter Test aller vier Workspaces.
+Die App ist damit deutlich PDS-tauglicher als ein reines `bsky.social`-Frontend. Trotzdem lohnt sich bei ungewöhnlichen Hosts immer ein gezielter Test aller fünf Workspaces.
 
 ## Lokal Starten
 

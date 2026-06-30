@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.176",
-  cacheVersion: "v195",
-  label: "Add analysis patterns and PDF export",
+  appVersion: "0.4.177",
+  cacheVersion: "v196",
+  label: "Refine analysis timing comparison",
 });
