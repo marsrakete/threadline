@@ -587,6 +587,10 @@ let analysisAccountDataA = null;
 let analysisAccountDataB = null;
 let analysisComparisonResult = null;
 let analysisRequestToken = 0;
+let analysisValidationTokens = {
+  a: 0,
+  b: 0,
+};
 let workspaceRestorePending = true;
 let appStateHydrated = false;
 const NETWORK_STAGE_MIN_ZOOM = 0.42;
@@ -707,6 +711,9 @@ async function sendToServiceWorker(type, payload = {}, options = {}) {
 
       const errorCode = String(event.data?.details?.code || "");
       const localizedServiceWorkerErrors = {
+        ANALYSIS_ACCOUNT_MISSING: "analysisAccountMissingGeneric",
+        ANALYSIS_ACCOUNT_NOT_FOUND: "analysisAccountNotFound",
+        ANALYSIS_ACCOUNT_CHECK_FAILED: "analysisAccountCheckFailed",
         POST_EDIT_URL_INVALID: "postEditCheckInvalidUrl",
         POST_EDIT_ACTOR_NOT_FOUND: "postEditCheckActorNotFound",
         POST_EDIT_RECORD_LOAD_FAILED: "postEditCheckLoadFailed",
@@ -714,6 +721,8 @@ async function sendToServiceWorker(type, payload = {}, options = {}) {
       };
       const errorMessage = errorCode === "ARCHIVE_ASSET_LOAD_FAILED"
         ? t("archiveAssetLoadFailed", { status: event.data?.details?.status || "?" })
+        : errorCode === "ANALYSIS_ACCOUNT_NOT_FOUND"
+        ? t("analysisAccountNotFound", { account: event.data?.details?.actor || "" })
         : localizedServiceWorkerErrors[errorCode]
         ? t(localizedServiceWorkerErrors[errorCode])
         : event.data?.error || t("statusSwUnknownError");
@@ -4634,6 +4643,61 @@ async function loadAnalysisAccountForSlot(slot, { actor, requestToken } = {}) {
     return null;
   }
   return normalizeAnalysisAccountData(result);
+}
+
+async function validateAnalysisAccountInput(slot, { silentSuccess = true } = {}) {
+  if (!authAccount || analysisLoading) {
+    return null;
+  }
+  const input = slot === "a" ? analysisAccountAInput : analysisAccountBInput;
+  const slotLabel = slot === "a" ? t("analysisAccountALabel") : t("analysisAccountBLabel");
+  const normalizedActor = normalizeAnalysisActor(input?.value || "");
+  const requestToken = ++analysisValidationTokens[slot];
+
+  if (input) {
+    input.setCustomValidity("");
+  }
+  if (!normalizedActor) {
+    return null;
+  }
+
+  setAnalysisStatus(`${slotLabel} - ${t("analysisAccountCheckingStatus", { account: normalizedActor })}`);
+
+  try {
+    const result = await sendToServiceWorker("CHECK_ANALYSIS_ACCOUNT", {
+      actor: normalizedActor,
+    }, {
+      timeoutMs: 30000,
+    });
+    if (requestToken !== analysisValidationTokens[slot]) {
+      return null;
+    }
+    if (input) {
+      input.value = result?.handle || normalizedActor;
+      input.setCustomValidity("");
+    }
+    if (!silentSuccess) {
+      setAnalysisStatus(t("analysisAccountValidatedStatus", {
+        slot: slot === "a" ? "A" : "B",
+        account: result?.handle || normalizedActor,
+      }));
+    } else if (!analysisComparisonResult && !analysisAccountDataA && !analysisAccountDataB) {
+      setAnalysisStatus(t("analysisStatusIdle"));
+    }
+    void persistSettings();
+    return result;
+  } catch (error) {
+    if (requestToken !== analysisValidationTokens[slot]) {
+      return null;
+    }
+    const message = error?.message || t("analysisLoadFailed");
+    if (input) {
+      input.setCustomValidity(message);
+      input.reportValidity();
+    }
+    setAnalysisStatus(message);
+    return null;
+  }
 }
 
 async function handleAnalysisAccountLoad(slot) {
@@ -17110,9 +17174,19 @@ analysisExportPdfButton?.addEventListener("click", async () => {
 [analysisAccountAInput, analysisAccountBInput].forEach((input) => {
   input?.addEventListener("input", () => {
     analysisComparisonResult = null;
+    input.setCustomValidity("");
+    if (input === analysisAccountAInput) {
+      analysisValidationTokens.a += 1;
+    } else if (input === analysisAccountBInput) {
+      analysisValidationTokens.b += 1;
+    }
     updateAnalysisControls();
     renderAnalysisResult();
     void persistSettings();
+  });
+  input?.addEventListener("blur", () => {
+    const slot = input === analysisAccountAInput ? "a" : "b";
+    void validateAnalysisAccountInput(slot);
   });
   input?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {

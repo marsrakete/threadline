@@ -36,6 +36,8 @@ const ACCOUNT_AVATAR_CACHE_KEY = "account-avatar-cache";
 const ARCHIVE_THREAD_REQUEST_TIMEOUT_MS = 15000;
 const ARCHIVE_THREAD_REQUEST_RETRIES = 1;
 const ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY = 4;
+const ANALYSIS_AUTHOR_FEED_PAGE_SIZE = 100;
+const ANALYSIS_AUTHOR_FEED_MAX_PAGES = 200;
 const API_BASE = "https://bsky.social/xrpc";
 const DEFAULT_LOGIN_SERVICE = "https://bsky.social";
 const MU_WEB_CLIENT = "https://mu.social";
@@ -678,6 +680,8 @@ async function handleMessage(message, port) {
       return loadNetworkActorFocus(message.payload, (progress) => port.postMessage({ progress }));
     case "LOAD_NETWORK_COMMON_MUTUALS":
       return loadNetworkCommonMutuals(message.payload, (progress) => port.postMessage({ progress }));
+    case "CHECK_ANALYSIS_ACCOUNT":
+      return checkAnalysisAccount(message.payload);
     case "LOAD_ANALYSIS_ACCOUNT":
       return loadAnalysisAccount(message.payload, (progress) => port.postMessage({ progress }));
     case "SCAN_ACCOUNT_MEDIA_EXPORT":
@@ -1855,7 +1859,7 @@ function isAnalysisQuoteRecord(record = {}, postView = {}) {
 
 async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProgress = () => {}) {
   const auth = await ensureSession();
-  const requestedActor = String(actor || "").trim() || auth.session.did;
+  const requestedActor = String(actor || "").trim().replace(/^@+/, "") || auth.session.did;
   const limit = Math.max(100, Math.min(2000, Number(options.limit) || 500));
   const rangeDays = Math.max(0, Number(options.rangeDays) || 0);
   const includeReplies = options.includeReplies === true;
@@ -1864,6 +1868,22 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
   const headers = {
     authorization: `Bearer ${auth.session.accessJwt}`,
   };
+  const resolveCache = new Map();
+  let profileActor = requestedActor;
+
+  if (!String(requestedActor).startsWith("did:")) {
+    notifyProgress({
+      title: "Analyse wird geladen",
+      step: "Account wird geprüft...",
+      percent: 4,
+      detail: requestedActor,
+    });
+    const resolvedDid = await resolveHandleToDid(requestedActor, auth, resolveCache);
+    if (!resolvedDid) {
+      throw new Error(`Der Account "${requestedActor}" wurde nicht gefunden.`);
+    }
+    profileActor = resolvedDid;
+  }
 
   notifyProgress({
     title: "Analyse wird geladen",
@@ -1872,12 +1892,21 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
     detail: requestedActor,
   });
 
-  const profile = await bskyGet("app.bsky.actor.getProfile", {
-    actor: requestedActor,
-  }, {
-    headers,
-    base: authXrpcBase(auth),
-  });
+  let profile;
+  try {
+    profile = await bskyGet("app.bsky.actor.getProfile", {
+      actor: profileActor,
+    }, {
+      headers,
+      base: authXrpcBase(auth),
+    });
+  } catch (error) {
+    const message = String(error?.message || "").trim();
+    if (/not found|recordnotfound|profil.*nicht/i.test(message)) {
+      throw new Error(`Der Account "${requestedActor}" wurde nicht gefunden.`);
+    }
+    throw error;
+  }
 
   const posts = [];
   let cursor = "";
@@ -1887,10 +1916,10 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
   let newestPostAt = "";
   let oldestPostAt = "";
 
-  while (posts.length < limit && pages < 40 && !reachedOlderPosts) {
+  while (posts.length < limit && pages < ANALYSIS_AUTHOR_FEED_MAX_PAGES && !reachedOlderPosts) {
     const response = await bskyGet("app.bsky.feed.getAuthorFeed", {
       actor: profile.did || requestedActor,
-      limit: 100,
+      limit: ANALYSIS_AUTHOR_FEED_PAGE_SIZE,
       cursor: cursor || undefined,
     }, {
       headers,
@@ -1985,6 +2014,54 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
     },
     posts,
   };
+}
+
+async function checkAnalysisAccount({ actor = "" } = {}) {
+  const auth = await ensureSession();
+  const requestedActor = String(actor || "").trim().replace(/^@+/, "");
+  if (!requestedActor) {
+    throw createServiceWorkerError("Bitte zuerst einen Account eingeben.", "ANALYSIS_ACCOUNT_MISSING");
+  }
+
+  const headers = {
+    authorization: `Bearer ${auth.session.accessJwt}`,
+  };
+  const resolveCache = new Map();
+  let profileActor = requestedActor;
+
+  if (!requestedActor.startsWith("did:")) {
+    const resolvedDid = await resolveHandleToDid(requestedActor, auth, resolveCache);
+    if (!resolvedDid) {
+      throw createServiceWorkerError(`Der Account "${requestedActor}" wurde nicht gefunden.`, "ANALYSIS_ACCOUNT_NOT_FOUND", {
+        actor: requestedActor,
+      });
+    }
+    profileActor = resolvedDid;
+  }
+
+  try {
+    const profile = await bskyGet("app.bsky.actor.getProfile", {
+      actor: profileActor,
+    }, {
+      headers,
+      base: authXrpcBase(auth),
+    });
+    return {
+      did: String(profile?.did || "").trim(),
+      handle: String(profile?.handle || requestedActor).trim(),
+      displayName: String(profile?.displayName || profile?.handle || requestedActor).trim(),
+    };
+  } catch (error) {
+    const message = String(error?.message || "").trim();
+    if (/not found|recordnotfound|profil.*nicht/i.test(message)) {
+      throw createServiceWorkerError(`Der Account "${requestedActor}" wurde nicht gefunden.`, "ANALYSIS_ACCOUNT_NOT_FOUND", {
+        actor: requestedActor,
+      });
+    }
+    throw createServiceWorkerError(message || "Analyse-Account konnte nicht geprüft werden.", "ANALYSIS_ACCOUNT_CHECK_FAILED", {
+      actor: requestedActor,
+    });
+  }
 }
 
 async function getRelationshipRecordCreatedAt(auth, recordUri) {
