@@ -334,6 +334,18 @@
                 <button type="button" class="help-trigger" data-help-topic="archive_scope" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
               </div>
               <label>
+                <span data-i18n="archiveSourceLabel">Quelle</span>
+                <input
+                  id="archive-source-input"
+                  type="text"
+                  inputmode="text"
+                  placeholder="@handle oder leer fuer mein Konto"
+                  data-i18n-placeholder="archiveSourcePlaceholder"
+                >
+              </label>
+              <p id="archive-source-status" class="settings-note"></p>
+              <div id="archive-source-preview" class="archive-source-preview" hidden></div>
+              <label>
                 <span data-i18n="archiveScopeLabel">Auswahl</span>
                 <select id="archive-scope-select">
                   <option value="all" data-i18n="archiveScopeAll">Kompletter Account</option>
@@ -823,6 +835,14 @@
               <h3 data-i18n="analysisTemporalTitle">Zeitliche Aktivität</h3>
               <div id="analysis-temporal" class="analysis-summary-grid">
                 <p class="settings-note" data-i18n="analysisTemporalEmpty">Nach dem Vergleich erscheinen hier Aktivitätsfenster, Wochenrhythmus und zeitliche Nähe beider Accounts.</p>
+              </div>
+            </section>
+
+            <section class="archive-card analysis-network-card">
+              <p class="eyebrow" data-i18n="analysisNetworkEyebrow">Netzwerk</p>
+              <h3 data-i18n="analysisNetworkTitle">Netzwerk und Beziehungsmerkmale</h3>
+              <div id="analysis-network" class="analysis-summary-grid">
+                <p class="settings-note" data-i18n="analysisNetworkEmpty">Nach dem Vergleich erscheinen hier gemeinsame Follower, Following, Mutuals, Zielmuster und Moderationsüberschneidungen.</p>
               </div>
             </section>
 

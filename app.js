@@ -304,6 +304,9 @@ const networkWorkspace = document.querySelector("#network-workspace");
 const analysisWorkspace = document.querySelector("#analysis-workspace");
 const dmWorkspace = document.querySelector("#dm-workspace");
 const archiveScopeSelect = document.querySelector("#archive-scope-select");
+const archiveSourceInput = document.querySelector("#archive-source-input");
+const archiveSourceStatus = document.querySelector("#archive-source-status");
+const archiveSourcePreview = document.querySelector("#archive-source-preview");
 const archiveContentModeSelect = document.querySelector("#archive-content-mode-select");
 const archiveYearWrap = document.querySelector("#archive-year-wrap");
 const archiveYearInput = document.querySelector("#archive-year-input");
@@ -426,6 +429,7 @@ const analysisStatusLineNode = document.querySelector("#analysis-status-line");
 const analysisSummary = document.querySelector("#analysis-summary");
 const analysisResultCard = document.querySelector("#analysis-result-card");
 const analysisTemporal = document.querySelector("#analysis-temporal");
+const analysisNetwork = document.querySelector("#analysis-network");
 const analysisMetrics = document.querySelector("#analysis-metrics");
 const analysisPatterns = document.querySelector("#analysis-patterns");
 const serverPresetField = document.querySelector("#server-preset");
@@ -481,6 +485,9 @@ let selectedHashtags = [];
 let hashtagPlacement = "first";
 let archiveSelectedHashtags = [];
 let archiveHashtagScope = "thread";
+let archiveSourceProfile = null;
+let archiveSourceValidationToken = 0;
+let archiveSourceValidationTimer = null;
 let postingHistory = [];
 let currentComposedText = "";
 let selectedPostLanguages = [];
@@ -2578,6 +2585,47 @@ function jaccardSimilarityFromSets(leftSet, rightSet) {
   return union ? (intersection / union) : 0;
 }
 
+function intersectionCountFromSets(leftSet, rightSet) {
+  const left = leftSet instanceof Set ? leftSet : new Set(leftSet || []);
+  const right = rightSet instanceof Set ? rightSet : new Set(rightSet || []);
+  let intersection = 0;
+  left.forEach((item) => {
+    if (right.has(item)) {
+      intersection += 1;
+    }
+  });
+  return intersection;
+}
+
+function overlapSummaryFromSets(leftSet, rightSet) {
+  const left = leftSet instanceof Set ? leftSet : new Set(leftSet || []);
+  const right = rightSet instanceof Set ? rightSet : new Set(rightSet || []);
+  const intersection = intersectionCountFromSets(left, right);
+  const union = new Set([...left, ...right]).size;
+  return {
+    leftCount: left.size,
+    rightCount: right.size,
+    sharedCount: intersection,
+    unionCount: union,
+    jaccard: union ? (intersection / union) : 1,
+    leftShare: left.size ? (intersection / left.size) : 0,
+    rightShare: right.size ? (intersection / right.size) : 0,
+  };
+}
+
+function frequencyMapFromEntries(entries = []) {
+  const map = new Map();
+  (Array.isArray(entries) ? entries : []).forEach((entry) => {
+    const label = String(entry?.identifier || entry?.did || entry?.handle || entry?.label || "").trim();
+    if (!label) {
+      return;
+    }
+    const count = Math.max(0, Number(entry?.count) || Math.round((Number(entry?.share) || 0) * 1000) || 0);
+    map.set(label, count);
+  });
+  return map;
+}
+
 function cosineSimilarityFromArrays(leftValues = [], rightValues = []) {
   const length = Math.max(leftValues.length, rightValues.length);
   if (!length) {
@@ -3127,6 +3175,8 @@ function normalizeAnalysisAccountData(result = null) {
     .filter(Boolean);
   const corpus = createAnalysisCorpus(texts);
   const temporal = createAnalysisTemporalProfile(posts);
+  const network = result.network && typeof result.network === "object" ? result.network : {};
+  const markers = result.markers && typeof result.markers === "object" ? result.markers : {};
   return {
     profile: {
       did: String(profile.did || "").trim(),
@@ -3154,6 +3204,26 @@ function normalizeAnalysisAccountData(result = null) {
     texts,
     corpus,
     temporal,
+    network: {
+      followers: [],
+      follows: [],
+      mutualDids: Array.isArray(network.mutualDids) ? network.mutualDids.map((value) => String(value || "").trim()).filter(Boolean) : [],
+      followerDids: new Set(Array.isArray(network.followerDids) ? network.followerDids.map((value) => String(value || "").trim()).filter(Boolean) : Array.isArray(network.followers) ? network.followers.map((entry) => String(entry?.did || "").trim()).filter(Boolean) : []),
+      followDids: new Set(Array.isArray(network.followDids) ? network.followDids.map((value) => String(value || "").trim()).filter(Boolean) : Array.isArray(network.follows) ? network.follows.map((entry) => String(entry?.did || "").trim()).filter(Boolean) : []),
+      mutes: Array.isArray(network.mutes) ? network.mutes.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
+      blocks: Array.isArray(network.blocks) ? network.blocks.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
+      muteBlockSource: String(network.muteBlockSource || "unavailable").trim() || "unavailable",
+    },
+    markers: {
+      topMentions: Array.isArray(markers.topMentions) ? markers.topMentions : [],
+      topHashtags: Array.isArray(markers.topHashtags) ? markers.topHashtags : [],
+      topDomains: Array.isArray(markers.topDomains) ? markers.topDomains : [],
+      topReplyTargets: Array.isArray(markers.topReplyTargets) ? markers.topReplyTargets : [],
+      topQuoteTargets: Array.isArray(markers.topQuoteTargets) ? markers.topQuoteTargets : [],
+      topLanguages: Array.isArray(markers.topLanguages) ? markers.topLanguages : [],
+      mediaPostShare: Number(markers.mediaPostShare) || 0,
+      textOnlyPostShare: Number(markers.textOnlyPostShare) || 0,
+    },
   };
 }
 
@@ -3190,6 +3260,26 @@ function getPersistableAnalysisAccount(account = null) {
       createdAt: String(post?.createdAt || "").trim(),
       text: String(post?.text || "").trim(),
     })),
+    network: {
+      followers: [],
+      follows: [],
+      mutualDids: Array.isArray(account.network?.mutualDids) ? account.network.mutualDids : [],
+      followerDids: Array.from(account.network?.followerDids || []),
+      followDids: Array.from(account.network?.followDids || []),
+      mutes: Array.isArray(account.network?.mutes) ? account.network.mutes.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
+      blocks: Array.isArray(account.network?.blocks) ? account.network.blocks.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
+      muteBlockSource: String(account.network?.muteBlockSource || "unavailable").trim() || "unavailable",
+    },
+    markers: {
+      topMentions: Array.isArray(account.markers?.topMentions) ? account.markers.topMentions : [],
+      topHashtags: Array.isArray(account.markers?.topHashtags) ? account.markers.topHashtags : [],
+      topDomains: Array.isArray(account.markers?.topDomains) ? account.markers.topDomains : [],
+      topReplyTargets: Array.isArray(account.markers?.topReplyTargets) ? account.markers.topReplyTargets : [],
+      topQuoteTargets: Array.isArray(account.markers?.topQuoteTargets) ? account.markers.topQuoteTargets : [],
+      topLanguages: Array.isArray(account.markers?.topLanguages) ? account.markers.topLanguages : [],
+      mediaPostShare: Number(account.markers?.mediaPostShare) || 0,
+      textOnlyPostShare: Number(account.markers?.textOnlyPostShare) || 0,
+    },
   };
 }
 
@@ -3293,15 +3383,76 @@ function compareAnalysisAccountsData(leftAccount, rightAccount) {
     rightAccount.temporal.timestamps,
     5,
   );
+  const followerOverlap = overlapSummaryFromSets(leftAccount.network?.followerDids, rightAccount.network?.followerDids);
+  const followingOverlap = overlapSummaryFromSets(leftAccount.network?.followDids, rightAccount.network?.followDids);
+  const mutualOverlap = overlapSummaryFromSets(
+    new Set(leftAccount.network?.mutualDids || []),
+    new Set(rightAccount.network?.mutualDids || []),
+  );
+  const mentionSimilarity = cosineSimilarityFromMaps(
+    frequencyMapFromEntries(leftAccount.markers?.topMentions),
+    frequencyMapFromEntries(rightAccount.markers?.topMentions),
+  );
+  const hashtagSimilarity = cosineSimilarityFromMaps(
+    frequencyMapFromEntries(leftAccount.markers?.topHashtags),
+    frequencyMapFromEntries(rightAccount.markers?.topHashtags),
+  );
+  const domainSimilarity = cosineSimilarityFromMaps(
+    frequencyMapFromEntries(leftAccount.markers?.topDomains),
+    frequencyMapFromEntries(rightAccount.markers?.topDomains),
+  );
+  const replyTargetSimilarity = cosineSimilarityFromMaps(
+    frequencyMapFromEntries(leftAccount.markers?.topReplyTargets),
+    frequencyMapFromEntries(rightAccount.markers?.topReplyTargets),
+  );
+  const quoteTargetSimilarity = cosineSimilarityFromMaps(
+    frequencyMapFromEntries(leftAccount.markers?.topQuoteTargets),
+    frequencyMapFromEntries(rightAccount.markers?.topQuoteTargets),
+  );
+  const languageSimilarity = cosineSimilarityFromMaps(
+    frequencyMapFromEntries(leftAccount.markers?.topLanguages),
+    frequencyMapFromEntries(rightAccount.markers?.topLanguages),
+  );
+  const mediaSimilarity = 1 - Math.min(1, Math.abs((leftAccount.markers?.mediaPostShare || 0) - (rightAccount.markers?.mediaPostShare || 0)));
+  const interactionSimilarity = (
+    (mentionSimilarity * 0.18)
+    + (hashtagSimilarity * 0.18)
+    + (domainSimilarity * 0.18)
+    + (replyTargetSimilarity * 0.16)
+    + (quoteTargetSimilarity * 0.16)
+    + (languageSimilarity * 0.08)
+    + (mediaSimilarity * 0.06)
+  );
+  const relationshipSimilarity = (
+    (followerOverlap.jaccard * 0.35)
+    + (followingOverlap.jaccard * 0.35)
+    + (mutualOverlap.jaccard * 0.30)
+  );
+  const leftBlocksSet = leftAccount.network?.blocks ? new Set(leftAccount.network.blocks.map((entry) => entry.did).filter(Boolean)) : null;
+  const rightBlocksSet = rightAccount.network?.blocks ? new Set(rightAccount.network.blocks.map((entry) => entry.did).filter(Boolean)) : null;
+  const leftMutesSet = leftAccount.network?.mutes ? new Set(leftAccount.network.mutes.map((entry) => entry.did).filter(Boolean)) : null;
+  const rightMutesSet = rightAccount.network?.mutes ? new Set(rightAccount.network.mutes.map((entry) => entry.did).filter(Boolean)) : null;
+  const blockOverlap = leftBlocksSet && rightBlocksSet ? overlapSummaryFromSets(leftBlocksSet, rightBlocksSet) : null;
+  const muteOverlap = leftMutesSet && rightMutesSet ? overlapSummaryFromSets(leftMutesSet, rightMutesSet) : null;
+  const moderationSimilarity = blockOverlap && muteOverlap
+    ? ((blockOverlap.jaccard * 0.5) + (muteOverlap.jaccard * 0.5))
+    : blockOverlap
+    ? blockOverlap.jaccard
+    : muteOverlap
+    ? muteOverlap.jaccard
+    : null;
   const robustnessMix = (
     (burrowsDelta.similarity * 0.22)
-    + (characterNgramSimilarity * 0.22)
-    + (functionWordSimilarity * 0.17)
-    + (cosineSimilarity * 0.14)
-    + (jaccardSimilarity * 0.07)
-    + (metricsSimilarity * 0.08)
-    + (temporalProfileSimilarity * 0.06)
-    + (temporalProximityScore * 0.04)
+    + (characterNgramSimilarity * 0.18)
+    + (functionWordSimilarity * 0.14)
+    + (cosineSimilarity * 0.11)
+    + (jaccardSimilarity * 0.05)
+    + (metricsSimilarity * 0.06)
+    + (temporalProfileSimilarity * 0.05)
+    + (temporalProximityScore * 0.03)
+    + (relationshipSimilarity * 0.08)
+    + (interactionSimilarity * 0.08)
+    + ((moderationSimilarity ?? 0) * 0.00)
   );
   const score = Math.round(100 * robustnessMix);
   const minWords = Math.min(leftAccount.corpus.wordCount, rightAccount.corpus.wordCount);
@@ -3330,6 +3481,25 @@ function compareAnalysisAccountsData(leftAccount, rightAccount) {
     characterNgramSimilarity,
     temporalProfileSimilarity,
     temporalProximityScore,
+    relationshipSimilarity,
+    interactionSimilarity,
+    moderationSimilarity,
+    followerOverlap,
+    followingOverlap,
+    mutualOverlap,
+    blockOverlap,
+    muteOverlap,
+    mentionSimilarity,
+    hashtagSimilarity,
+    domainSimilarity,
+    replyTargetSimilarity,
+    quoteTargetSimilarity,
+    languageSimilarity,
+    mediaSimilarity,
+    directRelationship: {
+      leftFollowsRight: Boolean(leftAccount.network?.followDids?.has?.(rightAccount.profile.did)),
+      rightFollowsLeft: Boolean(rightAccount.network?.followDids?.has?.(leftAccount.profile.did)),
+    },
     burrowsDelta,
     metricRows,
   };
@@ -3640,6 +3810,253 @@ function renderAnalysisTemporal() {
   }
 }
 
+function createAnalysisSimpleChipList(entries = [], emptyKey = "analysisPatternsNoData") {
+  const list = document.createElement("div");
+  list.className = "analysis-token-list";
+  if (!entries.length) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t(emptyKey);
+    list.appendChild(note);
+    return list;
+  }
+  entries.forEach((entry) => {
+    const chip = document.createElement("span");
+    chip.className = "analysis-token-chip";
+    chip.textContent = `${entry.label} - ${formatAnalysisPercent(entry.share ?? 0)}`;
+    list.appendChild(chip);
+  });
+  return list;
+}
+
+function createAnalysisResolvedProfileList(entries = [], emptyKey = "analysisPatternsNoData") {
+  const list = document.createElement("div");
+  list.className = "analysis-profile-list";
+  if (!entries.length) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t(emptyKey);
+    list.appendChild(note);
+    return list;
+  }
+
+  entries.forEach((entry) => {
+    const card = document.createElement("article");
+    card.className = "analysis-profile-chip";
+
+    const avatar = document.createElement("img");
+    avatar.className = "analysis-profile-chip-avatar";
+    const placeholderAvatar = "icons/threadline-icon.svg";
+    const avatarSrc = String(entry?.avatar || "").trim();
+    avatar.src = avatarSrc || placeholderAvatar;
+    avatar.alt = String(entry?.displayName || entry?.handle || entry?.did || entry?.label || "profile").trim();
+    avatar.loading = "lazy";
+    avatar.onerror = () => {
+      avatar.onerror = null;
+      avatar.src = placeholderAvatar;
+    };
+
+    const body = document.createElement("div");
+    body.className = "analysis-profile-chip-body";
+
+    const title = document.createElement("strong");
+    const deleted = entry?.deleted === true;
+    title.textContent = String(entry?.displayName || entry?.handle || entry?.did || entry?.label || "").trim();
+
+    const meta = document.createElement("span");
+    meta.className = "reply-target-handle";
+    const handle = String(entry?.handle || "").trim();
+    const did = String(entry?.did || "").trim();
+    meta.textContent = handle ? `@${handle}` : (did || String(entry?.label || "").trim());
+
+    const share = document.createElement("span");
+    share.className = "analysis-profile-chip-share";
+    share.textContent = formatAnalysisPercent(entry?.share ?? 0);
+
+    body.append(title, meta);
+    if (deleted) {
+      const status = document.createElement("span");
+      status.className = "analysis-profile-chip-status";
+      status.textContent = t("analysisNetworkDeletedAccount");
+      body.appendChild(status);
+    }
+    body.appendChild(share);
+    card.append(avatar, body);
+    list.appendChild(card);
+  });
+
+  return list;
+}
+
+function getAnalysisNetworkTableRows() {
+  if (!analysisAccountDataA || !analysisAccountDataB || !analysisComparisonResult) {
+    return [];
+  }
+  const comparison = analysisComparisonResult;
+  const formatOverlap = (summary) => `${formatCount(summary.sharedCount)} / ${formatCount(summary.unionCount)} · ${formatAnalysisPercent(summary.jaccard)}`;
+  const moderationAvailability = (source) => source === "saved_account" ? t("analysisNetworkModerationAvailable") : t("analysisNetworkModerationUnavailable");
+  return [
+    {
+      label: t("analysisNetworkFollowersOverlap"),
+      left: formatCount(comparison.followerOverlap.leftCount),
+      right: formatCount(comparison.followerOverlap.rightCount),
+      diff: formatOverlap(comparison.followerOverlap),
+    },
+    {
+      label: t("analysisNetworkFollowsOverlap"),
+      left: formatCount(comparison.followingOverlap.leftCount),
+      right: formatCount(comparison.followingOverlap.rightCount),
+      diff: formatOverlap(comparison.followingOverlap),
+    },
+    {
+      label: t("analysisNetworkMutualsOverlap"),
+      left: formatCount(comparison.mutualOverlap.leftCount),
+      right: formatCount(comparison.mutualOverlap.rightCount),
+      diff: formatOverlap(comparison.mutualOverlap),
+    },
+    {
+      label: t("analysisNetworkDirectRelation"),
+      left: comparison.directRelationship.leftFollowsRight ? t("analysisNetworkRelationYes") : t("analysisNetworkRelationNo"),
+      right: comparison.directRelationship.rightFollowsLeft ? t("analysisNetworkRelationYes") : t("analysisNetworkRelationNo"),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.relationshipSimilarity) }),
+    },
+    {
+      label: t("analysisNetworkMuteOverlap"),
+      left: moderationAvailability(analysisAccountDataA.network?.muteBlockSource),
+      right: moderationAvailability(analysisAccountDataB.network?.muteBlockSource),
+      diff: comparison.muteOverlap ? formatOverlap(comparison.muteOverlap) : t("analysisNetworkNotAvailable"),
+    },
+    {
+      label: t("analysisNetworkBlockOverlap"),
+      left: moderationAvailability(analysisAccountDataA.network?.muteBlockSource),
+      right: moderationAvailability(analysisAccountDataB.network?.muteBlockSource),
+      diff: comparison.blockOverlap ? formatOverlap(comparison.blockOverlap) : t("analysisNetworkNotAvailable"),
+    },
+    {
+      label: t("analysisNetworkMentionsSimilarity"),
+      left: formatAnalysisPercent(analysisAccountDataA.markers?.topMentions?.[0]?.share || 0),
+      right: formatAnalysisPercent(analysisAccountDataB.markers?.topMentions?.[0]?.share || 0),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.mentionSimilarity) }),
+    },
+    {
+      label: t("analysisNetworkDomainsSimilarity"),
+      left: formatAnalysisPercent(analysisAccountDataA.markers?.topDomains?.[0]?.share || 0),
+      right: formatAnalysisPercent(analysisAccountDataB.markers?.topDomains?.[0]?.share || 0),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.domainSimilarity) }),
+    },
+    {
+      label: t("analysisNetworkHashtagsSimilarity"),
+      left: formatAnalysisPercent(analysisAccountDataA.markers?.topHashtags?.[0]?.share || 0),
+      right: formatAnalysisPercent(analysisAccountDataB.markers?.topHashtags?.[0]?.share || 0),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.hashtagSimilarity) }),
+    },
+    {
+      label: t("analysisNetworkReplyTargetsSimilarity"),
+      left: formatAnalysisPercent(analysisAccountDataA.markers?.topReplyTargets?.[0]?.share || 0),
+      right: formatAnalysisPercent(analysisAccountDataB.markers?.topReplyTargets?.[0]?.share || 0),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.replyTargetSimilarity) }),
+    },
+    {
+      label: t("analysisNetworkQuoteTargetsSimilarity"),
+      left: formatAnalysisPercent(analysisAccountDataA.markers?.topQuoteTargets?.[0]?.share || 0),
+      right: formatAnalysisPercent(analysisAccountDataB.markers?.topQuoteTargets?.[0]?.share || 0),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.quoteTargetSimilarity) }),
+    },
+    {
+      label: t("analysisNetworkLanguagesSimilarity"),
+      left: formatAnalysisPercent(analysisAccountDataA.markers?.topLanguages?.[0]?.share || 0),
+      right: formatAnalysisPercent(analysisAccountDataB.markers?.topLanguages?.[0]?.share || 0),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.languageSimilarity) }),
+    },
+    {
+      label: t("analysisNetworkMediaSimilarity"),
+      left: formatAnalysisPercent(analysisAccountDataA.markers?.mediaPostShare || 0),
+      right: formatAnalysisPercent(analysisAccountDataB.markers?.mediaPostShare || 0),
+      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.mediaSimilarity) }),
+    },
+  ];
+}
+
+function renderAnalysisNetwork() {
+  if (!analysisNetwork) {
+    return;
+  }
+  analysisNetwork.replaceChildren();
+  if (!analysisAccountDataA && !analysisAccountDataB) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t("analysisNetworkEmpty");
+    analysisNetwork.appendChild(note);
+    return;
+  }
+  if (!analysisComparisonResult) {
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = t("analysisNetworkEmpty");
+    analysisNetwork.appendChild(note);
+    return;
+  }
+
+  const summary = document.createElement("article");
+  summary.className = "analysis-account-card";
+  const summaryHeading = document.createElement("strong");
+  summaryHeading.textContent = t("analysisNetworkSummaryTitle");
+  const summaryNote = document.createElement("p");
+  summaryNote.className = "settings-note";
+  summaryNote.textContent = t("analysisNetworkSummaryNote");
+  const summaryDetails = document.createElement("div");
+  summaryDetails.className = "analysis-result-details";
+  [
+    t("analysisSimilarityRelationship", { value: formatAnalysisPercent(analysisComparisonResult.relationshipSimilarity) }),
+    t("analysisSimilarityInteraction", { value: formatAnalysisPercent(analysisComparisonResult.interactionSimilarity) }),
+    analysisComparisonResult.moderationSimilarity === null
+      ? t("analysisSimilarityModerationUnavailable")
+      : t("analysisSimilarityModeration", { value: formatAnalysisPercent(analysisComparisonResult.moderationSimilarity) }),
+  ].forEach((text) => {
+    const item = document.createElement("span");
+    item.textContent = text;
+    summaryDetails.appendChild(item);
+  });
+  summary.append(summaryHeading, summaryNote, summaryDetails);
+  analysisNetwork.appendChild(summary);
+
+  const table = document.createElement("table");
+  table.className = "analysis-table";
+  const head = document.createElement("thead");
+  head.innerHTML = `<tr><th>${escapeHtml(t("analysisMetricsColumnMetric"))}</th><th>${escapeHtml(t("analysisAccountALabel"))}</th><th>${escapeHtml(t("analysisAccountBLabel"))}</th><th>${escapeHtml(t("analysisTemporalColumnAssessment"))}</th></tr>`;
+  table.appendChild(head);
+  const body = document.createElement("tbody");
+  getAnalysisNetworkTableRows().forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.left)}</td><td>${escapeHtml(row.right)}</td><td>${escapeHtml(row.diff)}</td>`;
+    body.appendChild(tr);
+  });
+  table.appendChild(body);
+  analysisNetwork.appendChild(table);
+
+  const patternDefinitions = [
+    { title: t("analysisNetworkMentionsTitle"), key: "topMentions", resolvedProfiles: true },
+    { title: t("analysisNetworkDomainsTitle"), key: "topDomains" },
+    { title: t("analysisNetworkHashtagsTitle"), key: "topHashtags" },
+    { title: t("analysisNetworkReplyTargetsTitle"), key: "topReplyTargets", resolvedProfiles: true },
+    { title: t("analysisNetworkQuoteTargetsTitle"), key: "topQuoteTargets", resolvedProfiles: true },
+    { title: t("analysisNetworkLanguagesTitle"), key: "topLanguages" },
+  ];
+  patternDefinitions.forEach((definition) => {
+    const createList = definition.resolvedProfiles
+      ? createAnalysisResolvedProfileList
+      : createAnalysisSimpleChipList;
+    analysisNetwork.appendChild(createAnalysisPatternCard(
+      `${t("analysisAccountALabel")} - ${definition.title}`,
+      [createList(analysisAccountDataA?.markers?.[definition.key] || [], "analysisPatternsNoData")],
+    ));
+    analysisNetwork.appendChild(createAnalysisPatternCard(
+      `${t("analysisAccountBLabel")} - ${definition.title}`,
+      [createList(analysisAccountDataB?.markers?.[definition.key] || [], "analysisPatternsNoData")],
+    ));
+  });
+}
+
 function renderAnalysisMetrics() {
   if (!analysisMetrics) {
     return;
@@ -3812,6 +4229,13 @@ function getAnalysisPdfTemporalRows() {
   return getAnalysisTemporalTableRows();
 }
 
+function getAnalysisPdfNetworkRows() {
+  if (!analysisComparisonResult) {
+    return [];
+  }
+  return getAnalysisNetworkTableRows();
+}
+
 function getAnalysisTemporalTableRows() {
   const hourSimilarity = cosineSimilarityFromArrays(
     analysisAccountDataA?.temporal?.hourShares || [],
@@ -3906,6 +4330,17 @@ function getAnalysisPdfScoreRows() {
     },
     {
       label: t("analysisSimilarityTemporalProximity", { value: formatAnalysisPercent(analysisComparisonResult.temporalProximityScore) }),
+    },
+    {
+      label: t("analysisSimilarityRelationship", { value: formatAnalysisPercent(analysisComparisonResult.relationshipSimilarity) }),
+    },
+    {
+      label: t("analysisSimilarityInteraction", { value: formatAnalysisPercent(analysisComparisonResult.interactionSimilarity) }),
+    },
+    {
+      label: analysisComparisonResult.moderationSimilarity === null
+        ? t("analysisSimilarityModerationUnavailable")
+        : t("analysisSimilarityModeration", { value: formatAnalysisPercent(analysisComparisonResult.moderationSimilarity) }),
     },
   ];
 }
@@ -4528,6 +4963,13 @@ async function exportAnalysisPdfReport() {
     getAnalysisPdfTemporalRows(),
     { label: 0.34, value: 0.2, diff: 0.23 },
   );
+  const networkTablePages = buildAnalysisPdfTablePageLayouts(
+    previewPage.scale,
+    previewPage.cardWidth,
+    contentHeight,
+    getAnalysisPdfNetworkRows(),
+    { label: 0.34, value: 0.2, diff: 0.23 },
+  );
   const metricTablePages = buildAnalysisPdfTablePageLayouts(
     previewPage.scale,
     previewPage.cardWidth,
@@ -4541,7 +4983,7 @@ async function exportAnalysisPdfReport() {
     previewPage.columnGap,
     previewPage.contentBottom - (previewPage.cursorY + (60 * previewPage.scale)),
   );
-  const totalPages = 2 + temporalTablePages.pages.length + metricTablePages.pages.length + patternPageRows.length;
+  const totalPages = 2 + temporalTablePages.pages.length + networkTablePages.pages.length + metricTablePages.pages.length + patternPageRows.length;
   const pageCanvases = await Promise.all([
     renderAnalysisPdfOverviewPage(0, totalPages),
     renderAnalysisPdfTemporalPage(1, totalPages),
@@ -4551,13 +4993,19 @@ async function exportAnalysisPdfReport() {
       columns: { label: 0.34, value: 0.2, diff: 0.23 },
       column4Title: t("analysisTemporalColumnAssessment"),
     })),
-    ...metricTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2 + temporalTablePages.pages.length, totalPages, {
+    ...networkTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2 + temporalTablePages.pages.length, totalPages, {
+      title: t("analysisNetworkTitle"),
+      rows,
+      columns: { label: 0.34, value: 0.2, diff: 0.23 },
+      column4Title: t("analysisTemporalColumnAssessment"),
+    })),
+    ...metricTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length, totalPages, {
       title: t("analysisMetricsTitle"),
       rows,
       columns: { label: 0.41, value: 0.16, diff: 0.27 },
       column4Title: t("analysisMetricsColumnDiff"),
     })),
-    ...patternPageRows.map((rows, index) => renderAnalysisPdfPatternPage(index + 2 + temporalTablePages.pages.length + metricTablePages.pages.length, totalPages, rows)),
+    ...patternPageRows.map((rows, index) => renderAnalysisPdfPatternPage(index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length + metricTablePages.pages.length, totalPages, rows)),
   ]);
   const pages = [];
   for (const [pageIndex, canvas] of pageCanvases.entries()) {
@@ -4613,6 +5061,7 @@ function renderAnalysisWorkspace() {
   renderAnalysisSummary();
   renderAnalysisResult();
   renderAnalysisTemporal();
+  renderAnalysisNetwork();
   renderAnalysisMetrics();
   renderAnalysisPatterns();
   updateAnalysisControls();
@@ -7321,7 +7770,10 @@ async function loadDmArchive() {
 
 function getArchiveFilters() {
   const hasExplicitRange = Boolean(archiveFromInput.value || archiveToInput.value);
+  const sourceActor = String(archiveSourceInput?.value || "").trim().replace(/^@+/, "");
   return {
+    sourceActor,
+    sourceDid: String(archiveSourceProfile?.did || "").trim(),
     scope: hasExplicitRange ? "range" : archiveScopeSelect.value,
     contentMode: archiveContentModeSelect.value || "posts",
     year: archiveYearInput.value.trim(),
@@ -7329,6 +7781,20 @@ function getArchiveFilters() {
     to: archiveToInput.value || "",
     hashtagTags: normalizeSelectedHashtagEntries(archiveSelectedHashtags, hashtags),
     hashtagScope: archiveHashtagScope === "startpost" ? "startpost" : "thread",
+  };
+}
+
+function getPersistableArchiveSource() {
+  const rawInput = String(archiveSourceInput?.value || "").trim();
+  if (!rawInput && !archiveSourceProfile) {
+    return null;
+  }
+  return {
+    input: rawInput,
+    did: String(archiveSourceProfile?.did || "").trim(),
+    handle: String(archiveSourceProfile?.handle || "").trim(),
+    displayName: String(archiveSourceProfile?.displayName || "").trim(),
+    avatar: String(archiveSourceProfile?.avatar || "").trim(),
   };
 }
 
@@ -7351,6 +7817,7 @@ function getArchivePreferences() {
   const options = getArchivePdfOptions();
   return {
     filters,
+    source: getPersistableArchiveSource(),
     waveSize: getArchiveWaveSize(),
     pdfOptions: options,
     livePreview: archiveLivePreviewToggle ? archiveLivePreviewToggle.checked : true,
@@ -7362,6 +7829,18 @@ function getArchivePreferences() {
 
 function applyArchivePreferences(preferences = {}) {
   const filters = preferences.filters || {};
+  const source = preferences.source && typeof preferences.source === "object" ? preferences.source : {};
+  if (archiveSourceInput) {
+    archiveSourceInput.value = String(source.input || filters.sourceActor || "").trim();
+  }
+  archiveSourceProfile = source.did
+    ? {
+        did: String(source.did || "").trim(),
+        handle: String(source.handle || "").trim(),
+        displayName: String(source.displayName || source.handle || source.did || "").trim(),
+        avatar: String(source.avatar || "").trim(),
+      }
+    : null;
   archiveScopeSelect.value = filters.scope === "year" || filters.scope === "range" ? filters.scope : "all";
   archiveContentModeSelect.value = ["posts", "thread_roots", "threads", "full"].includes(filters.contentMode)
     ? filters.contentMode
@@ -7407,6 +7886,7 @@ function applyArchivePreferences(preferences = {}) {
     archiveLivePreviewToggle.checked = preferences.livePreview !== false;
   }
   updateArchiveScopeFields();
+  renderArchiveSourceState();
   renderHashtagCloud();
 }
 
@@ -7416,6 +7896,116 @@ function serializeArchiveFilters(filters = getArchiveFilters()) {
 
 async function persistArchivePreferences() {
   await persistSettings();
+}
+
+function renderArchiveSourceState() {
+  if (!archiveSourceStatus || !archiveSourcePreview) {
+    return;
+  }
+  archiveSourcePreview.replaceChildren();
+  const rawInput = String(archiveSourceInput?.value || "").trim();
+  if (!rawInput || !archiveSourceProfile?.did) {
+    archiveSourcePreview.hidden = true;
+    if (!rawInput) {
+      archiveSourceStatus.textContent = "";
+    }
+    return;
+  }
+
+  archiveSourceStatus.textContent = t("archiveSourceReady", {
+    account: archiveSourceProfile.handle || archiveSourceProfile.displayName || archiveSourceProfile.did,
+  });
+  archiveSourcePreview.hidden = false;
+
+  const avatar = document.createElement("img");
+  avatar.className = "analysis-account-avatar";
+  avatar.src = archiveSourceProfile.avatar || "icons/threadline-icon.svg";
+  avatar.alt = archiveSourceProfile.displayName || archiveSourceProfile.handle || archiveSourceProfile.did;
+  avatar.loading = "lazy";
+  avatar.onerror = () => {
+    avatar.onerror = null;
+    avatar.src = "icons/threadline-icon.svg";
+  };
+
+  const identity = document.createElement("div");
+  identity.className = "analysis-account-identity";
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "eyebrow";
+  eyebrow.textContent = t("archiveSourcePreviewEyebrow");
+  const name = document.createElement("strong");
+  name.textContent = archiveSourceProfile.displayName || archiveSourceProfile.handle || archiveSourceProfile.did;
+  const handle = document.createElement("span");
+  handle.className = "reply-target-handle";
+  handle.textContent = archiveSourceProfile.handle ? `@${archiveSourceProfile.handle}` : archiveSourceProfile.did;
+  identity.append(eyebrow, name, handle);
+
+  archiveSourcePreview.append(avatar, identity);
+}
+
+async function validateArchiveSourceInput({ silentSuccess = false } = {}) {
+  const requestToken = ++archiveSourceValidationToken;
+  const rawValue = String(archiveSourceInput?.value || "").trim();
+  const normalizedActor = rawValue.replace(/^@+/, "");
+
+  if (!normalizedActor) {
+    archiveSourceProfile = null;
+    if (archiveSourceStatus) {
+      archiveSourceStatus.textContent = "";
+    }
+    renderArchiveSourceState();
+    await persistArchivePreferences();
+    return null;
+  }
+
+  if (archiveSourceStatus) {
+    archiveSourceStatus.textContent = t("archiveSourceChecking");
+  }
+
+  try {
+    const result = await sendToServiceWorker("CHECK_ANALYSIS_ACCOUNT", {
+      actor: normalizedActor,
+    }, { timeoutMs: 30000 });
+    if (requestToken !== archiveSourceValidationToken) {
+      return null;
+    }
+    archiveSourceProfile = result?.did
+      ? {
+          did: String(result.did || "").trim(),
+          handle: String(result.handle || normalizedActor).trim(),
+          displayName: String(result.displayName || result.handle || normalizedActor).trim(),
+          avatar: String(result.avatar || "").trim(),
+        }
+      : null;
+    if (!silentSuccess && archiveSourceStatus) {
+      archiveSourceStatus.textContent = t("archiveSourceValidated", {
+        account: archiveSourceProfile?.handle || normalizedActor,
+      });
+    }
+    renderArchiveSourceState();
+    await persistArchivePreferences();
+    return archiveSourceProfile;
+  } catch (error) {
+    if (requestToken !== archiveSourceValidationToken) {
+      return null;
+    }
+    archiveSourceProfile = null;
+    if (archiveSourceStatus) {
+      archiveSourceStatus.textContent = error?.message || t("archiveSourceInvalid");
+    }
+    renderArchiveSourceState();
+    await persistArchivePreferences();
+    throw error;
+  }
+}
+
+function scheduleArchiveSourceValidation() {
+  if (archiveSourceValidationTimer) {
+    window.clearTimeout(archiveSourceValidationTimer);
+  }
+  archiveSourceValidationTimer = window.setTimeout(() => {
+    archiveSourceValidationTimer = null;
+    void validateArchiveSourceInput({ silentSuccess: true }).catch(() => {});
+  }, 1800);
 }
 
 function applyDmPartnerCache(cache = null) {
@@ -7680,6 +8270,12 @@ function renderArchiveStartHint() {
   archiveStartHint.textContent = t("archiveStartHintFresh");
 }
 
+function syncArchiveActionButtonStates() {
+  if (archiveNextWaveButton && activeArchiveRunState !== "running") {
+    archiveNextWaveButton.textContent = t("archiveNextWaveButton");
+  }
+}
+
 function syncArchiveTransientNoticeFromCatalog() {
   archiveTransientNotice = buildArchiveCatalogNotice(archiveCatalog);
 }
@@ -7735,7 +8331,11 @@ async function setArchiveRunControl(action) {
     activeArchiveRunState = "running";
   } else if (action === "cancel") {
     activeArchiveRunState = "cancelled";
+    if (archiveNextWaveButton) {
+      archiveNextWaveButton.disabled = false;
+    }
   }
+  syncArchiveActionButtonStates();
   updateArchiveRunControls();
   renderArchiveStatusLine();
   renderArchiveStartHint();
@@ -7855,13 +8455,20 @@ function renderArchiveResults(catalog = archiveCatalog) {
 
 function renderArchiveWorkspace() {
   updateArchiveScopeFields();
+  renderArchiveSourceState();
   renderArchiveSpec();
   updateArchiveSummary();
   renderArchiveResults();
-  archiveNextWaveButton.disabled = !authAccount || Boolean(archiveSession && !archiveSession.hasMore && archiveSession.exportedPosts > 0);
+  archiveNextWaveButton.disabled = !authAccount || Boolean(
+    archiveSession
+    && archiveSession.status !== "cancelled"
+    && !archiveSession.hasMore
+    && archiveSession.exportedPosts > 0
+  );
   if (archiveExportMediaZipButton) {
     archiveExportMediaZipButton.disabled = !authAccount;
   }
+  syncArchiveActionButtonStates();
   updateArchiveRunControls();
   renderArchiveStatusLine();
   renderArchiveStartHint();
@@ -11318,6 +11925,18 @@ function assetToDataUri(asset) {
   return `data:${asset.type || "application/octet-stream"};base64,${bytesToBase64(asset.bytes)}`;
 }
 
+async function assetToDataUriAsync(asset) {
+  const blob = new Blob([asset?.bytes instanceof Uint8Array ? asset.bytes : new Uint8Array(asset?.bytes || [])], {
+    type: asset?.type || "application/octet-stream",
+  });
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Asset konnte nicht als Data-URL kodiert werden."));
+    reader.readAsDataURL(blob);
+  });
+}
+
 function getStoredAccountAvatarUri(account = {}) {
   const assets = Array.isArray(accountAvatarAssets) ? accountAvatarAssets : [];
   const avatarPath = String(account?.avatarPath || "").trim();
@@ -11935,6 +12554,7 @@ function buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap
   const authorAvatarUri = (post.authorAvatarPath ? (assetUris.get(post.authorAvatarPath) || "") : "") || post.authorAvatar || "";
   const externalCard = getArchiveExternalCard(post);
   const externalThumbUri = (externalCard?.thumbPath ? (assetUris.get(externalCard.thumbPath) || "") : "") || String(externalCard?.thumb || "").trim();
+  const externalThumbFailed = externalCard?.thumbLoadFailed === true && !externalThumbUri;
   return `
         <article
           class="archive-html-post"
@@ -11965,7 +12585,11 @@ function buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap
           <div class="archive-html-text" data-archive-richtext="true">${post.text ? renderArchiveHtmlRichText(post.text, post.facets || []) : (!externalCard ? `<span class="archive-html-empty">${escapeHtml(t("archiveHtmlNoText"))}</span>` : "")}</div>
           ${externalCard ? `
             <a class="archive-html-link-card" href="${escapeHtmlAttribute(externalCard.url)}" target="_blank" rel="noreferrer noopener">
-              ${externalThumbUri ? `<img class="archive-html-link-card-thumb" src="${escapeHtmlAttribute(externalThumbUri)}" alt="">` : ""}
+              ${externalThumbUri
+                ? `<img class="archive-html-link-card-thumb" src="${escapeHtmlAttribute(externalThumbUri)}" alt="">`
+                : (externalThumbFailed
+                  ? `<span class="archive-html-link-card-thumb archive-html-link-card-thumb-fallback">${escapeHtml(t("archiveLinkCardThumbFailed"))}</span>`
+                  : "")}
               <span class="archive-html-link-card-copy">
                 <strong>${escapeHtml(externalCard.title || externalCard.url)}</strong>
                 ${externalCard.description ? `<span>${escapeHtml(externalCard.description)}</span>` : ""}
@@ -12432,6 +13056,16 @@ function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
         object-fit: cover;
         border-radius: 14px;
         background: rgba(209, 224, 246, 0.55);
+      }
+      .archive-html-link-card-thumb-fallback {
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        color: #5b6f8d;
+        font-size: 0.9rem;
+        line-height: 1.4;
+        text-align: center;
+        border: 1px dashed rgba(102, 133, 178, 0.24);
       }
       .archive-html-link-card-copy {
         min-width: 0;
@@ -13246,7 +13880,7 @@ async function exportArchiveHtmlFromCatalog(catalog = archiveCatalog, options = 
 
   if (!compactMode) {
     for (const [index, asset] of assets.entries()) {
-      assetUris.set(asset.path, assetToDataUri(asset));
+      assetUris.set(asset.path, await assetToDataUriAsync(asset));
       setArchiveProgress({
         title: t("archiveProgressHtmlTitle"),
         step: t("archiveProgressHtmlStep"),
@@ -13591,9 +14225,11 @@ function getArchivePdfExternalCardLayout(context, post, contentWidth, scale) {
   const cardPadding = 11 * scale;
   const gap = 10 * scale;
   const hasThumb = Boolean(externalCard.thumbPath);
-  const thumbWidth = hasThumb ? Math.min(116 * scale, contentWidth * 0.3) : 0;
-  const thumbHeight = hasThumb ? (thumbWidth * 0.74) : 0;
-  const textWidth = Math.max(120 * scale, contentWidth - (cardPadding * 2) - (hasThumb ? (thumbWidth + gap) : 0));
+  const thumbFailed = externalCard.thumbLoadFailed === true && !hasThumb;
+  const hasThumbSlot = hasThumb || thumbFailed;
+  const thumbWidth = hasThumbSlot ? Math.min(116 * scale, contentWidth * 0.3) : 0;
+  const thumbHeight = hasThumbSlot ? (thumbWidth * 0.74) : 0;
+  const textWidth = Math.max(120 * scale, contentWidth - (cardPadding * 2) - (hasThumbSlot ? (thumbWidth + gap) : 0));
   const displayUrl = shortenArchiveUrlForDisplay(externalCard.url);
 
   context.font = `700 ${10.5 * scale}px "Segoe UI", Aptos, sans-serif`;
@@ -13601,6 +14237,9 @@ function getArchivePdfExternalCardLayout(context, post, contentWidth, scale) {
   context.font = `${9.2 * scale}px "Segoe UI", Aptos, sans-serif`;
   const descriptionLines = externalCard.description
     ? buildWrappedPdfLines(context, externalCard.description, textWidth).slice(0, 3)
+    : [];
+  const failedLines = thumbFailed
+    ? buildWrappedPdfLines(context, t("archiveLinkCardThumbFailed"), thumbWidth ? Math.max(48 * scale, thumbWidth - (14 * scale)) : textWidth).slice(0, 3)
     : [];
   context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
   const urlLines = buildWrappedPdfLines(context, displayUrl, textWidth).slice(0, 2);
@@ -13614,6 +14253,8 @@ function getArchivePdfExternalCardLayout(context, post, contentWidth, scale) {
   return {
     card: externalCard,
     hasThumb,
+    thumbFailed,
+    hasThumbSlot,
     thumbWidth,
     thumbHeight,
     textWidth,
@@ -13621,6 +14262,7 @@ function getArchivePdfExternalCardLayout(context, post, contentWidth, scale) {
     gap,
     titleLines,
     descriptionLines,
+    failedLines,
     urlLines,
     height: contentHeight + (cardPadding * 2),
   };
@@ -13852,16 +14494,27 @@ async function drawArchivePdfPostCard(
 
     let textX = cardX + externalCardLayout.cardPadding;
     const textY = cardY + externalCardLayout.cardPadding;
-    if (externalCardLayout.hasThumb) {
+    if (externalCardLayout.hasThumbSlot) {
       const thumbX = cardX + externalCardLayout.cardPadding;
       const thumbY = cardY + externalCardLayout.cardPadding;
       const thumbAsset = assetMap.get(externalCardLayout.card.thumbPath);
-      if (thumbAsset) {
+      if (thumbAsset && externalCardLayout.hasThumb) {
         const thumbBitmap = await loadArchiveAssetBitmap(thumbAsset);
         drawRoundedImageContain(context, thumbBitmap, thumbX, thumbY, externalCardLayout.thumbWidth, externalCardLayout.thumbHeight, 10 * scale, "#dfe8f7");
         thumbBitmap.close();
       } else {
         fillRoundedRect(context, thumbX, thumbY, externalCardLayout.thumbWidth, externalCardLayout.thumbHeight, 10 * scale, "#dfe8f7");
+        if (externalCardLayout.thumbFailed) {
+          context.fillStyle = "#5b6f8d";
+          context.font = `${8.4 * scale}px "Segoe UI", Aptos, sans-serif`;
+          drawArchivePdfTextBlock(
+            context,
+            externalCardLayout.failedLines,
+            thumbX + (7 * scale),
+            thumbY + (10 * scale),
+            10.5 * scale,
+          );
+        }
       }
       strokeRoundedRect(context, thumbX, thumbY, externalCardLayout.thumbWidth, externalCardLayout.thumbHeight, 10 * scale, "#d5e0f2", 1 * scale);
       textX += externalCardLayout.thumbWidth + externalCardLayout.gap;
@@ -14294,6 +14947,11 @@ async function exportArchivePdfBandsFromCatalog(catalog = archiveCatalog) {
 async function ensureArchiveCatalogLoaded(forceRefresh = false) {
   if (archiveCatalog && !forceRefresh) {
     return archiveCatalog;
+  }
+
+  const rawSource = String(archiveSourceInput?.value || "").trim();
+  if (rawSource && !archiveSourceProfile?.did) {
+    await validateArchiveSourceInput();
   }
 
   const filters = getArchiveFilters();
@@ -17452,6 +18110,21 @@ archiveScopeSelect.addEventListener("change", () => {
   updateArchiveScopeFields();
   invalidateArchiveCatalog();
   void persistArchivePreferences();
+});
+
+archiveSourceInput?.addEventListener("input", () => {
+  archiveSourceProfile = null;
+  if (archiveSourceStatus) {
+    archiveSourceStatus.textContent = "";
+  }
+  renderArchiveSourceState();
+  scheduleArchiveSourceValidation();
+  invalidateArchiveCatalog();
+  void persistArchivePreferences();
+});
+
+archiveSourceInput?.addEventListener("blur", () => {
+  void validateArchiveSourceInput({ silentSuccess: false }).catch(() => {});
 });
 
 archiveContentModeSelect.addEventListener("change", () => {

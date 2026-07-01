@@ -174,6 +174,7 @@ The analysis workspace loads a slice of the author feed for two accounts and cal
 
 - language-focused signals
 - temporal signals
+- network and interaction signals
 
 The result is intentionally heuristic. It is not an identity verdict, only an additional indicator.
 
@@ -201,6 +202,24 @@ These signals power weekly heatmaps, 30-day activity timelines, and two extra co
 
 - `Temporal profile score`
 - `Temporal proximity`
+
+### Network and interaction signals
+
+Threadline now also compares:
+
+- shared followers
+- shared follows
+- shared mutuals
+- direct relation between account A and B
+- mention targets
+- linked domains
+- hashtags
+- reply targets
+- quote targets
+- language tags
+- media-share tendencies
+
+Mutes and blocks are only comparable when the corresponding compared accounts are available as stored Threadline accounts, because Bluesky exposes those moderation lists only for the authenticated account.
 
 ### Methods And Sources
 

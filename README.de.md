@@ -244,6 +244,8 @@ Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erz
 - Der Bereich `Analyse` lädt zwei Accounts und vergleicht sie als zusätzlichen Indikator darauf, ob beide möglicherweise von derselben Person betrieben werden
 - Die Analyse kombiniert sprachliche Merkmale wie Funktionswörter, Character n-grams, Jaccard-Ähnlichkeit, Cosine Similarity, Burrows's Delta und ein Kennzahlen-Profil
 - Zusätzlich wird ein Zeitprofil aus Posting-Zeiten, Wochenrhythmus, Pausenverhalten und zeitlicher Nähe beider Accounts berechnet
+- Zusätzlich vergleicht sie jetzt gemeinsame Follower, gemeinsames Following, gemeinsame Mutuals, die direkte A/B-Beziehung, Mention-Muster, verlinkte Domains, Hashtags, typische Reply-Ziele, Quote-Ziele, Sprach-Tags und den Medienanteil
+- Gemeinsame Mutes und Blocks werden ebenfalls verglichen, wenn die betroffenen Vergleichsaccounts auch als gespeicherte Threadline-Konten vorliegen; sonst bleiben diese Werte nicht verfügbar
 - Für jeden Account werden ein Überblick, typische Stunden, typische Wochentage, eine Wochen-Heatmap und eine 30-Tage-Ansicht mit Aktivitätspunkten gezeigt
 - Im Vergleichsteil erscheinen Gesamtwertung, Einzelverfahren, Zeitvergleich sowie Stilmuster pro Kategorie nebeneinander
 - Die Analyse ist nur ein Indiz. Sehr kurze Textbasis, Scheduling, stark wechselnde Themen oder absichtliche Stiländerungen können das Bild deutlich verzerren

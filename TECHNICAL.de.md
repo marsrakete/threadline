@@ -177,6 +177,7 @@ Der Analyse-Workspace lädt für zwei Accounts jeweils einen Ausschnitt des Auth
 
 - sprachliche Signale
 - zeitliche Signale
+- Netzwerk- und Interaktionssignale
 
 Die Analyse ist bewusst heuristisch. Sie liefert keine Identitätsaussage, sondern nur zusätzliche Indikatoren.
 
@@ -204,6 +205,24 @@ Daraus entstehen Wochen-Heatmaps, 30-Tage-Punktansichten und zwei zusätzliche V
 
 - `Zeitprofil-Score`
 - `Zeitliche Nähe`
+
+### Netzwerk- und Interaktionssignale
+
+Threadline vergleicht inzwischen zusätzlich:
+
+- gemeinsame Follower
+- gemeinsames Following
+- gemeinsame Mutuals
+- die direkte Beziehung zwischen Account A und B
+- Mention-Ziele
+- verlinkte Domains
+- Hashtags
+- Reply-Ziele
+- Quote-Ziele
+- Sprach-Tags
+- Tendenzen beim Medienanteil
+
+Mutes und Blocks sind nur dann vergleichbar, wenn die betreffenden Vergleichsaccounts auch als gespeicherte Threadline-Konten vorliegen, weil Bluesky diese Moderationslisten nur für den aktuell authentifizierten Account bereitstellt.
 
 ### Verwendete Verfahren Und Quellen
 

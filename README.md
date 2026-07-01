@@ -244,6 +244,8 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 - The `Analysis` area loads two accounts and compares them as an additional indicator of whether both may be operated by the same person
 - The analysis combines language-focused signals such as function words, character n-grams, Jaccard similarity, cosine similarity, Burrows's Delta, and a metrics profile
 - It also builds a temporal profile from posting times, weekly rhythm, pause behavior, and temporal proximity between both accounts
+- It now also compares shared followers, shared follows, shared mutuals, direct A/B relationship, mention patterns, linked domains, hashtags, typical reply targets, quote targets, language tags, and media share
+- Shared mutes and blocks are compared too when the corresponding compared accounts are available as saved Threadline accounts; otherwise those values stay unavailable
 - For each account, the workspace shows an overview, typical hours, typical weekdays, a weekly heatmap, and a 30-day activity view with timeline dots
 - The comparison section shows the overall score, individual methods, temporal comparison, and style-pattern cards side by side by category
 - The analysis is only an indicator. Very small text bases, scheduling, topic shifts, or intentional style changes can skew the result substantially

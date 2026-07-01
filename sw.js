@@ -2,6 +2,7 @@ importScripts("./version.js");
 
 const APP_VERSION = globalThis.APP_VERSION_INFO?.cacheVersion || "v0";
 const CACHE_NAME = `threadline-${APP_VERSION}`;
+const REMOTE_MEDIA_CACHE_NAME = "threadline-remote-media-v1";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -38,6 +39,9 @@ const ARCHIVE_THREAD_REQUEST_RETRIES = 1;
 const ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY = 4;
 const ANALYSIS_AUTHOR_FEED_PAGE_SIZE = 100;
 const ANALYSIS_AUTHOR_FEED_MAX_PAGES = 200;
+const ANALYSIS_GRAPH_PAGE_LIMIT = 100;
+const ANALYSIS_GRAPH_MAX_PROFILES = 5000;
+const ANALYSIS_PROFILE_RESOLVE_BATCH_SIZE = 25;
 const API_BASE = "https://bsky.social/xrpc";
 const DEFAULT_LOGIN_SERVICE = "https://bsky.social";
 const MU_WEB_CLIENT = "https://mu.social";
@@ -534,7 +538,11 @@ self.addEventListener("activate", (event) => {
     Promise.all([
       self.clients.claim(),
       caches.keys().then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME && key !== REMOTE_MEDIA_CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
       ),
     ]),
   );
@@ -550,7 +558,27 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   const requestUrl = new URL(event.request.url);
 
-  if (event.request.method !== "GET" || requestUrl.origin !== self.location.origin) {
+  if (event.request.method !== "GET") {
+    return;
+  }
+
+  if (requestUrl.origin !== self.location.origin) {
+    if (event.request.destination === "image") {
+      event.respondWith(
+        caches.open(REMOTE_MEDIA_CACHE_NAME).then(async (cache) => {
+          const cachedResponse = await cache.match(event.request);
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+
+          const networkResponse = await fetch(event.request);
+          if (networkResponse.ok || networkResponse.type === "opaque") {
+            cache.put(event.request, networkResponse.clone()).catch(() => {});
+          }
+          return networkResponse;
+        }),
+      );
+    }
     return;
   }
 
@@ -1223,29 +1251,47 @@ async function refreshAuthReference(auth) {
   return auth;
 }
 
-async function fetchDidDocument(did) {
+async function fetchDidDocument(did, timeoutMs = 8000) {
   if (!did) {
     throw new Error("DID fehlt.");
   }
 
-  if (did.startsWith("did:plc:")) {
-    const response = await fetch(`https://plc.directory/${encodeURIComponent(did)}`, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`DID-Dokument konnte nicht geladen werden (${response.status}).`);
-    }
-    return response.json();
-  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 8000));
 
-  if (did.startsWith("did:web:")) {
-    const host = did.slice("did:web:".length).replace(/:/g, "/");
-    const response = await fetch(`https://${host}/.well-known/did.json`, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`DID-Dokument konnte nicht geladen werden (${response.status}).`);
+  try {
+    if (did.startsWith("did:plc:")) {
+      const response = await fetch(`https://plc.directory/${encodeURIComponent(did)}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`DID-Dokument konnte nicht geladen werden (${response.status}).`);
+      }
+      return response.json();
     }
-    return response.json();
-  }
 
-  throw new Error(`Nicht unterstütztes DID-Format: ${did}`);
+    if (did.startsWith("did:web:")) {
+      const host = did.slice("did:web:".length).replace(/:/g, "/");
+      const response = await fetch(`https://${host}/.well-known/did.json`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`DID-Dokument konnte nicht geladen werden (${response.status}).`);
+      }
+      return response.json();
+    }
+
+    throw new Error(`Nicht unterstütztes DID-Format: ${did}`);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("DID-Dokument timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function extractPdsServiceFromDidDocument(documentNode, fallbackService) {
@@ -1563,12 +1609,11 @@ function mergeNormalizedNetworkProfile(existing, incoming) {
 }
 
 async function collectEntireGraph(auth, endpoint, actorDid, source, notifyProgress, title, stepPrefix, percent) {
-  const maxPage = 100;
   const collected = [];
   let nextCursor = "";
   let pages = 0;
   do {
-    const page = await collectGraphPage(auth, endpoint, actorDid, nextCursor, maxPage, source);
+    const page = await collectGraphPage(auth, endpoint, actorDid, nextCursor, ANALYSIS_GRAPH_PAGE_LIMIT, source);
     collected.push(...page.profiles);
     nextCursor = page.cursor;
     pages += 1;
@@ -1578,8 +1623,201 @@ async function collectEntireGraph(auth, endpoint, actorDid, source, notifyProgre
       percent,
       detail: `${collected.length} geladen · Seite ${pages}`,
     });
-  } while (nextCursor);
+  } while (nextCursor && collected.length < ANALYSIS_GRAPH_MAX_PROFILES);
   return collected;
+}
+
+function getAnalysisStoredAccountByActor(state, actor = "") {
+  const normalizedActor = String(actor || "").trim().replace(/^@+/, "").toLowerCase();
+  if (!normalizedActor) {
+    return null;
+  }
+  return (Array.isArray(state?.accounts) ? state.accounts : []).find((entry) => {
+    const did = String(entry?.did || "").trim().toLowerCase();
+    const handle = String(entry?.handle || "").trim().replace(/^@+/, "").toLowerCase();
+    const identifier = String(entry?.identifier || "").trim().replace(/^@+/, "").toLowerCase();
+    return normalizedActor === did || normalizedActor === handle || normalizedActor === identifier;
+  }) || null;
+}
+
+async function getAnalysisAuthForActor(actor = "", fallbackAuth = null) {
+  const state = await readStoredAuth();
+  const matched = getAnalysisStoredAccountByActor(state, actor);
+  if (matched?.did) {
+    return ensureSession(matched.did);
+  }
+  return fallbackAuth;
+}
+
+async function collectAuthListProfiles(auth, endpoint, fieldName) {
+  if (!auth?.session?.accessJwt) {
+    return null;
+  }
+  const collected = [];
+  let cursor = "";
+  do {
+    const response = await bskyGet(endpoint, {
+      limit: ANALYSIS_GRAPH_PAGE_LIMIT,
+      cursor: cursor || undefined,
+    }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+      base: authXrpcBase(auth),
+    });
+    const entries = Array.isArray(response?.[fieldName]) ? response[fieldName] : [];
+    collected.push(...entries
+      .map((profile) => normalizeNetworkProfile(profile, fieldName))
+      .filter((profile) => profile.did));
+    cursor = String(response?.cursor || "").trim();
+  } while (cursor && collected.length < ANALYSIS_GRAPH_MAX_PROFILES);
+  return collected;
+}
+
+function extractAnalysisRecordFacets(record = {}) {
+  const facets = Array.isArray(record?.facets) ? record.facets : [];
+  const mentions = [];
+  const hashtags = [];
+  const domains = [];
+
+  facets.forEach((facet) => {
+    const features = Array.isArray(facet?.features) ? facet.features : [];
+    features.forEach((feature) => {
+      const type = String(feature?.$type || "").trim();
+      if (type === "app.bsky.richtext.facet#mention" && feature?.did) {
+        mentions.push(String(feature.did).trim());
+      }
+      if (type === "app.bsky.richtext.facet#tag" && feature?.tag) {
+        hashtags.push(String(feature.tag).trim().toLowerCase());
+      }
+      if (type === "app.bsky.richtext.facet#link" && feature?.uri) {
+        try {
+          const host = new URL(String(feature.uri)).hostname.toLowerCase();
+          if (host) {
+            domains.push(host);
+          }
+        } catch {
+          // ignore invalid URLs
+        }
+      }
+    });
+  });
+
+  return { mentions, hashtags, domains };
+}
+
+function extractAnalysisQuoteDid(record = {}, postView = {}) {
+  const candidates = [
+    record?.embed?.record?.uri,
+    record?.embed?.record?.record?.uri,
+    postView?.embed?.record?.uri,
+    postView?.embed?.record?.record?.uri,
+  ];
+  for (const candidate of candidates) {
+    const parsed = parseAtUri(candidate);
+    if (parsed.did) {
+      return parsed.did;
+    }
+  }
+  return "";
+}
+
+function detectAnalysisMediaEmbed(record = {}, postView = {}) {
+  const types = [
+    String(record?.embed?.$type || "").trim(),
+    String(postView?.embed?.$type || "").trim(),
+  ];
+  return types.some((type) => type.includes("images") || type.includes("video") || type.includes("recordWithMedia"));
+}
+
+function buildAnalysisTopListFromMap(frequencyMap, total, limit = 10) {
+  const safeTotal = Math.max(1, Number(total) || 1);
+  return Array.from(frequencyMap.entries())
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, limit)
+    .map(([label, count]) => ({
+      label,
+      identifier: label,
+      share: count / safeTotal,
+      count,
+    }));
+}
+
+const analysisProfileCache = new Map();
+
+async function resolveAnalysisProfiles(auth, actors = []) {
+  const normalizedActors = [...new Set((Array.isArray(actors) ? actors : [])
+    .map((value) => String(value || "").trim())
+    .filter((value) => value.startsWith("did:")))];
+  if (!normalizedActors.length || !auth?.session?.accessJwt) {
+    return new Map();
+  }
+
+  const resolved = new Map();
+  const pending = normalizedActors.filter((actor) => {
+    const cached = analysisProfileCache.get(actor);
+    if (cached) {
+      resolved.set(actor, cached);
+      return false;
+    }
+    return true;
+  });
+
+  for (let index = 0; index < pending.length; index += ANALYSIS_PROFILE_RESOLVE_BATCH_SIZE) {
+    const batch = pending.slice(index, index + ANALYSIS_PROFILE_RESOLVE_BATCH_SIZE);
+    try {
+      const response = await bskyGet("app.bsky.actor.getProfiles", {
+        actors: batch,
+      }, {
+        headers: {
+          authorization: `Bearer ${auth.session.accessJwt}`,
+        },
+        base: authXrpcBase(auth),
+      });
+      const profiles = Array.isArray(response?.profiles) ? response.profiles : [];
+      profiles.forEach((profile) => {
+        const normalized = normalizeNetworkProfile(profile, "analysis");
+        if (!normalized.did) {
+          return;
+        }
+        analysisProfileCache.set(normalized.did, normalized);
+        resolved.set(normalized.did, normalized);
+      });
+    } catch {
+      // Leave unresolved actors as plain DIDs.
+    }
+  }
+
+  return resolved;
+}
+
+async function buildAnalysisResolvedTopList(frequencyMap, total, auth, limit = 10, resolveActors = false) {
+  const entries = buildAnalysisTopListFromMap(frequencyMap, total, limit);
+  if (!resolveActors) {
+    return entries;
+  }
+  const resolvedProfiles = await resolveAnalysisProfiles(
+    auth,
+    entries.map((entry) => entry.label),
+  );
+  return entries.map((entry) => {
+    const profile = resolvedProfiles.get(entry.label);
+    if (!profile) {
+      return {
+        ...entry,
+        deleted: true,
+      };
+    }
+    return {
+      ...entry,
+      identifier: profile.did,
+      did: profile.did,
+      handle: profile.handle,
+      displayName: profile.displayName,
+      avatar: profile.avatar,
+      label: profile.handle || profile.displayName || profile.did,
+    };
+  });
 }
 
 async function loadNetworkSlice({ actor = "", followerCursor = "", followCursor = "", limit = 500 } = {}, notifyProgress = () => {}) {
@@ -1915,6 +2153,14 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
   let reachedOlderPosts = false;
   let newestPostAt = "";
   let oldestPostAt = "";
+  const mentionFrequency = new Map();
+  const hashtagFrequency = new Map();
+  const domainFrequency = new Map();
+  const replyTargetFrequency = new Map();
+  const quoteTargetFrequency = new Map();
+  const languageFrequency = new Map();
+  let mediaPostCount = 0;
+  let textOnlyPostCount = 0;
 
   while (posts.length < limit && pages < ANALYSIS_AUTHOR_FEED_MAX_PAGES && !reachedOlderPosts) {
     const response = await bskyGet("app.bsky.feed.getAuthorFeed", {
@@ -1961,6 +2207,31 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
         continue;
       }
 
+      const { mentions, hashtags, domains } = extractAnalysisRecordFacets(record);
+      mentions.forEach((did) => mentionFrequency.set(did, (mentionFrequency.get(did) || 0) + 1));
+      hashtags.forEach((tag) => hashtagFrequency.set(tag, (hashtagFrequency.get(tag) || 0) + 1));
+      domains.forEach((domain) => domainFrequency.set(domain, (domainFrequency.get(domain) || 0) + 1));
+      const replyDid = parseAtUri(record?.reply?.parent?.uri).did;
+      if (replyDid) {
+        replyTargetFrequency.set(replyDid, (replyTargetFrequency.get(replyDid) || 0) + 1);
+      }
+      const quoteDid = extractAnalysisQuoteDid(record, postView);
+      if (quoteDid) {
+        quoteTargetFrequency.set(quoteDid, (quoteTargetFrequency.get(quoteDid) || 0) + 1);
+      }
+      const langs = Array.isArray(record?.langs) ? record.langs : [];
+      langs.forEach((lang) => {
+        const normalized = String(lang || "").trim().toLowerCase();
+        if (normalized) {
+          languageFrequency.set(normalized, (languageFrequency.get(normalized) || 0) + 1);
+        }
+      });
+      if (detectAnalysisMediaEmbed(record, postView)) {
+        mediaPostCount += 1;
+      } else {
+        textOnlyPostCount += 1;
+      }
+
       posts.push({
         uri: String(postView.uri || "").trim(),
         cid: String(postView.cid || "").trim(),
@@ -1989,6 +2260,42 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
     }
   }
 
+  notifyProgress({
+    title: "Analyse wird geladen",
+    step: "Netzwerkdaten werden geladen...",
+    percent: 94,
+    detail: profile.handle || requestedActor,
+  });
+
+  const graphAuth = await getAnalysisAuthForActor(profile.did || requestedActor, auth);
+  const [followers, follows] = await Promise.all([
+    collectEntireGraph(graphAuth, "app.bsky.graph.getFollowers", profile.did || requestedActor, "followers", notifyProgress, "Analyse wird geladen", "Follower werden geladen...", 95).catch(() => []),
+    collectEntireGraph(graphAuth, "app.bsky.graph.getFollows", profile.did || requestedActor, "following", notifyProgress, "Analyse wird geladen", "Following wird geladen...", 96).catch(() => []),
+  ]);
+
+  let mutes = null;
+  let blocks = null;
+  let muteBlockSource = "unavailable";
+  try {
+    const actorSpecificAuth = await getAnalysisAuthForActor(profile.did || requestedActor, null);
+    if (actorSpecificAuth?.session?.did === profile.did) {
+      const [loadedMutes, loadedBlocks] = await Promise.all([
+        collectAuthListProfiles(actorSpecificAuth, "app.bsky.graph.getMutes", "mutes"),
+        collectAuthListProfiles(actorSpecificAuth, "app.bsky.graph.getBlocks", "blocks"),
+      ]);
+      mutes = Array.isArray(loadedMutes) ? loadedMutes : [];
+      blocks = Array.isArray(loadedBlocks) ? loadedBlocks : [];
+      muteBlockSource = "saved_account";
+    }
+  } catch {
+    muteBlockSource = "unavailable";
+  }
+
+  const followerDidSet = new Set(followers.map((entry) => entry.did).filter(Boolean));
+  const followDidSet = new Set(follows.map((entry) => entry.did).filter(Boolean));
+  const mutualDids = Array.from(followerDidSet).filter((did) => followDidSet.has(did));
+  const totalLoadedPosts = Math.max(posts.length, 1);
+
   return {
     profile: {
       did: String(profile?.did || "").trim(),
@@ -2011,6 +2318,26 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
       pages,
       newestPostAt,
       oldestPostAt,
+    },
+    network: {
+      followers,
+      follows,
+      mutualDids,
+      followerDids: Array.from(followerDidSet),
+      followDids: Array.from(followDidSet),
+      mutes,
+      blocks,
+      muteBlockSource,
+    },
+    markers: {
+      topMentions: await buildAnalysisResolvedTopList(mentionFrequency, totalLoadedPosts, graphAuth, 12, true),
+      topHashtags: buildAnalysisTopListFromMap(hashtagFrequency, totalLoadedPosts, 12),
+      topDomains: buildAnalysisTopListFromMap(domainFrequency, totalLoadedPosts, 12),
+      topReplyTargets: await buildAnalysisResolvedTopList(replyTargetFrequency, totalLoadedPosts, graphAuth, 12, true),
+      topQuoteTargets: await buildAnalysisResolvedTopList(quoteTargetFrequency, totalLoadedPosts, graphAuth, 12, true),
+      topLanguages: buildAnalysisTopListFromMap(languageFrequency, totalLoadedPosts, 6),
+      mediaPostShare: mediaPostCount / totalLoadedPosts,
+      textOnlyPostShare: textOnlyPostCount / totalLoadedPosts,
     },
     posts,
   };
@@ -2050,6 +2377,7 @@ async function checkAnalysisAccount({ actor = "" } = {}) {
       did: String(profile?.did || "").trim(),
       handle: String(profile?.handle || requestedActor).trim(),
       displayName: String(profile?.displayName || profile?.handle || requestedActor).trim(),
+      avatar: String(profile?.avatar || "").trim(),
     };
   } catch (error) {
     const message = String(error?.message || "").trim();
@@ -2164,20 +2492,63 @@ async function resolvePdsForDid(did, fallbackService = DEFAULT_LOGIN_SERVICE, ca
   return serviceUrl;
 }
 
-async function downloadBlobForDid(auth, did, cid, serviceCache = null) {
-  const serviceUrl = await resolvePdsForDid(did, auth.pdsUrl || auth.service, serviceCache);
-  const response = await fetch(`${xrpcBaseForService(serviceUrl)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, {
-    method: "GET",
-  });
+function buildArchiveBlobCacheKey(did = "", cid = "") {
+  return `${String(did || "").trim()}::${String(cid || "").trim()}`;
+}
 
-  if (!response.ok) {
-    throw await buildBlobDownloadError(response);
+async function downloadBlobForDid(auth, did, cid, serviceCache = null, options = {}) {
+  const cacheMap = options?.cacheMap instanceof Map ? options.cacheMap : null;
+  const cacheKey = cacheMap ? buildArchiveBlobCacheKey(did, cid) : "";
+  if (cacheMap?.has(cacheKey)) {
+    return cacheMap.get(cacheKey);
   }
 
-  return {
-    type: response.headers.get("content-type") || "application/octet-stream",
-    bytes: new Uint8Array(await response.arrayBuffer()),
-  };
+  const loadPromise = (async () => {
+    const serviceUrl = await resolvePdsForDid(did, auth.pdsUrl || auth.service, serviceCache);
+    const timeoutMs = Math.max(0, Number(options?.timeoutMs) || 0);
+    const controller = timeoutMs > 0 ? new AbortController() : null;
+    const timeoutId = controller
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : null;
+    let response;
+    try {
+      response = await fetch(`${xrpcBaseForService(serviceUrl)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, {
+        method: "GET",
+        signal: controller?.signal,
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error("Blob-Download timed out.");
+      }
+      throw error;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (!response.ok) {
+      throw await buildBlobDownloadError(response);
+    }
+
+    return {
+      type: response.headers.get("content-type") || "application/octet-stream",
+      bytes: new Uint8Array(await response.arrayBuffer()),
+    };
+  })();
+
+  if (cacheMap) {
+    cacheMap.set(cacheKey, loadPromise);
+  }
+
+  try {
+    return await loadPromise;
+  } catch (error) {
+    if (cacheMap) {
+      cacheMap.delete(cacheKey);
+    }
+    throw error;
+  }
 }
 
 async function buildBlobDownloadError(response) {
@@ -2982,13 +3353,13 @@ function parseBlobUrlInfo(url = "") {
   }
 }
 
-async function downloadRemoteAssetViaBlob(auth, url, fallbackDid = "", serviceCache = null) {
+async function downloadRemoteAssetViaBlob(auth, url, fallbackDid = "", serviceCache = null, options = {}) {
   const blobInfo = parseBlobUrlInfo(url);
   if (blobInfo?.did && blobInfo?.cid) {
-    return downloadBlobForDid(auth, blobInfo.did, blobInfo.cid, serviceCache);
+    return downloadBlobForDid(auth, blobInfo.did, blobInfo.cid, serviceCache, options);
   }
   if (fallbackDid && blobInfo?.cid) {
-    return downloadBlobForDid(auth, fallbackDid, blobInfo.cid, serviceCache);
+    return downloadBlobForDid(auth, fallbackDid, blobInfo.cid, serviceCache, options);
   }
   return downloadRemoteAsset(url);
 }
@@ -3435,7 +3806,7 @@ async function downloadAccountMediaAsset({ item } = {}, notifyProgress = () => {
   };
 }
 
-async function attachArchiveAvatarAssets(posts, assets, seenAssetPaths, auth = null, serviceCache = null, notifyProgress = null, progressBasePercent = 56) {
+async function attachArchiveAvatarAssets(posts, assets, seenAssetPaths, auth = null, serviceCache = null, notifyProgress = null, progressBasePercent = 56, blobCache = null) {
   const postsByAvatarUrl = new Map();
   for (const post of Array.isArray(posts) ? posts : []) {
     const avatarUrl = String(post?.authorAvatar || "").trim();
@@ -3460,6 +3831,7 @@ async function attachArchiveAvatarAssets(posts, assets, seenAssetPaths, auth = n
         avatarUrl,
         samplePost?.authorDid || "",
         serviceCache,
+        { cacheMap: blobCache },
       );
       const extension = getAssetExtensionFromMimeType(blob.type);
       const authorSlug = String(samplePost?.authorHandle || samplePost?.authorDid || "author")
@@ -3518,6 +3890,8 @@ async function mapWithConcurrency(items, concurrency, worker) {
 
 function normalizeArchiveFilters(filters = {}) {
   return {
+    sourceActor: String(filters.sourceActor || "").trim().replace(/^@+/, ""),
+    sourceDid: String(filters.sourceDid || "").trim(),
     scope: filters.scope === "year" || filters.scope === "range" ? filters.scope : "all",
     contentMode: ["posts", "thread_roots", "threads", "full"].includes(filters.contentMode) ? filters.contentMode : "posts",
     year: String(filters.year || "").trim(),
@@ -3831,6 +4205,8 @@ function extractArchiveExternalCardFromRecord(record = {}) {
     thumb,
     thumbRef,
     thumbPath: "",
+    thumbLoadFailed: false,
+    thumbLoadAttempts: 0,
   };
 }
 
@@ -4707,6 +5083,39 @@ function parseArchiveThreadSource(value = "") {
   };
 }
 
+async function resolveArchiveSourceActor(auth, filters = {}) {
+  const sourceDid = String(filters?.sourceDid || "").trim();
+  const sourceActor = String(filters?.sourceActor || "").trim();
+  const actor = sourceDid || sourceActor;
+  if (!actor) {
+    return {
+      did: auth.session.did,
+      handle: auth.session.handle,
+      displayName: auth.session.handle,
+      avatar: auth.avatar || "",
+      isOwnAccount: true,
+    };
+  }
+
+  const profile = await bskyGet("app.bsky.actor.getProfile", {
+    actor,
+  }, {
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+    base: authXrpcBase(auth),
+  });
+
+  const did = String(profile?.did || "").trim();
+  return {
+    did,
+    handle: String(profile?.handle || sourceActor || sourceDid).trim(),
+    displayName: String(profile?.displayName || profile?.handle || sourceActor || sourceDid).trim(),
+    avatar: String(profile?.avatar || "").trim(),
+    isOwnAccount: did === auth.session.did,
+  };
+}
+
 function normalizeReplyTargetMode(mode) {
   return mode === "thread" ? "thread" : "post";
 }
@@ -4974,8 +5383,10 @@ async function waitForArchiveRunControl(runId, notifyProgress = () => {}) {
 async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor = "", maxPosts = 500, waveIndex = 1 } = {}, notifyProgress = () => {}) {
   const auth = await ensureSession();
   const normalizedFilters = normalizeArchiveFilters(filters);
-  const ownDid = auth.session.did;
+  const sourceProfile = await resolveArchiveSourceActor(auth, normalizedFilters);
+  const sourceDid = sourceProfile.did || auth.session.did;
   const pdsServiceCache = new Map();
+  const archiveBlobCache = new Map();
   const threadHashtagMatchCache = new Map();
   const rootHashtagMatchCache = new Map();
   const hasHashtagFilter = Array.isArray(normalizedFilters.hashtagTags) && normalizedFilters.hashtagTags.length > 0;
@@ -5011,8 +5422,10 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       exportedAt: new Date().toISOString(),
       appVersion: APP_VERSION,
       account: {
-        handle: auth.session.handle,
-        did: auth.session.did,
+        handle: sourceProfile.handle,
+        did: sourceDid,
+        displayName: sourceProfile.displayName,
+        avatar: sourceProfile.avatar,
       },
       filters: normalizedFilters,
       postCount: orderedPosts.length,
@@ -5035,12 +5448,12 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
 
   notifyProgress({
     title: "Archiv wird gelesen",
-    step: "Eigene Posts werden aus dem Repo geladen …",
+    step: sourceProfile.isOwnAccount ? "Eigene Posts werden aus dem Repo geladen ..." : "Posts der Archivquelle werden geladen ...",
     percent: 5,
     detail: buildHashtagProgressDetail(
       hasHashtagFilter
-        ? `Konto: ${auth.session.handle} · Hashtag-Filter aktiv`
-        : `Konto: ${auth.session.handle}`,
+        ? `Konto: ${sourceProfile.handle || sourceDid} · Hashtag-Filter aktiv`
+        : `Konto: ${sourceProfile.handle || sourceDid}`,
     ),
     checkpoint: `Welle ${waveIndex} · Start`,
     state: "running",
@@ -5054,47 +5467,103 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
 
     const activeAuth = await refreshAuthReference(auth);
     const remaining = Math.max(1, Math.min(100, waveLimit - records.length));
-    const page = await bskyGet("com.atproto.repo.listRecords", {
-      repo: auth.session.did,
-      collection: "app.bsky.feed.post",
-      limit: remaining,
-      cursor,
-    }, {
-      headers: {
-        authorization: `Bearer ${activeAuth.session.accessJwt}`,
-      },
-      base: authXrpcBase(activeAuth),
-    });
-
     const pageRecords = [];
-    for (const entry of (page.records || [])) {
-      const normalizedEntry = {
-        uri: entry.uri,
-        cid: entry.cid,
-        value: entry.value || {},
-      };
-      if (!postMatchesArchiveSelection(normalizedEntry.value, normalizedFilters, ownDid, normalizedEntry.uri)) {
-        continue;
-      }
-      if (hasHashtagFilter) {
-        const matchesHashtagSelection = await postMatchesMediaExportHashtagSelection({
-          uri: normalizedEntry.uri,
-          record: normalizedEntry.value,
-        }, normalizedFilters, auth, threadHashtagMatchCache, rootHashtagMatchCache);
-        if (!matchesHashtagSelection) {
-          hashtagFilteredOutCount += 1;
+
+    if (sourceProfile.isOwnAccount) {
+      const page = await bskyGet("com.atproto.repo.listRecords", {
+        repo: auth.session.did,
+        collection: "app.bsky.feed.post",
+        limit: remaining,
+        cursor,
+      }, {
+        headers: {
+          authorization: `Bearer ${activeAuth.session.accessJwt}`,
+        },
+        base: authXrpcBase(activeAuth),
+      });
+      cursor = page.cursor || "";
+
+      for (const entry of (page.records || [])) {
+        const normalizedEntry = {
+          uri: entry.uri,
+          cid: entry.cid,
+          value: entry.value || {},
+        };
+        if (!postMatchesArchiveSelection(normalizedEntry.value, normalizedFilters, sourceDid, normalizedEntry.uri)) {
           continue;
         }
+        if (hasHashtagFilter) {
+          const matchesHashtagSelection = await postMatchesMediaExportHashtagSelection({
+            uri: normalizedEntry.uri,
+            record: normalizedEntry.value,
+          }, normalizedFilters, auth, threadHashtagMatchCache, rootHashtagMatchCache);
+          if (!matchesHashtagSelection) {
+            hashtagFilteredOutCount += 1;
+            continue;
+          }
+        }
+        pageRecords.push(normalizedEntry);
       }
-      pageRecords.push(normalizedEntry);
+    } else {
+      const page = await bskyGet("app.bsky.feed.getAuthorFeed", {
+        actor: sourceDid,
+        limit: remaining,
+        cursor: cursor || undefined,
+      }, {
+        headers: {
+          authorization: `Bearer ${activeAuth.session.accessJwt}`,
+        },
+        base: authXrpcBase(activeAuth),
+      });
+      cursor = page.cursor || "";
+
+      for (const item of (page.feed || [])) {
+        const postView = item?.post || null;
+        const record = postView?.record || {};
+        if (!postView?.uri || String(postView.author?.did || "").trim() !== sourceDid) {
+          continue;
+        }
+        if (!postMatchesArchiveSelection(record, normalizedFilters, sourceDid, postView.uri)) {
+          continue;
+        }
+        if (hasHashtagFilter) {
+          const matchesHashtagSelection = await postMatchesMediaExportHashtagSelection(
+            postView,
+            normalizedFilters,
+            auth,
+            threadHashtagMatchCache,
+            rootHashtagMatchCache,
+          );
+          if (!matchesHashtagSelection) {
+            hashtagFilteredOutCount += 1;
+            continue;
+          }
+        }
+        pageRecords.push({
+          uri: postView.uri,
+          cid: postView.cid,
+          value: record,
+          authorHandle: String(postView.author?.handle || "").trim(),
+          authorDisplayName: String(postView.author?.displayName || postView.author?.handle || "").trim(),
+          authorDid: String(postView.author?.did || "").trim(),
+          authorAvatar: String(postView.author?.avatar || "").trim(),
+          counts: {
+            likeCount: Number(postView.likeCount) || 0,
+            replyCount: Number(postView.replyCount) || 0,
+            repostCount: Number(postView.repostCount) || 0,
+            quoteCount: Number(postView.quoteCount) || 0,
+          },
+        });
+      }
     }
 
     records.push(...pageRecords);
-    cursor = page.cursor || "";
     pageCount += 1;
     notifyProgress({
       title: "Archiv wird gelesen",
-      step: `${pageCount} Repo-Seiten geprüft · ${records.length} passende Posts gefunden`,
+      step: sourceProfile.isOwnAccount
+        ? `${pageCount} Repo-Seiten geprüft · ${records.length} passende Posts gefunden`
+        : `${pageCount} Feed-Seiten geprüft · ${records.length} passende Posts gefunden`,
       percent: Math.min(45, 5 + (pageCount * 3)),
       detail: buildHashtagProgressDetail(
         hasHashtagFilter
@@ -5145,10 +5614,11 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         uri: entry.uri,
         cid: entry.cid,
         record: entry.value,
-        authorHandle: auth.session.handle,
-        authorDisplayName: auth.session.handle,
-        authorDid: ownDid,
-        authorAvatar: auth.avatar || "",
+        authorHandle: entry.authorHandle || sourceProfile.handle || "",
+        authorDisplayName: entry.authorDisplayName || sourceProfile.displayName || sourceProfile.handle || "",
+        authorDid: entry.authorDid || sourceDid,
+        authorAvatar: entry.authorAvatar || sourceProfile.avatar || "",
+        counts: entry.counts || null,
       }),
       entry.value,
     );
@@ -5157,7 +5627,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   if ((normalizedFilters.contentMode === "threads" || normalizedFilters.contentMode === "thread_roots") && records.length > 0) {
     const threadRootUris = [...new Set(records
       .map((entry) => getArchiveRootUri(entry.value, entry.uri) || entry.uri)
-      .filter((uri) => parseAtUri(uri).did === ownDid))];
+      .filter((uri) => parseAtUri(uri).did === sourceDid))];
 
     for (const [threadIndex, rootUri] of threadRootUris.entries()) {
       if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
@@ -5217,14 +5687,14 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       for (const postView of threadViews) {
         const record = postView?.record || {};
         const rootCandidate = getArchiveRootUri(record, postView.uri) || postView.uri;
-        if (parseAtUri(rootCandidate).did !== ownDid) {
+        if (parseAtUri(rootCandidate).did !== sourceDid) {
           continue;
         }
         if (normalizedFilters.contentMode === "thread_roots") {
-          if ((postView.author?.did || "") !== ownDid) {
+          if ((postView.author?.did || "") !== sourceDid) {
             continue;
           }
-          if (!recordBelongsToOwnMainThreadPath(record, ownDid, postView.uri)) {
+          if (!recordBelongsToOwnMainThreadPath(record, sourceDid, postView.uri)) {
             continue;
           }
         }
@@ -5344,7 +5814,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
     state: "running",
   });
 
-  await attachArchiveAvatarAssets(orderedPosts, assets, seenAssetPaths, auth, pdsServiceCache, notifyProgress, 61);
+  await attachArchiveAvatarAssets(orderedPosts, assets, seenAssetPaths, auth, pdsServiceCache, notifyProgress, 61, archiveBlobCache);
 
   const linkCardPosts = orderedPosts.filter((post) => Boolean(post?.externalCard?.thumbRef));
   if (linkCardPosts.length > 0) {
@@ -5359,15 +5829,48 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   }
 
   let processedLinkCards = 0;
+  let skippedLinkCardThumbs = 0;
   await mapWithConcurrency(linkCardPosts, ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY, async (post, linkIndex) => {
     const externalCard = post.externalCard;
     if (!externalCard?.thumbRef) {
       return;
     }
+    const postLabel = String(post.authorHandle || post.authorDid || "author").trim();
+    const postRef = String(post.rkey || `post-${linkIndex + 1}`).trim();
+    const targetUrl = String(externalCard.url || "").trim();
+    const progressTarget = [postLabel ? `@${postLabel}` : "", postRef].filter(Boolean).join(" · ");
+    notifyProgress({
+      title: "Archiv wird gelesen",
+      step: `Linkkarten-Vorschau ${processedLinkCards + 1}/${linkCardPosts.length} wird geladen`,
+      percent: 65 + Math.round((processedLinkCards / Math.max(1, linkCardPosts.length)) * 4),
+      detail: buildHashtagProgressDetail(
+        [progressTarget, targetUrl].filter(Boolean).join(" · ") || "Vorschaubilder externer Karten werden lokal ergänzt",
+      ),
+      checkpoint: `Linkkarten-Vorschau ${processedLinkCards + 1}/${linkCardPosts.length} wird geladen (${progressTarget || postRef})`,
+      state: "running",
+    });
     const thumbCid = getBlobCidFromRef(externalCard.thumbRef);
     if (thumbCid) {
-      try {
-        const blob = await downloadBlobForDid(auth, post.authorDid || ownDid, thumbCid, pdsServiceCache);
+      let blob = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        externalCard.thumbLoadAttempts = attempt + 1;
+        try {
+          blob = await downloadBlobForDid(
+            auth,
+            post.authorDid || sourceDid,
+            thumbCid,
+            pdsServiceCache,
+            { timeoutMs: 5000, cacheMap: archiveBlobCache },
+          );
+          break;
+        } catch {
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          }
+        }
+      }
+      if (blob) {
+        externalCard.thumbLoadFailed = false;
         const extension = getAssetExtensionFromMimeType(blob.type);
         const authorSlug = String(post.authorHandle || post.authorDid || "author")
           .replace(/[^\w.-]+/g, "-")
@@ -5383,19 +5886,23 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
             bytes: blob.bytes,
           });
         }
-      } catch {
+      } else {
         post.externalCard.thumbPath = "";
+        externalCard.thumbLoadFailed = true;
+        skippedLinkCardThumbs += 1;
       }
     }
 
     processedLinkCards += 1;
-    if (linkCardPosts.length > 0 && (processedLinkCards % 10 === 0 || processedLinkCards === linkCardPosts.length)) {
+    if (linkCardPosts.length > 0) {
       notifyProgress({
         title: "Archiv wird gelesen",
         step: `Linkkarten ${processedLinkCards}/${linkCardPosts.length} verarbeitet`,
         percent: 65 + Math.round((processedLinkCards / Math.max(1, linkCardPosts.length)) * 4),
-        detail: buildHashtagProgressDetail("Vorschaubilder externer Karten werden lokal ergänzt"),
-        checkpoint: `Linkkarten verarbeitet (${processedLinkCards}/${linkCardPosts.length})`,
+        detail: buildHashtagProgressDetail(
+          [`${skippedLinkCardThumbs} Vorschaubilder ausgelassen`, progressTarget, targetUrl].filter(Boolean).join(" · "),
+        ),
+        checkpoint: `Linkkarten verarbeitet (${processedLinkCards}/${linkCardPosts.length}) · ${progressTarget || postRef}`,
         state: "running",
       });
     }
@@ -5413,7 +5920,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         image,
         imageIndex,
         imageTotal: images.length,
-        blobDid: post.authorDid || ownDid,
+        blobDid: post.authorDid || sourceDid,
       });
     });
   });
@@ -5445,7 +5952,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       let lastBlobError = null;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          blob = await downloadBlobForDid(auth, blobDid, cid, pdsServiceCache);
+          blob = await downloadBlobForDid(auth, blobDid, cid, pdsServiceCache, { cacheMap: archiveBlobCache });
           break;
         } catch (error) {
           lastBlobError = error;
@@ -5709,6 +6216,7 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
   const rawRecordsByUri = new Map();
   const seenAssetPaths = new Set();
   const assets = [];
+  const archiveBlobCache = new Map();
   let imageCount = 0;
   let skippedImageCount = 0;
 
@@ -5745,7 +6253,7 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
   const orderedPosts = Array.from(postsByUri.values())
     .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
 
-  await attachArchiveAvatarAssets(orderedPosts, assets, seenAssetPaths, auth, pdsServiceCache);
+  await attachArchiveAvatarAssets(orderedPosts, assets, seenAssetPaths, auth, pdsServiceCache, null, 56, archiveBlobCache);
 
   for (const [postIndex, post] of orderedPosts.entries()) {
     const externalCard = post.externalCard;
@@ -5757,7 +6265,12 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
       continue;
     }
     try {
-      const blob = await downloadBlobForDid(auth, post.authorDid || actorDid, thumbCid, pdsServiceCache);
+      externalCard.thumbLoadAttempts = 1;
+      const blob = await downloadBlobForDid(auth, post.authorDid || actorDid, thumbCid, pdsServiceCache, {
+        timeoutMs: 5000,
+        cacheMap: archiveBlobCache,
+      });
+      externalCard.thumbLoadFailed = false;
       const extension = getAssetExtensionFromMimeType(blob.type);
       const authorSlug = String(post.authorHandle || post.authorDid || "author")
         .replace(/[^\w.-]+/g, "-")
@@ -5775,6 +6288,7 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
       }
     } catch {
       post.externalCard.thumbPath = "";
+      externalCard.thumbLoadFailed = true;
     }
   }
 
@@ -5838,7 +6352,9 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
       let lastBlobError = null;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          blob = await downloadBlobForDid(auth, post.authorDid || actorDid, cid, pdsServiceCache);
+          blob = await downloadBlobForDid(auth, post.authorDid || actorDid, cid, pdsServiceCache, {
+            cacheMap: archiveBlobCache,
+          });
           break;
         } catch (error) {
           lastBlobError = error;
