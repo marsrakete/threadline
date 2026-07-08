@@ -1,0 +1,16 @@
+{
+  "identifier": "your-handle.bsky.social",
+  "appPassword": "xxxx-xxxx-xxxx-xxxx",
+  "service": "https://bsky.social",
+  "sourceActor": "",
+  "outputDirectory": "C:/Temp/threadline-archive-output",
+  "scope": "all",
+  "year": "",
+  "from": "",
+  "to": "",
+  "contentMode": "full",
+  "includeConversationContext": false,
+  "maxPosts": 2000,
+  "waitProfile": "normal",
+  "createZip": true
+}

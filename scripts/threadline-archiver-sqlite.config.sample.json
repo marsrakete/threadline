@@ -1,0 +1,18 @@
+{
+  "identifier": "your-handle.bsky.social",
+  "appPassword": "xxxx-xxxx-xxxx-xxxx",
+  "service": "https://bsky.social",
+  "sourceActor": "",
+  "outputDirectory": "C:/Temp/threadline-archive-sqlite-output",
+  "scope": "all",
+  "year": "",
+  "from": "",
+  "to": "",
+  "contentMode": "full",
+  "includeConversationContext": true,
+  "maxPosts": 2000,
+  "waitProfile": "normal",
+  "createPostsJson": false,
+  "createZip": false,
+  "sqliteExePath": "C:/portable/sqlite/sqlite3.exe"
+}

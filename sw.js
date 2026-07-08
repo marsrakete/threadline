@@ -10,6 +10,8 @@ const APP_SHELL = [
   "./app.js",
   "./post-languages.js",
   "./translations.js",
+  "./templates/archive-html-shell.html",
+  "./templates/archive-html-client.js",
   "./manifest.webmanifest",
   "./version.js",
   "./README.md",
@@ -1223,13 +1225,23 @@ async function bskyFetch(endpoint, options = {}) {
   }
 
   if (!response.ok) {
+    const retryAfterRaw = response.headers.get("retry-after") || "";
+    let retryAfterMs = 0;
+    if (/^\d+$/.test(retryAfterRaw.trim())) {
+      retryAfterMs = Math.max(0, Number.parseInt(retryAfterRaw.trim(), 10) * 1000);
+    } else if (retryAfterRaw.trim()) {
+      const retryAt = Date.parse(retryAfterRaw.trim());
+      if (Number.isFinite(retryAt)) {
+        retryAfterMs = Math.max(0, retryAt - Date.now());
+      }
+    }
     const code = response.status === 401
       ? "AUTH_INVALID_CREDENTIALS"
       : "BSKY_REQUEST_FAILED";
     throw createServiceWorkerError(
       data.message || data.error || `Bluesky request failed (${response.status}).`,
       code,
-      { status: response.status },
+      { status: response.status, retryAfterMs },
     );
   }
 
@@ -2268,10 +2280,29 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
   });
 
   const graphAuth = await getAnalysisAuthForActor(profile.did || requestedActor, auth);
-  const [followers, follows] = await Promise.all([
-    collectEntireGraph(graphAuth, "app.bsky.graph.getFollowers", profile.did || requestedActor, "followers", notifyProgress, "Analyse wird geladen", "Follower werden geladen...", 95).catch(() => []),
-    collectEntireGraph(graphAuth, "app.bsky.graph.getFollows", profile.did || requestedActor, "following", notifyProgress, "Analyse wird geladen", "Following wird geladen...", 96).catch(() => []),
+  const networkWarnings = [];
+  let networkLoadState = "complete";
+  const [followerResult, followResult] = await Promise.allSettled([
+    collectEntireGraph(graphAuth, "app.bsky.graph.getFollowers", profile.did || requestedActor, "followers", notifyProgress, "Analyse wird geladen", "Follower werden geladen...", 95),
+    collectEntireGraph(graphAuth, "app.bsky.graph.getFollows", profile.did || requestedActor, "following", notifyProgress, "Analyse wird geladen", "Following wird geladen...", 96),
   ]);
+  const followers = followerResult.status === "fulfilled" ? followerResult.value : [];
+  const follows = followResult.status === "fulfilled" ? followResult.value : [];
+  if (followerResult.status !== "fulfilled") {
+    networkWarnings.push(`Follower konnten nicht geladen werden: ${String(followerResult.reason?.message || followerResult.reason || "").trim() || "Unbekannter Fehler"}`);
+  }
+  if (followResult.status !== "fulfilled") {
+    networkWarnings.push(`Following konnte nicht geladen werden: ${String(followResult.reason?.message || followResult.reason || "").trim() || "Unbekannter Fehler"}`);
+  }
+  if (networkWarnings.length) {
+    networkLoadState = followers.length || follows.length ? "partial" : "failed";
+    notifyProgress({
+      title: "Analyse wird geladen",
+      step: "Netzwerkdaten unvollständig",
+      percent: 96,
+      detail: networkWarnings[0],
+    });
+  }
 
   let mutes = null;
   let blocks = null;
@@ -2328,6 +2359,8 @@ async function loadAnalysisAccount({ actor = "", options = {} } = {}, notifyProg
       mutes,
       blocks,
       muteBlockSource,
+      loadState: networkLoadState,
+      warnings: networkWarnings,
     },
     markers: {
       topMentions: await buildAnalysisResolvedTopList(mentionFrequency, totalLoadedPosts, graphAuth, 12, true),
@@ -2711,6 +2744,7 @@ async function getAppState({ browserLocale } = {}) {
     tipsVisible: storedSettings?.tipsVisible !== false,
       altTextRequired: storedSettings?.altTextRequired !== false,
       imageAutoResizeMode: normalizeImageAutoResizeMode(storedSettings?.imageAutoResizeMode),
+      archiveExpertMode: normalizeArchiveExpertMode(storedSettings?.archiveExpertMode),
       themeMode: storedSettings?.themeMode === "dark" ? "dark" : "light",
       sidebarCollapsedDesktop: storedSettings?.sidebarCollapsedDesktop === true,
       desktopLayoutVersion: Number.isFinite(Number(storedSettings?.desktopLayoutVersion))
@@ -2758,6 +2792,10 @@ function normalizeStoredReplyTarget(target) {
 
 function normalizeImageAutoResizeMode(value) {
   return value === "fit" || value === "lossy" ? value : "off";
+}
+
+function normalizeArchiveExpertMode(value) {
+  return value === true;
 }
 
 function normalizeStoredAnalysisState(value = null) {
@@ -2853,6 +2891,7 @@ async function saveSettings(settings = {}) {
     tipsVisible: settings.tipsVisible !== undefined ? settings.tipsVisible : (existing.tipsVisible !== false),
     altTextRequired: settings.altTextRequired !== false,
       imageAutoResizeMode: normalizeImageAutoResizeMode(settings.imageAutoResizeMode ?? existing.imageAutoResizeMode),
+      archiveExpertMode: normalizeArchiveExpertMode(settings.archiveExpertMode ?? existing.archiveExpertMode),
       themeMode: settings.themeMode === "dark"
         ? "dark"
         : (settings.themeMode === "light" ? "light" : (existing.themeMode === "dark" ? "dark" : "light")),
@@ -3894,6 +3933,7 @@ function normalizeArchiveFilters(filters = {}) {
     sourceDid: String(filters.sourceDid || "").trim(),
     scope: filters.scope === "year" || filters.scope === "range" ? filters.scope : "all",
     contentMode: ["posts", "thread_roots", "threads", "full"].includes(filters.contentMode) ? filters.contentMode : "posts",
+    includeConversationContext: filters.includeConversationContext === true,
     year: String(filters.year || "").trim(),
     from: String(filters.from || "").trim(),
     to: String(filters.to || "").trim(),
@@ -4216,6 +4256,7 @@ function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", auth
     uri,
     cid: cid || "",
     rkey: parsed.rkey,
+    rawRecord: record || {},
     createdAt: record?.createdAt || "",
     text: record?.text || "",
     langs: Array.isArray(record?.langs) ? record.langs : [],
@@ -4247,6 +4288,7 @@ function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", auth
 function mergeArchivePostEntity(existing, incoming) {
   existing.cid = incoming.cid || existing.cid;
   existing.rkey = incoming.rkey || existing.rkey;
+  existing.rawRecord = incoming.rawRecord || existing.rawRecord;
   existing.createdAt = incoming.createdAt || existing.createdAt;
   existing.text = incoming.text || existing.text;
   existing.langs = incoming.langs?.length ? incoming.langs : existing.langs;
@@ -4412,6 +4454,87 @@ function collectThreadAuthorPosts(node, authorDid, result = []) {
     : (Array.isArray(postView?.replies) ? postView.replies : []);
   replies.forEach((reply) => collectThreadAuthorPosts(reply, authorDid, result));
   return result;
+}
+
+async function expandArchiveConversationContexts({
+  auth,
+  runId,
+  notifyProgress,
+  postsByUri,
+  rawRecordsByUri,
+  upsertArchivePost,
+} = {}) {
+  const rootUris = [...new Set(Array.from(postsByUri.values())
+    .map((post) => String(post?.thread?.rootUri || post?.uri || "").trim())
+    .filter(Boolean))];
+
+  for (const [index, rootUri] of rootUris.entries()) {
+    if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
+      return "cancelled";
+    }
+
+    notifyProgress({
+      title: "Archiv wird gelesen",
+      step: `Konversation ${index + 1}/${rootUris.length} wird erweitert`,
+      percent: 48 + Math.round(((index + 1) / Math.max(1, rootUris.length)) * 10),
+      detail: "Antwortkontext und sichtbare Antworten werden nachgeladen",
+      checkpoint: `Konversation ${index + 1}/${rootUris.length} wird erweitert`,
+      state: "running",
+    });
+
+    let threadResponse = null;
+    try {
+      threadResponse = await archiveGetPostThread(auth, rootUri, {
+        depth: 100,
+        parentHeight: 100,
+        notifyProgress,
+        progressTitle: "Archiv wird gelesen",
+        progressPercent: 48 + Math.round(((index + 1) / Math.max(1, rootUris.length)) * 10),
+        progressDetail: rootUri,
+        checkpointPrefix: `Konversation ${index + 1}/${rootUris.length}`,
+      });
+    } catch (error) {
+      if (!isMissingArchivePostError(error) && !isArchiveThreadTimeoutError(error)) {
+        throw error;
+      }
+      notifyProgress({
+        title: "Archiv wird gelesen",
+        step: `Konversation ${index + 1}/${rootUris.length} wird uebersprungen`,
+        percent: 48 + Math.round(((index + 1) / Math.max(1, rootUris.length)) * 10),
+        detail: isArchiveThreadTimeoutError(error)
+          ? `Antwortkontext zu langsam - ${rootUri}`
+          : `Konversation nicht mehr verfuegbar - ${rootUri}`,
+        checkpoint: `Konversation ${index + 1}/${rootUris.length} uebersprungen`,
+        state: "running",
+      });
+      continue;
+    }
+
+    const threadViews = collectThreadViewPosts(threadResponse.thread || threadResponse.post || threadResponse);
+    threadViews.forEach((postView) => {
+      const record = postView?.record || {};
+      upsertArchivePost(
+        buildArchivePostEntity({
+          uri: postView.uri,
+          cid: postView.cid,
+          record,
+          authorHandle: postView.author?.handle || "",
+          authorDisplayName: postView.author?.displayName || postView.author?.handle || "",
+          authorDid: postView.author?.did || "",
+          authorAvatar: postView.author?.avatar || "",
+          counts: {
+            likeCount: Number(postView.likeCount) || 0,
+            replyCount: Number(postView.replyCount) || 0,
+            repostCount: Number(postView.repostCount) || 0,
+            quoteCount: Number(postView.quoteCount) || 0,
+          },
+        }),
+        record,
+      );
+    });
+  }
+
+  return "completed";
 }
 
 function chunkEntries(items, size) {
@@ -5380,8 +5503,113 @@ async function waitForArchiveRunControl(runId, notifyProgress = () => {}) {
   }
 }
 
-async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor = "", maxPosts = 500, waveIndex = 1 } = {}, notifyProgress = () => {}) {
+async function sleepForArchiveRun(runId, durationMs, notifyProgress = () => {}, progress = {}) {
+  let remainingMs = Math.max(0, Number(durationMs) || 0);
+  while (remainingMs > 0) {
+    const state = await waitForArchiveRunControl(runId, notifyProgress);
+    if (state === "cancelled") {
+      return "cancelled";
+    }
+    const chunkMs = Math.min(1000, remainingMs);
+    notifyProgress({
+      ...progress,
+      state: "running",
+    });
+    await new Promise((resolve) => setTimeout(resolve, chunkMs));
+    remainingMs -= chunkMs;
+  }
+  return "running";
+}
+
+async function runArchiveRequestWithRetry(task, {
+  runId,
+  notifyProgress = () => {},
+  title = "Archiv wird gelesen",
+  percent = 0,
+  baseDetail = "",
+  checkpoint = "",
+  maxRetries = 4,
+} = {}) {
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const state = await waitForArchiveRunControl(runId, notifyProgress);
+    if (state === "cancelled") {
+      throw createServiceWorkerError("Der Archivlauf wurde abgebrochen.", "ARCHIVE_CANCELLED");
+    }
+
+    try {
+      return await task();
+    } catch (error) {
+      const status = Number(error?.details?.status) || 0;
+      const isRateLimited = status === 429;
+      const isTemporaryServerIssue = status === 502 || status === 503 || status === 504;
+      const isNetworkIssue = /fetch|network|timeout|tempor/i.test(String(error?.message || ""));
+      const shouldRetry = attempt < maxRetries && (isRateLimited || isTemporaryServerIssue || isNetworkIssue);
+      if (!shouldRetry) {
+        throw error;
+      }
+
+      const retryAfterMs = Math.max(0, Number(error?.details?.retryAfterMs) || 0);
+      const fallbackMs = Math.min(60_000, 30_000 + (attempt * 15_000));
+      const waitMs = retryAfterMs > 0 ? retryAfterMs : fallbackMs;
+      const waitSeconds = Math.max(1, Math.ceil(waitMs / 1000));
+      const reasonLabel = isRateLimited
+        ? "Rate-Limit"
+        : (status >= 500 ? `Serverfehler ${status}` : "Netzwerkproblem");
+
+      const waitState = await sleepForArchiveRun(runId, waitMs, notifyProgress, {
+        title,
+        step: "Kurze Pause, damit uns die Server nicht blockieren ...",
+        percent,
+        detail: [baseDetail, `${reasonLabel} · neuer Versuch in ${waitSeconds}s`].filter(Boolean).join(" · "),
+        checkpoint: checkpoint || "Kurze Pause, damit uns die Server nicht blockieren",
+      });
+      if (waitState === "cancelled") {
+        throw createServiceWorkerError("Der Archivlauf wurde abgebrochen.", "ARCHIVE_CANCELLED");
+      }
+    }
+  }
+
+  throw createServiceWorkerError("Der Archivlauf konnte nicht fortgesetzt werden.", "ARCHIVE_RETRY_EXHAUSTED");
+}
+
+function getArchiveSoftPauseMs(pageCount, archiveExpertMode = false) {
+  if (archiveExpertMode) {
+    return 0;
+  }
+  if (pageCount > 0 && pageCount % 100 === 0) {
+    return 10_000;
+  }
+  if (pageCount > 0 && pageCount % 25 === 0) {
+    return 3_000;
+  }
+  return 0;
+}
+
+async function maybePauseArchiveFeedScan({
+  runId,
+  notifyProgress = () => {},
+  pageCount = 0,
+  recordsCount = 0,
+  archiveExpertMode = false,
+}) {
+  const pauseMs = getArchiveSoftPauseMs(pageCount, archiveExpertMode);
+  if (pauseMs <= 0) {
+    return "running";
+  }
+  const waitSeconds = Math.max(1, Math.ceil(pauseMs / 1000));
+  return await sleepForArchiveRun(runId, pauseMs, notifyProgress, {
+    title: "Archiv wird gelesen",
+    step: "Kurze Pause, damit uns die Server nicht blockieren ...",
+    percent: Math.min(45, 5 + (pageCount * 3)),
+    detail: `${pageCount} Feed-Seiten gelesen · ${recordsCount} Posts vorgemerkt · freiwillige Pause ${waitSeconds}s`,
+    checkpoint: "Kurze Pause, damit uns die Server nicht blockieren",
+  });
+}
+
+async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor = "", maxPosts = 500, waveIndex = 1, existingCatalog = null, existingSession = null } = {}, notifyProgress = () => {}) {
   const auth = await ensureSession();
+  const storedSettings = await readStoredValue(SETTINGS_KEY) || {};
+  const archiveExpertMode = normalizeArchiveExpertMode(storedSettings?.archiveExpertMode);
   const normalizedFilters = normalizeArchiveFilters(filters);
   const sourceProfile = await resolveArchiveSourceActor(auth, normalizedFilters);
   const sourceDid = sourceProfile.did || auth.session.did;
@@ -5395,8 +5623,8 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   const rawRecordsByUri = new Map();
   const postsByUri = new Map();
   let cursor = String(initialCursor || "");
-  let pageCount = 0;
-  const waveLimit = Math.max(100, Math.min(1000, Number(maxPosts) || 500));
+  let pageCount = Math.max(0, Number(existingSession?.pageCount) || 0);
+  const pageSize = Math.max(25, Math.min(100, Number(maxPosts) || 100));
   let imageCount = 0;
   let skippedImageCount = 0;
   let orderedPosts = [];
@@ -5405,6 +5633,47 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   let previewCounter = 0;
   let cancelled = false;
   let hashtagFilteredOutCount = 0;
+  let stopScan = false;
+  let currentPhase = "fetch";
+
+  const resumedPosts = Array.isArray(existingCatalog?.posts)
+    ? existingCatalog.posts.map((post) => ({
+        ...post,
+        counts: {
+          likeCount: Number(post?.counts?.likeCount) || 0,
+          replyCount: Number(post?.counts?.replyCount) || 0,
+          repostCount: Number(post?.counts?.repostCount) || 0,
+          quoteCount: Number(post?.counts?.quoteCount) || 0,
+        },
+        images: Array.isArray(post?.images) ? [...post.images] : [],
+      }))
+    : [];
+
+  resumedPosts.forEach((post) => {
+    if (!post?.uri) {
+      return;
+    }
+    postsByUri.set(post.uri, post);
+    const rawRecord = post.rawRecord || {
+      text: post.text || "",
+      createdAt: post.createdAt || "",
+      langs: Array.isArray(post.langs) ? post.langs : [],
+      facets: Array.isArray(post.facets) ? post.facets : [],
+      reply: post.reply || null,
+      embed: null,
+    };
+    rawRecordsByUri.set(post.uri, rawRecord);
+    records.push({
+      uri: post.uri,
+      cid: post.cid || "",
+      value: rawRecord,
+      authorHandle: post.authorHandle || "",
+      authorDisplayName: post.authorDisplayName || "",
+      authorDid: post.authorDid || "",
+      authorAvatar: post.authorAvatar || "",
+      counts: post.counts || null,
+    });
+  });
 
   const buildHashtagProgressDetail = (baseDetail = "") => {
     if (!hasHashtagFilter) {
@@ -5416,7 +5685,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
 
   archiveRunControls.set(runId, { state: "running" });
 
-  const buildResult = (status = "completed") => ({
+  const buildResult = (status = "completed", { errorMessage = "" } = {}) => ({
     manifest: {
       schemaVersion: 1,
       exportedAt: new Date().toISOString(),
@@ -5432,17 +5701,23 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       imageCount,
       skippedImageCount,
       hashtagFilteredOutCount,
+      pageCount,
+      phase: currentPhase,
+      errorMessage,
     },
     posts: orderedPosts,
     assets,
     session: {
-      waveIndex,
+      waveIndex: 1,
       nextCursor: cursor,
       hasMore: Boolean(cursor),
       exportedPosts: orderedPosts.length,
       exportedImages: imageCount,
       skippedImages: skippedImageCount,
       status,
+      pageCount,
+      phase: currentPhase,
+      errorMessage,
     },
   });
 
@@ -5455,31 +5730,45 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         ? `Konto: ${sourceProfile.handle || sourceDid} · Hashtag-Filter aktiv`
         : `Konto: ${sourceProfile.handle || sourceDid}`,
     ),
-    checkpoint: `Welle ${waveIndex} · Start`,
+    checkpoint: "Archivlauf gestartet",
     state: "running",
   });
 
-  while (true) {
+  try {
+  let shouldContinueFetch = Boolean(cursor) || records.length === 0;
+  while (shouldContinueFetch) {
+    currentPhase = "fetch";
     if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
       cancelled = true;
       break;
     }
+    if (stopScan) {
+      cursor = "";
+      break;
+    }
 
     const activeAuth = await refreshAuthReference(auth);
-    const remaining = Math.max(1, Math.min(100, waveLimit - records.length));
     const pageRecords = [];
+    let oldestSeenCreatedAt = "";
 
     if (sourceProfile.isOwnAccount) {
-      const page = await bskyGet("com.atproto.repo.listRecords", {
+      const page = await runArchiveRequestWithRetry(() => bskyGet("com.atproto.repo.listRecords", {
         repo: auth.session.did,
         collection: "app.bsky.feed.post",
-        limit: remaining,
+        limit: pageSize,
         cursor,
       }, {
         headers: {
           authorization: `Bearer ${activeAuth.session.accessJwt}`,
         },
         base: authXrpcBase(activeAuth),
+      }), {
+        runId,
+        notifyProgress,
+        title: "Archiv wird gelesen",
+        percent: Math.min(45, 5 + (pageCount * 3)),
+        baseDetail: `Konto: ${sourceProfile.handle || sourceDid}`,
+        checkpoint: "Kurze Pause, damit uns die Server nicht blockieren",
       });
       cursor = page.cursor || "";
 
@@ -5489,6 +5778,10 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
           cid: entry.cid,
           value: entry.value || {},
         };
+        const createdAt = String(normalizedEntry.value?.createdAt || "").trim();
+        if (createdAt && (!oldestSeenCreatedAt || Date.parse(createdAt) < Date.parse(oldestSeenCreatedAt))) {
+          oldestSeenCreatedAt = createdAt;
+        }
         if (!postMatchesArchiveSelection(normalizedEntry.value, normalizedFilters, sourceDid, normalizedEntry.uri)) {
           continue;
         }
@@ -5505,21 +5798,32 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         pageRecords.push(normalizedEntry);
       }
     } else {
-      const page = await bskyGet("app.bsky.feed.getAuthorFeed", {
+      const page = await runArchiveRequestWithRetry(() => bskyGet("app.bsky.feed.getAuthorFeed", {
         actor: sourceDid,
-        limit: remaining,
+        limit: pageSize,
         cursor: cursor || undefined,
       }, {
         headers: {
           authorization: `Bearer ${activeAuth.session.accessJwt}`,
         },
         base: authXrpcBase(activeAuth),
+      }), {
+        runId,
+        notifyProgress,
+        title: "Archiv wird gelesen",
+        percent: Math.min(45, 5 + (pageCount * 3)),
+        baseDetail: `Konto: ${sourceProfile.handle || sourceDid}`,
+        checkpoint: "Kurze Pause, damit uns die Server nicht blockieren",
       });
       cursor = page.cursor || "";
 
       for (const item of (page.feed || [])) {
         const postView = item?.post || null;
         const record = postView?.record || {};
+        const createdAt = String(record?.createdAt || "").trim();
+        if (createdAt && (!oldestSeenCreatedAt || Date.parse(createdAt) < Date.parse(oldestSeenCreatedAt))) {
+          oldestSeenCreatedAt = createdAt;
+        }
         if (!postView?.uri || String(postView.author?.did || "").trim() !== sourceDid) {
           continue;
         }
@@ -5557,6 +5861,10 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       }
     }
 
+    if (oldestSeenCreatedAt) {
+      stopScan = shouldStopAuthorFeedScanForFilters(oldestSeenCreatedAt, normalizedFilters);
+    }
+
     records.push(...pageRecords);
     pageCount += 1;
     notifyProgress({
@@ -5567,10 +5875,10 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
       percent: Math.min(45, 5 + (pageCount * 3)),
       detail: buildHashtagProgressDetail(
         hasHashtagFilter
-          ? `${records.length} Posts für Welle ${waveIndex} vorgemerkt · Posts werden mit Hashtag-Filter geprüft`
-          : `${records.length} Posts für Welle ${waveIndex} vorgemerkt`,
+          ? `${records.length} Posts vorgemerkt · Posts werden mit Hashtag-Filter geprüft`
+          : `${records.length} Posts vorgemerkt`,
       ),
-      checkpoint: `Welle ${waveIndex} · ${records.length} Posts gefunden`,
+      checkpoint: `${records.length} Posts gefunden`,
       state: "running",
     });
 
@@ -5580,16 +5888,28 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         const latest = records[Math.max(0, records.length - 1)];
         notifyProgress({
           preview: {
-            meta: `Welle ${waveIndex} · ${records.length} Posts gefunden`,
+            meta: `${records.length} Posts gefunden`,
             text: String(latest?.value?.text || "").slice(0, 280),
           },
-          checkpoint: `Welle ${waveIndex} · ${records.length} Posts gefunden`,
+          checkpoint: `${records.length} Posts gefunden`,
           state: "running",
         });
       }
     }
 
-    if (records.length >= waveLimit || !cursor) {
+    if (!cursor || stopScan) {
+      break;
+    }
+
+    const pauseState = await maybePauseArchiveFeedScan({
+      runId,
+      notifyProgress,
+      pageCount,
+      recordsCount: records.length,
+      archiveExpertMode,
+    });
+    if (pauseState === "cancelled") {
+      cancelled = true;
       break;
     }
   }
@@ -5625,6 +5945,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
   });
 
   if ((normalizedFilters.contentMode === "threads" || normalizedFilters.contentMode === "thread_roots") && records.length > 0) {
+    currentPhase = "threads";
     const threadRootUris = [...new Set(records
       .map((entry) => getArchiveRootUri(entry.value, entry.uri) || entry.uri)
       .filter((uri) => parseAtUri(uri).did === sourceDid))];
@@ -5656,7 +5977,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
 
       let threadResponse = null;
       try {
-        threadResponse = await archiveGetPostThread(auth, rootUri, {
+        threadResponse = await runArchiveRequestWithRetry(() => archiveGetPostThread(auth, rootUri, {
           depth: 100,
           parentHeight: 0,
           notifyProgress,
@@ -5664,6 +5985,13 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
           progressPercent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
           progressDetail: rootUri,
           checkpointPrefix: `Eigene Threads werden erweitert (${threadIndex + 1}/${threadRootUris.length})`,
+        }), {
+          runId,
+          notifyProgress,
+          title: "Archiv wird gelesen",
+          percent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
+          baseDetail: rootUri,
+          checkpoint: `Eigene Threads werden erweitert (${threadIndex + 1}/${threadRootUris.length})`,
         });
       } catch (error) {
         if (!isMissingArchivePostError(error) && !isArchiveThreadTimeoutError(error)) {
@@ -5736,9 +6064,28 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
     }
   }
 
+  if (normalizedFilters.includeConversationContext === true && postsByUri.size > 0) {
+    currentPhase = "conversation";
+    const conversationExpansionResult = await expandArchiveConversationContexts({
+      auth,
+      runId,
+      notifyProgress,
+      postsByUri,
+      rawRecordsByUri,
+      upsertArchivePost,
+    });
+    if (conversationExpansionResult === "cancelled") {
+      orderedPosts = Array.from(postsByUri.values())
+        .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+      archiveRunControls.delete(runId);
+      return buildResult("cancelled");
+    }
+  }
+
   orderedPosts = Array.from(postsByUri.values())
     .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
 
+  currentPhase = "metrics";
   const metricBatches = chunkEntries(orderedPosts.map((entry) => entry.uri), 25);
   for (const [batchIndex, batch] of metricBatches.entries()) {
     if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
@@ -5749,11 +6096,18 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
     }
 
     const activeAuth = await refreshAuthReference(auth);
-    const response = await bskyGet("app.bsky.feed.getPosts", { uris: batch }, {
+    const response = await runArchiveRequestWithRetry(() => bskyGet("app.bsky.feed.getPosts", { uris: batch }, {
       headers: {
         authorization: `Bearer ${activeAuth.session.accessJwt}`,
       },
       base: authXrpcBase(activeAuth),
+    }), {
+      runId,
+      notifyProgress,
+      title: "Archiv wird gelesen",
+      percent: 55 + Math.round(((batchIndex + 1) / Math.max(1, metricBatches.length)) * 6),
+      baseDetail: `Metriken-Batch ${batchIndex + 1}/${metricBatches.length}`,
+      checkpoint: `Metriken geladen (${batchIndex + 1}/${metricBatches.length})`,
     });
     (response.posts || []).forEach((postView) => {
       const target = postsByUri.get(postView?.uri);
@@ -5814,6 +6168,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
     state: "running",
   });
 
+  currentPhase = "assets";
   await attachArchiveAvatarAssets(orderedPosts, assets, seenAssetPaths, auth, pdsServiceCache, notifyProgress, 61, archiveBlobCache);
 
   const linkCardPosts = orderedPosts.filter((post) => Boolean(post?.externalCard?.thumbRef));
@@ -6047,6 +6402,19 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
 
   archiveRunControls.delete(runId);
   return buildResult(cancelled ? "cancelled" : "completed");
+  } catch (error) {
+    orderedPosts = Array.from(postsByUri.values())
+      .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+    archiveRunControls.delete(runId);
+    if (error?.details?.code === "ARCHIVE_CANCELLED") {
+      return buildResult("cancelled", {
+        errorMessage: error?.message || "",
+      });
+    }
+    return buildResult("paused", {
+      errorMessage: error?.message || "Der Archivlauf wurde pausiert.",
+    });
+  }
 }
 
 async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notifyProgress = () => {}) {

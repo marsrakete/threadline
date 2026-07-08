@@ -379,11 +379,18 @@
               <p class="settings-note" data-i18n="archiveScopeHelp">
                 Der Export liest deine eigenen Posts seitenweise und filtert sie danach lokal.
               </p>
+              <label class="settings-check">
+                <input id="archive-conversation-context-toggle" type="checkbox">
+                <span data-i18n="archiveConversationContextToggle">Gesamte Konversationen mitspeichern</span>
+              </label>
+              <p class="settings-note" data-i18n="archiveConversationContextHelp">
+                Laedt zu passenden Replies und Threads zusaetzlich den sichtbaren Antwortbaum und den Antwortkontext nach.
+              </p>
               <p class="settings-note" data-i18n="archiveRestartHint">
-                Änderungen an Umfang, Archivtyp oder Wellen-Größe starten den Archivlauf wieder bei Welle 1.
+                Aenderungen an Umfang, Archivtyp oder Konversationsoption setzen das geladene Archiv zurueck und erfordern einen neuen Lauf.
               </p>
               <label>
-                <span data-i18n="archiveWaveSizeLabel">Posts pro Exportwelle</span>
+                <span data-i18n="archiveWaveSizeLabel">Abrufgröße</span>
                 <select id="archive-wave-size-select">
                   <option value="100">100</option>
                   <option value="250">250</option>
@@ -438,15 +445,15 @@
                 <button type="button" class="help-trigger" data-help-topic="archive_actions" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
               </div>
               <p id="archive-start-hint" class="archive-start-hint settings-note" data-i18n="archiveStartHintFresh">
-                Der nächste Start beginnt als Neustart bei Welle 1.
+                Das Archiv ist noch nicht geladen.
               </p>
               <div class="archive-actions">
-                <button type="button" class="ghost-button" id="archive-next-wave-button" data-i18n="archiveNextWaveButton">Nächste Welle laden</button>
+                <button type="button" class="ghost-button" id="archive-next-wave-button" data-i18n="archiveNextWaveButton">Archiv laden</button>
                 <button type="button" id="archive-export-zip-button" data-i18n="archiveExportZipButton">Archiv als ZIP sichern</button>
                 <button type="button" class="ghost-button" id="archive-actions-export-html-button" data-i18n="archiveExportHtmlButton">HTML-Archiv erzeugen</button>
                 <button type="button" class="ghost-button" id="archive-actions-export-html-compact-button" data-i18n="archiveExportHtmlCompactButton">Kompaktes HTML erzeugen</button>
                 <button type="button" class="ghost-button" id="archive-actions-export-pdf-button" data-i18n="archiveExportPdfButton">PDF-Bände erzeugen</button>
-                <button type="button" class="ghost-button" id="archive-import-button" data-i18n="archiveImportButton">Archiv laden</button>
+                <button type="button" class="ghost-button" id="archive-import-button" data-i18n="archiveImportButton">Archivdatei laden</button>
                 <button type="button" class="ghost-button" id="archive-reset-button" data-i18n="archiveResetButton">Archivlauf zurücksetzen</button>
               </div>
               <p class="settings-note" data-i18n="archiveActionsNote">
@@ -549,6 +556,14 @@
                 </div>
               </div>
               <div id="archive-results" class="archive-results"></div>
+              <div class="archive-script-help" hidden>
+                <strong data-i18n="archiveZipHtmlScriptTitle">ZIP zu HTML per PowerShell</strong>
+                <p class="settings-note" data-i18n="archiveZipHtmlScriptNote">
+                  Wenn das HTML-Archiv zu groß wird, sichere zuerst das ZIP und erzeuge daraus außerhalb der App ein vollständiges lokales HTML-Archiv.
+                </p>
+                <pre class="archive-script-command" hidden></pre>
+                <button type="button" class="ghost-button" hidden>PowerShell-Befehl kopieren</button>
+              </div>
             </section>
 
             <section class="archive-card archive-actions-card">
@@ -595,6 +610,14 @@
               <p id="archive-thread-url-note" class="settings-note" data-i18n="archiveThreadUrlHint">
                 Lade einen einzelnen Bluesky-Thread direkt aus einer Posting-URL. Wenn die URL auf eine Antwort zeigt, beginnt der Import automatisch beim Thread-Start.
               </p>
+              <div class="archive-script-help">
+                <strong data-i18n="archiveZipHtmlScriptTitle">ZIP zu HTML per PowerShell</strong>
+                <p class="settings-note" data-i18n="archiveZipHtmlScriptNote">
+                  Wenn das HTML-Archiv zu groß wird, sichere zuerst das ZIP und erzeuge daraus außerhalb der App ein vollständiges lokales HTML-Archiv.
+                </p>
+                <pre id="archive-zip-html-script-command" class="archive-script-command"></pre>
+                <button type="button" class="ghost-button" id="archive-zip-html-script-copy-button" data-i18n="archiveZipHtmlScriptCopyButton">PowerShell-Befehl kopieren</button>
+              </div>
             </section>
 
             <section class="archive-card archive-spec-card">
@@ -1034,6 +1057,15 @@
             </select>
           </label>
           <p class="settings-note" data-i18n="imageAutoResizeModeNote">Wenn eine automatische Strategie aktiv ist, blockieren zu große Bilder den Composer nicht mehr. Vor dem Posten werden sie im Speicher noch einmal geprüft und bei Bedarf automatisch angepasst.</p>
+        </section>
+
+        <section class="settings-block">
+          <p class="eyebrow" data-i18n="expertSettingsEyebrow">Profi</p>
+          <label class="settings-check">
+            <input id="archive-expert-mode-toggle" type="checkbox">
+            <span data-i18n="archiveExpertModeSetting">Ich wei\u00df, was ich tue: Archiv-Abruf aggressiver</span>
+          </label>
+          <p class="settings-note" data-i18n="archiveExpertModeNote">Lockert freiwillige Schonpausen beim Archivladen. Harte Rate-Limits und Retry-After werden weiterhin respektiert.</p>
         </section>
 
         <section class="settings-block">
@@ -1487,7 +1519,7 @@
 
         <div class="image-editor-metrics" aria-live="polite">
           <div>
-            <span data-i18n="imageEditorOriginalDimensionsLabel">OriginalmaÃŸe</span>
+            <span data-i18n="imageEditorOriginalDimensionsLabel">Originalmaße</span>
             <strong id="image-editor-original-dimensions">-</strong>
           </div>
           <div>

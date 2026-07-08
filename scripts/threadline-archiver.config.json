@@ -1,0 +1,16 @@
+{
+  "identifier": "millux-test.bsky.social",
+  "appPassword": "26nv-e6h2-k4zz-ha4g",
+  "service": "https://bsky.social",
+  "sourceActor": "pegadren.bsky.social",
+  "outputDirectory": "C:/Temp/threadline-archive-pegadren",
+  "scope": "all",
+  "year": "",
+  "from": "2025-06-01",
+  "to": "2026-07-02",
+  "contentMode": "full",
+  "includeConversationContext": true,
+  "maxPosts": 500000,
+  "waitProfile": "normal",
+  "createZip": true
+}

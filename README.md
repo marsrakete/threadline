@@ -201,21 +201,61 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 
 ### Account Archive
 
-- The dedicated `Account archive` area can back up your own Bluesky posts together with their images
+- The dedicated `Account archive` area can back up either your own Bluesky account or another reachable account together with its images
+- For very large archives, Threadline is gradually moving toward a split model: interactive filtering in the browser, heavyweight long-running fetches in PowerShell
+- Before loading, you can define the source account, date range, archive type, and whether full conversation context should be included
 - You can also choose an `Archive type` before loading:
 - `Full archive`: loads all of your own posts and all of your own replies, including replies inside other people's threads
 - `Own posts only`: loads your own top-level posts and your own replies only inside your own threads, but skips your replies in foreign threads
 - `My threads complete`: loads your own posts, your own replies inside those threads, and replies from other accounts inside your own threads
+- `Store full conversations`: additionally pulls in visible foreign reply context for matching replies and threads
 - `Check post changes` inspects a Bluesky or Mu post URL for Mu-compatible edit metadata and compares the original and current text
 - The normal user workflow is:
-1. Choose the range: all posts, a single year, or a custom date range
-2. Choose the archive type: full archive, own posts only, or my threads complete
-3. Use `Load next wave` to fetch the next posts and images into the current archive session
+1. Choose the source account, the range, and the archive type
+2. Decide whether full conversation context should be included
+3. Use `Load archive` to fetch posts and assets into the current archive session
 4. Pause or cancel if needed and continue later from the same checkpoint
 5. Use `Save archive as ZIP` to store a technical backup containing posts, metadata, and images
-6. Use `Generate HTML archive` to create an offline-readable version with search, filters, and collapsible threads
-7. Use `Generate PDF volumes` to create a paginated PDF version from that same loaded archive
-- For large accounts, the export should ideally be done on a desktop device with plenty of free storage and in multiple waves
+6. Use `Generate HTML archive`, `Generate compact HTML`, or `Generate PDF volumes` to create readable outputs from that already loaded archive state
+7. Use the single-thread tools below when you want to load one thread URL, check post edits, and export just that loaded thread
+- For large accounts, the export should ideally be done on a desktop device with plenty of free storage
+- If the embedded HTML archive becomes too large, Threadline recommends using the archive export together with the PowerShell script `scripts/convert-threadline-archive-to-html.ps1`
+- A standalone PowerShell bulk archiver now lives in `scripts/archive-threadline.ps1`, and the newer SQLite-based variant lives in `scripts/archive-threadline-sqlite.ps1`
+- Their documentation and sample configs live in `scripts/README.threadline-archiver.md`, `scripts/threadline-archiver.config.sample.json`, and `scripts/threadline-archiver-sqlite.config.sample.json`
+- The PowerShell archiver is designed to emit the **same archive JSON contract** as the browser app, so its ZIP output can still be loaded back into Threadline
+- For large archives, the SQLite-based archiver plus its separate viewer script are usually the better route than pushing everything through the browser
+- The script:
+- accepts either a Threadline archive ZIP or an already unpacked archive folder
+- generates a local HTML archive from it
+- stages images, avatars, and link-card thumbnails into `archive-assets/` for the generated HTML
+- stays independent of browser limits for very large single-file HTML exports
+- Example call:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to-html.ps1 `
+  -ArchiveSourcePath "C:\Path\to\threadline-archive-....zip"
+```
+
+- Optional with a custom output directory:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to-html.ps1 `
+  -ArchiveSourcePath "C:\Path\to\threadline-archive-....zip" `
+  -OutputDirectory "C:\Path\to\my-html-archive" `
+  -Force
+```
+
+- It can also work directly on an unpacked archive folder and write the HTML file there:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to-html.ps1 `
+  -ArchiveSourcePath "C:\Path\to\threadline-archive-folder"
+```
+
+- Optional: `-InlineAssets` embeds avatars, images, and link-card thumbnails directly into the HTML as data URLs. The converter uses a conservative recommendation of about 150 MB of source assets unless you override it with `-Force`.
+- By default, the converter reads posts directly from `threadline-archive.sqlite`. Use `-UsePostsJson` only when you explicitly want the legacy `posts.json` fallback.
+
+- The result is a folder containing `manifest.json`, `threadline-archive.sqlite`, optional `posts.json`, all assets, and a generated HTML file
 
 ## Publishing To Bluesky
 

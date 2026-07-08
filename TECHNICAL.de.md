@@ -55,6 +55,29 @@ flowchart TD
     K --> K3["Anhänge / Bilder"]
 ```
 
+## PowerShell-Archiver
+
+Für große Account-Archive hat Threadline jetzt eine klare Zwei-Teil-Richtung:
+
+- die Browser-PWA bleibt die interaktive Oberfläche
+- ein eigenständiger PowerShell-Archiver übernimmt lange Bulk-Abrufe
+
+Die zentrale technische Bedingung ist die Kompatibilität:
+
+**Der PowerShell-Archiver muss denselben Archiv-JSON-Vertrag erzeugen, den die Browser-App heute bereits exportiert.**
+
+Das bedeutet:
+
+- dieselbe Struktur für `manifest.json` und `posts.json`
+- dieselben Asset-Ordnerkonventionen
+- ZIP-Ausgaben, die sich weiterhin direkt wieder in Threadline importieren lassen
+- Kompatibilität mit `scripts/convert-threadline-archive-to-html.ps1`
+
+Script und Dokumentation für dieses Tool liegen hier:
+
+- `scripts/archive-threadline.ps1`
+- `scripts/README.threadline-archiver.de.md`
+
 ## Login Und Auth
 
 ### Was beim Login passiert

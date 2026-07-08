@@ -201,21 +201,61 @@ Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erz
 
 ### Account-Archiv
 
-- Über den eigenen Bereich `Account-Archiv` können die eigenen Bluesky-Posts samt Bildern als Archiv gesichert werden
+- Über den Bereich `Account-Archiv` können das eigene Bluesky-Konto oder ein anderes erreichbares Account samt Bildern als Archiv gesichert werden
+- Für sehr große Archive entwickelt sich Threadline schrittweise in Richtung einer Aufteilung: interaktive Filter und Vorschau im Browser, lange Schwerlast-Abrufe in PowerShell
+- Vor dem Laden lassen sich Quelle, Zeitraum, Archivtyp und optionaler Konversationskontext festlegen
 - Beim Laden kann zusätzlich der `Archivtyp` gewählt werden:
 - `Voll-Archiv`: lädt alle eigenen Posts und alle eigenen Replies, auch in fremden Threads
 - `Nur eigene Postings`: lädt eigene Top-Level-Posts und eigene Replies nur in eigenen Threads, aber keine eigenen Replies in fremden Threads
 - `Eigene Threads komplett`: lädt eigene Posts, eigene Replies in diesen Threads und zusätzlich Antworten fremder Accounts innerhalb dieser eigenen Threads
+- `Gesamte Konversationen mitspeichern`: ergänzt passenden sichtbaren Antwortkontext und fremde Antwortzweige für Replies und Threads
 - `Post-Änderung prüfen` untersucht eine Bluesky- oder Mu-Posting-URL auf Mu-kompatible Bearbeitungsmetadaten und vergleicht Originaltext und aktuellen Text
 - Der Ablauf für normale Nutzung ist:
-1. Zeitraum festlegen: alles, ein Jahr oder ein eigener Datumsbereich
-2. Archivtyp festlegen: Voll-Archiv, Nur eigene Postings oder Eigene Threads komplett
-3. Mit `Nächste Welle laden` die nächsten Posts und Bilder in die aktuelle Archiv-Sitzung holen
+1. Quelle, Zeitraum und Archivtyp festlegen
+2. Entscheiden, ob zusätzlich ganzer Konversationskontext mitgespeichert werden soll
+3. Mit `Archiv laden` Posts und Assets in die aktuelle Archiv-Sitzung holen
 4. Bei Bedarf pausieren oder abbrechen und später an derselben Stelle fortsetzen
 5. Mit `Archiv als ZIP sichern` ein technisches Backup aus Posts, Metadaten und Bildern speichern
-6. Mit `HTML-Archiv erzeugen` eine offline-fähige Lesefassung mit Suche, Filtern und aufklappbaren Threads erzeugen
-7. Mit `PDF-Bände erzeugen` daraus zusätzlich eine paginierte PDF-Fassung erzeugen
-- Für große Accounts sollte der Export am besten auf einem Desktop-Gerät mit viel freiem Speicher in mehreren Wellen durchgeführt werden
+6. Mit `HTML-Archiv erzeugen`, `Kompaktes HTML erzeugen` oder `PDF-Bände erzeugen` daraus Lesefassungen aus dem bereits geladenen Stand bauen
+7. Für Einzel-Threads darunter die URL-Werkzeuge nutzen, um einen einzelnen Thread zu laden, auf Änderungen zu prüfen und genau diesen Bestand zu exportieren
+- Für große Accounts sollte der Export am besten auf einem Desktop-Gerät mit viel freiem Speicher durchgeführt werden
+- Wenn das eingebettete HTML-Archiv zu groß wird, empfiehlt Threadline stattdessen den Archiv-Export plus PowerShell-Script `scripts/convert-threadline-archive-to-html.ps1`
+- Ein eigenständiger PowerShell-Bulk-Archiver liegt unter `scripts/archive-threadline.ps1`, dazu kommt die neuere SQLite-Variante `scripts/archive-threadline-sqlite.ps1`
+- Dokumentation und Beispiel-Konfiguration dazu liegen unter `scripts/README.threadline-archiver.de.md`, `scripts/threadline-archiver.config.sample.json` und `scripts/threadline-archiver-sqlite.config.sample.json`
+- Der PowerShell-Archiver soll ausdrücklich **denselben Archiv-JSON-Vertrag** erzeugen wie die Browser-App, damit seine ZIP-Ausgabe weiterhin direkt in Threadline geladen werden kann
+- Für große Archive ist die SQLite-Variante mitsamt separatem Viewer in der Regel die bessere Route als ein reiner Browser-Lauf
+- Das Script:
+- akzeptiert entweder ein Threadline-Archiv-ZIP oder einen bereits entpackten Archiv-Ordner
+- erzeugt daraus ein lokales HTML-Archiv
+- legt Bilder, Avatare und Link-Card-Vorschaubilder fuer das erzeugte HTML unter `archive-assets/` ab
+- bleibt damit unabhängig von Browser-Grenzen für riesige Ein-Datei-HTMLs
+- Beispielaufruf:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to-html.ps1 `
+  -ArchiveSourcePath "C:\Pfad\zu\threadline-archive-....zip"
+```
+
+- Optional mit eigenem Zielordner:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to-html.ps1 `
+  -ArchiveSourcePath "C:\Pfad\zu\threadline-archive-....zip" `
+  -OutputDirectory "C:\Pfad\zu\mein-html-archiv" `
+  -Force
+```
+
+- Es kann auch direkt auf einem bereits entpackten Archiv-Ordner arbeiten und die HTML-Datei dort erzeugen:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to-html.ps1 `
+  -ArchiveSourcePath "C:\Pfad\zu\threadline-archive-ordner"
+```
+
+- Optional: `-InlineAssets` bettet Avatare, Bilder und Link-Card-Vorschaubilder direkt als Data-URLs in das HTML ein. Der Konverter verwendet dafuer eine konservative Empfehlung von etwa 150 MB Quelldaten, ausser du erzwingst es mit `-Force`.
+- Standardmaessig liest der Konverter die Posts direkt aus `threadline-archive.sqlite`. Mit `-UsePostsJson` laesst sich bei Bedarf explizit auf `posts.json` als Fallback umschalten.
+
+- Das Ergebnis ist ein Ordner mit `manifest.json`, `threadline-archive.sqlite`, optional `posts.json`, allen Assets und einer erzeugten HTML-Datei
 
 ## Posting Auf Bluesky
 

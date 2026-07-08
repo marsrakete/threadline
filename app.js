@@ -1,4 +1,4 @@
-import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./post-languages.js";
+﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./post-languages.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./translations.js";
 
 const MAX_POST_LENGTH = 300;
@@ -55,8 +55,8 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.176",
-  cacheVersion: "v195",
+  appVersion: "0.4.179",
+  cacheVersion: "v198",
   label: "Add analysis patterns and PDF export",
 });
 
@@ -187,6 +187,7 @@ const tipsPanel = document.querySelector(".tips-panel");
 const tipsVisibleToggle = document.querySelector("#tips-visible-toggle");
 const altTextRequiredToggle = document.querySelector("#alt-text-required-toggle");
 const imageAutoResizeSelect = document.querySelector("#image-auto-resize-select");
+const archiveExpertModeToggle = document.querySelector("#archive-expert-mode-toggle");
 const exportSettingsButton = document.querySelector("#export-settings-button");
 const importSettingsButton = document.querySelector("#import-settings-button");
 const importSettingsInput = document.querySelector("#import-settings-input");
@@ -315,6 +316,7 @@ const archiveFromInput = document.querySelector("#archive-from-input");
 const archiveToWrap = document.querySelector("#archive-to-wrap");
 const archiveToInput = document.querySelector("#archive-to-input");
 const archiveWaveSizeSelect = document.querySelector("#archive-wave-size-select");
+const archiveConversationContextToggle = document.querySelector("#archive-conversation-context-toggle");
 const archiveBandSizeSelect = document.querySelector("#archive-band-size-select");
 const archiveImageSizeSelect = document.querySelector("#archive-image-size-select");
 const archiveMetricsToggle = document.querySelector("#archive-metrics-toggle");
@@ -333,6 +335,8 @@ const archiveExportPdfButton = document.querySelector("#archive-export-pdf-butto
 const archiveActionsExportHtmlButton = document.querySelector("#archive-actions-export-html-button");
 const archiveActionsExportHtmlCompactButton = document.querySelector("#archive-actions-export-html-compact-button");
 const archiveActionsExportPdfButton = document.querySelector("#archive-actions-export-pdf-button");
+const archiveZipHtmlScriptCommand = document.querySelector("#archive-zip-html-script-command");
+const archiveZipHtmlScriptCopyButton = document.querySelector("#archive-zip-html-script-copy-button");
 const archiveImportButton = document.querySelector("#archive-import-button");
 const archiveResetButton = document.querySelector("#archive-reset-button");
 const archiveMediaActorInput = document.querySelector("#archive-media-actor-input");
@@ -466,6 +470,7 @@ let currentTipIndex = 0;
 let tipsVisible = true;
 let altTextRequired = true;
 let imageAutoResizeMode = "off";
+let archiveExpertMode = false;
 let themeMode = "light";
 let composerReplyTarget = null;
 let confirmDialogValues = {
@@ -1556,7 +1561,7 @@ async function loadNetworkFocusDetails(did) {
         if (networkSelectedDid === actorDid) {
           const selectedProfile = networkNodes.get(actorDid) || null;
           const actorLabel = selectedProfile ? getProfileLabel(selectedProfile) : "";
-          setNetworkStatus([step, actorLabel || detail].filter(Boolean).join(" · ") || t("networkFocusLoading"));
+          setNetworkStatus([step, actorLabel || detail].filter(Boolean).join(" Â· ") || t("networkFocusLoading"));
         }
       },
     });
@@ -1609,7 +1614,7 @@ async function loadNetworkCommonMutuals(actorDid) {
         const step = String(progress?.step || "").trim();
         const detail = String(progress?.detail || "").trim();
         if (networkSelectedDid === focusDid) {
-          setNetworkStatus([step, detail].filter(Boolean).join(" · ") || t("networkCommonMutualsLoading"));
+          setNetworkStatus([step, detail].filter(Boolean).join(" Â· ") || t("networkCommonMutualsLoading"));
         }
       },
     });
@@ -1716,7 +1721,7 @@ function renderAccountSwitcher() {
       state === "available" ? t("accountStateAvailable") : "",
       state === "signed-out" ? t("accountStateSignedOut") : "",
       !account.hasStoredPassword && !account.hasSession ? t("accountNeedsLoginShort") : "",
-    ].filter(Boolean).join(" · ");
+    ].filter(Boolean).join(" Â· ");
 
     button.append(avatar, label);
     button.addEventListener("click", async () => {
@@ -2141,21 +2146,258 @@ function applyHashtagPaneContext() {
     return;
   }
 
+  const hashtagsEyebrow = hashtagsPane.querySelector(".eyebrow");
+  const hashtagsTitle = hashtagsPane.querySelector(".tips-title");
+
   if (isArchiveHashtagContext()) {
     archiveHashtagSlot?.replaceChildren(hashtagsPane);
     hashtagsPane.classList.add("is-archive-context");
     setElementVisibility(hashtagPlacementLabel, false);
     setElementVisibility(archiveHashtagScopeWrap, true);
     setElementVisibility(archiveHashtagNote, true);
+    if (hashtagsEyebrow) {
+      hashtagsEyebrow.textContent = t("archiveHashtagEyebrow");
+    }
+    if (hashtagsTitle) {
+      hashtagsTitle.textContent = t("archiveHashtagTitle");
+    }
   } else {
     composerColumn?.appendChild(hashtagsPane);
     hashtagsPane.classList.remove("is-archive-context");
     setElementVisibility(hashtagPlacementLabel, true);
     setElementVisibility(archiveHashtagScopeWrap, false);
     setElementVisibility(archiveHashtagNote, false);
+    if (hashtagsEyebrow) {
+      hashtagsEyebrow.textContent = t("hashtagsEyebrow");
+    }
+    if (hashtagsTitle) {
+      hashtagsTitle.textContent = t("hashtagsTitle");
+    }
   }
 
   renderHashtagCloud();
+}
+
+function createArchiveCardHeading({ eyebrowKey, eyebrowText, titleKey, titleText, helpTopic = "" } = {}) {
+  const fragment = document.createDocumentFragment();
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "eyebrow";
+  if (eyebrowKey) {
+    eyebrow.dataset.i18n = eyebrowKey;
+  }
+  eyebrow.textContent = eyebrowText || "";
+  fragment.appendChild(eyebrow);
+
+  const heading = document.createElement("div");
+  heading.className = "help-heading";
+  const title = document.createElement("h3");
+  if (titleKey) {
+    title.dataset.i18n = titleKey;
+  }
+  title.textContent = titleText || "";
+  heading.appendChild(title);
+
+  if (helpTopic) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "help-trigger";
+    button.dataset.helpTopic = helpTopic;
+    button.setAttribute("aria-label", "Hilfe zu diesem Bereich");
+    button.setAttribute("title", "Hilfe zu diesem Bereich");
+    button.textContent = "?";
+    heading.appendChild(button);
+  }
+
+  fragment.appendChild(heading);
+  return fragment;
+}
+
+function ensureArchiveWorkspaceLayout() {
+  const archiveGrid = archiveWorkspace?.querySelector(".archive-grid");
+  if (!archiveGrid) {
+    return;
+  }
+
+  archiveGrid.classList.add("archive-layout-grid");
+
+  const scopeCard = archiveSourceInput?.closest(".archive-card");
+  const pdfCard = archiveBandSizeSelect?.closest(".archive-card");
+  const loadCard = archiveNextWaveButton?.closest(".archive-card");
+  const mediaCard = archiveMediaActorInput?.closest(".archive-card");
+  const progressCard = archiveProgressTitle?.closest(".archive-card");
+  const threadCard = archiveThreadUrlInput?.closest(".archive-card");
+  const specCard = archiveSpecContent?.closest(".archive-card");
+  const hashtagSlot = archiveHashtagSlot;
+  const waveSizeLabel = archiveWaveSizeSelect?.closest("label");
+  const startHint = document.querySelector("#archive-start-hint");
+  const exportZipButton = document.querySelector("#archive-export-zip-button");
+  const exportHtmlButton = archiveActionsExportHtmlButton;
+  const exportHtmlCompactButton = archiveActionsExportHtmlCompactButton;
+  const exportPdfButton = archiveActionsExportPdfButton;
+  const importButton = archiveImportButton;
+  const resetButton = archiveResetButton;
+  const actionsNote = loadCard?.querySelector('[data-i18n="archiveActionsNote"]')
+    || archiveGrid.querySelector("#archive-export-card [data-i18n='archiveActionsNote']");
+  const threadScriptHelp = threadCard?.querySelector(".archive-script-help");
+  const progressCompactButtonRow = archiveProgressExportHtmlCompactButton?.closest(".archive-run-controls");
+  const hiddenProgressScriptHelp = progressCard?.querySelector(".archive-script-help");
+
+  if (!scopeCard || !pdfCard || !loadCard || !mediaCard || !progressCard || !threadCard || !specCard || !hashtagSlot || !waveSizeLabel || !startHint || !exportZipButton || !exportHtmlButton || !exportHtmlCompactButton || !exportPdfButton || !importButton || !resetButton) {
+    return;
+  }
+
+  progressCompactButtonRow?.remove();
+  hiddenProgressScriptHelp?.remove();
+
+  scopeCard.classList.add("archive-content-card");
+  loadCard.classList.remove("archive-actions-card");
+  loadCard.classList.add("archive-load-card");
+  pdfCard.classList.add("archive-export-config-card");
+  threadCard.classList.remove("archive-actions-card");
+  mediaCard.classList.remove("archive-actions-card");
+
+  const scopeEyebrow = scopeCard.querySelector(".eyebrow");
+  if (scopeEyebrow) {
+    scopeEyebrow.dataset.i18n = "archiveContentEyebrow";
+    scopeEyebrow.textContent = t("archiveContentEyebrow");
+  }
+  const scopeTitle = scopeCard.querySelector("h3");
+  if (scopeTitle) {
+    scopeTitle.dataset.i18n = "archiveContentTitle";
+    scopeTitle.textContent = t("archiveContentTitle");
+  }
+
+  const pdfEyebrow = pdfCard.querySelector(".eyebrow");
+  if (pdfEyebrow) {
+    pdfEyebrow.dataset.i18n = "archiveExportConfigEyebrow";
+    pdfEyebrow.textContent = t("archiveExportConfigEyebrow");
+  }
+  const pdfTitle = pdfCard.querySelector("h3");
+  if (pdfTitle) {
+    pdfTitle.dataset.i18n = "archiveExportConfigTitle";
+    pdfTitle.textContent = t("archiveExportConfigTitle");
+  }
+
+  const loadEyebrow = loadCard.querySelector(".eyebrow");
+  if (loadEyebrow) {
+    loadEyebrow.dataset.i18n = "archiveLoadEyebrow";
+    loadEyebrow.textContent = t("archiveLoadEyebrow");
+  }
+  const loadTitle = loadCard.querySelector("h3");
+  if (loadTitle) {
+    loadTitle.dataset.i18n = "archiveLoadTitle";
+    loadTitle.textContent = t("archiveLoadTitle");
+  }
+
+  let exportCard = archiveGrid.querySelector("#archive-export-card");
+  if (!exportCard) {
+    exportCard = document.createElement("section");
+    exportCard.id = "archive-export-card";
+    exportCard.className = "archive-card archive-export-card";
+    exportCard.appendChild(createArchiveCardHeading({
+      eyebrowKey: "archiveExportEyebrow",
+      eyebrowText: t("archiveExportEyebrow"),
+      titleKey: "archiveExportTitle",
+      titleText: t("archiveExportTitle"),
+      helpTopic: "archive_actions",
+    }));
+    const actions = document.createElement("div");
+    actions.className = "archive-actions";
+    exportCard.appendChild(actions);
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.dataset.i18n = "archiveActionsNote";
+    note.textContent = t("archiveActionsNote");
+    exportCard.appendChild(note);
+  }
+  const exportActions = exportCard.querySelector(".archive-actions");
+  const exportNote = exportCard.querySelector('[data-i18n="archiveActionsNote"]');
+  if (actionsNote?.parentElement === loadCard) {
+    actionsNote.remove();
+  }
+
+  let toolsHeading = archiveGrid.querySelector("#archive-tools-heading");
+  if (!toolsHeading) {
+    toolsHeading = document.createElement("div");
+    toolsHeading.id = "archive-tools-heading";
+    toolsHeading.className = "archive-tools-heading";
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "eyebrow";
+    eyebrow.dataset.i18n = "archiveToolsEyebrow";
+    eyebrow.textContent = t("archiveToolsEyebrow");
+    const title = document.createElement("h3");
+    title.dataset.i18n = "archiveToolsTitle";
+    title.textContent = t("archiveToolsTitle");
+    toolsHeading.append(eyebrow, title);
+  }
+
+  let loadNote = loadCard.querySelector('[data-i18n="archiveLoadNote"]');
+  if (!loadNote) {
+    loadNote = document.createElement("p");
+    loadNote.className = "settings-note";
+    loadNote.dataset.i18n = "archiveLoadNote";
+    loadNote.textContent = t("archiveLoadNote");
+  }
+  let waveSizeHelp = loadCard.querySelector('[data-i18n="archiveWaveSizeHelp"]');
+  if (!waveSizeHelp) {
+    waveSizeHelp = document.createElement("p");
+    waveSizeHelp.className = "settings-note";
+    waveSizeHelp.dataset.i18n = "archiveWaveSizeHelp";
+    waveSizeHelp.textContent = t("archiveWaveSizeHelp");
+  }
+
+  let contentLayout = scopeCard.querySelector(".archive-content-layout");
+  let contentMain = scopeCard.querySelector(".archive-content-main");
+  let contentFilters = scopeCard.querySelector(".archive-content-filters");
+  if (!contentLayout || !contentMain || !contentFilters) {
+    contentLayout = document.createElement("div");
+    contentLayout.className = "archive-content-layout";
+    contentMain = document.createElement("div");
+    contentMain.className = "archive-content-main";
+    contentFilters = document.createElement("div");
+    contentFilters.className = "archive-content-filters";
+
+    const scopeChildren = Array.from(scopeCard.children).filter((child) => !child.classList.contains("eyebrow") && !child.classList.contains("help-heading"));
+    scopeChildren.forEach((child) => {
+      if (child !== hashtagSlot) {
+        contentMain.appendChild(child);
+      }
+    });
+    contentFilters.appendChild(hashtagSlot);
+    scopeCard.append(contentLayout);
+    contentLayout.append(contentMain, contentFilters);
+  } else if (hashtagSlot.parentElement !== contentFilters) {
+    contentFilters.appendChild(hashtagSlot);
+  }
+
+  const loadChildren = Array.from(loadCard.children).filter((child) => !child.classList.contains("eyebrow") && !child.classList.contains("help-heading"));
+  const existingLoadActions = loadCard.querySelector(".archive-actions");
+  if (existingLoadActions) {
+    existingLoadActions.remove();
+  }
+  loadChildren.forEach((child) => {
+    if (child !== startHint && child !== waveSizeLabel && child !== waveSizeHelp && child !== loadNote && child !== actionsNote) {
+      child.remove();
+    }
+  });
+  const loadActions = document.createElement("div");
+  loadActions.className = "archive-actions";
+  loadActions.append(archiveNextWaveButton, importButton, resetButton);
+  loadCard.append(startHint, waveSizeLabel, waveSizeHelp, loadActions, loadNote);
+
+  if (exportActions) {
+    exportActions.append(exportZipButton, exportHtmlButton, exportHtmlCompactButton, exportPdfButton);
+  }
+  if (exportNote) {
+    exportNote.textContent = t("archiveActionsNote");
+  }
+
+  threadScriptHelp?.remove();
+  if (threadScriptHelp && threadScriptHelp.parentElement !== specCard) {
+    specCard.appendChild(threadScriptHelp);
+  }
+
+  archiveGrid.append(progressCard, scopeCard, loadCard, pdfCard, exportCard, toolsHeading, threadCard, mediaCard, specCard);
 }
 
 function showArchiveWorkspace() {
@@ -2170,6 +2412,7 @@ function showArchiveWorkspace() {
   analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   archiveWorkspace.hidden = false;
+  ensureArchiveWorkspaceLayout();
   applyHashtagPaneContext();
   updateAuthButtons();
   renderArchiveWorkspace();
@@ -2364,8 +2607,8 @@ function createAnalysisCorpus(texts = []) {
   const joinedText = normalizedPosts.join("\n");
   const withoutUrls = joinedText.replace(/https?:\/\/\S+/giu, " ");
   const lowercase = withoutUrls.toLowerCase();
-  const words = lowercase.match(/\p{L}+(?:['’-]\p{L}+)*/gu) || [];
-  const tokensWithNumbers = lowercase.match(/\p{L}+(?:['’-]\p{L}+)*|\p{N}+/gu) || [];
+  const words = lowercase.match(/\p{L}+(?:['â€™-]\p{L}+)*/gu) || [];
+  const tokensWithNumbers = lowercase.match(/\p{L}+(?:['â€™-]\p{L}+)*|\p{N}+/gu) || [];
   const sentences = withoutUrls
     .split(/[.!?]+/u)
     .map((entry) => entry.trim())
@@ -2429,15 +2672,15 @@ function createAnalysisCorpus(texts = []) {
     [":", /:/g],
     [";", /;/g],
     ["()", /[()]/g],
-    ["-", /[-–—]/g],
-    ['"', /["“”„]/g],
+    ["-", /[-â€“â€”]/g],
+    ['"', /["â€œâ€â€ž]/g],
   ];
   punctuationDefinitions.forEach(([label, regex]) => {
     punctuationFrequency.set(label, countRegexMatches(joinedText, regex));
   });
 
   normalizedPosts.forEach((post) => {
-    const postWords = post.toLowerCase().match(/\p{L}+(?:['’-]\p{L}+)*/gu) || [];
+    const postWords = post.toLowerCase().match(/\p{L}+(?:['â€™-]\p{L}+)*/gu) || [];
     if (postWords.length > 0) {
       const start = postWords.slice(0, Math.min(2, postWords.length)).join(" ");
       const end = postWords.slice(Math.max(0, postWords.length - 2)).join(" ");
@@ -2728,7 +2971,7 @@ function formatAnalysisTopTemporalEntries(entries = []) {
   }
   return entries
     .map((entry) => `${entry.label} ${formatAnalysisPercent(entry.share)}`)
-    .join(" · ");
+    .join(" Â· ");
 }
 
 function startOfUtcDay(timestamp) {
@@ -3070,7 +3313,7 @@ function splitAnalysisTextsIntoWordChunks(texts = [], minWords = 180, maxChunks 
     if (!normalized) {
       return;
     }
-    const words = normalized.toLowerCase().match(/\p{L}+(?:['’-]\p{L}+)*/gu) || [];
+    const words = normalized.toLowerCase().match(/\p{L}+(?:['â€™-]\p{L}+)*/gu) || [];
     if (!words.length) {
       return;
     }
@@ -3177,6 +3420,14 @@ function normalizeAnalysisAccountData(result = null) {
   const temporal = createAnalysisTemporalProfile(posts);
   const network = result.network && typeof result.network === "object" ? result.network : {};
   const markers = result.markers && typeof result.markers === "object" ? result.markers : {};
+  const rawNetworkLoadState = String(network.loadState || "").trim();
+  const inferredNetworkLoadState = ["complete", "partial", "failed", "legacy"].includes(rawNetworkLoadState)
+    ? rawNetworkLoadState
+    : (
+        Array.isArray(network.followerDids) && Array.isArray(network.followDids) && Array.isArray(network.mutualDids)
+          ? "complete"
+          : "legacy"
+      );
   return {
     profile: {
       did: String(profile.did || "").trim(),
@@ -3213,6 +3464,8 @@ function normalizeAnalysisAccountData(result = null) {
       mutes: Array.isArray(network.mutes) ? network.mutes.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
       blocks: Array.isArray(network.blocks) ? network.blocks.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
       muteBlockSource: String(network.muteBlockSource || "unavailable").trim() || "unavailable",
+      loadState: inferredNetworkLoadState,
+      warnings: Array.isArray(network.warnings) ? network.warnings.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
     },
     markers: {
       topMentions: Array.isArray(markers.topMentions) ? markers.topMentions : [],
@@ -3269,6 +3522,8 @@ function getPersistableAnalysisAccount(account = null) {
       mutes: Array.isArray(account.network?.mutes) ? account.network.mutes.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
       blocks: Array.isArray(account.network?.blocks) ? account.network.blocks.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
       muteBlockSource: String(account.network?.muteBlockSource || "unavailable").trim() || "unavailable",
+      loadState: ["complete", "partial", "failed"].includes(String(account.network?.loadState || "").trim()) ? String(account.network.loadState).trim() : "legacy",
+      warnings: Array.isArray(account.network?.warnings) ? account.network.warnings.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
     },
     markers: {
       topMentions: Array.isArray(account.markers?.topMentions) ? account.markers.topMentions : [],
@@ -3302,6 +3557,27 @@ function getPersistableAnalysisState() {
   };
 }
 
+function analysisAccountNeedsNetworkRefresh(rawAccount = null) {
+  if (!rawAccount || typeof rawAccount !== "object") {
+    return false;
+  }
+  const network = rawAccount.network && typeof rawAccount.network === "object" ? rawAccount.network : null;
+  if (!network) {
+    return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(network, "loadState")) {
+    return false;
+  }
+  const hasPersistedNetworkArrays = (
+    Object.prototype.hasOwnProperty.call(network, "followerDids")
+    || Object.prototype.hasOwnProperty.call(network, "followDids")
+    || Object.prototype.hasOwnProperty.call(network, "mutualDids")
+    || Object.prototype.hasOwnProperty.call(network, "warnings")
+  );
+  const expectedNetwork = (Number(rawAccount.profile?.followersCount) || 0) > 0 || (Number(rawAccount.profile?.followsCount) || 0) > 0;
+  return expectedNetwork && !hasPersistedNetworkArrays;
+}
+
 function restorePersistedAnalysisState(state = null) {
   const persisted = state && typeof state === "object" ? state : {};
   if (analysisAccountAInput) {
@@ -3332,9 +3608,13 @@ function restorePersistedAnalysisState(state = null) {
   }
   analysisAccountDataA = normalizeAnalysisAccountData(persisted.accountA);
   analysisAccountDataB = normalizeAnalysisAccountData(persisted.accountB);
-  analysisComparisonResult = (analysisAccountDataA && analysisAccountDataB)
+  const hasLegacyNetworkState = analysisAccountNeedsNetworkRefresh(persisted.accountA) || analysisAccountNeedsNetworkRefresh(persisted.accountB);
+  analysisComparisonResult = (!hasLegacyNetworkState && analysisAccountDataA && analysisAccountDataB)
     ? compareAnalysisAccountsData(analysisAccountDataA, analysisAccountDataB)
     : null;
+  if (hasLegacyNetworkState) {
+    analysisStatusLine = t("analysisNetworkReloadNeeded");
+  }
 }
 
 function compareAnalysisAccountsData(leftAccount, rightAccount) {
@@ -3888,31 +4168,53 @@ function createAnalysisResolvedProfileList(entries = [], emptyKey = "analysisPat
   return list;
 }
 
+function buildAnalysisNetworkPatternDefinitions() {
+  return [
+    { title: t("analysisNetworkMentionsTitle"), key: "topMentions", resolvedProfiles: true },
+    { title: t("analysisNetworkDomainsTitle"), key: "topDomains" },
+    { title: t("analysisNetworkHashtagsTitle"), key: "topHashtags" },
+    { title: t("analysisNetworkReplyTargetsTitle"), key: "topReplyTargets", resolvedProfiles: true },
+    { title: t("analysisNetworkQuoteTargetsTitle"), key: "topQuoteTargets", resolvedProfiles: true },
+    { title: t("analysisNetworkLanguagesTitle"), key: "topLanguages" },
+    {
+      title: t("analysisNetworkMediaSimilarity"),
+      createNode: (account) => createAnalysisStatList([
+        {
+          label: t("analysisNetworkMediaSimilarity"),
+          value: account?.markers?.mediaPostShare || 0,
+          formatter: "percent",
+        },
+      ], "percent", "analysisPatternsNoData"),
+    },
+  ];
+}
+
 function getAnalysisNetworkTableRows() {
   if (!analysisAccountDataA || !analysisAccountDataB || !analysisComparisonResult) {
     return [];
   }
   const comparison = analysisComparisonResult;
+  const networkLoaded = analysisAccountDataA.network?.loadState === "complete" && analysisAccountDataB.network?.loadState === "complete";
   const formatOverlap = (summary) => `${formatCount(summary.sharedCount)} / ${formatCount(summary.unionCount)} · ${formatAnalysisPercent(summary.jaccard)}`;
   const moderationAvailability = (source) => source === "saved_account" ? t("analysisNetworkModerationAvailable") : t("analysisNetworkModerationUnavailable");
   return [
     {
       label: t("analysisNetworkFollowersOverlap"),
-      left: formatCount(comparison.followerOverlap.leftCount),
-      right: formatCount(comparison.followerOverlap.rightCount),
-      diff: formatOverlap(comparison.followerOverlap),
+      left: networkLoaded ? formatCount(comparison.followerOverlap.leftCount) : t("analysisNetworkNotAvailable"),
+      right: networkLoaded ? formatCount(comparison.followerOverlap.rightCount) : t("analysisNetworkNotAvailable"),
+      diff: networkLoaded ? formatOverlap(comparison.followerOverlap) : t("analysisNetworkLoadIncomplete"),
     },
     {
       label: t("analysisNetworkFollowsOverlap"),
-      left: formatCount(comparison.followingOverlap.leftCount),
-      right: formatCount(comparison.followingOverlap.rightCount),
-      diff: formatOverlap(comparison.followingOverlap),
+      left: networkLoaded ? formatCount(comparison.followingOverlap.leftCount) : t("analysisNetworkNotAvailable"),
+      right: networkLoaded ? formatCount(comparison.followingOverlap.rightCount) : t("analysisNetworkNotAvailable"),
+      diff: networkLoaded ? formatOverlap(comparison.followingOverlap) : t("analysisNetworkLoadIncomplete"),
     },
     {
       label: t("analysisNetworkMutualsOverlap"),
-      left: formatCount(comparison.mutualOverlap.leftCount),
-      right: formatCount(comparison.mutualOverlap.rightCount),
-      diff: formatOverlap(comparison.mutualOverlap),
+      left: networkLoaded ? formatCount(comparison.mutualOverlap.leftCount) : t("analysisNetworkNotAvailable"),
+      right: networkLoaded ? formatCount(comparison.mutualOverlap.rightCount) : t("analysisNetworkNotAvailable"),
+      diff: networkLoaded ? formatOverlap(comparison.mutualOverlap) : t("analysisNetworkLoadIncomplete"),
     },
     {
       label: t("analysisNetworkDirectRelation"),
@@ -3992,10 +4294,15 @@ function renderAnalysisNetwork() {
   if (!analysisComparisonResult) {
     const note = document.createElement("p");
     note.className = "settings-note";
-    note.textContent = t("analysisNetworkEmpty");
+    note.textContent = analysisStatusLine === t("analysisNetworkReloadNeeded") ? t("analysisNetworkReloadNeeded") : t("analysisNetworkEmpty");
     analysisNetwork.appendChild(note);
     return;
   }
+
+  const networkWarnings = [
+    ...(analysisAccountDataA?.network?.warnings || []),
+    ...(analysisAccountDataB?.network?.warnings || []),
+  ];
 
   const summary = document.createElement("article");
   summary.className = "analysis-account-card";
@@ -4018,6 +4325,12 @@ function renderAnalysisNetwork() {
     summaryDetails.appendChild(item);
   });
   summary.append(summaryHeading, summaryNote, summaryDetails);
+  if (networkWarnings.length) {
+    const warning = document.createElement("p");
+    warning.className = "settings-note";
+    warning.textContent = `${t("analysisNetworkLoadIncomplete")} ${networkWarnings[0]}`;
+    summary.appendChild(warning);
+  }
   analysisNetwork.appendChild(summary);
 
   const table = document.createElement("table");
@@ -4034,25 +4347,19 @@ function renderAnalysisNetwork() {
   table.appendChild(body);
   analysisNetwork.appendChild(table);
 
-  const patternDefinitions = [
-    { title: t("analysisNetworkMentionsTitle"), key: "topMentions", resolvedProfiles: true },
-    { title: t("analysisNetworkDomainsTitle"), key: "topDomains" },
-    { title: t("analysisNetworkHashtagsTitle"), key: "topHashtags" },
-    { title: t("analysisNetworkReplyTargetsTitle"), key: "topReplyTargets", resolvedProfiles: true },
-    { title: t("analysisNetworkQuoteTargetsTitle"), key: "topQuoteTargets", resolvedProfiles: true },
-    { title: t("analysisNetworkLanguagesTitle"), key: "topLanguages" },
-  ];
-  patternDefinitions.forEach((definition) => {
+  buildAnalysisNetworkPatternDefinitions().forEach((definition) => {
     const createList = definition.resolvedProfiles
       ? createAnalysisResolvedProfileList
+      : definition.createNode
+      ? definition.createNode
       : createAnalysisSimpleChipList;
     analysisNetwork.appendChild(createAnalysisPatternCard(
       `${t("analysisAccountALabel")} - ${definition.title}`,
-      [createList(analysisAccountDataA?.markers?.[definition.key] || [], "analysisPatternsNoData")],
+      [createList(definition.key ? (analysisAccountDataA?.markers?.[definition.key] || []) : analysisAccountDataA, "analysisPatternsNoData")],
     ));
     analysisNetwork.appendChild(createAnalysisPatternCard(
       `${t("analysisAccountBLabel")} - ${definition.title}`,
-      [createList(analysisAccountDataB?.markers?.[definition.key] || [], "analysisPatternsNoData")],
+      [createList(definition.key ? (analysisAccountDataB?.markers?.[definition.key] || []) : analysisAccountDataB, "analysisPatternsNoData")],
     ));
   });
 }
@@ -4345,6 +4652,227 @@ function getAnalysisPdfScoreRows() {
   ];
 }
 
+function encodePdfHexString(value) {
+  const text = String(value || "");
+  let hex = "FEFF";
+  for (let index = 0; index < text.length; index += 1) {
+    hex += text.charCodeAt(index).toString(16).padStart(4, "0").toUpperCase();
+  }
+  return `<${hex}>`;
+}
+
+function createAnalysisTextPdfPages(options = {}) {
+  if (!analysisAccountDataA || !analysisAccountDataB || !analysisComparisonResult) {
+    return [];
+  }
+
+  const {
+    includeTemporalSection = true,
+    includeNetworkSection = true,
+    includeMetricsSection = true,
+    includePatternSection = true,
+  } = options;
+
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const marginX = 42;
+  const marginTop = 78;
+  const marginBottom = 46;
+  const contentWidth = pageWidth - (marginX * 2);
+  const pages = [];
+  const measureCanvas = document.createElement("canvas");
+  const measureContext = measureCanvas.getContext("2d");
+  let currentPage = [];
+  let cursorY = marginTop;
+
+  const startPage = () => {
+    currentPage = [];
+    pages.push(currentPage);
+    cursorY = marginTop;
+  };
+
+  const ensureSpace = (height) => {
+    if (!pages.length) {
+      startPage();
+      return;
+    }
+    if (cursorY + height > pageHeight - marginBottom) {
+      startPage();
+    }
+  };
+
+  const pushText = (text, options = {}) => {
+    const size = Number(options.size) || 10;
+    const font = options.font || "F1";
+    const color = options.color || [0.09, 0.14, 0.23];
+    const indent = Number(options.indent) || 0;
+    const lineHeight = options.lineHeight || Math.round(size * 1.35);
+    measureContext.font = `${font === "F2" ? "700" : "400"} ${size}px "Segoe UI", Aptos, sans-serif`;
+    const lines = buildWrappedPdfLines(measureContext, String(text || ""), Math.max(40, contentWidth - indent))
+      .map((line) => Array.isArray(line?.fragments)
+        ? line.fragments.map((fragment) => fragment.text).join("")
+        : String(line?.text || ""));
+    const height = Math.max(lineHeight, lines.length * lineHeight);
+    ensureSpace(height + (options.gapAfter || 0));
+    lines.forEach((line, index) => {
+      currentPage.push({
+        type: "text",
+        text: line,
+        x: marginX + indent,
+        y: cursorY + (index * lineHeight),
+        size,
+        font,
+        color,
+      });
+    });
+    cursorY += height + (options.gapAfter || 0);
+  };
+
+  const pushRule = (gapBefore = 4, gapAfter = 10) => {
+    ensureSpace(gapBefore + 8 + gapAfter);
+    cursorY += gapBefore;
+    currentPage.push({
+      type: "rule",
+      x1: marginX,
+      y1: cursorY,
+      x2: pageWidth - marginX,
+      y2: cursorY,
+      color: [0.84, 0.89, 0.95],
+      width: 1,
+    });
+    cursorY += 8 + gapAfter;
+  };
+
+  const pushSection = (title) => {
+    pushText(title, {
+      size: 15,
+      font: "F2",
+      color: [0.07, 0.13, 0.24],
+      gapAfter: 6,
+    });
+    pushRule(0, 8);
+  };
+
+  const pushBulletLines = (lines = [], indent = 14) => {
+    lines.forEach((line) => {
+      pushText(`- ${line}`, {
+        size: 9.6,
+        font: "F1",
+        indent,
+        gapAfter: 3,
+        color: [0.15, 0.24, 0.37],
+      });
+    });
+  };
+
+  const summaryRowsA = [
+    t("analysisSummaryPostsLoaded", { count: formatCount(analysisAccountDataA.posts.length) }),
+    t("analysisSummaryWordsLoaded", { count: formatCount(analysisAccountDataA.corpus.wordCount) }),
+    analysisAccountDataA.filters.rangeDays > 0 ? t("analysisSummaryRangeDays", { count: analysisAccountDataA.filters.rangeDays }) : t("analysisSummaryRangeAll"),
+    t("analysisSummaryPagesLoaded", { count: formatCount(analysisAccountDataA.stats.pages) }),
+    analysisAccountDataA.posts[0]?.createdAt ? t("analysisSummaryLatestPost", { value: formatHistoryTimestamp(analysisAccountDataA.posts[0].createdAt) }) : t("analysisSummaryNoPreview"),
+  ];
+  const summaryRowsB = [
+    t("analysisSummaryPostsLoaded", { count: formatCount(analysisAccountDataB.posts.length) }),
+    t("analysisSummaryWordsLoaded", { count: formatCount(analysisAccountDataB.corpus.wordCount) }),
+    analysisAccountDataB.filters.rangeDays > 0 ? t("analysisSummaryRangeDays", { count: analysisAccountDataB.filters.rangeDays }) : t("analysisSummaryRangeAll"),
+    t("analysisSummaryPagesLoaded", { count: formatCount(analysisAccountDataB.stats.pages) }),
+    analysisAccountDataB.posts[0]?.createdAt ? t("analysisSummaryLatestPost", { value: formatHistoryTimestamp(analysisAccountDataB.posts[0].createdAt) }) : t("analysisSummaryNoPreview"),
+  ];
+
+  pushSection(t("analysisPdfTitle"));
+  pushText(`${t("analysisAccountALabel")}: ${analysisAccountDataA.profile.displayName || analysisAccountDataA.profile.handle || analysisAccountDataA.profile.did}`, { size: 11.5, font: "F2", gapAfter: 4 });
+  pushBulletLines(summaryRowsA);
+  pushText(`${t("analysisAccountBLabel")}: ${analysisAccountDataB.profile.displayName || analysisAccountDataB.profile.handle || analysisAccountDataB.profile.did}`, { size: 11.5, font: "F2", gapAfter: 4, color: [0.07, 0.13, 0.24] });
+  pushBulletLines(summaryRowsB);
+
+  pushSection(t("analysisOverallScoreLabel"));
+  pushText(`${analysisComparisonResult.score}/100 - ${t(analysisComparisonResult.labelKey)}`, { size: 18, font: "F2", color: [0.09, 0.58, 0.50], gapAfter: 6 });
+  pushText(t("analysisOverallScoreSummary", { value: formatAnalysisPercent(analysisComparisonResult.robustnessMix) }), { size: 10.5, gapAfter: 4, color: [0.15, 0.24, 0.37] });
+  pushText(t(analysisComparisonResult.confidenceKey), { size: 9.5, gapAfter: 6, color: [0.35, 0.44, 0.57] });
+  pushBulletLines(getAnalysisPdfScoreRows().slice(1).map((row) => row.label), 10);
+
+  if (includeTemporalSection) {
+    pushSection(t("analysisTemporalTitle"));
+    pushBulletLines(getAnalysisPdfTemporalRows().map((row) => `${row.label}: ${t("analysisAccountALabel")} ${row.left} | ${t("analysisAccountBLabel")} ${row.right} | ${row.diff}`), 10);
+  }
+
+  if (includeNetworkSection) {
+    pushSection(t("analysisNetworkTitle"));
+    pushBulletLines(getAnalysisPdfNetworkRows().map((row) => `${row.label}: ${t("analysisAccountALabel")} ${row.left} | ${t("analysisAccountBLabel")} ${row.right} | ${row.diff}`), 10);
+  }
+
+  if (includeMetricsSection) {
+    pushSection(t("analysisMetricsTitle"));
+    pushBulletLines(getAnalysisPdfMetricRows().map((row) => `${row.label}: ${t("analysisAccountALabel")} ${row.left} | ${t("analysisAccountBLabel")} ${row.right} | ${t("analysisMetricsColumnDiff")} ${row.diff}`), 10);
+  }
+
+  if (includePatternSection) {
+    pushSection(t("analysisPdfPatternsTitle"));
+    buildAnalysisPdfPatternRows().forEach((row) => {
+      const sectionTitle = String(row.left?.title || "").replace(`${t("analysisAccountALabel")} - `, "");
+      pushText(sectionTitle, { size: 11.5, font: "F2", gapAfter: 4 });
+      pushText(t("analysisAccountALabel"), { size: 9.8, font: "F2", gapAfter: 2, indent: 8, color: [0.15, 0.24, 0.37] });
+      pushBulletLines(row.left?.lines || [], 18);
+      pushText(t("analysisAccountBLabel"), { size: 9.8, font: "F2", gapAfter: 2, indent: 8, color: [0.15, 0.24, 0.37] });
+      pushBulletLines(row.right?.lines || [], 18);
+      cursorY += 4;
+    });
+  }
+
+  return pages.map((ops, index) => ({ ops, pageIndex: index, pageCount: pages.length }));
+}
+
+function buildAnalysisPdfTextPageContent(ops, pageIndex, pageCount) {
+  const lines = [];
+  const titleY = 812;
+  const metaY = 792;
+  lines.push("BT");
+  lines.push("/F2 18 Tf");
+  lines.push("0.063 0.137 0.243 rg");
+  lines.push(`1 0 0 1 42 ${titleY} Tm ${encodePdfHexString(t("analysisPdfTitle"))} Tj`);
+  lines.push("ET");
+  lines.push("BT");
+  lines.push("/F1 9.5 Tf");
+  lines.push("0.345 0.443 0.573 rg");
+  lines.push(`1 0 0 1 42 ${metaY} Tm ${encodePdfHexString(`${formatCompactArchiveTimestamp(new Date().toISOString())} - ${t("analysisPdfPage", { index: pageIndex + 1, count: pageCount })}`)} Tj`);
+  lines.push("ET");
+
+  for (const op of ops) {
+    if (op.type === "text") {
+      const y = 842 - op.y - op.size;
+      lines.push("BT");
+      lines.push(`/${op.font || "F1"} ${Number(op.size) || 10} Tf`);
+      const [r, g, b] = Array.isArray(op.color) ? op.color : [0.09, 0.14, 0.23];
+      lines.push(`${r} ${g} ${b} rg`);
+      lines.push(`1 0 0 1 ${Number(op.x).toFixed(2)} ${y.toFixed(2)} Tm ${encodePdfHexString(op.text || "")} Tj`);
+      lines.push("ET");
+      continue;
+    }
+    if (op.type === "rule") {
+      const [r, g, b] = Array.isArray(op.color) ? op.color : [0.84, 0.89, 0.95];
+      const y = 842 - op.y1;
+      lines.push("q");
+      lines.push(`${r} ${g} ${b} RG`);
+      lines.push(`${Number(op.width) || 1} w`);
+      lines.push(`${Number(op.x1).toFixed(2)} ${y.toFixed(2)} m`);
+      lines.push(`${Number(op.x2).toFixed(2)} ${y.toFixed(2)} l`);
+      lines.push("S");
+      lines.push("Q");
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function convertAnalysisTextPagesToPdfPages(textPages, totalPages, pageOffset = 0) {
+  return textPages.map((page, index) => ({
+    content: buildAnalysisPdfTextPageContent(page.ops || [], pageOffset + index, totalPages),
+    images: [],
+    annotations: [],
+  }));
+}
+
 function createAnalysisPdfBasePage(pageIndex, pageCount) {
   const canvas = document.createElement("canvas");
   canvas.width = 1190;
@@ -4419,6 +4947,28 @@ function formatAnalysisPdfStatEntries(items = [], formatter = "percent", emptyKe
   });
 }
 
+const analysisPdfAvatarBitmapCache = new Map();
+
+async function loadAnalysisPdfAvatarBitmap(url) {
+  const normalizedUrl = String(url || "").trim();
+  if (!normalizedUrl) {
+    return null;
+  }
+  if (analysisPdfAvatarBitmapCache.has(normalizedUrl)) {
+    return analysisPdfAvatarBitmapCache.get(normalizedUrl);
+  }
+  const promise = (async () => {
+    const response = await fetch(normalizedUrl, { mode: "cors", credentials: "omit" });
+    if (!response.ok) {
+      throw new Error(`Avatar HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    return createImageBitmap(blob);
+  })().catch(() => null);
+  analysisPdfAvatarBitmapCache.set(normalizedUrl, promise);
+  return promise;
+}
+
 function buildAnalysisPdfPatternRows() {
   const buildCard = (label, account, title, lines) => ({
     title: `${label} - ${title}`,
@@ -4465,7 +5015,9 @@ function buildAnalysisPdfPatternRows() {
     },
     {
       title: t("analysisPatternWordLengthTitle"),
-      lines: (account) => formatAnalysisPdfStatEntries(account.corpus.wordLengthProfile, "percent", "analysisPatternsNoData"),
+      card: (account) => ({
+        barEntries: Array.isArray(account?.corpus?.wordLengthProfile) ? account.corpus.wordLengthProfile.slice(0, 8) : [],
+      }),
     },
     {
       title: t("analysisPatternConventionsTitle"),
@@ -4481,20 +5033,74 @@ function buildAnalysisPdfPatternRows() {
     },
   ];
 
-  return definitions.map((definition) => ({
-    left: buildCard(
-      t("analysisAccountALabel"),
-      analysisAccountDataA,
-      definition.title,
-      analysisAccountDataA ? definition.lines(analysisAccountDataA) : [],
-    ),
-    right: buildCard(
-      t("analysisAccountBLabel"),
-      analysisAccountDataB,
-      definition.title,
-      analysisAccountDataB ? definition.lines(analysisAccountDataB) : [],
-    ),
-  }));
+  return definitions.map((definition) => {
+    const leftBase = definition.card
+      ? definition.card(analysisAccountDataA)
+      : { lines: analysisAccountDataA ? definition.lines(analysisAccountDataA) : [] };
+    const rightBase = definition.card
+      ? definition.card(analysisAccountDataB)
+      : { lines: analysisAccountDataB ? definition.lines(analysisAccountDataB) : [] };
+    return {
+      left: {
+        ...buildCard(t("analysisAccountALabel"), analysisAccountDataA, definition.title, leftBase.lines || []),
+        ...leftBase,
+      },
+      right: {
+        ...buildCard(t("analysisAccountBLabel"), analysisAccountDataB, definition.title, rightBase.lines || []),
+        ...rightBase,
+      },
+    };
+  });
+}
+
+function buildAnalysisPdfNetworkPatternRows() {
+  const buildCard = (label, account, title, lines) => ({
+    title: `${label} - ${title}`,
+    lines: account ? lines : [t(label === t("analysisAccountALabel") ? "analysisAccountAEmpty" : "analysisAccountBEmpty")],
+  });
+
+  return buildAnalysisNetworkPatternDefinitions().map((definition) => {
+    const leftBase = !analysisAccountDataA
+      ? { lines: [] }
+      : definition.resolvedProfiles
+      ? { profileEntries: Array.isArray(analysisAccountDataA?.markers?.[definition.key]) ? analysisAccountDataA.markers[definition.key].slice(0, 6) : [] }
+      : definition.createNode
+      ? {
+          lines: formatAnalysisPdfStatEntries([
+            {
+              label: t("analysisNetworkMediaSimilarity"),
+              value: analysisAccountDataA?.markers?.mediaPostShare || 0,
+              formatter: "percent",
+            },
+          ], "percent", "analysisPatternsNoData"),
+        }
+      : { lines: formatAnalysisPdfListEntries(analysisAccountDataA?.markers?.[definition.key] || [], "analysisPatternsNoData") };
+    const rightBase = !analysisAccountDataB
+      ? { lines: [] }
+      : definition.resolvedProfiles
+      ? { profileEntries: Array.isArray(analysisAccountDataB?.markers?.[definition.key]) ? analysisAccountDataB.markers[definition.key].slice(0, 6) : [] }
+      : definition.createNode
+      ? {
+          lines: formatAnalysisPdfStatEntries([
+            {
+              label: t("analysisNetworkMediaSimilarity"),
+              value: analysisAccountDataB?.markers?.mediaPostShare || 0,
+              formatter: "percent",
+            },
+          ], "percent", "analysisPatternsNoData"),
+        }
+      : { lines: formatAnalysisPdfListEntries(analysisAccountDataB?.markers?.[definition.key] || [], "analysisPatternsNoData") };
+    return {
+      left: {
+        ...buildCard(t("analysisAccountALabel"), analysisAccountDataA, definition.title, leftBase.lines || []),
+        ...leftBase,
+      },
+      right: {
+        ...buildCard(t("analysisAccountBLabel"), analysisAccountDataB, definition.title, rightBase.lines || []),
+        ...rightBase,
+      },
+    };
+  });
 }
 
 function buildAnalysisPdfPatternPageLayouts(scale, cardWidth, columnGap, contentHeight) {
@@ -4530,19 +5136,57 @@ function buildAnalysisPdfPatternPageLayouts(scale, cardWidth, columnGap, content
   }
   return pages;
 }
+
+function buildAnalysisPdfPatternPageLayoutsFromRows(scale, cardWidth, columnGap, contentHeight, rows) {
+  const measureCanvas = document.createElement("canvas");
+  measureCanvas.width = 1190;
+  measureCanvas.height = 1684;
+  const measureContext = measureCanvas.getContext("2d");
+  const patternWidth = (cardWidth - columnGap) / 2;
+  const rowGap = 14 * scale;
+  const measuredRows = rows.map((row) => {
+    const leftHeight = measureAnalysisPdfPatternCard(measureContext, scale, patternWidth, row.left);
+    const rightHeight = measureAnalysisPdfPatternCard(measureContext, scale, patternWidth, row.right);
+    return {
+      ...row,
+      height: Math.max(leftHeight, rightHeight),
+    };
+  });
+
+  const pages = [];
+  let currentPage = [];
+  let usedHeight = 0;
+  measuredRows.forEach((row) => {
+    const nextHeight = currentPage.length ? usedHeight + rowGap + row.height : row.height;
+    if (currentPage.length && nextHeight > contentHeight) {
+      pages.push(currentPage);
+      currentPage = [];
+      usedHeight = 0;
+    }
+    currentPage.push(row);
+    usedHeight = currentPage.length === 1 ? row.height : usedHeight + rowGap + row.height;
+  });
+  if (currentPage.length) {
+    pages.push(currentPage);
+  }
+  return pages;
+}
 function measureAnalysisPdfPatternCard(context, scale, width, card) {
   const lineWidth = width - (28 * scale);
   context.font = `700 ${10 * scale}px "Segoe UI", Aptos, sans-serif`;
   const titleLineCount = Math.max(1, buildWrappedPdfLines(context, card.title, lineWidth).length);
   context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const lineCount = Math.max(
-    1,
-    card.lines.reduce((sum, line) => sum + Math.max(1, buildWrappedPdfLines(context, line, lineWidth).length), 0),
-  );
-  return (26 * scale) + (titleLineCount * 12 * scale) + (lineCount * 11 * scale) + (24 * scale);
+  const lineCount = Math.max(0, (card.lines || []).reduce((sum, line) => sum + Math.max(1, buildWrappedPdfLines(context, line, lineWidth).length), 0));
+  const profileCount = Array.isArray(card.profileEntries) ? card.profileEntries.length : 0;
+  const barCount = Array.isArray(card.barEntries) ? card.barEntries.length : 0;
+  const lineHeight = lineCount > 0 ? (lineCount * 11 * scale) : 0;
+  const profileHeight = profileCount > 0 ? (profileCount * 40 * scale) + (Math.max(0, profileCount - 1) * 8 * scale) : 0;
+  const barHeight = barCount > 0 ? (barCount * 28 * scale) + (Math.max(0, barCount - 1) * 8 * scale) : 0;
+  const contentHeight = Math.max(lineHeight, profileHeight, barHeight, 12 * scale);
+  return (26 * scale) + (titleLineCount * 12 * scale) + contentHeight + (24 * scale);
 }
 
-function drawAnalysisPdfPatternCard(context, scale, x, y, width, cardHeight, card) {
+async function drawAnalysisPdfPatternCard(context, scale, x, y, width, cardHeight, card) {
   fillRoundedRect(context, x, y, width, cardHeight, 18 * scale, "#ffffff");
   strokeRoundedRect(context, x, y, width, cardHeight, 18 * scale, "#d7e3f5", 1 * scale);
   context.fillStyle = "#13213c";
@@ -4553,7 +5197,55 @@ function drawAnalysisPdfPatternCard(context, scale, x, y, width, cardHeight, car
   context.fillStyle = "#415b81";
   context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
   let lineY = y + (20 * scale) + (titleLines.length * 12 * scale);
-  card.lines.forEach((line) => {
+  if (Array.isArray(card.profileEntries) && card.profileEntries.length) {
+    for (const entry of card.profileEntries) {
+      const avatarSize = 24 * scale;
+      const avatarX = x + (14 * scale);
+      const avatarY = lineY;
+      const avatarBitmap = await loadAnalysisPdfAvatarBitmap(entry?.avatar || "");
+      if (avatarBitmap) {
+        drawCircularImageCover(context, avatarBitmap, avatarX, avatarY, avatarSize, "#eef4ff");
+      } else {
+        fillRoundedRect(context, avatarX, avatarY, avatarSize, avatarSize, 8 * scale, "#eef4ff");
+      }
+      const textX = avatarX + avatarSize + (8 * scale);
+      const textWidth = width - (textX - x) - (14 * scale);
+      context.fillStyle = "#13213c";
+      context.font = `700 ${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
+      const title = String(entry?.displayName || entry?.handle || entry?.did || entry?.label || "").trim();
+      const titleLinesLocal = buildWrappedPdfLines(context, title, textWidth);
+      drawArchivePdfTextBlock(context, titleLinesLocal, textX, lineY, 10 * scale);
+      context.fillStyle = "#587192";
+      context.font = `${7.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+      const metaText = `@${String(entry?.handle || entry?.did || entry?.label || "").trim()} · ${formatAnalysisPercent(entry?.share ?? 0)}`;
+      const metaLines = buildWrappedPdfLines(context, metaText, textWidth);
+      drawArchivePdfTextBlock(context, metaLines, textX, lineY + (10 * scale), 9 * scale);
+      lineY += (32 * scale);
+    }
+    return;
+  }
+  if (Array.isArray(card.barEntries) && card.barEntries.length) {
+    const trackX = x + (14 * scale);
+    const labelWidth = 40 * scale;
+    const trackWidth = width - (28 * scale) - labelWidth - (8 * scale);
+    card.barEntries.forEach((entry) => {
+      const label = entry.labelKey ? t(entry.labelKey) : entry.label;
+      context.fillStyle = "#415b81";
+      context.font = `${8 * scale}px "Segoe UI", Aptos, sans-serif`;
+      context.fillText(label, trackX, lineY + (2 * scale));
+      const trackStartX = trackX + labelWidth;
+      fillRoundedRect(context, trackStartX, lineY, trackWidth, 12 * scale, 6 * scale, "#edf4ff");
+      fillRoundedRect(context, trackStartX, lineY, trackWidth * Math.max(0, Math.min(1, entry.share ?? entry.value ?? 0)), 12 * scale, 6 * scale, "#27b6a0");
+      context.fillStyle = "#13213c";
+      context.font = `700 ${7.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+      const valueText = formatAnalysisPercent(entry.share ?? entry.value ?? 0);
+      const valueWidth = context.measureText(valueText).width;
+      context.fillText(valueText, trackStartX + trackWidth - valueWidth, lineY + (1 * scale));
+      lineY += 20 * scale;
+    });
+    return;
+  }
+  (card.lines || []).forEach((line) => {
     const wrapped = buildWrappedPdfLines(context, line, maxWidth);
     drawArchivePdfTextBlock(context, wrapped, x + (14 * scale), lineY, 11 * scale);
     lineY += Math.max(1, wrapped.length) * 11 * scale;
@@ -4748,8 +5440,19 @@ async function renderAnalysisPdfOverviewPage(pageIndex, pageCount) {
   ).slice(0, 3);
   const noteLines = buildWrappedPdfLines(context, t(analysisComparisonResult.confidenceKey), summaryTextWidth).slice(0, 4);
   const scoreRows = getAnalysisPdfScoreRows().slice(1);
-  const measuredScoreRows = scoreRows.map((row) => measureAnalysisPdfScoreRow(context, scale, cardWidth - (36 * scale), row));
-  const scoreRowsHeight = measuredScoreRows.reduce((sum, item) => sum + item.height, 0) + (Math.max(0, measuredScoreRows.length - 1) * 8 * scale);
+  const scoreColumnGap = 12 * scale;
+  const scoreColumnWidth = ((cardWidth - (36 * scale)) - scoreColumnGap) / 2;
+  const scoreRowsPerColumn = Math.ceil(scoreRows.length / 2);
+  const leftScoreRows = scoreRows.slice(0, scoreRowsPerColumn);
+  const rightScoreRows = scoreRows.slice(scoreRowsPerColumn);
+  const measuredLeftScoreRows = leftScoreRows.map((row) => measureAnalysisPdfScoreRow(context, scale, scoreColumnWidth, row));
+  const measuredRightScoreRows = rightScoreRows.map((row) => measureAnalysisPdfScoreRow(context, scale, scoreColumnWidth, row));
+  const scoreRowCount = Math.max(measuredLeftScoreRows.length, measuredRightScoreRows.length);
+  const scoreRowsHeight = Array.from({ length: scoreRowCount }, (_, index) => {
+    const leftHeight = measuredLeftScoreRows[index]?.height || 0;
+    const rightHeight = measuredRightScoreRows[index]?.height || 0;
+    return Math.max(leftHeight, rightHeight, 26 * scale);
+  }).reduce((sum, height) => sum + height, 0) + (Math.max(0, scoreRowCount - 1) * 8 * scale);
   const overallCardHeight = (140 * scale)
     + (overallLines.length * 13 * scale)
     + (noteLines.length * 13 * scale)
@@ -4774,18 +5477,34 @@ async function renderAnalysisPdfOverviewPage(pageIndex, pageCount) {
   drawArchivePdfTextBlock(context, noteLines, cardX + (18 * scale), noteY, 13 * scale);
 
   let detailY = noteY + (noteLines.length * 13 * scale) + (16 * scale);
-  scoreRows.forEach((row, index) => {
-    drawAnalysisPdfScoreRow(
-      context,
-      scale,
-      cardX + (18 * scale),
-      detailY,
-      cardWidth - (36 * scale),
-      row,
-      measuredScoreRows[index],
-    );
-    detailY += measuredScoreRows[index].height + (8 * scale);
-  });
+  for (let index = 0; index < scoreRowCount; index += 1) {
+    const leftMeasured = measuredLeftScoreRows[index] || null;
+    const rightMeasured = measuredRightScoreRows[index] || null;
+    const rowHeight = Math.max(leftMeasured?.height || 0, rightMeasured?.height || 0, 26 * scale);
+    if (leftMeasured) {
+      drawAnalysisPdfScoreRow(
+        context,
+        scale,
+        cardX + (18 * scale),
+        detailY,
+        scoreColumnWidth,
+        leftScoreRows[index],
+        leftMeasured,
+      );
+    }
+    if (rightMeasured) {
+      drawAnalysisPdfScoreRow(
+        context,
+        scale,
+        cardX + (18 * scale) + scoreColumnWidth + scoreColumnGap,
+        detailY,
+        scoreColumnWidth,
+        rightScoreRows[index],
+        rightMeasured,
+      );
+    }
+    detailY += rowHeight + (8 * scale);
+  }
   return canvas;
 }
 
@@ -4919,7 +5638,7 @@ async function renderAnalysisPdfTemporalPage(pageIndex, pageCount) {
   return canvas;
 }
 
-async function renderAnalysisPdfPatternPage(pageIndex, pageCount, rows) {
+async function renderAnalysisPdfPatternPage(pageIndex, pageCount, rows, title = t("analysisPdfPatternsTitle")) {
   const {
     canvas,
     context,
@@ -4937,16 +5656,16 @@ async function renderAnalysisPdfPatternPage(pageIndex, pageCount, rows) {
   strokeRoundedRect(context, cardX, cursorY, cardWidth, 46 * scale, 18 * scale, "#d7e3f5", 1 * scale);
   context.fillStyle = "#13213c";
   context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(t("analysisPdfPatternsTitle"), cardX + (18 * scale), cursorY + (16 * scale));
+  context.fillText(title, cardX + (18 * scale), cursorY + (16 * scale));
   cursorY += 60 * scale;
 
-  rows.forEach((row) => {
-    drawAnalysisPdfPatternCard(context, scale, cardX, cursorY, patternWidth, row.height, row.left);
+  for (const row of rows) {
+    await drawAnalysisPdfPatternCard(context, scale, cardX, cursorY, patternWidth, row.height, row.left);
     if (row.right) {
-      drawAnalysisPdfPatternCard(context, scale, cardX + patternWidth + columnGap, cursorY, patternWidth, row.height, row.right);
+      await drawAnalysisPdfPatternCard(context, scale, cardX + patternWidth + columnGap, cursorY, patternWidth, row.height, row.right);
     }
     cursorY += row.height + rowGap;
-  });
+  }
   return canvas;
 }
 
@@ -4977,13 +5696,25 @@ async function exportAnalysisPdfReport() {
     getAnalysisPdfMetricRows(),
     { label: 0.41, value: 0.16, diff: 0.27 },
   );
+  const networkPatternPages = buildAnalysisPdfPatternPageLayoutsFromRows(
+    previewPage.scale,
+    previewPage.cardWidth,
+    previewPage.columnGap,
+    previewPage.contentBottom - (previewPage.cursorY + (60 * previewPage.scale)),
+    buildAnalysisPdfNetworkPatternRows(),
+  );
   const patternPageRows = buildAnalysisPdfPatternPageLayouts(
     previewPage.scale,
     previewPage.cardWidth,
     previewPage.columnGap,
     previewPage.contentBottom - (previewPage.cursorY + (60 * previewPage.scale)),
   );
-  const totalPages = 2 + temporalTablePages.pages.length + networkTablePages.pages.length + metricTablePages.pages.length + patternPageRows.length;
+  const totalPages = 2
+    + temporalTablePages.pages.length
+    + networkTablePages.pages.length
+    + networkPatternPages.length
+    + metricTablePages.pages.length
+    + patternPageRows.length;
   const pageCanvases = await Promise.all([
     renderAnalysisPdfOverviewPage(0, totalPages),
     renderAnalysisPdfTemporalPage(1, totalPages),
@@ -4999,13 +5730,19 @@ async function exportAnalysisPdfReport() {
       columns: { label: 0.34, value: 0.2, diff: 0.23 },
       column4Title: t("analysisTemporalColumnAssessment"),
     })),
-    ...metricTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length, totalPages, {
+    ...networkPatternPages.map((rows, index) => renderAnalysisPdfPatternPage(
+      index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length,
+      totalPages,
+      rows,
+      t("analysisNetworkTitle"),
+    )),
+    ...metricTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length + networkPatternPages.length, totalPages, {
       title: t("analysisMetricsTitle"),
       rows,
       columns: { label: 0.41, value: 0.16, diff: 0.27 },
       column4Title: t("analysisMetricsColumnDiff"),
     })),
-    ...patternPageRows.map((rows, index) => renderAnalysisPdfPatternPage(index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length + metricTablePages.pages.length, totalPages, rows)),
+    ...patternPageRows.map((rows, index) => renderAnalysisPdfPatternPage(index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length + networkPatternPages.length + metricTablePages.pages.length, totalPages, rows)),
   ]);
   const pages = [];
   for (const [pageIndex, canvas] of pageCanvases.entries()) {
@@ -5610,7 +6347,7 @@ function renderNetworkStage() {
       class: "network-node-button network-node-button-focus-center",
       tabindex: 0,
       role: "button",
-      "aria-label": `${selectedProfile?.displayName || selectedProfile?.handle || stageSelectedDid} · ${t("networkFocusEyebrow")}`,
+      "aria-label": `${selectedProfile?.displayName || selectedProfile?.handle || stageSelectedDid} Â· ${t("networkFocusEyebrow")}`,
     });
     focusCenterGroup.style.cursor = "pointer";
     focusCenterGroup.addEventListener("pointerdown", (event) => {
@@ -5710,7 +6447,7 @@ function renderNetworkStage() {
         class: "network-node-button network-node-button-preview",
         tabindex: 0,
         role: "button",
-        "aria-label": `${entry.displayName || entry.handle || entry.did} · ${entry.previewRelation === "followers" ? t("networkPreviewFollowersTitle") : t("networkPreviewFollowingTitle")}`,
+        "aria-label": `${entry.displayName || entry.handle || entry.did} Â· ${entry.previewRelation === "followers" ? t("networkPreviewFollowersTitle") : t("networkPreviewFollowingTitle")}`,
       });
       previewGroup.style.cursor = "pointer";
       previewGroup.addEventListener("pointerdown", (event) => {
@@ -5803,7 +6540,7 @@ function renderNetworkStage() {
       class: "network-node-button",
       tabindex: 0,
       role: "button",
-      "aria-label": `${node.displayName || node.handle || node.did} · ${getNetworkRelationLabel(node)}`,
+      "aria-label": `${node.displayName || node.handle || node.did} Â· ${getNetworkRelationLabel(node)}`,
     });
     buttonGroup.style.cursor = "pointer";
     buttonGroup.addEventListener("pointerdown", (event) => {
@@ -6019,7 +6756,7 @@ function renderNetworkFocus() {
     { label: t("networkStatFollowers"), value: formatCount(active.followersCount) },
     { label: t("networkStatFollowing"), value: formatCount(active.followsCount) },
     { label: t("networkStatPosts"), value: formatCount(active.postsCount) },
-    { label: t("networkStatScore"), value: node ? formatCount(getNetworkNodeScore(node)) : "—" },
+    { label: t("networkStatScore"), value: node ? formatCount(getNetworkNodeScore(node)) : "â€”" },
   ].forEach((item) => {
     const card = document.createElement("div");
     card.className = "network-stat-card";
@@ -6313,7 +7050,7 @@ function renderNetworkResults() {
     const card = document.createElement("article");
     card.className = "network-group-card";
     const title = document.createElement("strong");
-    title.textContent = `${titleText} · ${formatCount(totalCount)}`;
+    title.textContent = `${titleText} Â· ${formatCount(totalCount)}`;
     const note = document.createElement("p");
     note.className = "network-card-explainer";
     note.textContent = noteText;
@@ -6339,7 +7076,7 @@ function renderNetworkResults() {
         name.textContent = node.displayName || node.handle || node.did;
         const meta = document.createElement("span");
         meta.className = "network-list-meta";
-        meta.textContent = `@${node.handle || node.did} · ${formatCount(getNetworkNodeScore(node))}`;
+        meta.textContent = `@${node.handle || node.did} Â· ${formatCount(getNetworkNodeScore(node))}`;
         button.append(name, meta);
         list.appendChild(button);
       });
@@ -6524,7 +7261,7 @@ async function loadNetworkWave(options = {}) {
       onProgress(progress) {
         const step = String(progress?.step || "").trim();
         const detail = String(progress?.detail || "").trim();
-        setNetworkStatus([step, detail].filter(Boolean).join(" · ") || t("networkProgressLoading"));
+        setNetworkStatus([step, detail].filter(Boolean).join(" Â· ") || t("networkProgressLoading"));
       },
     });
 
@@ -7008,7 +7745,7 @@ function buildDmHtmlDocument(catalog = dmCatalog) {
   const partnerAvatarUri = partner?.avatarPath ? (assetUris.get(partner.avatarPath) || "") : "";
   const exportedAt = catalog?.manifest?.exportedAt || new Date().toISOString();
   const ownHandle = catalog?.manifest?.account?.handle || authAccount || "";
-  const title = `${t("dmHeaderTitle")} · ${partner?.displayName || `@${partner?.handle || ""}`}`.trim();
+  const title = `${t("dmHeaderTitle")} Â· ${partner?.displayName || `@${partner?.handle || ""}`}`.trim();
   const archiveRange = getDmArchiveMessageRange(catalog);
   const rangeFrom = archiveRange.from || "";
   const rangeTo = archiveRange.to || "";
@@ -7301,11 +8038,11 @@ function buildDmHtmlDocument(catalog = dmCatalog) {
         <p>${escapeHtml(t("dmHtmlGenerated", { date: formatCompactArchiveTimestamp(exportedAt) }))}</p>
         <div class="dm-html-partner">
           ${partnerAvatarUri ? `<img class="dm-html-avatar" src="${escapeHtmlAttribute(partnerAvatarUri)}" alt="${escapeHtmlAttribute(partner?.displayName || partner?.handle || "")}" loading="lazy">` : ""}
-          <p>${escapeHtml(t("dmPartnerLabel"))}: ${escapeHtml(partner?.displayName || "")}${partner?.handle ? ` · @${escapeHtml(partner.handle)}` : ""}</p>
+          <p>${escapeHtml(t("dmPartnerLabel"))}: ${escapeHtml(partner?.displayName || "")}${partner?.handle ? ` Â· @${escapeHtml(partner.handle)}` : ""}</p>
         </div>
         <p>${escapeHtml(t("dmArchiveRangeValue", {
-          from: rangeFrom ? formatCompactArchiveTimestamp(rangeFrom) : "…",
-          to: rangeTo ? formatCompactArchiveTimestamp(rangeTo) : "…",
+          from: rangeFrom ? formatCompactArchiveTimestamp(rangeFrom) : "â€¦",
+          to: rangeTo ? formatCompactArchiveTimestamp(rangeTo) : "â€¦",
         }))}</p>
         <div class="dm-html-meta">
           <div><span>${escapeHtml(t("dmSummaryConversationsLabel"))}</span><strong>${Number(catalog?.manifest?.conversationCount) || 0}</strong></div>
@@ -7519,8 +8256,8 @@ async function renderDmPdfCanvasPage(catalog, assetMap, entries, pageIndex, page
   }
   context.font = `${12 * scale}px "Segoe UI", Aptos, sans-serif`;
   context.fillStyle = "#5f7593";
-  context.fillText(`${t("dmPartnerLabel")}: ${partner?.displayName || ""}${partner?.handle ? ` · @${partner.handle}` : ""}`, 54 * scale, 70 * scale);
-  context.fillText(`@${handle} · ${formatCompactArchiveTimestamp(catalog?.manifest?.exportedAt || "")}`, 54 * scale, 88 * scale);
+  context.fillText(`${t("dmPartnerLabel")}: ${partner?.displayName || ""}${partner?.handle ? ` Â· @${partner.handle}` : ""}`, 54 * scale, 70 * scale);
+  context.fillText(`@${handle} Â· ${formatCompactArchiveTimestamp(catalog?.manifest?.exportedAt || "")}`, 54 * scale, 88 * scale);
   context.fillText(`${pageIndex + 1}/${pageCount}`, canvas.width - (90 * scale), 88 * scale);
 
   for (const entry of entries) {
@@ -7680,7 +8417,7 @@ async function loadDmPartners() {
     title: t("dmPartnersLoadingTitle"),
     step: "Partnerliste geladen",
     percent: 55,
-    detail: `${dmRecentContacts.length} DM-Partner werden angezeigt. Avatar-Bilder werden jetzt gesichert …`,
+    detail: `${dmRecentContacts.length} DM-Partner werden angezeigt. Avatar-Bilder werden jetzt gesichert â€¦`,
   });
   const hydrated = await sendToServiceWorker("HYDRATE_DM_PARTNER_AVATARS", {
     recentContacts: dmRecentContacts,
@@ -7776,6 +8513,7 @@ function getArchiveFilters() {
     sourceDid: String(archiveSourceProfile?.did || "").trim(),
     scope: hasExplicitRange ? "range" : archiveScopeSelect.value,
     contentMode: archiveContentModeSelect.value || "posts",
+    includeConversationContext: archiveConversationContextToggle?.checked === true,
     year: archiveYearInput.value.trim(),
     from: archiveFromInput.value || "",
     to: archiveToInput.value || "",
@@ -7845,6 +8583,9 @@ function applyArchivePreferences(preferences = {}) {
   archiveContentModeSelect.value = ["posts", "thread_roots", "threads", "full"].includes(filters.contentMode)
     ? filters.contentMode
     : "posts";
+  if (archiveConversationContextToggle) {
+    archiveConversationContextToggle.checked = filters.includeConversationContext === true;
+  }
   archiveYearInput.value = String(filters.year || "");
   archiveFromInput.value = String(filters.from || "");
   archiveToInput.value = String(filters.to || "");
@@ -8253,9 +8994,9 @@ function renderArchiveStartHint() {
     return;
   }
 
-  if (archiveSession?.hasMore) {
-    archiveStartHint.textContent = t("archiveStartHintResume", {
-      wave: (archiveSession.waveIndex || 0) + 1,
+  if (archiveSession?.status === "paused" || archiveSession?.hasMore || archiveSession?.nextCursor) {
+    archiveStartHint.textContent = t("archiveStartHintIncomplete", {
+      wave: getArchiveCurrentWave(),
     });
     return;
   }
@@ -8305,17 +9046,24 @@ function buildArchiveCatalogNotice(catalog = archiveCatalog) {
 function updateArchiveRunControls() {
   const isRunning = activeArchiveRunState === "running";
   const isPaused = activeArchiveRunState === "paused";
-  const hasRun = Boolean(activeArchiveRunId);
-  archivePauseButton.disabled = !isRunning;
-  archiveResumeButton.disabled = !isPaused;
-  archiveCancelButton.disabled = !hasRun || activeArchiveRunState === "idle" || activeArchiveRunState === "cancelled";
-  archivePauseButton.hidden = !isRunning;
-  archiveResumeButton.hidden = !isPaused;
-  archiveCancelButton.hidden = !isRunning && !isPaused;
+  const canPause = isRunning && Boolean(activeArchiveRunId);
+  const canResume = isPaused || (archiveSession?.status === "paused");
+  const canCancel = Boolean(activeArchiveRunId) && (isRunning || isPaused);
+  archivePauseButton.disabled = !canPause;
+  archiveResumeButton.disabled = !canResume;
+  archiveCancelButton.disabled = !canCancel;
+  archivePauseButton.hidden = false;
+  archiveResumeButton.hidden = false;
+  archiveCancelButton.hidden = false;
   renderArchiveBackgroundNotice();
 }
 
 async function setArchiveRunControl(action) {
+  if (action === "resume" && !activeArchiveRunId && (activeArchiveRunState === "paused" || archiveSession?.status === "paused")) {
+    archiveNextWaveButton?.click();
+    return;
+  }
+
   if (!activeArchiveRunId) {
     return;
   }
@@ -8381,8 +9129,7 @@ function renderArchiveResults(catalog = archiveCatalog) {
     empty.className = "settings-note";
     empty.textContent = archiveSession
       ? t("archiveSessionMeta", {
-          wave: archiveSession.waveIndex || 1,
-          next: archiveSession.hasMore ? t("archiveSessionContinue") : t("archiveSessionComplete"),
+          next: archiveSession?.status === "paused" ? t("archiveSessionContinue") : t("archiveSessionComplete"),
           exported: archiveSession.exportedPosts || 0,
         })
       : t("archiveResultsEmpty");
@@ -8397,8 +9144,8 @@ function renderArchiveResults(catalog = archiveCatalog) {
   const note = document.createElement("p");
   note.className = "settings-note";
   note.textContent = t("archiveResultsMeta", {
-    from: catalog.summary?.from || "—",
-    to: catalog.summary?.to || "—",
+    from: catalog.summary?.from || "â€”",
+    to: catalog.summary?.to || "â€”",
     images: catalog.summary?.imageCount || 0,
     skipped: catalog.summary?.skippedImageCount || 0,
   });
@@ -8413,8 +9160,7 @@ function renderArchiveResults(catalog = archiveCatalog) {
   const resume = document.createElement("p");
   resume.className = "settings-note";
   resume.textContent = t("archiveSessionMeta", {
-    wave: archiveSession?.waveIndex || 1,
-    next: archiveSession?.hasMore ? t("archiveSessionContinue") : t("archiveSessionComplete"),
+    next: archiveSession?.status === "paused" ? t("archiveSessionContinue") : t("archiveSessionComplete"),
     exported: archiveSession?.exportedPosts || catalog.posts.length,
   });
   const actions = document.createElement("div");
@@ -8439,10 +9185,15 @@ function renderArchiveResults(catalog = archiveCatalog) {
   const htmlButton = document.createElement("button");
   htmlButton.type = "button";
   htmlButton.className = "ghost-button";
-  htmlButton.textContent = t("archiveDownloadHtmlButton");
-  htmlButton.addEventListener("click", () => {
-    void exportArchiveHtmlFromCatalog(catalog);
-  });
+  const htmlTooLarge = isArchiveHtmlTooLargeForEmbeddedExport(catalog);
+  htmlButton.textContent = htmlTooLarge ? t("archiveExportHtmlTooLargeButton") : t("archiveDownloadHtmlButton");
+  htmlButton.title = htmlTooLarge ? t("archiveExportHtmlTooLargeTitle") : t("archiveDownloadHtmlButton");
+  htmlButton.disabled = htmlTooLarge;
+  if (!htmlTooLarge) {
+    htmlButton.addEventListener("click", () => {
+      void exportArchiveHtmlFromCatalog(catalog);
+    });
+  }
 
   actions.append(zipButton, htmlButton, pdfButton);
   card.append(title, note);
@@ -8459,15 +9210,11 @@ function renderArchiveWorkspace() {
   renderArchiveSpec();
   updateArchiveSummary();
   renderArchiveResults();
-  archiveNextWaveButton.disabled = !authAccount || Boolean(
-    archiveSession
-    && archiveSession.status !== "cancelled"
-    && !archiveSession.hasMore
-    && archiveSession.exportedPosts > 0
-  );
+  archiveNextWaveButton.disabled = !authAccount || hasActiveArchiveRun();
   if (archiveExportMediaZipButton) {
     archiveExportMediaZipButton.disabled = !authAccount;
   }
+  updateArchiveHtmlExportButtons();
   syncArchiveActionButtonStates();
   updateArchiveRunControls();
   renderArchiveStatusLine();
@@ -8745,8 +9492,8 @@ function applySidebarState() {
   sidebarResizeHandle.setAttribute("aria-label", t("sidebarResizeHandleLabel"));
   composerResizeHandle.setAttribute("aria-label", t("composerResizeHandleLabel"));
   sidebarToggleGlyph.textContent = isDesktop
-    ? (shouldCollapse ? "▶" : "◀")
-    : (shouldCollapse ? "▼" : "▲");
+    ? (shouldCollapse ? "â–¶" : "â—€")
+    : (shouldCollapse ? "â–¼" : "â–²");
 }
 
 function getDesktopResizeHandleWidth() {
@@ -8833,7 +9580,7 @@ function renderPostLanguageSummary() {
     summaryParts.push(t("quotePostsBlockedSummary"));
   }
 
-  postLanguagesSummary.textContent = summaryParts.join(" · ");
+  postLanguagesSummary.textContent = summaryParts.join(" Â· ");
   renderPostSettingsDisclosureMeta();
 }
 
@@ -8888,6 +9635,7 @@ function renderPostLanguageDialog() {
 function applyTranslations() {
   document.documentElement.lang = currentLocale;
   syncArchiveTransientNoticeFromCatalog();
+  ensureArchiveWorkspaceLayout();
 
   document.querySelectorAll("[data-i18n]").forEach((element) => {
     const key = element.dataset.i18n;
@@ -8981,6 +9729,8 @@ function applyTranslations() {
   if (archiveProgressExportHtmlCompactButton) {
     archiveProgressExportHtmlCompactButton.textContent = t("archiveExportHtmlCompactButton");
   }
+  renderArchiveZipHtmlScriptHelp();
+  updateArchiveHtmlExportButtons();
   if (archiveActionsExportPdfButton) {
     archiveActionsExportPdfButton.textContent = t("archiveExportPdfButton");
   }
@@ -11868,8 +12618,10 @@ async function exportArchiveZipFromCatalog(catalog = archiveCatalog) {
     detail: t("archiveProgressZipDetail", { count: catalog.assets.length }),
   });
 
-  const postsForJson = catalog.posts.map((post) => ({
-    ...post,
+  const postsForJson = catalog.posts.map((post) => {
+    const { rawRecord, ...exportPost } = post;
+    return {
+    ...exportPost,
     images: (post.images || []).map((image) => ({
       path: image.path,
       alt: image.alt || "",
@@ -11878,7 +12630,8 @@ async function exportArchiveZipFromCatalog(catalog = archiveCatalog) {
       mimeType: image.mimeType || "application/octet-stream",
       sizeBytes: image.sizeBytes || 0,
     })),
-  }));
+    };
+  });
 
   const entries = [
     { name: "manifest.json", data: utf8Bytes(JSON.stringify(catalog.manifest, null, 2)) },
@@ -11935,6 +12688,95 @@ async function assetToDataUriAsync(asset) {
     reader.onerror = () => reject(reader.error || new Error("Asset konnte nicht als Data-URL kodiert werden."));
     reader.readAsDataURL(blob);
   });
+}
+
+const ARCHIVE_HTML_EMBED_RECOMMENDED_MAX_BYTES = 48 * 1024 * 1024;
+
+function getArchiveAssetTotalBytes(assets = []) {
+  return (Array.isArray(assets) ? assets : []).reduce((sum, asset) => (
+    sum + Math.max(0, Number(asset?.sizeBytes) || asset?.bytes?.length || 0)
+  ), 0);
+}
+
+function isArchiveStringLengthError(error) {
+  const message = String(error?.message || "").trim().toLowerCase();
+  return error instanceof RangeError
+    || message.includes("invalid string length")
+    || message.includes("string length");
+}
+
+function shouldAutoFallbackArchiveHtmlToCompact(assets = []) {
+  return getArchiveAssetTotalBytes(assets) > ARCHIVE_HTML_EMBED_RECOMMENDED_MAX_BYTES;
+}
+
+function isArchiveHtmlTooLargeForEmbeddedExport(catalog = archiveCatalog) {
+  return Boolean(catalog) && shouldAutoFallbackArchiveHtmlToCompact(catalog.assets || []);
+}
+
+function updateArchiveHtmlExportButtons() {
+  const tooLarge = isArchiveHtmlTooLargeForEmbeddedExport();
+  const label = tooLarge ? t("archiveExportHtmlTooLargeButton") : t("archiveExportHtmlButton");
+  const title = tooLarge ? t("archiveExportHtmlTooLargeTitle") : t("archiveExportHtmlButton");
+
+  [archiveExportHtmlButton, archiveActionsExportHtmlButton].forEach((button) => {
+    if (!button) {
+      return;
+    }
+    button.textContent = label;
+    button.title = title;
+    button.disabled = tooLarge;
+  });
+}
+
+function waitForUiFrame() {
+  return new Promise((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
+function getArchiveZipHtmlScriptCommand() {
+  return 'powershell -ExecutionPolicy Bypass -File .\\scripts\\convert-threadline-archive-to-html.ps1 -ArchiveSourcePath "C:\\Pfad\\zu\\threadline-archive-ordner"';
+}
+
+function renderArchiveZipHtmlScriptHelp() {
+  const readmeUrl = "https://github.com/marsrakete/threadline/tree/main/scripts";
+  const noteHtml = `${escapeHtml(t("archiveZipHtmlScriptNoteLead"))} <a href="${readmeUrl}" target="_blank" rel="noreferrer noopener">${escapeHtml(t("archiveZipHtmlScriptReadmeLink"))}</a>. ${escapeHtml(t("archiveZipHtmlScriptNoteTail"))}`;
+  document.querySelectorAll('[data-i18n="archiveZipHtmlScriptNote"]').forEach((node) => {
+    node.innerHTML = noteHtml;
+  });
+  if (archiveZipHtmlScriptCommand) {
+    archiveZipHtmlScriptCommand.hidden = true;
+    archiveZipHtmlScriptCommand.textContent = getArchiveZipHtmlScriptCommand();
+  }
+  if (archiveZipHtmlScriptCopyButton) {
+    archiveZipHtmlScriptCopyButton.hidden = true;
+  }
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || "");
+  if (!value) {
+    return;
+  }
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const helper = document.createElement("textarea");
+  helper.value = value;
+  helper.setAttribute("readonly", "readonly");
+  helper.style.position = "fixed";
+  helper.style.opacity = "0";
+  helper.style.pointerEvents = "none";
+  document.body.append(helper);
+  helper.select();
+  document.execCommand("copy");
+  helper.remove();
 }
 
 function getStoredAccountAvatarUri(account = {}) {
@@ -12316,6 +13158,48 @@ function buildArchiveHtmlToolbarStrings() {
   };
 }
 
+const ARCHIVE_HTML_TEMPLATE_SHELL_PATH = "./templates/archive-html-shell.html";
+const ARCHIVE_HTML_TEMPLATE_CLIENT_PATH = "./templates/archive-html-client.js";
+let archiveHtmlTemplateBundlePromise = null;
+
+async function loadArchiveHtmlTemplateBundle() {
+  if (!archiveHtmlTemplateBundlePromise) {
+    archiveHtmlTemplateBundlePromise = Promise.all([
+      fetch(ARCHIVE_HTML_TEMPLATE_SHELL_PATH).then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load archive shell template: ${response.status}`);
+        }
+        return response.text();
+      }),
+      fetch(ARCHIVE_HTML_TEMPLATE_CLIENT_PATH).then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load archive client template: ${response.status}`);
+        }
+        return response.text();
+      }),
+    ]).then(([shell, clientScript]) => ({ shell, clientScript }));
+  }
+  return archiveHtmlTemplateBundlePromise;
+}
+
+function fillArchiveHtmlTemplate(template, replacements = {}) {
+  return Object.entries(replacements).reduce(
+    (result, [key, value]) => result.split(`{{${key}}}`).join(String(value ?? "")),
+    String(template || ""),
+  );
+}
+
+function serializeArchiveHtmlInlineJson(value) {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+function serializeArchiveHtmlInlineScript(value) {
+  return String(value || "").replace(/<\/script/gi, "<\\/script");
+}
+
 function buildArchiveHtmlI18n() {
   const keys = [
     "archiveHeaderEyebrow",
@@ -12496,7 +13380,7 @@ function buildArchiveHtmlFilterSummary(catalog) {
   const scope = filters.scope === "year"
     ? `Jahr ${filters.year || "?"}`
     : (filters.scope === "range"
-      ? `${filters.from || "…"} – ${filters.to || "…"}`
+      ? `${filters.from || "â€¦"} â€“ ${filters.to || "â€¦"}`
       : "Kompletter Account");
   const hashtags = selectedTags.length > 0
     ? t("archiveHtmlFilterHashtagsSuffix", { count: selectedTags.length, skipped: filteredOutCount })
@@ -12621,7 +13505,7 @@ function buildArchiveHtmlGroupMarkup(group, groupIndex, handle, assetUris, optio
           <summary>
             <div>
               <strong>${escapeHtml(summaryLabel)}</strong>
-              <span>${escapeHtml(formatHistoryTimestamp(group.posts[0]?.createdAt))} – ${escapeHtml(formatHistoryTimestamp(group.posts[group.posts.length - 1]?.createdAt))}</span>
+              <span>${escapeHtml(formatHistoryTimestamp(group.posts[0]?.createdAt))} â€“ ${escapeHtml(formatHistoryTimestamp(group.posts[group.posts.length - 1]?.createdAt))}</span>
             </div>
             <span>${escapeHtml(t("archiveSummaryPosts"))}: ${group.posts.length}</span>
           </summary>
@@ -12652,7 +13536,7 @@ function buildArchiveHtmlLinksMarkup(archiveLinks) {
           <summary>
             <div>
               <strong>${escapeHtml(t("archiveHtmlLinksSummary", { count: archiveLinks.length }))}</strong>
-              <span>${escapeHtml(formatHistoryTimestamp(archiveLinks[0]?.createdAt))} – ${escapeHtml(formatHistoryTimestamp(archiveLinks[archiveLinks.length - 1]?.createdAt))}</span>
+              <span>${escapeHtml(formatHistoryTimestamp(archiveLinks[0]?.createdAt))} â€“ ${escapeHtml(formatHistoryTimestamp(archiveLinks[archiveLinks.length - 1]?.createdAt))}</span>
             </div>
             <span>${archiveLinks.length}</span>
           </summary>
@@ -13397,7 +14281,7 @@ function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
             return `Jahr ${filters.year || "?"}`;
           }
           if (filters.scope === "range") {
-            return `${filters.from || "…"} – ${filters.to || "…"}`;
+            return `${filters.from || "â€¦"} â€“ ${filters.to || "â€¦"}`;
           }
           return "Kompletter Account";
         })(),
@@ -13440,11 +14324,11 @@ function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
 
       function formatArchiveDateTime(value) {
         if (!value) {
-          return "—";
+          return "â€”";
         }
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) {
-          return "—";
+          return "â€”";
         }
         return new Intl.DateTimeFormat(archiveLocale, {
           dateStyle: "medium",
@@ -13859,6 +14743,128 @@ function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
 </html>`;
 }
 
+async function buildArchiveHtmlDocumentFromTemplate(catalog, assetUris, options = {}) {
+  const groups = buildArchiveThreadGroups(catalog.posts || []);
+  const archiveHashtags = collectArchiveHtmlHashtags(catalog.posts || []);
+  const archiveLinks = collectArchiveHtmlLinks(catalog.posts || []);
+  const htmlI18n = buildArchiveHtmlI18n();
+  const handle = catalog?.manifest?.account?.handle || authAccount || "Bluesky";
+  const fromValue = formatArchiveHtmlDateInputValue(catalog?.summary?.from);
+  const toValue = formatArchiveHtmlDateInputValue(catalog?.summary?.to);
+  const exportedAtIso = catalog?.manifest?.exportedAt || new Date().toISOString();
+  const title = t("archiveHtmlTitle", { handle });
+  const skippedImageCount = Number(catalog?.summary?.skippedImageCount) || 0;
+  const filterSummaryText = buildArchiveHtmlFilterSummary(catalog);
+  const groupsMarkup = groups
+    .map((group, groupIndex) => buildArchiveHtmlGroupMarkup(group, groupIndex, handle, assetUris, options))
+    .join("");
+  const linksMarkup = buildArchiveHtmlLinksMarkup(archiveLinks);
+  const metaItemsMarkup = [
+    `
+      <div class="archive-html-meta-item">
+        <span data-i18n-key="archiveSummaryPosts">${escapeHtml(t("archiveSummaryPosts"))}</span>
+        <strong>${catalog.posts.length}</strong>
+      </div>
+    `,
+    `
+      <div class="archive-html-meta-item">
+        <span data-i18n-key="archiveSummaryImages">${escapeHtml(t("archiveSummaryImages"))}</span>
+        <strong>${catalog.summary?.imageCount || 0}</strong>
+      </div>
+    `,
+    skippedImageCount > 0
+      ? `
+        <div class="archive-html-meta-item">
+          <span data-i18n-key="archiveSkippedImagesLabel">${escapeHtml(t("archiveSkippedImagesLabel"))}</span>
+          <strong>${skippedImageCount}</strong>
+        </div>
+      `
+      : "",
+    `
+      <div class="archive-html-meta-item">
+        <span data-i18n-key="archiveHtmlArchiveRangeLabel">${escapeHtml(t("archiveHtmlArchiveRangeLabel"))}</span>
+        <strong
+          id="archive-range-copy"
+          data-range-from="${escapeHtmlAttribute(catalog.summary?.from || "")}"
+          data-range-to="${escapeHtmlAttribute(catalog.summary?.to || "")}"
+        >${escapeHtml(t("archiveHtmlArchiveRangeValue", {
+          from: formatHistoryTimestamp(catalog.summary?.from),
+          to: formatHistoryTimestamp(catalog.summary?.to),
+        }))}</strong>
+      </div>
+    `,
+  ].join("");
+  const hashtagsMarkup = archiveHashtags.length > 0
+    ? `
+      <div class="archive-html-hashtags">
+        ${archiveHashtags.map((tag) => `
+          <button
+            type="button"
+            class="archive-html-hashtag"
+            data-archive-hashtag="${escapeHtmlAttribute(tag.value.toLowerCase())}"
+          >${escapeHtml(tag.value)}</button>
+        `).join("")}
+      </div>
+    `
+    : `<p class="archive-html-hashtags-empty" data-i18n-key="archiveHtmlHashtagsEmpty">${escapeHtml(t("archiveHtmlHashtagsEmpty"))}</p>`;
+  const bootstrapJson = serializeArchiveHtmlInlineJson({
+    htmlI18n,
+    defaults: {
+      fromValue,
+      toValue,
+    },
+    runtimeData: {
+      handle,
+      exportedAtIso,
+      title,
+      skippedImageCount,
+      filterScope: (() => {
+        const filters = catalog?.manifest?.filters || {};
+        if (filters.scope === "year") {
+          return `Jahr ${filters.year || "?"}`;
+        }
+        if (filters.scope === "range") {
+          return `${filters.from || "..."} - ${filters.to || "..."}`;
+        }
+        return "Kompletter Account";
+      })(),
+      filterHashtagCount: Array.isArray(catalog?.manifest?.filters?.hashtagTags) ? catalog.manifest.filters.hashtagTags.length : 0,
+      filterSkippedCount: Math.max(0, Number(catalog?.manifest?.hashtagFilteredOutCount) || 0),
+    },
+  });
+  const { shell, clientScript } = await loadArchiveHtmlTemplateBundle();
+  return fillArchiveHtmlTemplate(shell, {
+    documentTitle: escapeHtml(title),
+    heroKicker: escapeHtml(t("archiveHeaderEyebrow")),
+    pageTitle: escapeHtml(title),
+    generatedCopy: escapeHtml(t("archiveHtmlGenerated", { exportedAt: formatHistoryTimestamp(exportedAtIso) })),
+    skippedCopyMarkup: skippedImageCount > 0 ? `<p class="archive-html-warning" id="archive-skipped-copy">${escapeHtml(t("archiveSkippedImagesNotice", { skipped: skippedImageCount }))}</p>` : "",
+    filterCopyMarkup: filterSummaryText ? `<p class="archive-html-warning" id="archive-filter-copy" data-i18n-key="archiveHtmlFilterSummary">${escapeHtml(filterSummaryText)}</p>` : "",
+    metaItemsMarkup,
+    searchLabel: escapeHtml(t("archiveHtmlSearchLabel")),
+    searchPlaceholder: escapeHtmlAttribute(t("archiveHtmlSearchLabel")),
+    fromLabel: escapeHtml(t("archiveFromLabel")),
+    fromValue: escapeHtmlAttribute(fromValue),
+    toLabel: escapeHtml(t("archiveToLabel")),
+    toValue: escapeHtmlAttribute(toValue),
+    onlyImagesLabel: escapeHtml(t("archiveHtmlOnlyImages")),
+    onlyThreadsLabel: escapeHtml(t("archiveHtmlOnlyThreads")),
+    resetFiltersLabel: escapeHtml(t("archiveHtmlResetFilters")),
+    indentThreadsLabel: escapeHtml(t("archiveHtmlIndentThreads")),
+    toggleAllLabel: escapeHtml(t("archiveHtmlToggleAllOpen")),
+    toggleThreadsLabel: escapeHtml(t("archiveHtmlExpandThreads")),
+    toggleSinglesLabel: escapeHtml(t("archiveHtmlExpandSingles")),
+    hashtagsLabel: escapeHtml(t("archiveHtmlHashtagsLabel")),
+    hashtagsMarkup,
+    linksMarkup,
+    groupsMarkup,
+    lightboxTitle: escapeHtml(title),
+    lightboxCloseLabel: escapeHtml(t("closeButton")),
+    bootstrapJson,
+    clientScript: serializeArchiveHtmlInlineScript(clientScript),
+  });
+}
+
 async function exportArchiveHtmlFromCatalog(catalog = archiveCatalog, options = {}) {
   if (!catalog) {
     throw new Error(t("archiveNeedArchive"));
@@ -13866,42 +14872,85 @@ async function exportArchiveHtmlFromCatalog(catalog = archiveCatalog, options = 
   await ensureArchiveAvatarAssets(catalog);
 
   const assets = Array.isArray(catalog.assets) ? catalog.assets : [];
-  const assetUris = new Map();
   const compactMode = options.mode === "compact";
+  const assetUris = new Map();
+  const autoFallbackToCompact = !compactMode && shouldAutoFallbackArchiveHtmlToCompact(assets);
+  const effectiveCompactMode = compactMode || autoFallbackToCompact;
 
   setArchiveProgress({
     title: t("archiveProgressHtmlTitle"),
     step: t("archiveProgressHtmlStep"),
     percent: 76,
-    detail: compactMode
+    detail: effectiveCompactMode
       ? t("archiveProgressHtmlCompactDetail")
       : t("archiveProgressHtmlDetail", { count: assets.length }),
   });
 
-  if (!compactMode) {
-    for (const [index, asset] of assets.entries()) {
-      assetUris.set(asset.path, await assetToDataUriAsync(asset));
-      setArchiveProgress({
-        title: t("archiveProgressHtmlTitle"),
-        step: t("archiveProgressHtmlStep"),
-        percent: 76 + Math.round(((index + 1) / Math.max(1, assets.length)) * 18),
-        detail: t("archiveProgressHtmlDetail", { count: assets.length }),
-      });
+  if (!effectiveCompactMode) {
+    try {
+      for (const [index, asset] of assets.entries()) {
+        assetUris.set(asset.path, await assetToDataUriAsync(asset));
+        if ((index + 1) % 8 === 0 || index + 1 === assets.length) {
+          setArchiveProgress({
+            title: t("archiveProgressHtmlTitle"),
+            step: t("archiveProgressHtmlStep"),
+            percent: 76 + Math.round(((index + 1) / Math.max(1, assets.length)) * 18),
+            detail: t("archiveProgressHtmlDetail", { count: assets.length }),
+          });
+          await waitForUiFrame();
+        }
+      }
+    } catch (error) {
+      if (!isArchiveStringLengthError(error)) {
+        throw error;
+      }
+      assetUris.clear();
     }
   }
 
-  const html = buildArchiveHtmlDocument(catalog, assetUris, {
-    embedPostImages: !compactMode,
-    mode: compactMode ? "compact" : "full",
-  });
-  const fileName = `${makeArchiveFileBaseName(catalog)}${compactMode ? "-compact" : ""}.html`;
+  const fallbackTriggered = effectiveCompactMode || (!compactMode && assetUris.size === 0 && assets.length > 0);
+  if (fallbackTriggered) {
+    setArchiveProgress({
+      title: t("archiveProgressHtmlTitle"),
+      step: t("archiveProgressHtmlStep"),
+      percent: 94,
+      detail: t("archiveHtmlAutoCompactNotice"),
+    });
+    await waitForUiFrame();
+  }
+
+  let html = "";
+  try {
+    html = await buildArchiveHtmlDocumentFromTemplate(catalog, assetUris, {
+      embedPostImages: !fallbackTriggered,
+      mode: fallbackTriggered ? "compact" : "full",
+    });
+  } catch (error) {
+    if (!isArchiveStringLengthError(error) || fallbackTriggered) {
+      throw error;
+    }
+    assetUris.clear();
+    setArchiveProgress({
+      title: t("archiveProgressHtmlTitle"),
+      step: t("archiveProgressHtmlStep"),
+      percent: 94,
+      detail: t("archiveHtmlAutoCompactNotice"),
+    });
+    await waitForUiFrame();
+    html = await buildArchiveHtmlDocumentFromTemplate(catalog, assetUris, {
+      embedPostImages: false,
+      mode: "compact",
+    });
+  }
+
+  const fileName = `${makeArchiveFileBaseName(catalog)}${fallbackTriggered ? "-compact" : ""}.html`;
   const file = new File([html], fileName, { type: "text/html" });
   await shareOrDownloadFile(file, fileName, { preferDownload: true });
   setArchiveProgress({
     title: t("archiveProgressDoneTitle"),
     step: t("archiveProgressDoneStep"),
     percent: 100,
-    detail: compactMode ? t("archiveHtmlCompactDone") : t("archiveHtmlDone"),
+    detail: fallbackTriggered ? t("archiveHtmlCompactDone") : t("archiveHtmlDone"),
   });
 }
 
@@ -14367,6 +15416,79 @@ function canvasRectToPdfRect(rect, canvasWidth, canvasHeight) {
   ];
 }
 
+function buildTextPdfFile(pages) {
+  const encoder = new TextEncoder();
+  const objects = [null];
+
+  function addObject(data) {
+    objects.push(data);
+    return objects.length - 1;
+  }
+
+  const fontRegularId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const fontBoldId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+  const pageIds = [];
+
+  for (const page of pages) {
+    const contentBytes = encoder.encode(page.content || "");
+    const contentId = addObject({
+      header: `<< /Length ${contentBytes.length} >>\nstream\n`,
+      bytes: contentBytes,
+      footer: "\nendstream",
+    });
+
+    const annotationIds = (page.annotations || []).map((annotation) => addObject(
+      `<< /Type /Annot /Subtype /Link /Rect [${annotation.rect.join(" ")}] /Border [0 0 0] /A << /S /URI /URI (${escapePdfText(annotation.url)}) >> >>`,
+    ));
+
+    const resources = `<< /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >> >>`;
+    const annotations = annotationIds.length > 0 ? ` /Annots [${annotationIds.map((id) => `${id} 0 R`).join(" ")}]` : "";
+    pageIds.push(addObject(`<< /Type /Page /Parent PAGES_REF /MediaBox [0 0 595 842] /Resources ${resources} /Contents ${contentId} 0 R${annotations} >>`));
+  }
+
+  const pagesId = addObject(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`);
+  objects[pagesId] = objects[pagesId].replace("PAGES_REF", `${pagesId} 0 R`);
+  for (const pageId of pageIds) {
+    objects[pageId] = objects[pageId].replace("PAGES_REF", `${pagesId} 0 R`);
+  }
+  const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+
+  const parts = [encoder.encode("%PDF-1.4\n")];
+  const offsets = [0];
+  let length = parts[0].length;
+
+  for (let index = 1; index < objects.length; index += 1) {
+    offsets[index] = length;
+    const object = objects[index];
+    const prefix = encoder.encode(`${index} 0 obj\n`);
+    const suffix = encoder.encode("\nendobj\n");
+    parts.push(prefix);
+    length += prefix.length;
+    if (typeof object === "string") {
+      const body = encoder.encode(object);
+      parts.push(body);
+      length += body.length;
+    } else {
+      const header = encoder.encode(object.header);
+      const footer = encoder.encode(object.footer);
+      parts.push(header, object.bytes, footer);
+      length += header.length + object.bytes.length + footer.length;
+    }
+    parts.push(suffix);
+    length += suffix.length;
+  }
+
+  const xrefOffset = length;
+  const xref = ["xref", `0 ${objects.length}`, "0000000000 65535 f "];
+  for (let index = 1; index < objects.length; index += 1) {
+    xref.push(`${String(offsets[index]).padStart(10, "0")} 00000 n `);
+  }
+  const trailer = `trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  parts.push(encoder.encode(`${xref.join("\n")}\n${trailer}`));
+
+  return new Blob(parts, { type: "application/pdf" });
+}
+
 function getArchiveThreadGroupKey(post) {
   return post?.thread?.rootUri || post?.uri || "";
 }
@@ -14606,7 +15728,7 @@ async function drawArchivePdfPostCard(
     const maxUriWidth = width - (innerPadding * 2) - (140 * scale);
     let clipped = uriLabel;
     while (clipped && context.measureText(clipped).width > maxUriWidth) {
-      clipped = `${clipped.slice(0, -2)}…`;
+      clipped = `${clipped.slice(0, -2)}â€¦`;
     }
     context.fillText(clipped, x + width - innerPadding - context.measureText(clipped).width, footerY + (5 * scale));
   }
@@ -14782,6 +15904,8 @@ function paginateArchivePdfPosts(posts, options) {
 function buildPdfFile(pages) {
   const encoder = new TextEncoder();
   const objects = [null];
+  const fontRegularId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const fontBoldId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
 
   function addObject(data) {
     objects.push(data);
@@ -14814,7 +15938,8 @@ function buildPdfFile(pages) {
     const xObjectEntries = Object.entries(xObjects)
       .map(([name, id]) => `/${name} ${id} 0 R`)
       .join(" ");
-    const resources = `<< /XObject << ${xObjectEntries} >> >>`;
+    const xObjectResource = xObjectEntries ? `/XObject << ${xObjectEntries} >> ` : "";
+    const resources = `<< /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >> ${xObjectResource}>>`;
     const annotations = annotationIds.length > 0 ? ` /Annots [${annotationIds.map((id) => `${id} 0 R`).join(" ")}]` : "";
     pageIds.push(addObject(`<< /Type /Page /Parent PAGES_REF /MediaBox [0 0 595 842] /Resources ${resources} /Contents ${contentId} 0 R${annotations} >>`));
   }
@@ -14862,11 +15987,18 @@ function buildPdfFile(pages) {
   return new Blob(parts, { type: "application/pdf" });
 }
 
-async function buildArchivePdfBand(catalog, posts, bandIndex, bandCount, options) {
+async function buildArchivePdfBand(catalog, posts, bandIndex, bandCount, options, progressCallback = null) {
   const pagePosts = paginateArchivePdfPosts(posts, options);
   const pages = [];
 
   for (const [pageIndex, page] of pagePosts.entries()) {
+    if (typeof progressCallback === "function") {
+      progressCallback({
+        pageIndex,
+        pageCount: pagePosts.length,
+      });
+    }
+    await waitForUiFrame();
     const renderedPage = await renderArchivePdfCanvasPage(catalog, page, pageIndex, pagePosts.length, bandIndex, bandCount, options);
     pages.push({
       content: `q 595 0 0 842 0 0 cm /PageImage${pageIndex + 1} Do Q`,
@@ -14916,6 +16048,13 @@ async function exportArchivePdfBandsFromCatalog(catalog = archiveCatalog) {
   if (!catalog) {
     throw new Error(t("archiveNeedArchive"));
   }
+  setArchiveProgress({
+    title: t("archiveProgressPdfTitle"),
+    step: t("archiveProgressPdfStep", { index: 1, count: 1 }),
+    percent: 3,
+    detail: t("archiveProgressPdfPreparing"),
+  });
+  await waitForUiFrame();
   await ensureArchiveAvatarAssets(catalog);
 
   const options = getArchivePdfOptions();
@@ -14927,10 +16066,25 @@ async function exportArchivePdfBandsFromCatalog(catalog = archiveCatalog) {
     setArchiveProgress({
       title: t("archiveProgressPdfTitle"),
       step: t("archiveProgressPdfStep", { index: bandIndex + 1, count: bands.length }),
-      percent: Math.round((bandIndex / Math.max(1, bands.length)) * 100),
+      percent: Math.max(6, Math.round((bandIndex / Math.max(1, bands.length)) * 100)),
       detail: t("archiveProgressPdfDetail", { posts: posts.length }),
     });
-    const blob = await buildArchivePdfBand(catalog, posts, bandIndex, bands.length, options);
+    await waitForUiFrame();
+    const blob = await buildArchivePdfBand(catalog, posts, bandIndex, bands.length, options, ({ pageIndex, pageCount }) => {
+      const bandBase = bandIndex / Math.max(1, bands.length);
+      const pageShare = pageCount > 0 ? ((pageIndex + 1) / pageCount) : 1;
+      const percent = Math.min(99, Math.round((bandBase + (pageShare / Math.max(1, bands.length))) * 100));
+      setArchiveProgress({
+        title: t("archiveProgressPdfTitle"),
+        step: t("archiveProgressPdfStep", { index: bandIndex + 1, count: bands.length }),
+        percent,
+        detail: t("archiveProgressPdfPageDetail", {
+          posts: posts.length,
+          page: pageIndex + 1,
+          pages: pageCount,
+        }),
+      });
+    });
     const fileName = `${baseName}-band-${String(bandIndex + 1).padStart(3, "0")}.pdf`;
     const file = new File([blob], fileName, { type: "application/pdf" });
     await shareOrDownloadFile(file, fileName, { preferDownload: true });
@@ -14957,9 +16111,7 @@ async function ensureArchiveCatalogLoaded(forceRefresh = false) {
   const filters = getArchiveFilters();
   const filterKey = serializeArchiveFilters(filters);
   const currentSession = archiveSession && archiveSession.filterKey === filterKey ? archiveSession : null;
-  if (currentSession && !currentSession.hasMore && !forceRefresh) {
-    throw new Error(t("archiveNoPendingWave"));
-  }
+  const resumeCatalog = currentSession ? archiveCatalog : null;
 
   setArchiveProgress({
     title: t("archiveProgressFetchTitle"),
@@ -14980,9 +16132,11 @@ async function ensureArchiveCatalogLoaded(forceRefresh = false) {
     catalog = await sendToServiceWorker("EXPORT_ACCOUNT_ARCHIVE_WAVE", {
       runId: activeArchiveRunId,
       filters,
-      cursor: forceRefresh ? "" : (currentSession?.nextCursor || ""),
       maxPosts: getArchiveWaveSize(),
-      waveIndex: forceRefresh ? 1 : ((currentSession?.waveIndex || 0) + 1),
+      waveIndex: 1,
+      cursor: currentSession?.status === "paused" ? (currentSession?.nextCursor || "") : "",
+      existingCatalog: currentSession?.status === "paused" ? resumeCatalog : null,
+      existingSession: currentSession?.status === "paused" ? currentSession : null,
     }, {
       timeoutMs: 600000,
       onProgress(progress) {
@@ -15032,30 +16186,36 @@ async function ensureArchiveCatalogLoaded(forceRefresh = false) {
   archiveSession = {
     filterKey,
     filters,
-    waveIndex: Number(catalog.session?.waveIndex) || (forceRefresh ? 1 : ((currentSession?.waveIndex || 0) + 1)),
+    waveIndex: 1,
     nextCursor: catalog.session?.nextCursor || "",
     hasMore: Boolean(catalog.session?.hasMore),
     exportedPosts: Number(catalog.session?.exportedPosts) || archiveCatalog.posts.length,
     exportedImages: Number(catalog.session?.exportedImages) || archiveCatalog.summary.imageCount,
     status: catalog.session?.status || "completed",
+    pageCount: Number(catalog.session?.pageCount) || 0,
+    phase: String(catalog.session?.phase || ""),
+    errorMessage: String(catalog.session?.errorMessage || ""),
     updatedAt: new Date().toISOString(),
   };
   await saveArchiveSession(archiveSession);
   await saveArchiveCatalogState(archiveCatalog);
-  activeArchiveRunState = catalog.session?.status === "cancelled" ? "cancelled" : "idle";
-  if (activeArchiveRunState === "idle") {
-    activeArchiveRunId = null;
-  }
+  activeArchiveRunId = null;
+  activeArchiveRunState = catalog.session?.status === "cancelled"
+    ? "cancelled"
+    : (catalog.session?.status === "paused" ? "paused" : "idle");
   archiveTransientNotice = catalog.session?.status === "cancelled"
-    ? t("archiveWaveCancelledNotice", { wave: archiveSession.waveIndex || 1 })
-    : t("archiveWaveLoadedNotice", {
-        wave: archiveSession.waveIndex || 1,
-        posts: archiveCatalog.posts.length,
-        images: archiveCatalog.summary.imageCount,
-      });
+    ? t("archiveWaveCancelledNotice")
+    : (catalog.session?.status === "paused"
+      ? t("archiveWavePausedNotice", {
+          message: catalog.session?.errorMessage || t("archiveWavePausedDefault"),
+        })
+      : t("archiveWaveLoadedNotice", {
+          posts: archiveCatalog.posts.length,
+          images: archiveCatalog.summary.imageCount,
+        }));
   setArchiveProgress({
-    title: t("archiveProgressDoneTitle"),
-    step: t("archiveWaveLoadedStep", { wave: archiveSession.waveIndex || 1 }),
+    title: catalog.session?.status === "paused" ? t("archiveProgressPausedTitle") : t("archiveProgressDoneTitle"),
+    step: catalog.session?.status === "paused" ? t("archiveWavePausedStep") : t("archiveWaveLoadedStep"),
     percent: 100,
     detail: archiveTransientNotice,
   });
@@ -15388,6 +16548,7 @@ async function persistSettings() {
     tipsVisible,
     altTextRequired,
     imageAutoResizeMode,
+    archiveExpertMode,
     themeMode,
     sidebarCollapsedDesktop,
     desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
@@ -15439,7 +16600,7 @@ function deserializeBackupAssets(assets = []) {
 
 async function gzipBytes(bytes) {
   if (typeof CompressionStream !== "function") {
-    throw new Error("GZIP-Komprimierung wird in diesem Browser nicht unterstützt.");
+    throw new Error("GZIP-Komprimierung wird in diesem Browser nicht unterstÃ¼tzt.");
   }
   const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
   const chunks = [];
@@ -15458,7 +16619,7 @@ async function gzipBytes(bytes) {
 
 async function gunzipBytes(bytes) {
   if (typeof DecompressionStream !== "function") {
-    throw new Error("GZIP-Dekomprimierung wird in diesem Browser nicht unterstützt.");
+    throw new Error("GZIP-Dekomprimierung wird in diesem Browser nicht unterstÃ¼tzt.");
   }
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
   const chunks = [];
@@ -15489,6 +16650,8 @@ async function createSettingsBackupPayload() {
       localePreference,
       tipsVisible,
       altTextRequired,
+      imageAutoResizeMode,
+      archiveExpertMode,
       themeMode,
       sidebarCollapsedDesktop,
       desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
@@ -15574,6 +16737,7 @@ async function importSettingsBackup(file) {
   tipsVisible = imported.tipsVisible !== false;
   altTextRequired = imported.altTextRequired === true;
   imageAutoResizeMode = normalizeImageAutoResizeMode(imported.imageAutoResizeMode);
+  archiveExpertMode = imported.archiveExpertMode === true;
   themeMode = imported.themeMode === "dark" ? "dark" : "light";
   sidebarCollapsedDesktop = imported.sidebarCollapsedDesktop === true;
   ({
@@ -15593,6 +16757,9 @@ async function importSettingsBackup(file) {
   markerSpacingToggle.checked = addMarkerSpacing;
   if (imageAutoResizeSelect) {
     imageAutoResizeSelect.value = imageAutoResizeMode;
+  }
+  if (archiveExpertModeToggle) {
+    archiveExpertModeToggle.checked = archiveExpertMode;
   }
   applyPostInteractionSettings(imported.postInteraction || {});
   if (imported.linkCardProxy && typeof imported.linkCardProxy === "object") {
@@ -15699,7 +16866,7 @@ function renderVersionLabel() {
     parts.push(CURRENT_VERSION_INFO.label);
   }
 
-  versionLabel.textContent = parts.join(" · ");
+  versionLabel.textContent = parts.join(" Â· ");
 }
 
 async function fetchVersionInfo() {
@@ -15771,8 +16938,8 @@ async function checkForUpdates(options = {}) {
       return;
     }
 
-    const remoteLabel = remoteVersion.label ? ` · ${remoteVersion.label}` : "";
-    const message = `${t("updateAvailablePrefix")}: ${remoteVersion.appVersion} · ${remoteVersion.cacheVersion}${remoteLabel}. ${t("updateAvailableAction")}`;
+    const remoteLabel = remoteVersion.label ? ` Â· ${remoteVersion.label}` : "";
+    const message = `${t("updateAvailablePrefix")}: ${remoteVersion.appVersion} Â· ${remoteVersion.cacheVersion}${remoteLabel}. ${t("updateAvailableAction")}`;
     setUpdateStatus(message, true);
   } catch (error) {
     console.error(error);
@@ -16444,6 +17611,9 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicArchiveScopeBullet1"),
           t("helpTopicArchiveScopeBullet2"),
           t("helpTopicArchiveScopeBullet3"),
+          t("helpTopicArchiveScopeBullet4"),
+          t("helpTopicArchiveScopeBullet5"),
+          t("helpTopicArchiveScopeBullet6"),
         ],
       };
     case "archive_actions":
@@ -16455,6 +17625,7 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicArchiveActionsBullet1"),
           t("helpTopicArchiveActionsBullet2"),
           t("helpTopicArchiveActionsBullet3"),
+          t("helpTopicArchiveActionsBullet4"),
         ],
       };
     case "archive_media":
@@ -16478,6 +17649,7 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicArchiveUnrollBullet2"),
           t("helpTopicArchiveUnrollBullet3"),
           t("helpTopicArchiveUnrollBullet4"),
+          t("helpTopicArchiveUnrollBullet5"),
         ],
       };
     case "archive_progress":
@@ -16625,7 +17797,7 @@ function reserveForCounters(segmentCount) {
 }
 
 function reserveForThreadEmoji() {
-  return "\n⤵️".length;
+  return "\nâ¤µï¸".length;
 }
 
 function reserveForThreadIntro() {
@@ -16680,7 +17852,7 @@ function decorateSegments(segments, withCounters, withThreadIntro, withThreadEmo
     }
 
     if (isThread && withThreadEmoji && !isLastSegment) {
-      suffix += "\n⤵️";
+      suffix += "\nâ¤µï¸";
     }
 
     if (isThread && withCounters) {
@@ -17258,6 +18430,7 @@ async function hydrateAppState() {
     tipsVisible = state.tipsVisible !== false;
     altTextRequired = state.altTextRequired !== false;
     imageAutoResizeMode = normalizeImageAutoResizeMode(state.imageAutoResizeMode);
+    archiveExpertMode = state.archiveExpertMode === true;
     themeMode = state.themeMode === "dark" ? "dark" : "light";
     sidebarCollapsedDesktop = state.sidebarCollapsedDesktop === true;
     const needsDesktopLayoutMigration = state.desktopLayoutVersion !== DESKTOP_LAYOUT_STATE_VERSION;
@@ -17286,6 +18459,9 @@ async function hydrateAppState() {
     linkCardSecretInput.value = state.linkCardProxy?.secret || "";
     if (imageAutoResizeSelect) {
       imageAutoResizeSelect.value = imageAutoResizeMode;
+    }
+    if (archiveExpertModeToggle) {
+      archiveExpertModeToggle.checked = archiveExpertMode;
     }
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
@@ -18132,6 +19308,11 @@ archiveContentModeSelect.addEventListener("change", () => {
   void persistArchivePreferences();
 });
 
+archiveConversationContextToggle?.addEventListener("change", () => {
+  invalidateArchiveCatalog();
+  void persistArchivePreferences();
+});
+
 archiveBandSizeSelect.addEventListener("change", () => {
   updateArchiveSummary();
   void persistArchivePreferences();
@@ -18247,9 +19428,8 @@ dmToInput.addEventListener("change", () => {
 
 archiveNextWaveButton.addEventListener("click", async () => {
   try {
-    archiveCatalog = null;
     setBusy(archiveNextWaveButton, true, t("archiveWorkingButton"), t("archiveNextWaveButton"));
-    await ensureArchiveCatalogLoaded(false);
+    await ensureArchiveCatalogLoaded(true);
     renderArchiveWorkspace();
   } catch (error) {
     console.error(error);
@@ -18468,6 +19648,16 @@ if (archiveProgressExportHtmlCompactButton) {
     archiveExportHtmlCompactButton?.click();
   });
 }
+
+archiveZipHtmlScriptCopyButton?.addEventListener("click", async () => {
+  try {
+    await copyTextToClipboard(getArchiveZipHtmlScriptCommand());
+    setStatus(t("archiveZipHtmlScriptCopied"));
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || t("statusNoSupport"), "error");
+  }
+});
 
 if (archiveActionsExportPdfButton) {
   archiveActionsExportPdfButton.addEventListener("click", () => {
@@ -18709,10 +19899,12 @@ helpButton.addEventListener("click", () => {
   void loadReadmeContent();
 });
 
-document.querySelectorAll("[data-help-topic]").forEach((button) => {
-  button.addEventListener("click", () => {
-    openInlineHelpTopic(button.dataset.helpTopic || "");
-  });
+document.addEventListener("click", (event) => {
+  const button = event.target instanceof Element ? event.target.closest("[data-help-topic]") : null;
+  if (!(button instanceof HTMLElement)) {
+    return;
+  }
+  openInlineHelpTopic(button.dataset.helpTopic || "");
 });
 
 installButton.addEventListener("click", async () => {
@@ -18773,6 +19965,11 @@ imageAutoResizeSelect?.addEventListener("change", async () => {
     renderSegments({ preserveOverrides: true });
   });
   updatePublishAvailability();
+  await persistSettings();
+});
+
+archiveExpertModeToggle?.addEventListener("change", async () => {
+  archiveExpertMode = archiveExpertModeToggle.checked === true;
   await persistSettings();
 });
 
@@ -19158,3 +20355,5 @@ updateInstallButtonVisibility();
 setStatus(t("statusPreparing"));
 registerServiceWorker();
 renderSegments();
+
+
