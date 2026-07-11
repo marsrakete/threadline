@@ -55,9 +55,9 @@ const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.179",
-  cacheVersion: "v198",
-  label: "Add analysis patterns and PDF export",
+  appVersion: "0.4.181",
+  cacheVersion: "v200",
+  label: "Repair encoding glitches",
 });
 
 function clamp(value, min, max) {
@@ -1561,7 +1561,7 @@ async function loadNetworkFocusDetails(did) {
         if (networkSelectedDid === actorDid) {
           const selectedProfile = networkNodes.get(actorDid) || null;
           const actorLabel = selectedProfile ? getProfileLabel(selectedProfile) : "";
-          setNetworkStatus([step, actorLabel || detail].filter(Boolean).join(" Â· ") || t("networkFocusLoading"));
+          setNetworkStatus([step, actorLabel || detail].filter(Boolean).join(" · ") || t("networkFocusLoading"));
         }
       },
     });
@@ -1614,7 +1614,7 @@ async function loadNetworkCommonMutuals(actorDid) {
         const step = String(progress?.step || "").trim();
         const detail = String(progress?.detail || "").trim();
         if (networkSelectedDid === focusDid) {
-          setNetworkStatus([step, detail].filter(Boolean).join(" Â· ") || t("networkCommonMutualsLoading"));
+          setNetworkStatus([step, detail].filter(Boolean).join(" · ") || t("networkCommonMutualsLoading"));
         }
       },
     });
@@ -1721,7 +1721,7 @@ function renderAccountSwitcher() {
       state === "available" ? t("accountStateAvailable") : "",
       state === "signed-out" ? t("accountStateSignedOut") : "",
       !account.hasStoredPassword && !account.hasSession ? t("accountNeedsLoginShort") : "",
-    ].filter(Boolean).join(" Â· ");
+    ].filter(Boolean).join(" · ");
 
     button.append(avatar, label);
     button.addEventListener("click", async () => {
@@ -2607,8 +2607,8 @@ function createAnalysisCorpus(texts = []) {
   const joinedText = normalizedPosts.join("\n");
   const withoutUrls = joinedText.replace(/https?:\/\/\S+/giu, " ");
   const lowercase = withoutUrls.toLowerCase();
-  const words = lowercase.match(/\p{L}+(?:['â€™-]\p{L}+)*/gu) || [];
-  const tokensWithNumbers = lowercase.match(/\p{L}+(?:['â€™-]\p{L}+)*|\p{N}+/gu) || [];
+  const words = lowercase.match(/\p{L}+(?:['\u2019-]\p{L}+)*/gu) || [];
+  const tokensWithNumbers = lowercase.match(/\p{L}+(?:['\u2019-]\p{L}+)*|\p{N}+/gu) || [];
   const sentences = withoutUrls
     .split(/[.!?]+/u)
     .map((entry) => entry.trim())
@@ -2672,15 +2672,15 @@ function createAnalysisCorpus(texts = []) {
     [":", /:/g],
     [";", /;/g],
     ["()", /[()]/g],
-    ["-", /[-â€“â€”]/g],
-    ['"', /["â€œâ€â€ž]/g],
+    ["-", /[-\u2013\u2014]/g],
+    ['"', /["\u201c\u201d\u201e]/g],
   ];
   punctuationDefinitions.forEach(([label, regex]) => {
     punctuationFrequency.set(label, countRegexMatches(joinedText, regex));
   });
 
   normalizedPosts.forEach((post) => {
-    const postWords = post.toLowerCase().match(/\p{L}+(?:['â€™-]\p{L}+)*/gu) || [];
+    const postWords = post.toLowerCase().match(/\p{L}+(?:['\u2019-]\p{L}+)*/gu) || [];
     if (postWords.length > 0) {
       const start = postWords.slice(0, Math.min(2, postWords.length)).join(" ");
       const end = postWords.slice(Math.max(0, postWords.length - 2)).join(" ");
@@ -2971,7 +2971,7 @@ function formatAnalysisTopTemporalEntries(entries = []) {
   }
   return entries
     .map((entry) => `${entry.label} ${formatAnalysisPercent(entry.share)}`)
-    .join(" Â· ");
+    .join(" · ");
 }
 
 function startOfUtcDay(timestamp) {
@@ -3313,7 +3313,7 @@ function splitAnalysisTextsIntoWordChunks(texts = [], minWords = 180, maxChunks 
     if (!normalized) {
       return;
     }
-    const words = normalized.toLowerCase().match(/\p{L}+(?:['â€™-]\p{L}+)*/gu) || [];
+    const words = normalized.toLowerCase().match(/\p{L}+(?:['\u2019-]\p{L}+)*/gu) || [];
     if (!words.length) {
       return;
     }
@@ -6347,7 +6347,7 @@ function renderNetworkStage() {
       class: "network-node-button network-node-button-focus-center",
       tabindex: 0,
       role: "button",
-      "aria-label": `${selectedProfile?.displayName || selectedProfile?.handle || stageSelectedDid} Â· ${t("networkFocusEyebrow")}`,
+      "aria-label": `${selectedProfile?.displayName || selectedProfile?.handle || stageSelectedDid} · ${t("networkFocusEyebrow")}`,
     });
     focusCenterGroup.style.cursor = "pointer";
     focusCenterGroup.addEventListener("pointerdown", (event) => {
@@ -6447,7 +6447,7 @@ function renderNetworkStage() {
         class: "network-node-button network-node-button-preview",
         tabindex: 0,
         role: "button",
-        "aria-label": `${entry.displayName || entry.handle || entry.did} Â· ${entry.previewRelation === "followers" ? t("networkPreviewFollowersTitle") : t("networkPreviewFollowingTitle")}`,
+        "aria-label": `${entry.displayName || entry.handle || entry.did} · ${entry.previewRelation === "followers" ? t("networkPreviewFollowersTitle") : t("networkPreviewFollowingTitle")}`,
       });
       previewGroup.style.cursor = "pointer";
       previewGroup.addEventListener("pointerdown", (event) => {
@@ -6540,7 +6540,7 @@ function renderNetworkStage() {
       class: "network-node-button",
       tabindex: 0,
       role: "button",
-      "aria-label": `${node.displayName || node.handle || node.did} Â· ${getNetworkRelationLabel(node)}`,
+        "aria-label": `${node.displayName || node.handle || node.did} · ${getNetworkRelationLabel(node)}`,
     });
     buttonGroup.style.cursor = "pointer";
     buttonGroup.addEventListener("pointerdown", (event) => {
@@ -6756,7 +6756,7 @@ function renderNetworkFocus() {
     { label: t("networkStatFollowers"), value: formatCount(active.followersCount) },
     { label: t("networkStatFollowing"), value: formatCount(active.followsCount) },
     { label: t("networkStatPosts"), value: formatCount(active.postsCount) },
-    { label: t("networkStatScore"), value: node ? formatCount(getNetworkNodeScore(node)) : "â€”" },
+    { label: t("networkStatScore"), value: node ? formatCount(getNetworkNodeScore(node)) : "—" },
   ].forEach((item) => {
     const card = document.createElement("div");
     card.className = "network-stat-card";
@@ -7050,7 +7050,7 @@ function renderNetworkResults() {
     const card = document.createElement("article");
     card.className = "network-group-card";
     const title = document.createElement("strong");
-    title.textContent = `${titleText} Â· ${formatCount(totalCount)}`;
+    title.textContent = `${titleText} · ${formatCount(totalCount)}`;
     const note = document.createElement("p");
     note.className = "network-card-explainer";
     note.textContent = noteText;
@@ -7076,7 +7076,7 @@ function renderNetworkResults() {
         name.textContent = node.displayName || node.handle || node.did;
         const meta = document.createElement("span");
         meta.className = "network-list-meta";
-        meta.textContent = `@${node.handle || node.did} Â· ${formatCount(getNetworkNodeScore(node))}`;
+        meta.textContent = `@${node.handle || node.did} · ${formatCount(getNetworkNodeScore(node))}`;
         button.append(name, meta);
         list.appendChild(button);
       });
@@ -7261,7 +7261,7 @@ async function loadNetworkWave(options = {}) {
       onProgress(progress) {
         const step = String(progress?.step || "").trim();
         const detail = String(progress?.detail || "").trim();
-        setNetworkStatus([step, detail].filter(Boolean).join(" Â· ") || t("networkProgressLoading"));
+        setNetworkStatus([step, detail].filter(Boolean).join(" · ") || t("networkProgressLoading"));
       },
     });
 
@@ -7745,7 +7745,7 @@ function buildDmHtmlDocument(catalog = dmCatalog) {
   const partnerAvatarUri = partner?.avatarPath ? (assetUris.get(partner.avatarPath) || "") : "";
   const exportedAt = catalog?.manifest?.exportedAt || new Date().toISOString();
   const ownHandle = catalog?.manifest?.account?.handle || authAccount || "";
-  const title = `${t("dmHeaderTitle")} Â· ${partner?.displayName || `@${partner?.handle || ""}`}`.trim();
+  const title = `${t("dmHeaderTitle")} · ${partner?.displayName || `@${partner?.handle || ""}`}`.trim();
   const archiveRange = getDmArchiveMessageRange(catalog);
   const rangeFrom = archiveRange.from || "";
   const rangeTo = archiveRange.to || "";
@@ -8038,11 +8038,11 @@ function buildDmHtmlDocument(catalog = dmCatalog) {
         <p>${escapeHtml(t("dmHtmlGenerated", { date: formatCompactArchiveTimestamp(exportedAt) }))}</p>
         <div class="dm-html-partner">
           ${partnerAvatarUri ? `<img class="dm-html-avatar" src="${escapeHtmlAttribute(partnerAvatarUri)}" alt="${escapeHtmlAttribute(partner?.displayName || partner?.handle || "")}" loading="lazy">` : ""}
-          <p>${escapeHtml(t("dmPartnerLabel"))}: ${escapeHtml(partner?.displayName || "")}${partner?.handle ? ` Â· @${escapeHtml(partner.handle)}` : ""}</p>
+          <p>${escapeHtml(t("dmPartnerLabel"))}: ${escapeHtml(partner?.displayName || "")}${partner?.handle ? ` · @${escapeHtml(partner.handle)}` : ""}</p>
         </div>
         <p>${escapeHtml(t("dmArchiveRangeValue", {
-          from: rangeFrom ? formatCompactArchiveTimestamp(rangeFrom) : "â€¦",
-          to: rangeTo ? formatCompactArchiveTimestamp(rangeTo) : "â€¦",
+          from: rangeFrom ? formatCompactArchiveTimestamp(rangeFrom) : "…",
+          to: rangeTo ? formatCompactArchiveTimestamp(rangeTo) : "…",
         }))}</p>
         <div class="dm-html-meta">
           <div><span>${escapeHtml(t("dmSummaryConversationsLabel"))}</span><strong>${Number(catalog?.manifest?.conversationCount) || 0}</strong></div>
@@ -8256,8 +8256,8 @@ async function renderDmPdfCanvasPage(catalog, assetMap, entries, pageIndex, page
   }
   context.font = `${12 * scale}px "Segoe UI", Aptos, sans-serif`;
   context.fillStyle = "#5f7593";
-  context.fillText(`${t("dmPartnerLabel")}: ${partner?.displayName || ""}${partner?.handle ? ` Â· @${partner.handle}` : ""}`, 54 * scale, 70 * scale);
-  context.fillText(`@${handle} Â· ${formatCompactArchiveTimestamp(catalog?.manifest?.exportedAt || "")}`, 54 * scale, 88 * scale);
+  context.fillText(`${t("dmPartnerLabel")}: ${partner?.displayName || ""}${partner?.handle ? ` · @${partner.handle}` : ""}`, 54 * scale, 70 * scale);
+  context.fillText(`@${handle} · ${formatCompactArchiveTimestamp(catalog?.manifest?.exportedAt || "")}`, 54 * scale, 88 * scale);
   context.fillText(`${pageIndex + 1}/${pageCount}`, canvas.width - (90 * scale), 88 * scale);
 
   for (const entry of entries) {
@@ -8417,7 +8417,7 @@ async function loadDmPartners() {
     title: t("dmPartnersLoadingTitle"),
     step: "Partnerliste geladen",
     percent: 55,
-    detail: `${dmRecentContacts.length} DM-Partner werden angezeigt. Avatar-Bilder werden jetzt gesichert â€¦`,
+    detail: `${dmRecentContacts.length} DM-Partner werden angezeigt. Avatar-Bilder werden jetzt gesichert …`,
   });
   const hydrated = await sendToServiceWorker("HYDRATE_DM_PARTNER_AVATARS", {
     recentContacts: dmRecentContacts,
@@ -9144,8 +9144,8 @@ function renderArchiveResults(catalog = archiveCatalog) {
   const note = document.createElement("p");
   note.className = "settings-note";
   note.textContent = t("archiveResultsMeta", {
-    from: catalog.summary?.from || "â€”",
-    to: catalog.summary?.to || "â€”",
+    from: catalog.summary?.from || "—",
+    to: catalog.summary?.to || "—",
     images: catalog.summary?.imageCount || 0,
     skipped: catalog.summary?.skippedImageCount || 0,
   });
@@ -9492,8 +9492,8 @@ function applySidebarState() {
   sidebarResizeHandle.setAttribute("aria-label", t("sidebarResizeHandleLabel"));
   composerResizeHandle.setAttribute("aria-label", t("composerResizeHandleLabel"));
   sidebarToggleGlyph.textContent = isDesktop
-    ? (shouldCollapse ? "â–¶" : "â—€")
-    : (shouldCollapse ? "â–¼" : "â–²");
+    ? (shouldCollapse ? "▶" : "◀")
+    : (shouldCollapse ? "▼" : "▲");
 }
 
 function getDesktopResizeHandleWidth() {
@@ -9580,7 +9580,7 @@ function renderPostLanguageSummary() {
     summaryParts.push(t("quotePostsBlockedSummary"));
   }
 
-  postLanguagesSummary.textContent = summaryParts.join(" Â· ");
+  postLanguagesSummary.textContent = summaryParts.join(" · ");
   renderPostSettingsDisclosureMeta();
 }
 
@@ -13380,7 +13380,7 @@ function buildArchiveHtmlFilterSummary(catalog) {
   const scope = filters.scope === "year"
     ? `Jahr ${filters.year || "?"}`
     : (filters.scope === "range"
-      ? `${filters.from || "â€¦"} â€“ ${filters.to || "â€¦"}`
+      ? `${filters.from || "…"} – ${filters.to || "…"}`
       : "Kompletter Account");
   const hashtags = selectedTags.length > 0
     ? t("archiveHtmlFilterHashtagsSuffix", { count: selectedTags.length, skipped: filteredOutCount })
@@ -13505,7 +13505,7 @@ function buildArchiveHtmlGroupMarkup(group, groupIndex, handle, assetUris, optio
           <summary>
             <div>
               <strong>${escapeHtml(summaryLabel)}</strong>
-              <span>${escapeHtml(formatHistoryTimestamp(group.posts[0]?.createdAt))} â€“ ${escapeHtml(formatHistoryTimestamp(group.posts[group.posts.length - 1]?.createdAt))}</span>
+              <span>${escapeHtml(formatHistoryTimestamp(group.posts[0]?.createdAt))} – ${escapeHtml(formatHistoryTimestamp(group.posts[group.posts.length - 1]?.createdAt))}</span>
             </div>
             <span>${escapeHtml(t("archiveSummaryPosts"))}: ${group.posts.length}</span>
           </summary>
@@ -13536,7 +13536,7 @@ function buildArchiveHtmlLinksMarkup(archiveLinks) {
           <summary>
             <div>
               <strong>${escapeHtml(t("archiveHtmlLinksSummary", { count: archiveLinks.length }))}</strong>
-              <span>${escapeHtml(formatHistoryTimestamp(archiveLinks[0]?.createdAt))} â€“ ${escapeHtml(formatHistoryTimestamp(archiveLinks[archiveLinks.length - 1]?.createdAt))}</span>
+              <span>${escapeHtml(formatHistoryTimestamp(archiveLinks[0]?.createdAt))} – ${escapeHtml(formatHistoryTimestamp(archiveLinks[archiveLinks.length - 1]?.createdAt))}</span>
             </div>
             <span>${archiveLinks.length}</span>
           </summary>
@@ -14281,7 +14281,7 @@ function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
             return `Jahr ${filters.year || "?"}`;
           }
           if (filters.scope === "range") {
-            return `${filters.from || "â€¦"} â€“ ${filters.to || "â€¦"}`;
+            return `${filters.from || "…"} – ${filters.to || "…"}`;
           }
           return "Kompletter Account";
         })(),
@@ -14324,11 +14324,11 @@ function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
 
       function formatArchiveDateTime(value) {
         if (!value) {
-          return "â€”";
+          return "—";
         }
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) {
-          return "â€”";
+          return "—";
         }
         return new Intl.DateTimeFormat(archiveLocale, {
           dateStyle: "medium",
@@ -15728,7 +15728,7 @@ async function drawArchivePdfPostCard(
     const maxUriWidth = width - (innerPadding * 2) - (140 * scale);
     let clipped = uriLabel;
     while (clipped && context.measureText(clipped).width > maxUriWidth) {
-      clipped = `${clipped.slice(0, -2)}â€¦`;
+      clipped = `${clipped.slice(0, -2)}…`;
     }
     context.fillText(clipped, x + width - innerPadding - context.measureText(clipped).width, footerY + (5 * scale));
   }
@@ -16600,7 +16600,7 @@ function deserializeBackupAssets(assets = []) {
 
 async function gzipBytes(bytes) {
   if (typeof CompressionStream !== "function") {
-    throw new Error("GZIP-Komprimierung wird in diesem Browser nicht unterstÃ¼tzt.");
+    throw new Error("GZIP-Komprimierung wird in diesem Browser nicht unterstützt.");
   }
   const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
   const chunks = [];
@@ -16619,7 +16619,7 @@ async function gzipBytes(bytes) {
 
 async function gunzipBytes(bytes) {
   if (typeof DecompressionStream !== "function") {
-    throw new Error("GZIP-Dekomprimierung wird in diesem Browser nicht unterstÃ¼tzt.");
+    throw new Error("GZIP-Dekomprimierung wird in diesem Browser nicht unterstützt.");
   }
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
   const chunks = [];
@@ -16866,7 +16866,7 @@ function renderVersionLabel() {
     parts.push(CURRENT_VERSION_INFO.label);
   }
 
-  versionLabel.textContent = parts.join(" Â· ");
+  versionLabel.textContent = parts.join(" · ");
 }
 
 async function fetchVersionInfo() {
@@ -16938,8 +16938,8 @@ async function checkForUpdates(options = {}) {
       return;
     }
 
-    const remoteLabel = remoteVersion.label ? ` Â· ${remoteVersion.label}` : "";
-    const message = `${t("updateAvailablePrefix")}: ${remoteVersion.appVersion} Â· ${remoteVersion.cacheVersion}${remoteLabel}. ${t("updateAvailableAction")}`;
+    const remoteLabel = remoteVersion.label ? ` · ${remoteVersion.label}` : "";
+    const message = `${t("updateAvailablePrefix")}: ${remoteVersion.appVersion} · ${remoteVersion.cacheVersion}${remoteLabel}. ${t("updateAvailableAction")}`;
     setUpdateStatus(message, true);
   } catch (error) {
     console.error(error);
@@ -17797,7 +17797,7 @@ function reserveForCounters(segmentCount) {
 }
 
 function reserveForThreadEmoji() {
-  return "\nâ¤µï¸".length;
+  return "\n⤵️".length;
 }
 
 function reserveForThreadIntro() {
@@ -17852,7 +17852,7 @@ function decorateSegments(segments, withCounters, withThreadIntro, withThreadEmo
     }
 
     if (isThread && withThreadEmoji && !isLastSegment) {
-      suffix += "\nâ¤µï¸";
+      suffix += "\n⤵️";
     }
 
     if (isThread && withCounters) {

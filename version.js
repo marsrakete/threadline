@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.180",
-  cacheVersion: "v199",
-  label: "Refresh archive help and docs",
+  appVersion: "0.4.181",
+  cacheVersion: "v200",
+  label: "Repair encoding glitches",
 });
