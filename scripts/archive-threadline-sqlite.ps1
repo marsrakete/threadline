@@ -5,6 +5,7 @@ param(
   [string]$AppPassword = "",
   [string]$Service = "",
   [string]$SourceActor = "",
+  [string]$SearchUrl = "",
   [string]$OutputDirectory = "",
   [ValidateSet("all", "year", "range")]
   [string]$Scope = "",
@@ -23,7 +24,8 @@ param(
   [string]$RestartFrom = "",
   [switch]$CreatePostsJson,
   [switch]$CreateZip,
-  [string]$SqliteExePath = ""
+  [string]$SqliteExePath = "",
+  [switch]$AllowSvg
 )
 
 Set-StrictMode -Version Latest
@@ -717,6 +719,18 @@ function New-ArchivePostEntity {
   if ($null -eq $Counts) {
     $Counts = @{ likeCount = 0; replyCount = 0; repostCount = 0; quoteCount = 0 }
   }
+  $originalText = Get-ObjectPropertyValue -Object $Record -Name "originalText" -Default $null
+  $updatedAt = Get-ObjectPropertyValue -Object $Record -Name "updatedAt" -Default $null
+  $editInfo = $null
+  if (($null -ne $originalText) -and ($null -ne $updatedAt)) {
+    $editInfo = [ordered]@{
+      isEdited = $true
+      originalText = [string]$originalText
+      text = [string](Get-ObjectPropertyValue -Object $Record -Name "text" -Default "")
+      createdAt = [string](Get-ObjectPropertyValue -Object $Record -Name "createdAt" -Default "")
+      updatedAt = [string]$updatedAt
+    }
+  }
   return [ordered]@{
     uri = $Uri
     cid = $Cid
@@ -744,6 +758,7 @@ function New-ArchivePostEntity {
     authorAvatarPath = ""
     sourceImages = @(Get-EmbedImageRefs -Record $Record)
     externalCard = Get-ExternalCardFromRecord -Record $Record
+    editInfo = $editInfo
     images = @()
     mediaSkippedCount = 0
     isPrimarySelection = $true
@@ -1025,6 +1040,7 @@ CREATE TABLE IF NOT EXISTS posts (
   author_avatar_path TEXT,
   source_images_json TEXT,
   external_card_json TEXT,
+  edit_info_json TEXT,
   images_json TEXT,
   media_skipped_count INTEGER NOT NULL DEFAULT 0,
   is_primary_selection INTEGER NOT NULL DEFAULT 0,
@@ -1059,7 +1075,8 @@ CREATE INDEX IF NOT EXISTS idx_assets_post_uri ON assets(post_uri);
   Invoke-SqliteNonQuery -SqliteExe $SqliteExe -DatabasePath $DatabasePath -Sql $sql
   foreach ($migrationSql in @(
     "ALTER TABLE posts ADD COLUMN is_primary_selection INTEGER NOT NULL DEFAULT 0;",
-    "ALTER TABLE posts ADD COLUMN has_context INTEGER NOT NULL DEFAULT 0;"
+    "ALTER TABLE posts ADD COLUMN has_context INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE posts ADD COLUMN edit_info_json TEXT;"
   )) {
     try {
       Invoke-SqliteNonQuery -SqliteExe $SqliteExe -DatabasePath $DatabasePath -Sql $migrationSql
@@ -1323,6 +1340,34 @@ function Get-AssetExtensionFromMimeType {
   return "bin"
 }
 
+function Test-IsSvgMimeType {
+  param([string]$MimeType)
+  $value = [string]$MimeType
+  return $value -match "image/svg|svg\+xml"
+}
+
+function Get-ArchivePlaceholderImageBytes {
+  $base64 = "iVBORw0KGgoAAAANSUhEUgAAAGAAAABICAYAAAAJZ/BjAAAAvUlEQVR4nO3XMRUCQRAFwVWEHNwgBj/EKLn8yJDA3NIVdD7vVzTr/bydmmtNH1DvC3AeL/0wAADaAQDQDgCAdgAAtAMAoB0AAO0AAGgHoAbwuK+tAgAAAAAAAAAAAAAAAAAAAAAAAABgWwABuFQAALQDAKAdAADtAPwLwPTHOh0AAPMjAAgHAMD8CADCAQAwPwKAcADqAAKwZQAAtAMAoB0AAO0AAGgHAEA7AADaAQDQDgCAdgCuBqCZAAz3AYEOqDkEidkXAAAAAElFTkSuQmCC"
+  return [Convert]::FromBase64String($base64)
+}
+
+function Normalize-ArchiveImageAsset {
+  param(
+    [Parameter(Mandatory = $true)][byte[]]$Bytes,
+    [Parameter(Mandatory = $true)][string]$ContentType
+  )
+  if ($AllowSvg -or -not (Test-IsSvgMimeType -MimeType $ContentType)) {
+    return [ordered]@{
+      Bytes = $Bytes
+      ContentType = if ([string]::IsNullOrWhiteSpace($ContentType)) { "application/octet-stream" } else { $ContentType }
+    }
+  }
+  return [ordered]@{
+    Bytes = Get-ArchivePlaceholderImageBytes
+    ContentType = "image/png"
+  }
+}
+
 function Save-ByteAsset {
   param(
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
@@ -1551,7 +1596,8 @@ function Try-DownloadPostImageAsset {
     return $null
   }
 
-  $extension = Get-AssetExtensionFromMimeType -MimeType $download.ContentType
+  $normalizedAsset = Normalize-ArchiveImageAsset -Bytes $download.Bytes -ContentType $download.ContentType
+  $extension = Get-AssetExtensionFromMimeType -MimeType $normalizedAsset.ContentType
   $authorSlug = ([string](Get-ObjectPropertyValue -Object $Post -Name "authorHandle" -Default ""), $did -join "-").Replace(":", "-").Replace("/", "-")
   $authorSlug = ($authorSlug -replace "[^\w.-]+", "-").Trim("-")
   if ([string]::IsNullOrWhiteSpace($authorSlug)) { $authorSlug = "author" }
@@ -1559,7 +1605,7 @@ function Try-DownloadPostImageAsset {
   $yearPart = if ($createdAtValue.Length -ge 4) { $createdAtValue.Substring(0, 4) } else { "misc" }
   $rkeyValue = [string](Get-ObjectPropertyValue -Object $Post -Name "rkey" -Default "")
   $relativePath = "images/$yearPart/$authorSlug-$rkeyValue-$ImageIndex.$extension"
-  $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $download.Bytes -ContentType $download.ContentType
+  $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $normalizedAsset.Bytes -ContentType $normalizedAsset.ContentType
   Set-CachedAsset -AssetIndex $AssetIndex -CacheKey $cacheKey -Asset $asset
 
   return [ordered]@{
@@ -1616,14 +1662,15 @@ function Try-DownloadLinkCardThumbnailAsset {
     return $null
   }
 
-  $extension = Get-AssetExtensionFromMimeType -MimeType $download.ContentType
+  $normalizedAsset = Normalize-ArchiveImageAsset -Bytes $download.Bytes -ContentType $download.ContentType
+  $extension = Get-AssetExtensionFromMimeType -MimeType $normalizedAsset.ContentType
   $authorSlug = ([string]$Post.authorHandle, [string]$Post.authorDid -join "-").Replace(":", "-").Replace("/", "-")
   $authorSlug = ($authorSlug -replace "[^\w.-]+", "-").Trim("-")
   if ([string]::IsNullOrWhiteSpace($authorSlug)) {
     $authorSlug = "author"
   }
   $relativePath = "link-cards/$authorSlug-$($Post.rkey).$extension"
-  $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $download.Bytes -ContentType $download.ContentType
+  $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $normalizedAsset.Bytes -ContentType $normalizedAsset.ContentType
   Set-CachedAsset -AssetIndex $AssetIndex -CacheKey $thumbCacheKey -Asset $asset
   if ($downloadSource -eq "url") {
     Set-CachedAsset -AssetIndex $AssetIndex -CacheKey (Get-UrlAssetCacheKey -Url $fallbackThumbUrl) -Asset $asset
@@ -1658,14 +1705,15 @@ function Download-AvatarAsset {
   }
   try {
     $download = Invoke-HttpBytes -Uri $avatarUrl -Headers @{}
-    $extension = Get-AssetExtensionFromMimeType -MimeType $download.ContentType
+    $normalizedAsset = Normalize-ArchiveImageAsset -Bytes $download.Bytes -ContentType $download.ContentType
+    $extension = Get-AssetExtensionFromMimeType -MimeType $normalizedAsset.ContentType
     $slug = ([string](Get-ObjectPropertyValue -Object $Post -Name "authorHandle" -Default ""), [string](Get-ObjectPropertyValue -Object $Post -Name "authorDid" -Default "") -join "-").Replace(":", "-").Replace("/", "-")
     $slug = ($slug -replace "[^\w.-]+", "-").Trim("-")
     if ([string]::IsNullOrWhiteSpace($slug)) {
       $slug = "account"
     }
     $relativePath = "avatars/$slug.$extension"
-    $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $download.Bytes -ContentType $download.ContentType
+    $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $normalizedAsset.Bytes -ContentType $normalizedAsset.ContentType
     Set-CachedAsset -AssetIndex $AssetIndex -CacheKey $avatarUrl -Asset $asset
     Set-ObjectPropertyValue -Object $Post -Name "authorAvatarPath" -Value $asset.path
     return $asset
@@ -1692,7 +1740,7 @@ function Upsert-ArchivePostsBatch {
 INSERT INTO posts (
   uri, cid, rkey, created_at, created_at_unix, text, langs_json, facets_json, reply_json,
   thread_root_uri, thread_parent_uri, counts_json, permalink, author_handle, author_display_name,
-  author_did, author_avatar_url, author_avatar_path, source_images_json, external_card_json, images_json,
+  author_did, author_avatar_url, author_avatar_path, source_images_json, external_card_json, edit_info_json, images_json,
   media_skipped_count, is_primary_selection, has_context, has_metrics, has_avatar, has_media, export_ready
 ) VALUES (
   $(ConvertTo-SqliteTextLiteral ([string](Get-ObjectPropertyValue -Object $post -Name "uri" -Default ""))),
@@ -1715,6 +1763,7 @@ INSERT INTO posts (
   $(ConvertTo-SqliteTextLiteral ([string](Get-ObjectPropertyValue -Object $post -Name "authorAvatarPath" -Default ""))),
   $(ConvertTo-SqliteTextLiteral (ConvertTo-CompactJson (Get-ObjectPropertyValue -Object $post -Name "sourceImages" -Default @()))),
   $(ConvertTo-SqliteTextLiteral (ConvertTo-CompactJson (Get-ObjectPropertyValue -Object $post -Name "externalCard" -Default $null))),
+  $(ConvertTo-SqliteTextLiteral (ConvertTo-CompactJson (Get-ObjectPropertyValue -Object $post -Name "editInfo" -Default $null))),
   $(ConvertTo-SqliteTextLiteral (ConvertTo-CompactJson (Get-ObjectPropertyValue -Object $post -Name "images" -Default @()))),
   $(ConvertTo-SqliteIntegerLiteral ([int](Get-ObjectPropertyValue -Object $post -Name "mediaSkippedCount" -Default 0))),
   $(ConvertTo-SqliteIntegerLiteral $(if ((Get-ObjectPropertyValue -Object $post -Name "isPrimarySelection" -Default $false)) { 1 } else { 0 })),
@@ -1740,7 +1789,8 @@ ON CONFLICT(uri) DO UPDATE SET
   author_avatar_url = excluded.author_avatar_url,
   is_primary_selection = MAX(posts.is_primary_selection, excluded.is_primary_selection),
   source_images_json = excluded.source_images_json,
-  external_card_json = excluded.external_card_json;
+  external_card_json = excluded.external_card_json,
+  edit_info_json = excluded.edit_info_json;
 "@
     $lines.Add($sql) | Out-Null
   }
@@ -1869,6 +1919,7 @@ SELECT json_object(
   'author_avatar_path', author_avatar_path,
   'source_images_json', source_images_json,
   'external_card_json', external_card_json,
+  'edit_info_json', edit_info_json,
   'images_json', images_json,
   'media_skipped_count', media_skipped_count
 )
@@ -1899,6 +1950,7 @@ ORDER BY created_at_unix DESC, uri DESC;
       authorAvatarPath = [string]$row.author_avatar_path
       sourceImages = @(ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "source_images_json" -Default @()) -Default @())
       externalCard = ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "external_card_json" -Default $null) -Default $null
+      editInfo = ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "edit_info_json" -Default $null) -Default $null
       images = @(ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "images_json" -Default @()) -Default @())
       mediaSkippedCount = [int](Get-ObjectPropertyValue -Object $row -Name "media_skipped_count" -Default 0)
     }) | Out-Null
@@ -1936,6 +1988,7 @@ SELECT json_object(
   'author_avatar_path', author_avatar_path,
   'source_images_json', source_images_json,
   'external_card_json', external_card_json,
+  'edit_info_json', edit_info_json,
   'images_json', images_json,
   'media_skipped_count', media_skipped_count
 )
@@ -1967,6 +2020,7 @@ LIMIT $safeLimit OFFSET $safeOffset;
       authorAvatarPath = [string]$row.author_avatar_path
       sourceImages = @(ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "source_images_json" -Default @()) -Default @())
       externalCard = ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "external_card_json" -Default $null) -Default $null
+      editInfo = ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "edit_info_json" -Default $null) -Default $null
       images = @(ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "images_json" -Default @()) -Default @())
       mediaSkippedCount = [int](Get-ObjectPropertyValue -Object $row -Name "media_skipped_count" -Default 0)
     }) | Out-Null
@@ -2008,6 +2062,7 @@ SELECT json_object(
   'author_avatar_path', author_avatar_path,
   'source_images_json', source_images_json,
   'external_card_json', external_card_json,
+  'edit_info_json', edit_info_json,
   'images_json', images_json,
   'media_skipped_count', media_skipped_count
 )
@@ -2040,6 +2095,7 @@ LIMIT $safeLimit;
       authorAvatarPath = [string]$row.author_avatar_path
       sourceImages = @(ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "source_images_json" -Default @()) -Default @())
       externalCard = ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "external_card_json" -Default $null) -Default $null
+      editInfo = ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "edit_info_json" -Default $null) -Default $null
       images = @(ConvertFrom-EmbeddedJsonValue -Value (Get-ObjectPropertyValue -Object $row -Name "images_json" -Default @()) -Default @())
       mediaSkippedCount = [int](Get-ObjectPropertyValue -Object $row -Name "media_skipped_count" -Default 0)
     }) | Out-Null
@@ -2270,6 +2326,7 @@ $resolvedIdentifier = if ($Identifier) { $Identifier } else { [string](Get-Confi
 $resolvedAppPassword = if ($AppPassword) { $AppPassword } else { [string](Get-ConfigValue -Config $config -Name "appPassword" -Default "") }
 $resolvedService = Normalize-ServiceUrl -Value ($(if ($Service) { $Service } else { [string](Get-ConfigValue -Config $config -Name "service" -Default $Script:DefaultService) }))
 $resolvedSourceActor = if ($SourceActor) { $SourceActor.Trim() } else { [string](Get-ConfigValue -Config $config -Name "sourceActor" -Default "") }
+$resolvedSearchUrl = if ($SearchUrl) { $SearchUrl.Trim() } else { [string](Get-ConfigValue -Config $config -Name "searchUrl" -Default "") }
 $resolvedOutputDirectory = if ($OutputDirectory) { $OutputDirectory } else { [string](Get-ConfigValue -Config $config -Name "outputDirectory" -Default "") }
 $resolvedOutputDirectory = Resolve-ConfigPathValue -Value $resolvedOutputDirectory -ConfigFilePath $resolvedConfigPath
 $resolvedScope = if ($Scope) { $Scope } else { [string](Get-ConfigValue -Config $config -Name "scope" -Default "all") }
@@ -2346,6 +2403,7 @@ $filters = [ordered]@{
   year = $resolvedYear
   from = $resolvedFrom
   to = $resolvedTo
+  searchUrl = $resolvedSearchUrl
   hashtagScope = "thread"
   hashtagTags = @()
 }
@@ -2353,6 +2411,9 @@ $filters = [ordered]@{
 $warning = ""
 if ($resolvedContentMode -in @("threads", "thread_roots")) {
   $warning = "This PowerShell version currently maps contentMode '$resolvedContentMode' to the base post selection logic."
+}
+if (-not [string]::IsNullOrWhiteSpace($resolvedSearchUrl)) {
+  Write-Info "SearchUrl parameter received, but this PowerShell archiver does not yet execute searchPosts archive runs. URL: $resolvedSearchUrl"
 }
 
 if (-not $effectiveResume) {

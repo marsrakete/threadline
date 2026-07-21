@@ -209,6 +209,7 @@ Die aktuelle Kommandooberfläche von `archive-threadline.ps1` orientiert sich an
 - `-Update`
 - `-WaitProfile`
 - `-ConfigPath`
+- `-AllowSvg`
 
 ## Schnellstart
 
@@ -227,6 +228,7 @@ Hinweise zur Konfiguration:
 - nutze `from` / `to` im Format `YYYY-MM-DD`
 - `maxPosts` muss eine Zahl sein und darf nicht leer bleiben
 - `includeConversationContext` kann in der Konfigurationsdatei gespeichert oder auf der Kommandozeile mit `-IncludeConversationContext` gesetzt werden
+- SVG-Dateien werden standardmaessig durch ein kleines PNG-Dummy-Bild ersetzt; mit `-AllowSvg` laesst sich das bewusst ausschalten
 
 Beispiel ohne Konfigurationsdatei:
 

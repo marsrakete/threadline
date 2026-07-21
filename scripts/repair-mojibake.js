@@ -1,13 +1,13 @@
 const fs = require("fs");
 const path = require("path");
 
-const files = [
+const TARGET_FILES = [
   path.join(__dirname, "..", "translations.js"),
   path.join(__dirname, "..", "index.html"),
   path.join(__dirname, "..", "app.js"),
 ];
 
-const replacements = new Map([
+const REPLACEMENTS = new Map([
   ["\u00c3\u00a4", "\u00e4"],
   ["\u00c3\u0084", "\u00c4"],
   ["\u00c3\u00b6", "\u00f6"],
@@ -41,10 +41,38 @@ const replacements = new Map([
   ["\u00e2\u00a4\u00b5\u00ef\u00b8\u008f", "\u2935\ufe0f"],
 ]);
 
-for (const file of files) {
-  let text = fs.readFileSync(file, "utf8");
-  for (const [from, to] of replacements) {
-    text = text.split(from).join(to);
+/**
+ * Replaces all configured mojibake patterns inside one text string.
+ * @param {string} text - UTF-8-decoded source text.
+ * @returns {string} Repaired source text.
+ */
+function repairText(text) {
+  let repairedText = text;
+  for (const [from, to] of REPLACEMENTS) {
+    repairedText = repairedText.split(from).join(to);
   }
-  fs.writeFileSync(file, text, "utf8");
+  return repairedText;
 }
+
+/**
+ * Repairs one configured file in place.
+ * @param {string} filePath - Absolute file path.
+ * @returns {void} No return value.
+ */
+function repairFile(filePath) {
+  const originalText = fs.readFileSync(filePath, "utf8");
+  const repairedText = repairText(originalText);
+  fs.writeFileSync(filePath, repairedText, "utf8");
+}
+
+/**
+ * Runs the mojibake repair pass across the configured target files.
+ * @returns {void} No return value.
+ */
+function main() {
+  for (const filePath of TARGET_FILES) {
+    repairFile(filePath);
+  }
+}
+
+main();

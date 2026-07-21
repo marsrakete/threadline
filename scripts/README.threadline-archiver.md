@@ -209,6 +209,7 @@ The current command surface of `archive-threadline.ps1` is centered around param
 - `-Update`
 - `-WaitProfile`
 - `-ConfigPath`
+- `-AllowSvg`
 
 ## Quick Start
 
@@ -227,6 +228,7 @@ Config notes:
 - use `from` / `to` as `YYYY-MM-DD`
 - `maxPosts` must be a number, not empty
 - `includeConversationContext` can be stored in the config file, or overridden on the command line with `-IncludeConversationContext`
+- SVG files are replaced with a small PNG dummy image by default; use `-AllowSvg` only when you intentionally want to disable that safeguard
 
 Example without config file:
 

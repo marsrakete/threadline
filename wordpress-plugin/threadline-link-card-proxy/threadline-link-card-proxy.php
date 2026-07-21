@@ -3,7 +3,7 @@
  * Plugin Name: Threadline Link Card Proxy
  * Plugin URI: https://marsrakete.github.io/threadline/
  * Description: Secure OpenGraph/Twitter-card proxy for Threadline.
- * Version: 0.1.12
+ * Version: 0.1.13
  * Author: Threadline
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 if (!class_exists('Threadline_Link_Card_Proxy_Plugin', false)) {
 final class Threadline_Link_Card_Proxy_Plugin {
-    private const VERSION = '0.1.12';
+    private const VERSION = '0.1.13';
     private const OPTION_KEY = 'threadline_link_card_proxy_options';
     private const VERSION_OPTION_KEY = 'threadline_link_card_proxy_version';
     private const REST_NAMESPACE = 'threadline/v1';
@@ -641,6 +641,153 @@ final class Threadline_Link_Card_Proxy_Plugin {
         return '';
     }
 
+    /**
+     * Finds the first href for a link element with the requested rel token.
+     *
+     * @param DOMXPath $xpath Parsed target page XPath helper.
+     * @param string $rel Requested rel token.
+     * @return string Sanitized href value or an empty string.
+     */
+    private static function link_rel_value(DOMXPath $xpath, string $rel): string {
+        $target_rel = strtolower(trim($rel));
+        if ($target_rel === '') {
+            return '';
+        }
+
+        $nodes = $xpath->query('//link[@rel and @href]');
+        if (!$nodes) {
+            return '';
+        }
+
+        foreach ($nodes as $node) {
+            $rel_value = strtolower(trim((string)$node->getAttribute('rel')));
+            $rel_tokens = preg_split('/\s+/', $rel_value);
+            if (!is_array($rel_tokens)) {
+                continue;
+            }
+            if (!in_array($target_rel, $rel_tokens, true)) {
+                continue;
+            }
+            $href = trim((string)$node->getAttribute('href'));
+            if ($href !== '') {
+                return wp_strip_all_tags(html_entity_decode($href, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Sanitizes an AT URI used by Standard.site document and publication records.
+     *
+     * @param string $value Raw AT URI.
+     * @return string Valid AT URI or an empty string.
+     */
+    private static function sanitize_at_uri(string $value): string {
+        $uri = trim($value);
+        if ($uri === '') {
+            return '';
+        }
+        if (!preg_match('/^at:\/\/[a-z0-9:._-]+\/[a-z0-9:._-]+\/[a-z0-9:._~-]+$/i', $uri)) {
+            return '';
+        }
+        return $uri;
+    }
+
+    /**
+     * Builds the origin for a target URL so the Standard.site well-known endpoint can be checked.
+     *
+     * @param string $url Final fetched target URL.
+     * @return string URL origin or an empty string when invalid.
+     */
+    private static function origin_from_url(string $url): string {
+        $parts = wp_parse_url($url);
+        if (!is_array($parts)) {
+            return '';
+        }
+
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = strtolower((string)($parts['host'] ?? ''));
+        if (($scheme !== 'http' && $scheme !== 'https') || $host === '') {
+            return '';
+        }
+
+        $origin = $scheme . '://' . $host;
+        if (isset($parts['port'])) {
+            $origin .= ':' . (int)$parts['port'];
+        }
+        return $origin;
+    }
+
+    /**
+     * Fetches a Standard.site publication AT URI from the target origin's well-known endpoint.
+     *
+     * @param string $url Final fetched target URL.
+     * @return string Publication AT URI or an empty string.
+     */
+    private static function fetch_standard_site_well_known_publication(string $url): string {
+        $origin = self::origin_from_url($url);
+        if ($origin === '') {
+            return '';
+        }
+
+        $well_known_url = $origin . '/.well-known/site.standard.publication';
+        $valid = self::validate_url($well_known_url);
+        if (is_wp_error($valid)) {
+            return '';
+        }
+
+        $response = wp_remote_get($well_known_url, [
+            'timeout' => 5,
+            'redirection' => 0,
+            'limit_response_size' => 2048,
+            'headers' => ['Accept' => 'text/plain,*/*;q=0.2'],
+        ]);
+        if (is_wp_error($response)) {
+            return '';
+        }
+        $code = (int)wp_remote_retrieve_response_code($response);
+        if ($code < 200 || $code >= 300) {
+            return '';
+        }
+
+        return self::sanitize_at_uri((string)wp_remote_retrieve_body($response));
+    }
+
+    /**
+     * Extracts Standard.site publication metadata from a parsed HTML page.
+     *
+     * @param DOMXPath $xpath Parsed target page XPath helper.
+     * @param string $final_url Final URL after the initial fetch.
+     * @return array Standard.site metadata, or an empty array when no publication was detected.
+     */
+    private static function standard_site_metadata(DOMXPath $xpath, string $final_url): array {
+        $document_uri = self::sanitize_at_uri(self::link_rel_value($xpath, 'site.standard.document'));
+        $publication_uri = self::sanitize_at_uri(self::link_rel_value($xpath, 'site.standard.publication'));
+        $well_known_publication_uri = self::fetch_standard_site_well_known_publication($final_url);
+
+        if ($publication_uri === '' && $well_known_publication_uri !== '') {
+            $publication_uri = $well_known_publication_uri;
+        }
+
+        if ($document_uri === '' && $publication_uri === '') {
+            return [];
+        }
+
+        $publication_verified = false;
+        if ($publication_uri !== '' && $well_known_publication_uri !== '' && $publication_uri === $well_known_publication_uri) {
+            $publication_verified = true;
+        }
+
+        return [
+            'documentUri' => $document_uri,
+            'publicationUri' => $publication_uri,
+            'publicationVerified' => $publication_verified,
+            'publicationUrl' => esc_url_raw(self::origin_from_url($final_url)),
+            'ctaLabel' => 'View Publication',
+        ];
+    }
+
     private static function absolutize_url(string $url, string $base): string {
         if (!$url) {
             return '';
@@ -711,6 +858,12 @@ final class Threadline_Link_Card_Proxy_Plugin {
         ];
     }
 
+    /**
+     * Handles one signed REST request and returns link-card metadata for the target URL.
+     *
+     * @param WP_REST_Request $request Incoming REST request from Threadline.
+     * @return WP_REST_Response|WP_Error Metadata response or a sanitized error.
+     */
     public static function handle_request(WP_REST_Request $request) {
         $started_at = microtime(true);
         $url = trim((string)$request->get_param('url'));
@@ -750,18 +903,30 @@ final class Threadline_Link_Card_Proxy_Plugin {
             $title = $title_nodes && $title_nodes->length ? trim((string)$title_nodes->item(0)->textContent) : '';
         }
         $description = self::meta_value($xpath, ['og:description', 'twitter:description', 'description']);
-        $card_url = self::meta_value($xpath, ['og:url']) ?: $final_url;
+        $card_url = self::meta_value($xpath, ['og:url']);
+        if ($card_url === '') {
+            $card_url = $final_url;
+        }
         $image_url = self::absolutize_url(self::meta_value($xpath, ['og:image:secure_url', 'og:image', 'twitter:image']), $final_url);
-        $image = $image_url ? self::fetch_image_data($image_url) : [];
+        $image = [];
+        if ($image_url !== '') {
+            $image = self::fetch_image_data($image_url);
+        }
+        $standard_site = self::standard_site_metadata($xpath, $final_url);
+        $response_title = $title;
+        if ($response_title === '') {
+            $response_title = $card_url;
+        }
         $rest_response = rest_ensure_response([
             'url' => esc_url_raw($card_url),
             'finalUrl' => esc_url_raw($final_url),
-            'title' => wp_trim_words(wp_strip_all_tags($title ?: $card_url), 24, ''),
+            'title' => wp_trim_words(wp_strip_all_tags($response_title), 24, ''),
             'description' => wp_trim_words(wp_strip_all_tags($description), 48, ''),
             'imageUrl' => esc_url_raw($image_url),
             'image' => $image,
+            'standardSite' => $standard_site,
         ]);
-        return self::finish_request($request, $rest_response, $started_at, $url, $final_url, $title ?: $card_url);
+        return self::finish_request($request, $rest_response, $started_at, $url, $final_url, $response_title);
     }
 }
 

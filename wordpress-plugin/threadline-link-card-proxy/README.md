@@ -19,6 +19,8 @@ Use the ZIP package from this repository:
 
 `wordpress-plugin/threadline-link-card-proxy.zip`
 
+After changing the plugin source, rebuild that ZIP with `npm run package:wordpress` from the repository root.
+
 When installing from a GitHub release, download the same ZIP asset if it is attached there.
 
 ## Installation
@@ -50,6 +52,8 @@ When a thread segment contains a URL and the proxy is configured, Threadline ena
 Bluesky posts cannot combine image embeds and external link cards in the same post. If the segment already has images, Threadline warns before creating the link card and removing those images from the segment.
 
 Generated link cards are saved with the thread data and survive reloads and thread backups.
+
+When the target page exposes Standard.site metadata, the proxy also returns publication-card data from `site.standard.document`, `site.standard.publication`, and the optional `/.well-known/site.standard.publication` verification endpoint. Threadline uses that metadata to mark the card as a publication in Composer, Thread Explorer, and HTML archives.
 
 ## Security And Operations
 

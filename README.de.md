@@ -25,6 +25,10 @@ Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich m
 
 Threadline ist inzwischen deutlich mehr als ein Thread-Composer. Mit eigenen Workspaces für Archiv-Funktion, Analyse, Netzwerk und DM-Archiv, direkter In-App-Hilfe, robusterem Export, besserer mobiler HTML-Lesbarkeit und Drag-and-Drop für Bilder wird die App zu einer kleinen Bluesky-Arbeitsumgebung.
 
+## Projektleitlinien
+
+Die Entwicklung folgt der lokalen [PROJECT_GUIDELINES.md](PROJECT_GUIDELINES.md): Struktur, Styling, Verhalten und Übersetzungen bleiben getrennt; wiederkehrende Oberfläche nutzt Templates und DOM-APIs statt großer HTML-Strings; sichtbare Texte werden zentral gepflegt; kaputte Kodierung gilt als Fehler.
+
 ## In 3 Schritten Zum Ersten Thread-Post
 
 1. Erzeuge ein Bluesky-App-Passwort, füge dein Konto in Threadline hinzu und melde dich an.
@@ -81,9 +85,57 @@ Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kanns
 - Sobald ein Abschnitt manuell verändert wurde, wird der Composer gesperrt, damit die Bearbeitung nicht versehentlich überschrieben wird
 - Mit `Änderung ignorieren` wird nur der Composer wieder freigegeben; die vorhandene Thread-Anzeige bleibt dabei unverändert
 
+### Offizielle Bluesky-Limits
+
+Die Protokoll-Details hinter diesen Limits stehen gesammelt in [ATPROTO.de.md](ATPROTO.de.md).
+
+Ein kompletter Thread hat bei Bluesky nach der offiziellen Dokumentation kein eigenes Gesamtlimit. Begrenzt wird stattdessen jeder einzelne Post innerhalb des Threads.
+
+- Jeder Thread-Abschnitt wird als eigener `app.bsky.feed.post` veröffentlicht
+- Das entscheidende Limit pro Post sind `300` Unicode-Grapheme, also sichtbare Zeichen so, wie Bluesky sie zählt
+- Darum prüft und splittet Threadline pro Abschnitt und nicht nach einer Gesamtlänge des ganzen Threads
+- Emojis, verbundene Emoji-Sequenzen und andere Unicode-Kombinationen können anders zählen als eine einfache JavaScript-Zeichenlänge
+- Chinesische, japanische und ähnliche Schriften sind im Protokoll kein Sonderfall, aber jedes sichtbare Zeichen zählt direkt in dasselbe `300`-Limit hinein
+
+Ein offizielles Gesamt-Zeichenlimit für den gesamten Thread ist in der AT-Proto- oder Bluesky-Dokumentation derzeit nicht beschrieben. Technisch ist ein Thread einfach eine Antwort-Kette, in der die einzelnen Posts über `reply.root` und `reply.parent` verbunden werden.
+
+Bei extrem langen Threads greifen in der Praxis eher die Schreib-Limits pro Account als ein Thread-Längenlimit. Bluesky dokumentiert derzeit `5.000` Write-Punkte pro Stunde und `35.000` pro Tag, und das Erstellen eines normalen neuen Posts kostet dabei `3` Punkte.
+
+### Grapheme-Testfälle
+
+Threadline folgt beim Post-Limit inzwischen der offiziellen Bluesky-Regel von `300` Unicode-Graphemen pro Post und nicht nur einer einfachen JavaScript-Stringlänge.
+
+- `\"🙂\".repeat(300)` sind genau `300` Grapheme und sollten noch in einen einzelnen Post passen
+- `\"🙂\".repeat(301)` sind `301` Grapheme und müssen gesplittet oder mindestens gewarnt werden
+- `\"👨‍👩‍👧‍👦\".repeat(300)` sind ebenfalls genau `300` Grapheme, obwohl jedes sichtbare Familien-Emoji intern aus mehreren Codepoints und vielen UTF-16-Zeichen besteht
+- `\"漢\".repeat(300)` sind genau `300` Grapheme; `\"漢\".repeat(301)` ist zu lang. Das ist ein guter CJK-Testfall, weil jedes sichtbare Zeichen direkt ins Limit eingeht
+
+Schneller Browser-Konsolencheck:
+
+```js
+const examples = {
+  emoji300: "🙂".repeat(300),
+  emoji301: "🙂".repeat(301),
+  family300: "👨‍👩‍👧‍👦".repeat(300),
+  han300: "漢".repeat(300),
+  han301: "漢".repeat(301),
+};
+
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+for (const [name, text] of Object.entries(examples)) {
+  const graphemes = Array.from(segmenter.segment(text)).length;
+  console.log(name, {
+    graphemes,
+    codePoints: Array.from(text).length,
+    codeUnits: text.length,
+  });
+}
+```
+
 ## Antworten Und Thread Fortsetzen
 
-![Vergleichsgrafik fuer Thread fortsetzen und Auf Posting antworten](icons/readme-reply-targets-de.svg)
+![Vergleichsgrafik für Thread fortsetzen und Auf Posting antworten](icons/readme-reply-targets-de.svg)
 
 - Über den Button neben `Post-Einstellungen` kann eine Posting-URL geprüft und als Antwortsziel gesetzt werden
 - Im Composer erscheint dann eine Ziel-Kachel mit Avatar, Name und Textausschnitt des Ziel-Postings oder Threads
@@ -142,10 +194,14 @@ Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erz
 
 - Plugin-Paket: `wordpress-plugin/threadline-link-card-proxy.zip`
 - Plugin-Dokumentation: `wordpress-plugin/threadline-link-card-proxy/README.md`
+- Nach Änderungen am Plugin wird das ZIP mit `npm run package:wordpress` neu gebaut
 - Voraussetzungen: Admin-Zugriff auf eine eigene WordPress-Installation, WordPress 6.0+, PHP 7.4+, eine erreichbare REST-API und ausgehende HTTP(S)-Requests vom Server
 - Das Plugin zeigt Proxy-Endpunkt und Secret im WordPress-Admin unter `Threadline`
 - In Threadline werden beide Werte unter `Einstellungen` -> `Link-Cards` eingetragen
 - Link-Cards werden pro Abschnitt erzeugt; Bilder und Link-Cards schließen sich im selben Abschnitt aus
+- Standard.site-Seiten werden als Publication Cards erkannt, wenn ihr HTML `site.standard.document`- / `site.standard.publication`-Metadaten liefert; Threadline markiert sie im Composer, Thread Explorer und HTML-Archiv als Publikationen
+- Der Thread Explorer lädt aktuelle Posts in 50er-Seiten, hängt beim Scrollen weitere Seiten an und kann angepinnte Bluesky-Feed-Generatoren aus den Account-Preferences als zusätzliche Einstiege verwenden
+- Geladene Thread-Explorer-Bäume können als PNG-Snapshot heruntergeladen werden; der Dateiname enthält Handle und Datum des Root-Posts
 
 ## Inklusion Und ALT-Texte
 
@@ -187,16 +243,24 @@ Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erz
 - Spracheinstellung
 - Sichtbarkeit der Tipps
 - Einstellung zur ALT-Text-Pflicht
+- Layout- und Composer-Einstellungen
 - gespeicherte Login-Einträge mit Handle, Server und Avatar
+- lokale Avatar-Bilder gespeicherter Accounts
 - Hashtags
 - ausgewählte Hashtags
 - Hashtag-Platzierung
+- lokal gespeicherte Thread-Explorer-Favoriten
 - Posting-Historie
+- Archiv-Voreinstellungen
+- Analyse-Workspace-Status
+- zwischengespeicherte DM-Partner-Metadaten und lokale Kontakt-Avatar-Assets
 - Beim Import von Hashtags wird gemerged
 - Vorhandene Hashtags bleiben erhalten
 - Neue Hashtags werden ergänzt
 - Dubletten werden nicht doppelt importiert
-- Wichtig: Das Backup enthält gespeicherte Login-Einträge, aber ausdrücklich **keine** App-Passwörter
+- Threadline erinnert daran, ein neues Einstellungen-Backup zu speichern, wenn das zuletzt vermerkte Backup mehr als 30 Tage alt ist
+- Das Erinnerungs-Popup enthält direkt den Button `Backup speichern`
+- Wichtig: Das Backup enthält gespeicherte Login-Einträge, aber ausdrücklich **keine** App-Passwörter, Session-Tokens, vollständige Archiv-Datenbanken, vollständige Archiv-Posts, komplette DM-Exporte oder aktuelle Bilder aus Composer-Segmenten
 - Nach einem Import können diese Konten deshalb erneut nach dem App-Passwort fragen
 
 ### Account-Archiv
@@ -204,6 +268,7 @@ Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erz
 - Über den Bereich `Account-Archiv` können das eigene Bluesky-Konto oder ein anderes erreichbares Account samt Bildern als Archiv gesichert werden
 - Für sehr große Archive entwickelt sich Threadline schrittweise in Richtung einer Aufteilung: interaktive Filter und Vorschau im Browser, lange Schwerlast-Abrufe in PowerShell
 - Vor dem Laden lassen sich Quelle, Zeitraum, Archivtyp und optionaler Konversationskontext festlegen
+- In der PWA ist der Zeitraum bewusst auf maximal drei Monate begrenzt
 - Beim Laden kann zusätzlich der `Archivtyp` gewählt werden:
 - `Voll-Archiv`: lädt alle eigenen Posts und alle eigenen Replies, auch in fremden Threads
 - `Nur eigene Postings`: lädt eigene Top-Level-Posts und eigene Replies nur in eigenen Threads, aber keine eigenen Replies in fremden Threads
@@ -211,23 +276,26 @@ Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erz
 - `Gesamte Konversationen mitspeichern`: ergänzt passenden sichtbaren Antwortkontext und fremde Antwortzweige für Replies und Threads
 - `Post-Änderung prüfen` untersucht eine Bluesky- oder Mu-Posting-URL auf Mu-kompatible Bearbeitungsmetadaten und vergleicht Originaltext und aktuellen Text
 - Der Ablauf für normale Nutzung ist:
-1. Quelle, Zeitraum und Archivtyp festlegen
+1. Quelle, Zeitraum von maximal drei Monaten und Archivtyp festlegen
 2. Entscheiden, ob zusätzlich ganzer Konversationskontext mitgespeichert werden soll
 3. Mit `Archiv laden` Posts und Assets in die aktuelle Archiv-Sitzung holen
 4. Bei Bedarf pausieren oder abbrechen und später an derselben Stelle fortsetzen
 5. Mit `Archiv als ZIP sichern` ein technisches Backup aus Posts, Metadaten und Bildern speichern
-6. Mit `HTML-Archiv erzeugen`, `Kompaktes HTML erzeugen` oder `PDF-Bände erzeugen` daraus Lesefassungen aus dem bereits geladenen Stand bauen
-7. Für Einzel-Threads darunter die URL-Werkzeuge nutzen, um einen einzelnen Thread zu laden, auf Änderungen zu prüfen und genau diesen Bestand zu exportieren
+6. SVG-Bilder werden in der PWA aus Sicherheitsgründen nicht direkt übernommen, sondern durch ein kleines Dummy-Bild ersetzt
+7. Mit `HTML-Archiv erzeugen`, `Kompaktes HTML erzeugen` oder `PDF-Bände erzeugen` daraus Lesefassungen aus dem bereits geladenen Stand bauen
+8. Für Einzel-Threads darunter die URL-Werkzeuge nutzen, um einen einzelnen Thread zu laden, auf Änderungen zu prüfen und genau diesen Bestand zu exportieren
 - Für große Accounts sollte der Export am besten auf einem Desktop-Gerät mit viel freiem Speicher durchgeführt werden
 - Wenn das eingebettete HTML-Archiv zu groß wird, empfiehlt Threadline stattdessen den Archiv-Export plus PowerShell-Script `scripts/convert-threadline-archive-to-html.ps1`
 - Ein eigenständiger PowerShell-Bulk-Archiver liegt unter `scripts/archive-threadline.ps1`, dazu kommt die neuere SQLite-Variante `scripts/archive-threadline-sqlite.ps1`
+- Beide PowerShell-Skripte ersetzen SVG-Dateien standardmaessig ebenfalls durch ein kleines Dummy-Bild; mit `-AllowSvg` kann dieses Schutzverhalten bewusst abgeschaltet werden
 - Dokumentation und Beispiel-Konfiguration dazu liegen unter `scripts/README.threadline-archiver.de.md`, `scripts/threadline-archiver.config.sample.json` und `scripts/threadline-archiver-sqlite.config.sample.json`
 - Der PowerShell-Archiver soll ausdrücklich **denselben Archiv-JSON-Vertrag** erzeugen wie die Browser-App, damit seine ZIP-Ausgabe weiterhin direkt in Threadline geladen werden kann
 - Für große Archive ist die SQLite-Variante mitsamt separatem Viewer in der Regel die bessere Route als ein reiner Browser-Lauf
 - Das Script:
 - akzeptiert entweder ein Threadline-Archiv-ZIP oder einen bereits entpackten Archiv-Ordner
 - erzeugt daraus ein lokales HTML-Archiv
-- legt Bilder, Avatare und Link-Card-Vorschaubilder fuer das erzeugte HTML unter `archive-assets/` ab
+- legt Bilder, Avatare und Link-Card-Vorschaubilder für das erzeugte HTML unter `archive-assets/` ab
+- erhält erkannte Standard.site-Publication-Metadaten und zeigt diese Link-Cards im erzeugten HTML als Publication Cards an
 - bleibt damit unabhängig von Browser-Grenzen für riesige Ein-Datei-HTMLs
 - Beispielaufruf:
 
@@ -252,7 +320,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to
   -ArchiveSourcePath "C:\Pfad\zu\threadline-archive-ordner"
 ```
 
-- Optional: `-InlineAssets` bettet Avatare, Bilder und Link-Card-Vorschaubilder direkt als Data-URLs in das HTML ein. Der Konverter verwendet dafuer eine konservative Empfehlung von etwa 150 MB Quelldaten, ausser du erzwingst es mit `-Force`.
+- Optional: `-InlineAssets` bettet Avatare, Bilder und Link-Card-Vorschaubilder direkt als Data-URLs in das HTML ein. Der Konverter verwendet dafür eine konservative Empfehlung von etwa 150 MB Quelldaten, außer du erzwingst es mit `-Force`.
 - Standardmaessig liest der Konverter die Posts direkt aus `threadline-archive.sqlite`. Mit `-UsePostsJson` laesst sich bei Bedarf explizit auf `posts.json` als Fallback umschalten.
 
 - Das Ergebnis ist ein Ordner mit `manifest.json`, `threadline-archive.sqlite`, optional `posts.json`, allen Assets und einer erzeugten HTML-Datei
@@ -353,6 +421,8 @@ Hinweis: Unter iOS kann die Installation nicht automatisch ausgelöst werden. In
 ## Technische Hinweise
 
 Ausführlichere technische Informationen zu Archiv, Analyse-Verfahren, Netzwerk-Datenbasis, Link-Cards, lokalem Start, Update-Erkennung und empfohlenen Tests stehen in [TECHNICAL.de.md](TECHNICAL.de.md).
+
+Die protokollspezifischen Hinweise zu Endpunkten, Auth, DID/PDS, Cursorn und Limits stehen getrennt in [ATPROTO.de.md](ATPROTO.de.md).
 
 ## OpenGraph-Bild
 

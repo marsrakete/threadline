@@ -30,6 +30,11 @@ const lightboxImage = document.querySelector("#archive-lightbox-image");
 const lightboxCaption = document.querySelector("#archive-lightbox-caption");
 const lightboxTitle = document.querySelector("#archive-lightbox-title");
 const lightboxClose = document.querySelector("#archive-lightbox-close");
+const editDialog = document.querySelector("#archive-edit-dialog");
+const editDialogClose = document.querySelector("#archive-edit-close");
+const editDialogMeta = document.querySelector("#archive-edit-meta");
+const editDialogOriginal = document.querySelector("#archive-edit-original");
+const editDialogCurrent = document.querySelector("#archive-edit-current");
 let indentThreads = true;
 let lastAppliedQuery = "";
 let filterApplyTimer = 0;
@@ -348,6 +353,132 @@ function openLightboxFromImage(image) {
   lightboxCaption.textContent = image.alt || "";
 }
 
+/**
+ * Splits edit comparison text into whitespace-preserving tokens.
+ * @param {string} text - Text to tokenize.
+ * @returns {string[]} Token list.
+ */
+function tokenizeArchiveEditText(text) {
+  return String(text || "").match(/\s+|[^\s]+/g) || [];
+}
+
+/**
+ * Calculates original/current token parts for an archive edit dialog.
+ * @param {string} originalText - Original post text.
+ * @param {string} currentText - Current post text.
+ * @returns {object} Original and current diff parts.
+ */
+function diffArchiveEditTokens(originalText, currentText) {
+  const originalTokens = tokenizeArchiveEditText(originalText);
+  const currentTokens = tokenizeArchiveEditText(currentText);
+  const originalLength = originalTokens.length;
+  const currentLength = currentTokens.length;
+  const matrix = Array.from({ length: originalLength + 1 }, () => new Uint16Array(currentLength + 1));
+
+  for (let originalIndex = originalLength - 1; originalIndex >= 0; originalIndex -= 1) {
+    for (let currentIndex = currentLength - 1; currentIndex >= 0; currentIndex -= 1) {
+      if (originalTokens[originalIndex] === currentTokens[currentIndex]) {
+        matrix[originalIndex][currentIndex] = matrix[originalIndex + 1][currentIndex + 1] + 1;
+      } else {
+        matrix[originalIndex][currentIndex] = Math.max(matrix[originalIndex + 1][currentIndex], matrix[originalIndex][currentIndex + 1]);
+      }
+    }
+  }
+
+  const originalParts = [];
+  const currentParts = [];
+  let originalIndex = 0;
+  let currentIndex = 0;
+  while (originalIndex < originalLength && currentIndex < currentLength) {
+    if (originalTokens[originalIndex] === currentTokens[currentIndex]) {
+      originalParts.push({ type: "equal", text: originalTokens[originalIndex] });
+      currentParts.push({ type: "equal", text: currentTokens[currentIndex] });
+      originalIndex += 1;
+      currentIndex += 1;
+    } else if (matrix[originalIndex + 1][currentIndex] >= matrix[originalIndex][currentIndex + 1]) {
+      originalParts.push({ type: "removed", text: originalTokens[originalIndex] });
+      originalIndex += 1;
+    } else {
+      currentParts.push({ type: "added", text: currentTokens[currentIndex] });
+      currentIndex += 1;
+    }
+  }
+
+  while (originalIndex < originalLength) {
+    originalParts.push({ type: "removed", text: originalTokens[originalIndex] });
+    originalIndex += 1;
+  }
+  while (currentIndex < currentLength) {
+    currentParts.push({ type: "added", text: currentTokens[currentIndex] });
+    currentIndex += 1;
+  }
+
+  return {
+    originalParts,
+    currentParts,
+  };
+}
+
+/**
+ * Renders edit diff parts into an archive HTML dialog text container.
+ * @param {HTMLElement|null} container - Target text container.
+ * @param {Array<object>} parts - Diff parts to render.
+ * @returns {void}
+ */
+function renderArchiveEditDiff(container, parts) {
+  if (!container) {
+    return;
+  }
+  container.replaceChildren();
+  parts.forEach((part) => {
+    if (part.type === "equal") {
+      container.append(document.createTextNode(part.text));
+      return;
+    }
+    const mark = document.createElement("mark");
+    mark.textContent = part.text;
+    if (part.type === "added") {
+      mark.className = "archive-html-edit-added";
+    }
+    if (part.type === "removed") {
+      mark.className = "archive-html-edit-removed";
+    }
+    container.appendChild(mark);
+  });
+}
+
+/**
+ * Opens the archive HTML edit dialog from an edit marker button.
+ * @param {HTMLButtonElement|null} button - Button carrying edit metadata.
+ * @returns {void}
+ */
+function openArchiveEditDialog(button) {
+  if (!editDialog || !editDialogMeta || !editDialogOriginal || !editDialogCurrent || !button) {
+    return;
+  }
+  const originalText = String(button.dataset.editOriginal || "");
+  const currentText = String(button.dataset.editCurrent || "");
+  const diff = diffArchiveEditTokens(originalText, currentText);
+  editDialog.hidden = false;
+  editDialogMeta.textContent = `${formatArchiveDateTime(button.dataset.editCreated)} - ${formatArchiveDateTime(button.dataset.editUpdated)}`;
+  renderArchiveEditDiff(editDialogOriginal, diff.originalParts);
+  renderArchiveEditDiff(editDialogCurrent, diff.currentParts);
+}
+
+/**
+ * Closes and clears the archive HTML edit dialog.
+ * @returns {void}
+ */
+function closeArchiveEditDialog() {
+  if (!editDialog || !editDialogOriginal || !editDialogCurrent || !editDialogMeta) {
+    return;
+  }
+  editDialog.hidden = true;
+  editDialogMeta.textContent = "";
+  editDialogOriginal.replaceChildren();
+  editDialogCurrent.replaceChildren();
+}
+
 searchInput?.addEventListener("input", () => queueArchiveFilterApply(140));
 [fromInput, toInput, onlyImagesInput, onlyThreadsInput].forEach((element) => {
   element?.addEventListener("input", () => applyArchiveFilters());
@@ -449,6 +580,12 @@ document.querySelectorAll(".archive-html-image img").forEach((image) => {
   });
 });
 
+document.querySelectorAll("[data-archive-edit-button]").forEach((button) => {
+  button.addEventListener("click", () => {
+    openArchiveEditDialog(button);
+  });
+});
+
 function closeLightbox() {
   if (!lightbox || !lightboxImage || !lightboxCaption) {
     return;
@@ -465,9 +602,18 @@ lightbox?.addEventListener("click", (event) => {
     closeLightbox();
   }
 });
+editDialogClose?.addEventListener("click", closeArchiveEditDialog);
+editDialog?.addEventListener("click", (event) => {
+  if (event.target === editDialog) {
+    closeArchiveEditDialog();
+  }
+});
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && lightbox && !lightbox.hidden) {
     closeLightbox();
+  }
+  if (event.key === "Escape" && editDialog && !editDialog.hidden) {
+    closeArchiveEditDialog();
   }
 });
 

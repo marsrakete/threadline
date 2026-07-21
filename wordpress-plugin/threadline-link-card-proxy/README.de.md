@@ -51,6 +51,8 @@ Bluesky-Posts können Bild-Embeds und externe Link-Cards nicht im selben Post ko
 
 Erzeugte Link-Cards werden zusammen mit den Thread-Daten gespeichert und bleiben bei Reloads sowie in Thread-Backups erhalten.
 
+Wenn die Zielseite Standard.site-Metadaten ausliefert, gibt der Proxy zusätzlich Publication-Card-Daten aus `site.standard.document`, `site.standard.publication` und dem optionalen Verifikationsendpunkt `/.well-known/site.standard.publication` zurück. Threadline markiert diese Karte damit im Composer, Thread Explorer und HTML-Archiv als Publikation.
+
 ## Sicherheit Und Betrieb
 
 - Anfragen werden mit einem HMAC-Secret signiert, das Threadline und Plugin gemeinsam verwenden.

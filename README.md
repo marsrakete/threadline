@@ -25,6 +25,10 @@ Threadline is a static PWA for publishing Bluesky threads. It connects with a Bl
 
 Threadline has grown far beyond a thread composer. With dedicated workspaces for archive functions, analysis, network exploration, and DM archiving, direct in-app help, more robust exports, better mobile HTML readability, and drag-and-drop image handling, it now feels like a small Bluesky workbench.
 
+## Project Guidelines
+
+Development follows the local [PROJECT_GUIDELINES.md](PROJECT_GUIDELINES.md): keep structure, styling, behavior, and translations separated; prefer templates and DOM APIs over large HTML strings; keep user-facing text centralized; and treat broken encoding as a bug.
+
 ## First Thread Post In 3 Steps
 
 1. Create a Bluesky app password, add your account in Threadline, and sign in.
@@ -80,6 +84,54 @@ Using a dedicated app password is recommended because you can revoke it later wi
 - Thread segments can be edited after splitting
 - As soon as a segment is edited manually, the composer is locked to prevent accidental overwrites
 - `Ignore change` only unlocks the composer; it does not rerender the existing thread preview
+
+### Official Bluesky Limits
+
+For the protocol details behind these limits, see [ATPROTO.md](ATPROTO.md).
+
+In simple terms, Bluesky does not limit the total length of a whole thread. It limits each individual post inside the thread.
+
+- Every thread segment becomes its own `app.bsky.feed.post`
+- The important post limit is `300` Unicode grapheme clusters, meaning visible characters as Bluesky counts them
+- That is why Threadline splits and warns per segment, not per whole thread
+- Emojis, joined emoji sequences, and some other Unicode combinations can count differently than a simple JavaScript string length
+- Chinese, Japanese, and similar scripts are not "special cases" in the protocol, but each visible character counts directly toward the same `300` limit
+
+There is no officially documented total character limit for an entire thread in the AT Protocol or Bluesky docs. Technically, a thread is just a reply chain where every segment is linked through `reply.root` and `reply.parent`.
+
+For extremely long threads, the practical limit is account write rate limits rather than a thread-length limit. Bluesky currently documents write budgets of `5,000` points per hour and `35,000` per day, and creating one normal new record costs `3` points.
+
+### Grapheme Test Cases
+
+Threadline now follows the official Bluesky limit of `300` Unicode grapheme clusters per post, not just JavaScript string length.
+
+- `\"🙂\".repeat(300)` is exactly `300` grapheme clusters and should still fit into one post.
+- `\"🙂\".repeat(301)` is `301` grapheme clusters and must be split or warned.
+- `\"👨‍👩‍👧‍👦\".repeat(300)` is also exactly `300` grapheme clusters, even though each visible family emoji consists of multiple code points and many UTF-16 code units.
+- `\"漢\".repeat(300)` is exactly `300` grapheme clusters; `\"漢\".repeat(301)` is too long. This is a good CJK test because each visible character counts directly toward the limit.
+
+Quick browser-console check:
+
+```js
+const examples = {
+  emoji300: "🙂".repeat(300),
+  emoji301: "🙂".repeat(301),
+  family300: "👨‍👩‍👧‍👦".repeat(300),
+  han300: "漢".repeat(300),
+  han301: "漢".repeat(301),
+};
+
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+for (const [name, text] of Object.entries(examples)) {
+  const graphemes = Array.from(segmenter.segment(text)).length;
+  console.log(name, {
+    graphemes,
+    codePoints: Array.from(text).length,
+    codeUnits: text.length,
+  });
+}
+```
 
 ## Replies And Thread Continuation
 
@@ -142,10 +194,14 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 
 - Plugin package: `wordpress-plugin/threadline-link-card-proxy.zip`
 - Plugin documentation: `wordpress-plugin/threadline-link-card-proxy/README.md`
+- Rebuild the plugin ZIP after source changes with `npm run package:wordpress`
 - Requirements: admin access to your own WordPress installation, WordPress 6.0+, PHP 7.4+, a reachable REST API, and outbound HTTP(S) requests from the server
 - The plugin shows the proxy endpoint and secret in WordPress Admin under `Threadline`
 - In Threadline, paste both values into `Settings` -> `Link cards`
 - Link cards are created per segment; images and link cards are mutually exclusive in the same segment
+- Standard.site pages are recognized as publication cards when their HTML exposes `site.standard.document` / `site.standard.publication` metadata; Threadline marks them as publications in Composer, Thread Explorer, and HTML archives
+- Thread Explorer loads current posts in pages of 50, appends more while scrolling, and can use pinned Bluesky feed generators from the account preferences as additional entry points
+- Loaded Thread Explorer trees can be downloaded as PNG snapshots; the filename includes the root post handle and date
 
 ## Inclusion And ALT Texts
 
@@ -187,16 +243,24 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 - language preference
 - tips visibility
 - ALT-text requirement
+- layout and composer preferences
 - saved login entries with handle, server, and avatar
+- local account avatar images
 - hashtags
 - selected hashtags
 - hashtag placement
+- locally saved Thread Explorer favorites
 - posting history
+- archive preferences
+- analysis workspace state
+- cached DM partner metadata and local contact avatar assets
 - Hashtags are merged during import
 - Existing hashtags stay
 - New hashtags are added
 - Duplicates are ignored
-- Important: the backup includes saved login entries, but explicitly does **not** include app passwords
+- Threadline reminds you to save a new settings backup when the last recorded backup is more than 30 days old
+- The reminder popup contains a direct `Save backup` button
+- Important: the backup includes saved login entries, but explicitly does **not** include app passwords, session tokens, full archive databases, full archive posts, complete DM exports, or current composer segment images
 - After an import, those accounts may therefore ask for the app password again
 
 ### Account Archive
@@ -204,6 +268,7 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 - The dedicated `Account archive` area can back up either your own Bluesky account or another reachable account together with its images
 - For very large archives, Threadline is gradually moving toward a split model: interactive filtering in the browser, heavyweight long-running fetches in PowerShell
 - Before loading, you can define the source account, date range, archive type, and whether full conversation context should be included
+- In the PWA, the date range is intentionally limited to at most three months
 - You can also choose an `Archive type` before loading:
 - `Full archive`: loads all of your own posts and all of your own replies, including replies inside other people's threads
 - `Own posts only`: loads your own top-level posts and your own replies only inside your own threads, but skips your replies in foreign threads
@@ -211,16 +276,18 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 - `Store full conversations`: additionally pulls in visible foreign reply context for matching replies and threads
 - `Check post changes` inspects a Bluesky or Mu post URL for Mu-compatible edit metadata and compares the original and current text
 - The normal user workflow is:
-1. Choose the source account, the range, and the archive type
+1. Choose the source account, a range of at most three months, and the archive type
 2. Decide whether full conversation context should be included
 3. Use `Load archive` to fetch posts and assets into the current archive session
 4. Pause or cancel if needed and continue later from the same checkpoint
 5. Use `Save archive as ZIP` to store a technical backup containing posts, metadata, and images
-6. Use `Generate HTML archive`, `Generate compact HTML`, or `Generate PDF volumes` to create readable outputs from that already loaded archive state
-7. Use the single-thread tools below when you want to load one thread URL, check post edits, and export just that loaded thread
+6. In the PWA, SVG images are not copied into the archive directly. They are replaced with a small dummy image for safety
+7. Use `Generate HTML archive`, `Generate compact HTML`, or `Generate PDF volumes` to create readable outputs from that already loaded archive state
+8. Use the single-thread tools below when you want to load one thread URL, check post edits, and export just that loaded thread
 - For large accounts, the export should ideally be done on a desktop device with plenty of free storage
 - If the embedded HTML archive becomes too large, Threadline recommends using the archive export together with the PowerShell script `scripts/convert-threadline-archive-to-html.ps1`
 - A standalone PowerShell bulk archiver now lives in `scripts/archive-threadline.ps1`, and the newer SQLite-based variant lives in `scripts/archive-threadline-sqlite.ps1`
+- Both PowerShell scripts also replace SVG files with a small dummy image by default; use `-AllowSvg` only when you explicitly want to disable that safeguard
 - Their documentation and sample configs live in `scripts/README.threadline-archiver.md`, `scripts/threadline-archiver.config.sample.json`, and `scripts/threadline-archiver-sqlite.config.sample.json`
 - The PowerShell archiver is designed to emit the **same archive JSON contract** as the browser app, so its ZIP output can still be loaded back into Threadline
 - For large archives, the SQLite-based archiver plus its separate viewer script are usually the better route than pushing everything through the browser
@@ -228,6 +295,7 @@ Threadline can create Bluesky external link cards for URLs inside individual thr
 - accepts either a Threadline archive ZIP or an already unpacked archive folder
 - generates a local HTML archive from it
 - stages images, avatars, and link-card thumbnails into `archive-assets/` for the generated HTML
+- preserves recognized Standard.site publication metadata and shows those link cards as publication cards in the generated HTML
 - stays independent of browser limits for very large single-file HTML exports
 - Example call:
 
@@ -353,6 +421,8 @@ Note: on iOS the installation cannot be triggered automatically. The app include
 ## Technical Notes
 
 More detailed technical information about the archive, analysis methods, the network data model, link-card limits, running locally, update detection, and recommended testing is available in [TECHNICAL.md](TECHNICAL.md).
+
+The protocol-specific endpoint, auth, DID/PDS, cursor, and limit notes are collected separately in [ATPROTO.md](ATPROTO.md).
 
 ## OpenGraph Image
 

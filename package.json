@@ -1,12 +1,17 @@
 {
   "name": "threadline",
-  "version": "0.4.180",
+  "version": "0.4.220",
   "private": true,
   "scripts": {
-    "build:og-image": "node scripts/build-og-images.js"
+    "build:og-image": "node scripts/build-og-images.js",
+    "check:encoding": "node scripts/check-encoding.js",
+    "fix:encoding": "node scripts/convert-windows1252-to-utf8.js",
+    "package:wordpress": "npm run package:wordpress:link-card-proxy",
+    "package:wordpress:link-card-proxy": "powershell -NoProfile -ExecutionPolicy Bypass -File wordpress-plugin/package-link-card-proxy.ps1"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
+    "iconv-lite": "^0.7.0",
     "sharp": "^0.35.2"
   }
 }

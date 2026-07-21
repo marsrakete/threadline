@@ -29,6 +29,8 @@ const els = {
   zoom: document.querySelector("#zoom-input"),
 };
 
+let activeEditDialog = null;
+
 function api(path, params = {}) {
   const url = new URL(path, window.location.origin);
   Object.entries(params).forEach(([key, value]) => {
@@ -90,6 +92,15 @@ function textSpan(value) {
   const span = document.createElement("span");
   span.textContent = value;
   return span;
+}
+
+/**
+ * Checks whether an archive viewer post has Mu edit metadata.
+ * @param {object} post - Archive viewer post object.
+ * @returns {boolean} True when edit metadata exists.
+ */
+function isEditedPost(post) {
+  return post?.editInfo?.isEdited === true;
 }
 
 function renderPostList() {
@@ -228,8 +239,32 @@ function renderPostCard(post) {
   text.className = "post-text";
   text.textContent = post.text || "Kein Text.";
 
-  article.append(header, meta, renderMetrics(post), text, renderExternalCard(post), renderGallery(post), renderLinks(post));
+  article.append(header, meta, renderMetrics(post), renderEditMarker(post), text, renderExternalCard(post), renderGallery(post), renderLinks(post));
   return article;
+}
+
+/**
+ * Renders the archive viewer edit marker for a post.
+ * @param {object} post - Archive viewer post object.
+ * @returns {HTMLElement} Edit marker wrapper.
+ */
+function renderEditMarker(post) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "edit-marker-row";
+  if (!isEditedPost(post)) {
+    wrapper.hidden = true;
+    return wrapper;
+  }
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "archive-viewer-edit-button";
+  button.textContent = "Wurde bearbeitet";
+  button.addEventListener("click", () => {
+    openEditDialog(post);
+  });
+  wrapper.appendChild(button);
+  return wrapper;
 }
 
 function renderMetrics(post) {
@@ -316,6 +351,168 @@ function renderLinks(post) {
   uri.textContent = post.uri.replace(/^at:\/\//, "");
   links.append(uri);
   return links;
+}
+
+/**
+ * Splits text into whitespace-preserving edit-diff tokens.
+ * @param {string} text - Text to tokenize.
+ * @returns {string[]} Token list.
+ */
+function tokenizeEditText(text) {
+  return String(text || "").match(/\s+|[^\s]+/g) || [];
+}
+
+/**
+ * Calculates edit-diff token parts for original and current post text.
+ * @param {string} originalText - Original post text.
+ * @param {string} currentText - Current post text.
+ * @returns {object} Original and current diff parts.
+ */
+function diffEditTokens(originalText, currentText) {
+  const originalTokens = tokenizeEditText(originalText);
+  const currentTokens = tokenizeEditText(currentText);
+  const originalLength = originalTokens.length;
+  const currentLength = currentTokens.length;
+  const matrix = Array.from({ length: originalLength + 1 }, () => new Uint16Array(currentLength + 1));
+
+  for (let originalIndex = originalLength - 1; originalIndex >= 0; originalIndex -= 1) {
+    for (let currentIndex = currentLength - 1; currentIndex >= 0; currentIndex -= 1) {
+      if (originalTokens[originalIndex] === currentTokens[currentIndex]) {
+        matrix[originalIndex][currentIndex] = matrix[originalIndex + 1][currentIndex + 1] + 1;
+      } else {
+        matrix[originalIndex][currentIndex] = Math.max(matrix[originalIndex + 1][currentIndex], matrix[originalIndex][currentIndex + 1]);
+      }
+    }
+  }
+
+  const originalParts = [];
+  const currentParts = [];
+  let originalIndex = 0;
+  let currentIndex = 0;
+  while (originalIndex < originalLength && currentIndex < currentLength) {
+    if (originalTokens[originalIndex] === currentTokens[currentIndex]) {
+      originalParts.push({ type: "equal", text: originalTokens[originalIndex] });
+      currentParts.push({ type: "equal", text: currentTokens[currentIndex] });
+      originalIndex += 1;
+      currentIndex += 1;
+    } else if (matrix[originalIndex + 1][currentIndex] >= matrix[originalIndex][currentIndex + 1]) {
+      originalParts.push({ type: "removed", text: originalTokens[originalIndex] });
+      originalIndex += 1;
+    } else {
+      currentParts.push({ type: "added", text: currentTokens[currentIndex] });
+      currentIndex += 1;
+    }
+  }
+
+  while (originalIndex < originalLength) {
+    originalParts.push({ type: "removed", text: originalTokens[originalIndex] });
+    originalIndex += 1;
+  }
+  while (currentIndex < currentLength) {
+    currentParts.push({ type: "added", text: currentTokens[currentIndex] });
+    currentIndex += 1;
+  }
+
+  return {
+    originalParts,
+    currentParts,
+  };
+}
+
+/**
+ * Renders edit-diff parts into a viewer dialog text element.
+ * @param {HTMLElement} target - Target text element.
+ * @param {Array<object>} parts - Diff parts.
+ * @returns {void}
+ */
+function renderEditDiff(target, parts) {
+  target.replaceChildren();
+  parts.forEach((part) => {
+    if (part.type === "equal") {
+      target.append(document.createTextNode(part.text));
+      return;
+    }
+    const mark = document.createElement("mark");
+    mark.textContent = part.text;
+    if (part.type === "added") {
+      mark.className = "edit-added";
+    }
+    if (part.type === "removed") {
+      mark.className = "edit-removed";
+    }
+    target.appendChild(mark);
+  });
+}
+
+/**
+ * Closes the active archive viewer edit dialog.
+ * @returns {void}
+ */
+function closeEditDialog() {
+  if (!activeEditDialog) {
+    return;
+  }
+  activeEditDialog.remove();
+  activeEditDialog = null;
+}
+
+/**
+ * Opens the archive viewer edit dialog for a post.
+ * @param {object} post - Archive viewer post object.
+ * @returns {void}
+ */
+function openEditDialog(post) {
+  closeEditDialog();
+  const editInfo = post?.editInfo || {};
+  const diff = diffEditTokens(editInfo.originalText || "", editInfo.text || post.text || "");
+  const overlay = document.createElement("div");
+  overlay.className = "edit-dialog-overlay";
+  const dialog = document.createElement("section");
+  dialog.className = "edit-dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "edit-dialog-close";
+  closeButton.textContent = "Schließen";
+  closeButton.addEventListener("click", closeEditDialog);
+
+  const title = document.createElement("h2");
+  title.textContent = "Bearbeitungs-Details";
+  const note = document.createElement("p");
+  note.textContent = "Dieser Post enthält eine Bearbeitung, die von Mu dokumentiert wurde.";
+  const meta = document.createElement("p");
+  meta.className = "post-card-meta";
+  meta.textContent = `${formatDate(editInfo.createdAt || post.createdAt)} - ${formatDate(editInfo.updatedAt || "")}`;
+
+  const grid = document.createElement("div");
+  grid.className = "edit-dialog-grid";
+  const originalPanel = document.createElement("section");
+  const currentPanel = document.createElement("section");
+  const originalTitle = document.createElement("h3");
+  const currentTitle = document.createElement("h3");
+  const originalText = document.createElement("div");
+  const currentText = document.createElement("div");
+  originalTitle.textContent = "Ursprünglicher Text";
+  currentTitle.textContent = "Aktueller Text";
+  originalText.className = "edit-dialog-text";
+  currentText.className = "edit-dialog-text";
+  renderEditDiff(originalText, diff.originalParts);
+  renderEditDiff(currentText, diff.currentParts);
+  originalPanel.append(originalTitle, originalText);
+  currentPanel.append(currentTitle, currentText);
+  grid.append(originalPanel, currentPanel);
+
+  dialog.append(closeButton, title, note, meta, grid);
+  overlay.appendChild(dialog);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      closeEditDialog();
+    }
+  });
+  document.body.appendChild(overlay);
+  activeEditDialog = overlay;
 }
 
 function buildTree(rootUri) {
@@ -484,6 +681,11 @@ els.expandAll.addEventListener("click", () => {
 els.zoomOut.addEventListener("click", () => setZoom(state.zoom - 10));
 els.zoomIn.addEventListener("click", () => setZoom(state.zoom + 10));
 els.zoom.addEventListener("input", () => setZoom(Number(els.zoom.value || 100)));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeEditDialog();
+  }
+});
 
 loadSummary().catch((error) => showError(error.message));
 loadPosts({ reset: true });

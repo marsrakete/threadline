@@ -10,6 +10,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+<#
+.SYNOPSIS
+Finds a usable php.exe for the local archive viewer.
+
+.PARAMETER PathValue
+Optional explicit path to php.exe.
+
+.OUTPUTS
+System.String
+#>
 function Resolve-PhpPath {
   param([string]$PathValue)
   if (-not [string]::IsNullOrWhiteSpace($PathValue)) {
@@ -37,6 +47,19 @@ function Resolve-PhpPath {
   throw "php.exe was not found. Install PHP or pass -PhpExePath."
 }
 
+<#
+.SYNOPSIS
+Resolves the archive directory from parameters or the current location.
+
+.PARAMETER ArchiveValue
+Optional archive directory path.
+
+.PARAMETER DatabaseValue
+Optional SQLite database path whose parent directory should be used.
+
+.OUTPUTS
+System.String
+#>
 function Resolve-ArchiveDirectory {
   param(
     [string]$ArchiveValue,
@@ -67,6 +90,83 @@ function Resolve-ArchiveDirectory {
   throw "Pass -ArchiveDirectory or -DatabasePath. The current directory does not contain threadline-archive.sqlite."
 }
 
+<#
+.SYNOPSIS
+Builds the effective database path for the viewer run.
+
+.PARAMETER ArchivePath
+Resolved archive directory.
+
+.PARAMETER DatabaseValue
+Optional explicit database path.
+
+.OUTPUTS
+System.String
+#>
+function Resolve-DatabasePath {
+  param(
+    [string]$ArchivePath,
+    [string]$DatabaseValue
+  )
+
+  if ([string]::IsNullOrWhiteSpace($DatabaseValue)) {
+    return Join-Path $ArchivePath "threadline-archive.sqlite"
+  }
+
+  return [System.IO.Path]::GetFullPath($DatabaseValue)
+}
+
+<#
+.SYNOPSIS
+Resolves the PHP extension directory used for SQLite support.
+
+.PARAMETER PhpPath
+Resolved php.exe path.
+
+.OUTPUTS
+System.String
+#>
+function Resolve-PhpExtensionDirectory {
+  param([string]$PhpPath)
+
+  $phpRoot = Split-Path -Parent $PhpPath
+  $extensionDir = Join-Path $phpRoot "ext"
+  if (-not (Test-Path -LiteralPath $extensionDir -PathType Container)) {
+    throw "PHP extension directory not found: $extensionDir"
+  }
+
+  return $extensionDir
+}
+
+<#
+.SYNOPSIS
+Prints the local viewer endpoint and selected archive paths.
+
+.PARAMETER Url
+Viewer URL bound to localhost.
+
+.PARAMETER ArchivePath
+Resolved archive directory.
+
+.PARAMETER DatabasePath
+Resolved SQLite database path.
+
+.OUTPUTS
+None
+#>
+function Write-ViewerStartupInfo {
+  param(
+    [string]$Url,
+    [string]$ArchivePath,
+    [string]$DatabasePath
+  )
+
+  Write-Host "Threadline Viewer: $Url"
+  Write-Host "Archive: $ArchivePath"
+  Write-Host "Database: $DatabasePath"
+  Write-Host "Press Ctrl+C to stop."
+}
+
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptRoot
 $viewerRoot = Join-Path $repoRoot "viewer"
@@ -76,30 +176,19 @@ if (-not (Test-Path -LiteralPath (Join-Path $viewerRoot "index.php") -PathType L
 
 $resolvedPhp = Resolve-PhpPath -PathValue $PhpExePath
 $resolvedArchive = Resolve-ArchiveDirectory -ArchiveValue $ArchiveDirectory -DatabaseValue $DatabasePath
-$resolvedDatabase = if ([string]::IsNullOrWhiteSpace($DatabasePath)) {
-  Join-Path $resolvedArchive "threadline-archive.sqlite"
-} else {
-  [System.IO.Path]::GetFullPath($DatabasePath)
-}
+$resolvedDatabase = Resolve-DatabasePath -ArchivePath $resolvedArchive -DatabaseValue $DatabasePath
 
 if (-not (Test-Path -LiteralPath $resolvedDatabase -PathType Leaf)) {
   throw "Database not found: $resolvedDatabase"
 }
 
-$phpRoot = Split-Path -Parent $resolvedPhp
-$extensionDir = Join-Path $phpRoot "ext"
-if (-not (Test-Path -LiteralPath $extensionDir -PathType Container)) {
-  throw "PHP extension directory not found: $extensionDir"
-}
+$extensionDir = Resolve-PhpExtensionDirectory -PhpPath $resolvedPhp
 
 $env:THREADLINE_ARCHIVE_DIR = $resolvedArchive
 $env:THREADLINE_DATABASE_PATH = $resolvedDatabase
 
 $url = "http://127.0.0.1:$Port/"
-Write-Host "Threadline Viewer: $url"
-Write-Host "Archive: $resolvedArchive"
-Write-Host "Database: $resolvedDatabase"
-Write-Host "Press Ctrl+C to stop."
+Write-ViewerStartupInfo -Url $url -ArchivePath $resolvedArchive -DatabasePath $resolvedDatabase
 
 if ($OpenBrowser) {
   Start-Process $url

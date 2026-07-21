@@ -879,6 +879,14 @@ function Render-ArchiveImageMarkup {
   return "<div class=""archive-html-gallery"">$($parts -join "`n")</div>"
 }
 
+<#
+.SYNOPSIS
+Renders the external link-card HTML for one archived post.
+.PARAMETER Post
+Archive post object that can contain externalCard metadata.
+.OUTPUTS
+HTML markup string, or an empty string when no external card is present.
+#>
 function Render-ExternalCardMarkup {
   param($Post)
   $card = Get-OptionalPropertyValue -Object $Post -Name "externalCard"
@@ -902,14 +910,21 @@ function Render-ExternalCardMarkup {
   if (-not [string]::IsNullOrWhiteSpace($cardDescription)) {
     $descriptionMarkup = "<span>$(Escape-Html $cardDescription)</span>"
   }
+  $cardClass = "archive-html-link-card"
+  $footerText = Shorten-UrlForDisplay $cardUrl
+  $standardSite = Get-OptionalPropertyValue -Object $card -Name "standardSite" -Default $null
+  if ($null -ne $standardSite) {
+    $cardClass = "archive-html-link-card is-publication"
+    $footerText = "$(Shorten-UrlForDisplay $cardUrl) - View Publication"
+  }
 
 return @"
-<a class="archive-html-link-card" href="$(Escape-HtmlAttribute $cardUrl)" target="_blank" rel="noreferrer noopener">
+<a class="$cardClass" href="$(Escape-HtmlAttribute $cardUrl)" target="_blank" rel="noreferrer noopener">
   $thumbMarkup
   <span class="archive-html-link-card-copy">
     <strong>$title</strong>
     $descriptionMarkup
-    <small>$(Escape-Html (Shorten-UrlForDisplay $cardUrl))</small>
+    <small>$(Escape-Html $footerText)</small>
   </span>
 </a>
 "@

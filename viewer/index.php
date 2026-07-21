@@ -115,6 +115,31 @@ function archive_account_did(): string
     return is_string($did) ? trim($did) : '';
 }
 
+/**
+ * Checks whether the SQLite archive table exposes a column.
+ *
+ * @param string $table Table name.
+ * @param string $column Column name.
+ * @return bool True when the column exists.
+ */
+function db_has_column(string $table, string $column): bool
+{
+    static $cache = [];
+    $key = $table . '.' . $column;
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+    $stmt = db()->query('PRAGMA table_info(' . $table . ')');
+    $cache[$key] = false;
+    foreach ($stmt->fetchAll() as $row) {
+        if ((string)($row['name'] ?? '') === $column) {
+            $cache[$key] = true;
+            break;
+        }
+    }
+    return $cache[$key];
+}
+
 function post_from_row(array $row): array
 {
     $counts = decode_json_value($row['counts_json'] ?? null, [
@@ -143,6 +168,7 @@ function post_from_row(array $row): array
         'counts' => is_array($counts) ? $counts : [],
         'images' => decode_json_value($row['images_json'] ?? null, []),
         'externalCard' => decode_json_value($row['external_card_json'] ?? null, null),
+        'editInfo' => decode_json_value($row['edit_info_json'] ?? null, null),
         'mediaSkippedCount' => (int)($row['media_skipped_count'] ?? 0),
         'childCount' => (int)($row['child_count'] ?? 0),
         'threadSize' => (int)($row['thread_size'] ?? 1),
@@ -151,11 +177,15 @@ function post_from_row(array $row): array
 
 function post_select_sql(): string
 {
+    $editInfoSelect = 'NULL AS edit_info_json';
+    if (db_has_column('posts', 'edit_info_json')) {
+        $editInfoSelect = 'p.edit_info_json';
+    }
     return "
         p.uri, p.cid, p.rkey, p.created_at, p.created_at_unix, p.text,
         p.counts_json, p.permalink, p.author_handle, p.author_display_name,
         p.author_did, p.author_avatar_path, p.thread_root_uri, p.thread_parent_uri,
-        p.images_json, p.external_card_json, p.media_skipped_count
+        p.images_json, p.external_card_json, $editInfoSelect, p.media_skipped_count
     ";
 }
 

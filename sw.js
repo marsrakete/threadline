@@ -8,8 +8,11 @@ const APP_SHELL = [
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./sw-atproto.js",
   "./post-languages.js",
   "./translations.js",
+  "./ATPROTO.md",
+  "./ATPROTO.de.md",
   "./templates/archive-html-shell.html",
   "./templates/archive-html-client.js",
   "./manifest.webmanifest",
@@ -36,6 +39,7 @@ const ARCHIVE_SESSION_KEY = "archive-session";
 const ARCHIVE_CATALOG_KEY = "archive-catalog";
 const DM_PARTNER_CACHE_KEY = "dm-partner-cache";
 const ACCOUNT_AVATAR_CACHE_KEY = "account-avatar-cache";
+const ACCOUNT_AVATAR_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const ARCHIVE_THREAD_REQUEST_TIMEOUT_MS = 15000;
 const ARCHIVE_THREAD_REQUEST_RETRIES = 1;
 const ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY = 4;
@@ -56,6 +60,8 @@ const POST_WEB_FRONTENDS = {
   "mu.social": "https://mu.social",
 };
 const archiveRunControls = new Map();
+
+importScripts("./sw-atproto.js");
 
 function normalizePostLanguageTags(tags, max = 3) {
   const values = Array.isArray(tags) ? tags : [tags];
@@ -260,6 +266,39 @@ function normalizeSegmentImageMetadata(segments) {
   );
 }
 
+/**
+ * Normalizes Standard.site publication metadata attached to a link card.
+ * @param {object|null} value - Raw metadata from a proxy response or saved archive.
+ * @returns {object|null} Compact Standard.site metadata, or null when absent.
+ */
+function normalizeStandardSiteMetadata(value = null) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const documentUri = String(value.documentUri || value.document || "").trim();
+  const publicationUri = String(value.publicationUri || value.publication || "").trim();
+  const publicationUrl = String(value.publicationUrl || value.url || "").trim();
+  const publicationName = String(value.publicationName || value.name || "").trim().slice(0, 160);
+  if (!documentUri && !publicationUri && !publicationUrl && !publicationName) {
+    return null;
+  }
+
+  return {
+    documentUri,
+    publicationUri,
+    publicationUrl,
+    publicationName,
+    publicationVerified: value.publicationVerified === true,
+    ctaLabel: String(value.ctaLabel || "View Publication").trim().slice(0, 80),
+  };
+}
+
+/**
+ * Normalizes one composer link card for persistence and posting.
+ * @param {object|null} card - Raw link-card data from settings or the proxy.
+ * @returns {object|null} Normalized link-card data, or null when invalid.
+ */
 function normalizeLinkCard(card = null) {
   if (!card || typeof card !== "object") {
     return null;
@@ -275,6 +314,7 @@ function normalizeLinkCard(card = null) {
     imageUrl: String(card.imageUrl || "").trim(),
     imageDataUrl: String(card.imageDataUrl || "").trim(),
     imageMimeType: String(card.imageMimeType || "").trim(),
+    standardSite: normalizeStandardSiteMetadata(card.standardSite),
     createdAt: String(card.createdAt || new Date().toISOString()),
   };
 }
@@ -459,29 +499,6 @@ function parseMentionCandidates(text) {
   }
 
   return candidates;
-}
-
-async function resolveHandleToDid(handle, auth, cache) {
-  if (cache.has(handle)) {
-    return cache.get(handle);
-  }
-
-  const url = `${API_BASE}/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`;
-  const response = await fetch(url, {
-    headers: auth?.session?.accessJwt
-      ? { authorization: `Bearer ${auth.session.accessJwt}` }
-      : undefined,
-  });
-
-  if (!response.ok) {
-    cache.set(handle, null);
-    return null;
-  }
-
-  const data = await response.json().catch(() => ({}));
-  const did = typeof data.did === "string" && data.did ? data.did : null;
-  cache.set(handle, did);
-  return did;
 }
 
 async function parseMentionFacets(text, auth, cache) {
@@ -710,6 +727,18 @@ async function handleMessage(message, port) {
       return loadNetworkActorFocus(message.payload, (progress) => port.postMessage({ progress }));
     case "LOAD_NETWORK_COMMON_MUTUALS":
       return loadNetworkCommonMutuals(message.payload, (progress) => port.postMessage({ progress }));
+    case "LOAD_THREAD_EXPLORER_FEED":
+      return loadThreadExplorerFeed(message.payload);
+    case "LOAD_THREAD_EXPLORER_FEED_SOURCES":
+      return loadThreadExplorerFeedSources();
+    case "RESOLVE_THREAD_EXPLORER_POST_URL":
+      return resolveThreadExplorerPostUrl(message.payload);
+    case "LOAD_THREAD_EXPLORER_THREAD":
+      return loadThreadExplorerThread(message.payload);
+    case "HYDRATE_THREAD_EXPLORER_AVATARS":
+      return hydrateThreadExplorerAvatars(message.payload);
+    case "LOAD_THREAD_EXPLORER_REACTIONS":
+      return loadThreadExplorerReactions(message.payload);
     case "CHECK_ANALYSIS_ACCOUNT":
       return checkAnalysisAccount(message.payload);
     case "LOAD_ANALYSIS_ACCOUNT":
@@ -736,6 +765,58 @@ function createServiceWorkerError(message, code, details = {}) {
     code,
   };
   return error;
+}
+
+/**
+ * Reads rate-limit headers from a server response when available.
+ * @param {Response} response - HTTP response returned by the fetch call.
+ * @returns {object|null} Parsed rate-limit metadata, or null when no headers were present.
+ */
+function extractRateLimitMeta(response) {
+  if (!response?.headers) {
+    return null;
+  }
+
+  const limitRaw = String(response.headers.get("ratelimit-limit") || "").trim();
+  const remainingRaw = String(response.headers.get("ratelimit-remaining") || "").trim();
+  const resetRaw = String(response.headers.get("ratelimit-reset") || "").trim();
+  const policy = String(response.headers.get("ratelimit-policy") || "").trim();
+  const retryAfter = String(response.headers.get("retry-after") || "").trim();
+
+  if (!limitRaw && !remainingRaw && !resetRaw && !policy && !retryAfter) {
+    return null;
+  }
+
+  let resetAt = "";
+  if (/^\d+$/.test(resetRaw)) {
+    const resetSeconds = Number.parseInt(resetRaw, 10);
+    if (Number.isFinite(resetSeconds) && resetSeconds > 0) {
+      resetAt = new Date(resetSeconds * 1000).toISOString();
+    }
+  } else if (resetRaw) {
+    const parsedResetAt = Date.parse(resetRaw);
+    if (Number.isFinite(parsedResetAt)) {
+      resetAt = new Date(parsedResetAt).toISOString();
+    }
+  }
+
+  let limit = null;
+  if (/^\d+$/.test(limitRaw)) {
+    limit = Number.parseInt(limitRaw, 10);
+  }
+
+  let remaining = null;
+  if (/^\d+$/.test(remainingRaw)) {
+    remaining = Number.parseInt(remainingRaw, 10);
+  }
+
+  return {
+    limit,
+    remaining,
+    resetAt,
+    policy,
+    retryAfter,
+  };
 }
 
 function openDatabase() {
@@ -792,46 +873,6 @@ function assertSecureServiceUrl(value) {
       "INSECURE_SERVICE_URL",
     );
   }
-}
-
-function xrpcBaseForService(service) {
-  assertSecureServiceUrl(service);
-  return `${normalizeServiceUrl(service)}/xrpc`;
-}
-
-async function buildPublicBlobUrlForDid(auth, did, cid, serviceCache = null) {
-  const serviceUrl = await resolvePdsForDid(did, auth.pdsUrl || auth.service, serviceCache);
-  return `${xrpcBaseForService(serviceUrl)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
-}
-
-function resolvePostWebBase(serviceUrl = DEFAULT_LOGIN_SERVICE) {
-  try {
-    const host = new URL(normalizeServiceUrl(serviceUrl)).hostname.toLowerCase();
-    return POST_WEB_FRONTENDS[host] || DEFAULT_POST_WEB_APP;
-  } catch {
-    return DEFAULT_POST_WEB_APP;
-  }
-}
-
-function buildPostWebUrl(handle, recordKey, serviceUrl = DEFAULT_LOGIN_SERVICE) {
-  if (!handle || !recordKey) {
-    return "";
-  }
-
-  return `${resolvePostWebBase(serviceUrl)}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordKey)}`;
-}
-
-function inferAccountWebApp(entry = {}, service = DEFAULT_LOGIN_SERVICE, handle = "") {
-  if (entry.webApp) {
-    return normalizeServiceUrl(entry.webApp);
-  }
-
-  const normalizedHandle = String(handle || entry.handle || entry.identifier || "").toLowerCase();
-  if (normalizedHandle.endsWith(".eurosky.social") || normalizedHandle.endsWith(".mu.social")) {
-    return MU_WEB_CLIENT;
-  }
-
-  return resolvePostWebBase(service);
 }
 
 function normalizeAuthAccount(entry = {}) {
@@ -1203,173 +1244,6 @@ function isJwtValid(accessJwt) {
   }
 }
 
-async function bskyFetch(endpoint, options = {}) {
-  const base = options.base || API_BASE;
-  const response = await fetch(`${base}/${endpoint}`, {
-    ...options,
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-
-  const text = await response.text();
-  let data = {};
-
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { message: text };
-    }
-  }
-
-  if (!response.ok) {
-    const retryAfterRaw = response.headers.get("retry-after") || "";
-    let retryAfterMs = 0;
-    if (/^\d+$/.test(retryAfterRaw.trim())) {
-      retryAfterMs = Math.max(0, Number.parseInt(retryAfterRaw.trim(), 10) * 1000);
-    } else if (retryAfterRaw.trim()) {
-      const retryAt = Date.parse(retryAfterRaw.trim());
-      if (Number.isFinite(retryAt)) {
-        retryAfterMs = Math.max(0, retryAt - Date.now());
-      }
-    }
-    const code = response.status === 401
-      ? "AUTH_INVALID_CREDENTIALS"
-      : "BSKY_REQUEST_FAILED";
-    throw createServiceWorkerError(
-      data.message || data.error || `Bluesky request failed (${response.status}).`,
-      code,
-      { status: response.status, retryAfterMs },
-    );
-  }
-
-  return data;
-}
-
-async function refreshAuthReference(auth) {
-  if (!auth?.did) {
-    return auth;
-  }
-
-  const freshAuth = await ensureSession(auth.did);
-  if (!freshAuth) {
-    return auth;
-  }
-
-  Object.assign(auth, freshAuth);
-  auth.session = freshAuth.session;
-  return auth;
-}
-
-async function fetchDidDocument(did, timeoutMs = 8000) {
-  if (!did) {
-    throw new Error("DID fehlt.");
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 8000));
-
-  try {
-    if (did.startsWith("did:plc:")) {
-      const response = await fetch(`https://plc.directory/${encodeURIComponent(did)}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`DID-Dokument konnte nicht geladen werden (${response.status}).`);
-      }
-      return response.json();
-    }
-
-    if (did.startsWith("did:web:")) {
-      const host = did.slice("did:web:".length).replace(/:/g, "/");
-      const response = await fetch(`https://${host}/.well-known/did.json`, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`DID-Dokument konnte nicht geladen werden (${response.status}).`);
-      }
-      return response.json();
-    }
-
-    throw new Error(`Nicht unterstütztes DID-Format: ${did}`);
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw new Error("DID-Dokument timed out.");
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-function extractPdsServiceFromDidDocument(documentNode, fallbackService) {
-  const services = Array.isArray(documentNode?.service) ? documentNode.service : [];
-  const pds = services.find((entry) =>
-    entry?.type === "AtprotoPersonalDataServer"
-    || String(entry?.id || "").endsWith("#atproto_pds"));
-
-  return normalizeServiceUrl(pds?.serviceEndpoint || fallbackService || DEFAULT_LOGIN_SERVICE);
-}
-
-async function fetchAccountAvatar(did, auth = null) {
-  try {
-    const profile = await bskyFetch(`app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`, {
-      method: "GET",
-      headers: auth?.session?.accessJwt
-        ? { authorization: `Bearer ${auth.session.accessJwt}` }
-        : undefined,
-      base: auth?.pdsUrl || auth?.service ? authXrpcBase(auth) : undefined,
-    });
-    return typeof profile?.avatar === "string" ? profile.avatar : "";
-  } catch {
-    return "";
-  }
-}
-
-async function bskyGet(endpoint, query = {}, options = {}) {
-  const search = new URLSearchParams();
-  Object.entries(query || {}).forEach(([key, value]) => {
-    if (Array.isArray(value)) {
-      value.filter(Boolean).forEach((entry) => search.append(key, entry));
-      return;
-    }
-    if (value !== undefined && value !== null && value !== "") {
-      search.set(key, value);
-    }
-  });
-
-  const suffix = search.toString() ? `?${search.toString()}` : "";
-  return bskyFetch(`${endpoint}${suffix}`, {
-    method: "GET",
-    headers: options.headers || {},
-    base: options.base,
-    signal: options.signal,
-  });
-}
-
-function authXrpcBase(auth = null) {
-  return xrpcBaseForService(auth?.pdsUrl || auth?.service || DEFAULT_LOGIN_SERVICE);
-}
-
-function buildChatProxyHeaders(auth, headers = {}) {
-  return {
-    authorization: `Bearer ${auth.session.accessJwt}`,
-    "atproto-proxy": CHAT_PROXY_DID,
-    ...headers,
-  };
-}
-
-async function chatBskyGet(auth, endpoint, query = {}) {
-  return bskyGet(endpoint, query, {
-    base: authXrpcBase(auth),
-    headers: buildChatProxyHeaders(auth),
-  });
-}
-
 function normalizeNetworkProfile(profile = {}, source = "") {
   const viewer = profile?.viewer && typeof profile.viewer === "object" ? profile.viewer : {};
   return {
@@ -1383,6 +1257,1003 @@ function normalizeNetworkProfile(profile = {}, source = "") {
     postsCount: Number(profile.postsCount) || 0,
     followingViewer: source === "following" || Boolean(viewer.following),
     followedByViewer: source === "followers" || Boolean(viewer.followedBy),
+  };
+}
+
+/**
+ * Normalizes an AT Protocol actor object for Thread Explorer rendering.
+ * @param {object} actor - Actor profile data from a post view.
+ * @returns {object} A compact actor object with stable string fields and viewer relation flags.
+ */
+function normalizeThreadExplorerActor(actor = {}) {
+  let viewer = {};
+  if (actor?.viewer && typeof actor.viewer === "object") {
+    viewer = actor.viewer;
+  }
+  return {
+    did: String(actor?.did || "").trim(),
+    handle: String(actor?.handle || "").trim(),
+    displayName: String(actor?.displayName || actor?.handle || "").trim(),
+    avatar: String(actor?.avatar || "").trim(),
+    followingViewer: Boolean(viewer.following),
+    followedByViewer: Boolean(viewer.followedBy),
+  };
+}
+
+/**
+ * Extracts image entries from a Bluesky embed view.
+ * @param {object} embed - Post embed view or nested media embed view.
+ * @returns {Array<object>} Image entries with thumb/fullsize URLs and alt text.
+ */
+function extractThreadExplorerImages(embed = {}) {
+  if (!embed || typeof embed !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(embed.images)) {
+    return embed.images.map((image) => ({
+      thumb: String(image?.thumb || image?.fullsize || "").trim(),
+      fullsize: String(image?.fullsize || image?.thumb || "").trim(),
+      alt: String(image?.alt || "").trim(),
+    })).filter((image) => image.thumb || image.fullsize);
+  }
+
+  if (embed.media && typeof embed.media === "object") {
+    return extractThreadExplorerImages(embed.media);
+  }
+
+  return [];
+}
+
+/**
+ * Extracts an external link-card from a Bluesky embed view.
+ * @param {object} embed - Post embed view or nested media embed view.
+ * @returns {object|null} A compact link-card object, or null when no external card exists.
+ */
+function extractThreadExplorerExternalCard(embed = {}) {
+  if (!embed || typeof embed !== "object") {
+    return null;
+  }
+
+  let external = null;
+  if (embed.external && typeof embed.external === "object") {
+    external = embed.external;
+  } else if (embed.media && typeof embed.media === "object") {
+    return extractThreadExplorerExternalCard(embed.media);
+  }
+
+  if (!external) {
+    return null;
+  }
+
+  return {
+    uri: String(external.uri || "").trim(),
+    title: String(external.title || external.uri || "").trim(),
+    description: String(external.description || "").trim(),
+    thumb: String(external.thumb || "").trim(),
+    standardSite: normalizeStandardSiteMetadata(external.standardSite || external.standardSiteMetadata || external.publication),
+  };
+}
+
+/**
+ * Normalizes Mu-compatible post edit metadata from an ATProto post record.
+ * @param {object} record - Raw app.bsky.feed.post record.
+ * @returns {object|null} Edit metadata, or null when no Mu edit fields exist.
+ */
+function normalizePostEditInfoFromRecord(record = {}) {
+  if (!record || typeof record !== "object") {
+    return null;
+  }
+  if (typeof record.originalText !== "string") {
+    return null;
+  }
+  if (typeof record.updatedAt !== "string") {
+    return null;
+  }
+
+  return {
+    isEdited: true,
+    originalText: String(record.originalText || ""),
+    text: String(record.text || ""),
+    createdAt: String(record.createdAt || ""),
+    updatedAt: String(record.updatedAt || ""),
+  };
+}
+
+/**
+ * Normalizes a quoted post embed for Thread Explorer quote cards.
+ * @param {object} record - Bluesky embed record view.
+ * @returns {object|null} Normalized quoted post, or null when unavailable.
+ */
+function normalizeThreadExplorerQuoteRecord(record = {}) {
+  if (!record || typeof record !== "object") {
+    return null;
+  }
+  if (!record.uri) {
+    return null;
+  }
+
+  let value = {};
+  if (record.value && typeof record.value === "object") {
+    value = record.value;
+  }
+  let quoteEmbed = {};
+  if (record.embeds && Array.isArray(record.embeds) && record.embeds[0]) {
+    quoteEmbed = record.embeds[0];
+  } else if (record.embed && typeof record.embed === "object") {
+    quoteEmbed = record.embed;
+  } else if (value.embed && typeof value.embed === "object") {
+    quoteEmbed = value.embed;
+  }
+
+  return {
+    uri: String(record.uri || "").trim(),
+    cid: String(record.cid || "").trim(),
+    text: String(value.text || "").trim(),
+    createdAt: String(value.createdAt || record.indexedAt || "").trim(),
+    indexedAt: String(record.indexedAt || "").trim(),
+    author: normalizeThreadExplorerActor(record.author || {}),
+    images: extractThreadExplorerImages(quoteEmbed),
+    externalCard: extractThreadExplorerExternalCard(quoteEmbed),
+    editInfo: normalizePostEditInfoFromRecord(value),
+  };
+}
+
+/**
+ * Extracts a quoted post from a Bluesky embed view.
+ * @param {object} embed - Post embed view or nested record-with-media view.
+ * @returns {object|null} Normalized quote card data, or null.
+ */
+function extractThreadExplorerQuoteCard(embed = {}) {
+  if (!embed || typeof embed !== "object") {
+    return null;
+  }
+
+  let record = null;
+  if (embed.record && typeof embed.record === "object") {
+    record = embed.record;
+  }
+  if (record?.record && typeof record.record === "object") {
+    record = record.record;
+  }
+
+  return normalizeThreadExplorerQuoteRecord(record);
+}
+
+/**
+ * Normalizes a Bluesky post view for the Thread Explorer UI.
+ * @param {object} postView - AT Protocol post view object.
+ * @returns {object|null} Compact post data, or null when the input is not a post.
+ */
+function normalizeThreadExplorerPost(postView = {}) {
+  if (!postView || typeof postView !== "object") {
+    return null;
+  }
+  if (!postView.uri) {
+    return null;
+  }
+
+  let record = {};
+  if (postView.record && typeof postView.record === "object") {
+    record = postView.record;
+  }
+  return {
+    uri: String(postView.uri || "").trim(),
+    cid: String(postView.cid || "").trim(),
+    rootUri: String(record.reply?.root?.uri || postView.uri || "").trim(),
+    text: String(record.text || "").trim(),
+    createdAt: String(record.createdAt || postView.indexedAt || "").trim(),
+    indexedAt: String(postView.indexedAt || "").trim(),
+    author: normalizeThreadExplorerActor(postView.author || {}),
+    likeCount: Number(postView.likeCount) || 0,
+    replyCount: Number(postView.replyCount) || 0,
+    repostCount: Number(postView.repostCount) || 0,
+    quoteCount: Number(postView.quoteCount) || 0,
+    viewer: postView.viewer || {},
+    images: extractThreadExplorerImages(postView.embed || {}),
+    externalCard: extractThreadExplorerExternalCard(postView.embed || {}),
+    quoteCard: extractThreadExplorerQuoteCard(postView.embed || {}),
+    editInfo: normalizePostEditInfoFromRecord(record),
+  };
+}
+
+/**
+ * Builds a placeholder post for a missing parent/root in getPostThread.
+ * @param {object} node - ThreadViewPost notFound node.
+ * @returns {object|null} Placeholder post, or null when no URI exists.
+ */
+function normalizeThreadExplorerMissingPost(node = {}) {
+  const uri = String(node?.uri || "").trim();
+  if (!uri) {
+    return null;
+  }
+
+  return {
+    uri,
+    cid: "",
+    text: "",
+    createdAt: "",
+    indexedAt: "",
+    author: {
+      did: "",
+      handle: "",
+      displayName: "",
+      avatar: "",
+      followingViewer: false,
+      followedByViewer: false,
+    },
+    likeCount: 0,
+    replyCount: 0,
+    repostCount: 0,
+    quoteCount: 0,
+    viewer: {},
+    images: [],
+    externalCard: null,
+    quoteCard: null,
+    editInfo: null,
+    isDeletedThreadAnchor: true,
+  };
+}
+
+/**
+ * Converts a getPostThread node to a recursive UI tree.
+ * @param {object} node - ThreadViewPost node from app.bsky.feed.getPostThread.
+ * @returns {object|null} Tree node with normalized post and child replies.
+ */
+function normalizeThreadExplorerThreadNode(node = {}) {
+  if (!node || typeof node !== "object") {
+    return null;
+  }
+
+  let post = null;
+  if (node.notFound === true) {
+    post = normalizeThreadExplorerMissingPost(node);
+  } else {
+    post = normalizeThreadExplorerPost(node.post || node);
+  }
+  if (!post) {
+    return null;
+  }
+
+  const replies = [];
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => {
+      const normalizedReply = normalizeThreadExplorerThreadNode(reply);
+      if (normalizedReply) {
+        replies.push(normalizedReply);
+      }
+    });
+  }
+
+  return {
+    post,
+    replies,
+  };
+}
+
+/**
+ * Finds the index of a reply by post URI.
+ * @param {Array<object>} replies - Normalized reply nodes.
+ * @param {string} uri - Post URI to find.
+ * @returns {number} Matching index, or -1 when not found.
+ */
+function findThreadExplorerReplyIndex(replies, uri) {
+  if (!Array.isArray(replies) || !uri) {
+    return -1;
+  }
+
+  for (let index = 0; index < replies.length; index += 1) {
+    if (replies[index]?.post?.uri === uri) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Inserts a selected child subtree into a normalized parent node.
+ * @param {object|null} parentNode - Normalized parent node.
+ * @param {object|null} childNode - Normalized selected child subtree.
+ * @returns {object|null} Parent node with the child subtree placed in replies.
+ */
+function attachThreadExplorerChildToParent(parentNode, childNode) {
+  if (!parentNode || !childNode) {
+    return parentNode || childNode || null;
+  }
+
+  if (!Array.isArray(parentNode.replies)) {
+    parentNode.replies = [];
+  }
+
+  const existingIndex = findThreadExplorerReplyIndex(parentNode.replies, childNode.post.uri);
+  if (existingIndex >= 0) {
+    parentNode.replies[existingIndex] = childNode;
+  } else {
+    parentNode.replies.push(childNode);
+  }
+  return parentNode;
+}
+
+/**
+ * Builds the visible Thread Explorer root tree from a getPostThread response.
+ * @param {object} threadNode - ThreadViewPost node for the selected post.
+ * @returns {object|null} Normalized tree rooted at the conversation root.
+ */
+function normalizeThreadExplorerThreadRoot(threadNode = {}) {
+  let childTree = normalizeThreadExplorerThreadNode(threadNode);
+  let parentSource = threadNode?.parent;
+
+  while (parentSource && typeof parentSource === "object") {
+    const parentTree = normalizeThreadExplorerThreadNode(parentSource);
+    if (!parentTree) {
+      break;
+    }
+    childTree = attachThreadExplorerChildToParent(parentTree, childTree);
+    parentSource = parentSource.parent;
+  }
+
+  return childTree;
+}
+
+/**
+ * Checks whether a normalized Thread Explorer tree contains a post URI.
+ * @param {object|null} node - Normalized Thread Explorer tree node.
+ * @param {string} uri - AT URI to find.
+ * @returns {boolean} True when the URI exists in the tree.
+ */
+function threadExplorerTreeContainsUri(node, uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!node || !normalizedUri) {
+    return false;
+  }
+  if (node.post?.uri === normalizedUri) {
+    return true;
+  }
+  if (!Array.isArray(node.replies)) {
+    return false;
+  }
+  return node.replies.some((reply) => threadExplorerTreeContainsUri(reply, normalizedUri));
+}
+
+/**
+ * Merges a selected ancestor path into a full root tree when the full tree omits that path.
+ * @param {object|null} fullRoot - Full root tree from getPostThread(root).
+ * @param {object|null} selectedRoot - Root-to-selected path from getPostThread(selected).
+ * @param {string} selectedUri - Selected post URI that must remain focusable.
+ * @returns {object|null} Full root with selected path preserved.
+ */
+function mergeThreadExplorerSelectedPath(fullRoot, selectedRoot, selectedUri) {
+  if (!fullRoot || !selectedRoot) {
+    return fullRoot || selectedRoot || null;
+  }
+  if (threadExplorerTreeContainsUri(fullRoot, selectedUri)) {
+    return fullRoot;
+  }
+  if (fullRoot.post?.uri !== selectedRoot.post?.uri) {
+    return fullRoot;
+  }
+
+  mergeThreadExplorerPathNode(fullRoot, selectedRoot);
+  return fullRoot;
+}
+
+/**
+ * Merges one selected path node into a target node while preserving existing sibling replies.
+ * @param {object} targetNode - Existing full-tree node.
+ * @param {object} pathNode - Selected-path node with replies to preserve.
+ * @returns {void}
+ */
+function mergeThreadExplorerPathNode(targetNode, pathNode) {
+  if (!targetNode || !pathNode || targetNode.post?.uri !== pathNode.post?.uri) {
+    return;
+  }
+
+  if (!Array.isArray(targetNode.replies)) {
+    targetNode.replies = [];
+  }
+  if (!Array.isArray(pathNode.replies)) {
+    return;
+  }
+
+  pathNode.replies.forEach((pathReply) => {
+    const existingIndex = findThreadExplorerReplyIndex(targetNode.replies, pathReply.post?.uri || "");
+    if (existingIndex >= 0) {
+      mergeThreadExplorerPathNode(targetNode.replies[existingIndex], pathReply);
+    } else {
+      targetNode.replies.push(pathReply);
+    }
+  });
+}
+
+/**
+ * Counts posts in a normalized Thread Explorer tree.
+ * @param {object|null} node - Normalized thread tree node.
+ * @returns {number} Total number of posts below and including the node.
+ */
+function countThreadExplorerTreePosts(node) {
+  if (!node) {
+    return 0;
+  }
+
+  let count = 0;
+  if (node.post?.isDeletedThreadAnchor !== true) {
+    count = 1;
+  }
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => {
+      count += countThreadExplorerTreePosts(reply);
+    });
+  }
+  return count;
+}
+
+/**
+ * Loads a Thread Explorer thread view from Bluesky.
+ * @param {object} auth - Active account auth reference.
+ * @param {string} uri - AT URI to load.
+ * @param {number} parentHeight - Number of parent levels to request.
+ * @returns {Promise<object>} Raw getPostThread response.
+ */
+async function fetchThreadExplorerThreadView(auth, uri, parentHeight) {
+  return bskyGet("app.bsky.feed.getPostThread", {
+    uri,
+    depth: 100,
+    parentHeight,
+  }, {
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+    base: authXrpcBase(auth),
+  });
+}
+
+/**
+ * Keeps only feed items whose post URI is still resolvable through getPosts.
+ * @param {object} auth - Active account auth reference.
+ * @param {object[]} items - Normalized feed items from getTimeline.
+ * @returns {Promise<object[]>} Feed items whose posts still exist.
+ */
+async function filterExistingThreadExplorerFeedItems(auth, items = []) {
+  const validItems = [];
+  const seenUris = new Set();
+  const uris = [];
+
+  items.forEach((item) => {
+    const uri = String(item?.post?.uri || "").trim();
+    if (!uri || seenUris.has(uri)) {
+      return;
+    }
+    seenUris.add(uri);
+    uris.push(uri);
+  });
+
+  for (let index = 0; index < uris.length; index += 25) {
+    const batch = uris.slice(index, index + 25);
+    const response = await bskyGet("app.bsky.feed.getPosts", {
+      uris: batch,
+    }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+      base: authXrpcBase(auth),
+    });
+
+    const existingUris = new Set();
+    if (Array.isArray(response?.posts)) {
+      response.posts.forEach((post) => {
+        const uri = String(post?.uri || "").trim();
+        if (uri) {
+          existingUris.add(uri);
+        }
+      });
+    }
+
+    items.forEach((item) => {
+      const uri = String(item?.post?.uri || "").trim();
+      if (!batch.includes(uri)) {
+        return;
+      }
+      if (!existingUris.has(uri)) {
+        return;
+      }
+      validItems.push(item);
+    });
+  }
+
+  return validItems;
+}
+
+/**
+ * Normalizes one saved feed preference entry for the Thread Explorer source picker.
+ * @param {object} feed - Raw saved feed preference entry.
+ * @returns {object|null} Feed source metadata, or null when invalid.
+ */
+function normalizeThreadExplorerSavedFeed(feed = {}) {
+  const uri = String(feed?.value || feed?.uri || feed?.feed || "").trim();
+  if (!/^at:\/\/[^/]+\/app\.bsky\.feed\.generator\/[^/]+$/i.test(uri)) {
+    return null;
+  }
+
+  return {
+    uri,
+    displayName: String(feed?.displayName || feed?.name || "").trim(),
+    pinned: feed?.pinned === true,
+  };
+}
+
+/**
+ * Extracts pinned feed generator sources from actor preferences.
+ * @param {Array<object>} preferences - Raw getPreferences preference entries.
+ * @returns {Array<object>} Pinned feed generator sources.
+ */
+function extractThreadExplorerPinnedFeedSources(preferences = []) {
+  const seen = new Set();
+  const feeds = [];
+  if (!Array.isArray(preferences)) {
+    return feeds;
+  }
+
+  preferences.forEach((preference) => {
+    const type = String(preference?.$type || "");
+    if (!type.endsWith("#savedFeedsPref") && !Array.isArray(preference?.saved)) {
+      return;
+    }
+
+    const saved = Array.isArray(preference.saved) ? preference.saved : [];
+    saved.forEach((entry) => {
+      const feed = normalizeThreadExplorerSavedFeed(entry);
+      if (!feed || !feed.pinned || seen.has(feed.uri)) {
+        return;
+      }
+      seen.add(feed.uri);
+      feeds.push(feed);
+    });
+  });
+
+  return feeds;
+}
+
+/**
+ * Adds display metadata from app.bsky.feed.getFeedGenerator to pinned feed sources.
+ * @param {object} auth - Active account auth reference.
+ * @param {Array<object>} feeds - Feed sources from actor preferences.
+ * @returns {Promise<Array<object>>} Feed sources with display names where available.
+ */
+async function enrichThreadExplorerFeedSources(auth, feeds = []) {
+  const enriched = [];
+  for (const feed of feeds.slice(0, 25)) {
+    try {
+      const response = await bskyGet("app.bsky.feed.getFeedGenerator", {
+        feed: feed.uri,
+      }, {
+        headers: {
+          authorization: `Bearer ${auth.session.accessJwt}`,
+        },
+        base: authXrpcBase(auth),
+      });
+      const displayName = String(response?.view?.displayName || feed.displayName || "").trim();
+      enriched.push({
+        ...feed,
+        displayName,
+      });
+    } catch {
+      enriched.push(feed);
+    }
+  }
+  return enriched;
+}
+
+/**
+ * Loads the active account's pinned feed generator sources.
+ * @returns {Promise<object>} Pinned feed sources.
+ */
+async function loadThreadExplorerFeedSources() {
+  const auth = await ensureSession();
+  const activeAuth = await refreshAuthReference(auth);
+  const response = await bskyGet("app.bsky.actor.getPreferences", {}, {
+    headers: {
+      authorization: `Bearer ${activeAuth.session.accessJwt}`,
+    },
+    base: authXrpcBase(activeAuth),
+  });
+
+  const feeds = extractThreadExplorerPinnedFeedSources(response?.preferences || []);
+  const enrichedFeeds = await enrichThreadExplorerFeedSources(activeAuth, feeds);
+  return {
+    feeds: enrichedFeeds,
+  };
+}
+
+/**
+ * Loads a live timeline slice for the Thread Explorer.
+ * @param {object} payload - Source, limit, and cursor values from the app.
+ * @returns {Promise<object>} Feed items, next cursor, and source metadata.
+ */
+async function loadThreadExplorerFeed(payload = {}) {
+  const auth = await ensureSession();
+  const activeAuth = await refreshAuthReference(auth);
+  const source = String(payload?.source || "follows").trim();
+  const feedUri = source.startsWith("feed:") ? source.slice(5).trim() : "";
+  const isSearchSource = source.startsWith("search:");
+  const limit = Math.min(100, Math.max(10, Number(payload?.limit) || 50));
+  const targetCount = Math.min(50, Math.max(10, limit));
+  const items = [];
+  let cursor = String(payload?.cursor || "").trim();
+  let nextCursor = "";
+  let pageCount = 0;
+  const seenThreadRoots = new Set();
+
+  while (items.length < targetCount && pageCount < 4) {
+    let endpoint = "app.bsky.feed.getTimeline";
+    const params = {
+      limit,
+      cursor,
+    };
+    if (isSearchSource) {
+      endpoint = "app.bsky.feed.searchPosts";
+      Object.assign(params, buildThreadExplorerSearchPostsParams(payload?.search || {}));
+    } else if (feedUri) {
+      endpoint = "app.bsky.feed.getFeed";
+      params.feed = feedUri;
+    }
+
+    const response = await bskyGet(endpoint, params, {
+      headers: {
+        authorization: `Bearer ${activeAuth.session.accessJwt}`,
+      },
+      base: authXrpcBase(activeAuth),
+    });
+
+    let feed = [];
+    if (isSearchSource && Array.isArray(response?.posts)) {
+      feed = response.posts.map((post) => ({ post }));
+    } else if (Array.isArray(response?.feed)) {
+      feed = response.feed;
+    }
+    feed.forEach((entry) => {
+      const post = normalizeThreadExplorerPost(entry?.post || {});
+      if (!post) {
+        return;
+      }
+      if (isSearchSource) {
+        const rootKey = String(post.rootUri || post.uri || "").trim();
+        if (rootKey && seenThreadRoots.has(rootKey)) {
+          return;
+        }
+        if (rootKey) {
+          seenThreadRoots.add(rootKey);
+        }
+      }
+      if (source === "mutuals") {
+        if (!post.author.followingViewer || !post.author.followedByViewer) {
+          return;
+        }
+      }
+      items.push({
+        post,
+        reason: entry?.reason || null,
+      });
+    });
+
+    nextCursor = String(response?.cursor || "").trim();
+    cursor = nextCursor;
+    pageCount += 1;
+    if (!nextCursor || feed.length === 0) {
+      break;
+    }
+  }
+
+  const existingItems = await filterExistingThreadExplorerFeedItems(activeAuth, items);
+  return {
+    source,
+    items: existingItems.slice(0, targetCount),
+    cursor: nextCursor,
+  };
+}
+
+/**
+ * Builds safe searchPosts query params for Thread Explorer saved searches.
+ * @param {object} search - Saved search params from app settings.
+ * @returns {object} Query params accepted by app.bsky.feed.searchPosts.
+ */
+function buildThreadExplorerSearchPostsParams(search = {}) {
+  const params = {};
+  const q = String(search?.q || "").trim();
+  const tags = Array.isArray(search?.tag) ? search.tag : [];
+  if (q) {
+    params.q = q;
+  } else if (tags.length > 0) {
+    params.q = `#${String(tags[0] || "").replace(/^#+/, "")}`;
+  }
+
+  const normalizedTags = tags.map((tag) => String(tag || "").trim().replace(/^#+/, "")).filter(Boolean);
+  if (normalizedTags.length > 0) {
+    params.tag = normalizedTags.slice(0, 8);
+  }
+
+  const sort = String(search?.sort || "").trim();
+  if (sort === "top") {
+    params.sort = "top";
+  } else {
+    params.sort = "latest";
+  }
+
+  ["since", "until", "author", "mentions", "lang", "domain", "url"].forEach((key) => {
+    const value = String(search?.[key] || "").trim();
+    if (value) {
+      params[key] = value;
+    }
+  });
+
+  if (!params.q && !params.author && !params.domain && !params.url) {
+    throw new Error("Die gespeicherte Suche enthaelt keinen nutzbaren Suchparameter.");
+  }
+
+  return params;
+}
+
+/**
+ * Resolves a bsky, mu.social, or at:// post URL into an AT URI for Thread Explorer.
+ * @param {object} payload - Contains the post URL.
+ * @returns {Promise<object>} Resolved post URI and original source URL.
+ */
+async function resolveThreadExplorerPostUrl(payload = {}) {
+  const auth = await ensureSession();
+  const activeAuth = await refreshAuthReference(auth);
+  const parsedSource = parseArchiveThreadSource(payload?.url);
+  const resolveCache = new Map();
+  let actorDid = parsedSource.actor;
+
+  if (!actorDid.startsWith("did:")) {
+    actorDid = await resolveHandleToDid(parsedSource.actor, activeAuth, resolveCache);
+  }
+
+  if (!actorDid) {
+    throw new Error("Die Posting-URL konnte keinem Bluesky-Account zugeordnet werden.");
+  }
+
+  let uri = parsedSource.entryUri;
+  if (!uri) {
+    uri = `at://${actorDid}/app.bsky.feed.post/${parsedSource.rkey}`;
+  }
+
+  return {
+    uri,
+    sourceUrl: parsedSource.sourceUrl,
+  };
+}
+
+/**
+ * Collects unique authors with avatar URLs from a Thread Explorer tree.
+ * @param {object|null} node - Thread Explorer tree node.
+ * @param {Map<string, object>} authors - Mutable author map keyed by DID and avatar URL.
+ * @returns {Map<string, object>} Author map with unique avatar entries.
+ */
+function collectThreadExplorerAvatarAuthors(node = null, authors = new Map()) {
+  if (!node || typeof node !== "object") {
+    return authors;
+  }
+
+  const author = node.post?.author || {};
+  const did = String(author.did || "").trim();
+  const avatar = String(author.avatar || "").trim();
+  if (did && avatar) {
+    authors.set(`${did}|${avatar}`, {
+      did,
+      avatar,
+      handle: String(author.handle || did).trim(),
+      displayName: String(author.displayName || author.handle || did).trim(),
+    });
+  }
+
+  const quoteAuthor = node.post?.quoteCard?.author || {};
+  const quoteDid = String(quoteAuthor.did || "").trim();
+  const quoteAvatar = String(quoteAuthor.avatar || "").trim();
+  if (quoteDid && quoteAvatar) {
+    authors.set(`${quoteDid}|${quoteAvatar}`, {
+      did: quoteDid,
+      avatar: quoteAvatar,
+      handle: String(quoteAuthor.handle || quoteDid).trim(),
+      displayName: String(quoteAuthor.displayName || quoteAuthor.handle || quoteDid).trim(),
+    });
+  }
+
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => {
+      collectThreadExplorerAvatarAuthors(reply, authors);
+    });
+  }
+
+  return authors;
+}
+
+/**
+ * Converts an avatar cache asset into a browser-ready data URI.
+ * @param {object} asset - Cached avatar asset.
+ * @returns {string} Data URI for the cached avatar.
+ */
+function accountAvatarAssetToDataUri(asset = {}) {
+  const type = String(asset.type || "image/jpeg").trim() || "image/jpeg";
+  return bytesToDataUrl(asset.bytes, type);
+}
+
+/**
+ * Downloads missing Thread Explorer avatars into the shared avatar cache.
+ * @param {object} payload - Contains the currently loaded Thread Explorer tree.
+ * @returns {Promise<object>} Hydration summary with cache TTL and hydrated avatar count.
+ */
+async function hydrateThreadExplorerAvatars(payload = {}) {
+  const auth = await ensureSession();
+  const activeAuth = await refreshAuthReference(auth);
+  const serviceCache = new Map();
+  const now = Date.now();
+  const cache = pruneAccountAvatarCache(await getAccountAvatarCache(), now);
+  const assets = normalizeAccountAvatarAssets(cache?.assets);
+  const authors = Array.from(collectThreadExplorerAvatarAuthors(payload?.root).values());
+  let hydratedCount = 0;
+
+  await mapWithConcurrency(authors, ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY, async (author) => {
+    let asset = assets.find((entry) => entry.did === author.did && entry.url === author.avatar);
+    if (!asset) {
+      try {
+        const blob = await downloadRemoteAssetViaBlob(activeAuth, author.avatar, author.did, serviceCache);
+        const extension = getAssetExtensionFromMimeType(blob.type);
+        const slug = String(author.handle || author.did || "account")
+          .replace(/[^\w.-]+/g, "-")
+          .slice(0, 60) || "account";
+        asset = {
+          did: author.did,
+          url: author.avatar,
+          path: `account-avatars/${slug}.${extension}`,
+          type: blob.type,
+          sizeBytes: blob.bytes.length,
+          cachedAt: now,
+          bytes: blob.bytes,
+        };
+        for (let index = assets.length - 1; index >= 0; index -= 1) {
+          if (assets[index].did === author.did) {
+            assets.splice(index, 1);
+          }
+        }
+        assets.push(asset);
+      } catch {
+        asset = null;
+      }
+    }
+
+    if (asset) {
+      hydratedCount += 1;
+    }
+  });
+
+  await writeStoredValue(ACCOUNT_AVATAR_CACHE_KEY, {
+    ...cache,
+    assets,
+    updatedAt: new Date(now).toISOString(),
+  });
+
+  return {
+    ttlMs: ACCOUNT_AVATAR_CACHE_TTL_MS,
+    avatarCount: hydratedCount,
+  };
+}
+
+/**
+ * Loads a live thread for the Thread Explorer.
+ * @param {object} payload - Contains the selected post URI.
+ * @returns {Promise<object>} Normalized thread tree and post count.
+ */
+async function loadThreadExplorerThread(payload = {}) {
+  const uri = String(payload?.uri || "").trim();
+  if (!uri) {
+    throw new Error("Thread-URI fehlt.");
+  }
+
+  const auth = await ensureSession();
+  const activeAuth = await refreshAuthReference(auth);
+  const selectedResponse = await fetchThreadExplorerThreadView(activeAuth, uri, 100);
+  let root = normalizeThreadExplorerThreadRoot(selectedResponse?.thread || {});
+  const rootUri = String(root?.post?.uri || "").trim();
+  const rootIsDeletedAnchor = root?.post?.isDeletedThreadAnchor === true;
+
+  if (rootUri && rootUri !== uri && !rootIsDeletedAnchor) {
+    const rootResponse = await fetchThreadExplorerThreadView(activeAuth, rootUri, 0);
+    const fullRoot = normalizeThreadExplorerThreadRoot(rootResponse?.thread || {});
+    if (fullRoot) {
+      root = mergeThreadExplorerSelectedPath(fullRoot, root, uri);
+    }
+  }
+
+  return {
+    selectedUri: uri,
+    root,
+    postCount: countThreadExplorerTreePosts(root),
+  };
+}
+
+/**
+ * Normalizes actor entries returned by interaction endpoints.
+ * @param {object} actor - Actor profile object.
+ * @returns {object|null} Compact actor entry, or null.
+ */
+function normalizeThreadExplorerReactionActor(actor = {}) {
+  const normalized = normalizeThreadExplorerActor(actor);
+  if (!normalized.did && !normalized.handle) {
+    return null;
+  }
+  return normalized;
+}
+
+/**
+ * Loads accounts related to a post interaction for Thread Explorer popups.
+ * @param {object} payload - Reaction type, post URI, optional CID, and limit.
+ * @returns {Promise<object>} Actor entries and optional cursor.
+ */
+async function loadThreadExplorerReactions(payload = {}) {
+  const type = String(payload?.type || "").trim().toLowerCase();
+  const uri = String(payload?.uri || "").trim();
+  const cid = String(payload?.cid || "").trim();
+  const limit = Math.min(100, Math.max(1, Number(payload?.limit) || 100));
+  if (!uri) {
+    throw new Error("Post-URI fehlt.");
+  }
+
+  const auth = await ensureSession();
+  const activeAuth = await refreshAuthReference(auth);
+  const requestOptions = {
+    headers: {
+      authorization: `Bearer ${activeAuth.session.accessJwt}`,
+    },
+    base: authXrpcBase(activeAuth),
+  };
+  const params = {
+    uri,
+    limit,
+  };
+  if (cid) {
+    params.cid = cid;
+  }
+
+  let response = null;
+  let rawActors = [];
+  if (type === "likes") {
+    response = await bskyGet("app.bsky.feed.getLikes", params, requestOptions);
+    if (Array.isArray(response?.likes)) {
+      rawActors = response.likes.map((entry) => entry?.actor);
+    }
+  } else if (type === "reposts") {
+    response = await bskyGet("app.bsky.feed.getRepostedBy", params, requestOptions);
+    if (Array.isArray(response?.repostedBy)) {
+      rawActors = response.repostedBy;
+    }
+  } else if (type === "quotes") {
+    response = await bskyGet("app.bsky.feed.getQuotes", params, requestOptions);
+    if (Array.isArray(response?.posts)) {
+      rawActors = response.posts.map((post) => post?.author);
+    }
+  } else {
+    throw new Error("Unbekannter Interaktionstyp.");
+  }
+
+  const seen = new Set();
+  const actors = [];
+  rawActors.forEach((actor) => {
+    const normalizedActor = normalizeThreadExplorerReactionActor(actor);
+    if (!normalizedActor) {
+      return;
+    }
+    const key = normalizedActor.did || normalizedActor.handle;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    actors.push(normalizedActor);
+  });
+
+  return {
+    type,
+    actors,
+    cursor: String(response?.cursor || "").trim(),
   };
 }
 
@@ -2463,250 +3334,6 @@ async function loadNetworkRelationshipDates(auth, viewer = {}) {
   };
 }
 
-async function uploadBlob(auth, file) {
-  const response = await fetch(`${xrpcBaseForService(auth.pdsUrl || auth.service)}/com.atproto.repo.uploadBlob`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${auth.session.accessJwt}`,
-      "content-type": file.type || "application/octet-stream",
-    },
-    body: file,
-  });
-
-  const text = await response.text();
-  let data = {};
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { message: text };
-    }
-  }
-  if (!response.ok) {
-    throw new Error(data.message || data.error || `Bluesky-Fehler: ${response.status}`);
-  }
-  return data.blob;
-}
-
-async function downloadBlob(auth, did, cid) {
-  const response = await fetch(`${xrpcBaseForService(auth.pdsUrl || auth.service)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, {
-    method: "GET",
-  });
-
-  if (!response.ok) {
-    throw await buildBlobDownloadError(response);
-  }
-
-  return {
-    type: response.headers.get("content-type") || "application/octet-stream",
-    bytes: new Uint8Array(await response.arrayBuffer()),
-  };
-}
-
-async function resolvePdsForDid(did, fallbackService = DEFAULT_LOGIN_SERVICE, cache = null) {
-  const key = String(did || "").trim();
-  if (!key) {
-    return normalizeServiceUrl(fallbackService || DEFAULT_LOGIN_SERVICE);
-  }
-
-  if (cache?.has(key)) {
-    return cache.get(key);
-  }
-
-  let serviceUrl = normalizeServiceUrl(fallbackService || DEFAULT_LOGIN_SERVICE);
-  try {
-    const didDocument = await fetchDidDocument(key);
-    serviceUrl = extractPdsServiceFromDidDocument(didDocument, serviceUrl);
-  } catch {
-    serviceUrl = normalizeServiceUrl(fallbackService || DEFAULT_LOGIN_SERVICE);
-  }
-
-  cache?.set(key, serviceUrl);
-  return serviceUrl;
-}
-
-function buildArchiveBlobCacheKey(did = "", cid = "") {
-  return `${String(did || "").trim()}::${String(cid || "").trim()}`;
-}
-
-async function downloadBlobForDid(auth, did, cid, serviceCache = null, options = {}) {
-  const cacheMap = options?.cacheMap instanceof Map ? options.cacheMap : null;
-  const cacheKey = cacheMap ? buildArchiveBlobCacheKey(did, cid) : "";
-  if (cacheMap?.has(cacheKey)) {
-    return cacheMap.get(cacheKey);
-  }
-
-  const loadPromise = (async () => {
-    const serviceUrl = await resolvePdsForDid(did, auth.pdsUrl || auth.service, serviceCache);
-    const timeoutMs = Math.max(0, Number(options?.timeoutMs) || 0);
-    const controller = timeoutMs > 0 ? new AbortController() : null;
-    const timeoutId = controller
-      ? setTimeout(() => controller.abort(), timeoutMs)
-      : null;
-    let response;
-    try {
-      response = await fetch(`${xrpcBaseForService(serviceUrl)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`, {
-        method: "GET",
-        signal: controller?.signal,
-      });
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        throw new Error("Blob-Download timed out.");
-      }
-      throw error;
-    } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    }
-
-    if (!response.ok) {
-      throw await buildBlobDownloadError(response);
-    }
-
-    return {
-      type: response.headers.get("content-type") || "application/octet-stream",
-      bytes: new Uint8Array(await response.arrayBuffer()),
-    };
-  })();
-
-  if (cacheMap) {
-    cacheMap.set(cacheKey, loadPromise);
-  }
-
-  try {
-    return await loadPromise;
-  } catch (error) {
-    if (cacheMap) {
-      cacheMap.delete(cacheKey);
-    }
-    throw error;
-  }
-}
-
-async function buildBlobDownloadError(response) {
-  const status = Number(response?.status) || 0;
-  let payload = null;
-  try {
-    payload = await response.clone().json();
-  } catch {
-    payload = null;
-  }
-
-  const remoteError = String(payload?.error || "").trim();
-  const remoteMessage = String(payload?.message || "").trim();
-
-  if (status === 401 || status === 403 || remoteError === "InvalidToken") {
-    return new Error("Blob-Zugriff verweigert. Der Host erlaubt den Abruf nicht oder der Account ist eingeschränkt/blockiert.");
-  }
-  if (status === 404 || remoteError === "RepoNotFound") {
-    return new Error("Blob oder Repo nicht gefunden. Das Bild ist auf dem Ursprungshost möglicherweise nicht mehr verfügbar.");
-  }
-  if (status === 400) {
-    return new Error("Blob konnte vom Ursprungshost nicht bereitgestellt werden.");
-  }
-
-  return new Error(remoteMessage || `Blob konnte nicht geladen werden (${status}).`);
-}
-
-async function login({ identifier, appPassword, service, webApp } = {}) {
-  if (!identifier || !appPassword) {
-    throw createServiceWorkerError(
-      "Identifier and app password are required.",
-      "LOGIN_MISSING_CREDENTIALS",
-    );
-  }
-
-  const requestedService = normalizeServiceUrl(service || DEFAULT_LOGIN_SERVICE);
-  const requestedWebApp = normalizeServiceUrl(
-    requestedService === MU_WEB_CLIENT ? MU_WEB_CLIENT : webApp || resolvePostWebBase(requestedService),
-  );
-  let normalizedService = requestedService;
-  if (requestedService === MU_WEB_CLIENT) {
-    const normalizedIdentifier = String(identifier || "").trim().replace(/^@/, "");
-    if (normalizedIdentifier.includes("@") && !normalizedIdentifier.startsWith("did:")) {
-      throw createServiceWorkerError(
-        "Mu.social is a web client, not a login server. Use your handle or select the account's PDS.",
-        "LOGIN_MU_PDS_RESOLUTION_FAILED",
-      );
-    }
-
-    const did = normalizedIdentifier.startsWith("did:")
-      ? normalizedIdentifier
-      : await resolveHandleToDid(normalizedIdentifier, null, new Map());
-    if (!did) {
-      throw createServiceWorkerError(
-        "The account server for this Mu.social handle could not be resolved.",
-        "LOGIN_MU_PDS_RESOLUTION_FAILED",
-      );
-    }
-
-    const didDocument = await fetchDidDocument(did).catch(() => null);
-    const pdsEntry = Array.isArray(didDocument?.service)
-      ? didDocument.service.find((entry) =>
-          entry?.type === "AtprotoPersonalDataServer"
-          || String(entry?.id || "").endsWith("#atproto_pds"))
-      : null;
-    if (!pdsEntry?.serviceEndpoint) {
-      throw createServiceWorkerError(
-        "The account server for this Mu.social handle could not be resolved.",
-        "LOGIN_MU_PDS_RESOLUTION_FAILED",
-      );
-    }
-    normalizedService = normalizeServiceUrl(pdsEntry.serviceEndpoint);
-  }
-  const session = await bskyFetch("com.atproto.server.createSession", {
-    method: "POST",
-    body: JSON.stringify({
-      identifier,
-      password: appPassword,
-    }),
-    base: xrpcBaseForService(normalizedService),
-  });
-
-  const didDocument = await fetchDidDocument(session.did).catch(() => null);
-  const pdsUrl = extractPdsServiceFromDidDocument(didDocument, normalizedService);
-  const avatar = await fetchAccountAvatar(session.did, { session, service: normalizedService, pdsUrl });
-  const serviceCache = new Map();
-  const avatarCache = await getAccountAvatarCache();
-  const cachedAvatar = avatar
-    ? await cacheStoredAccountAvatar({
-        did: session.did,
-        identifier,
-        handle: session.handle,
-        service: normalizedService,
-        pdsUrl,
-        webApp: requestedWebApp,
-        avatar,
-        session,
-      }, avatarCache?.assets, serviceCache).catch(() => null)
-    : null;
-  if (cachedAvatar) {
-    await saveAccountAvatarCache({
-      cache: {
-        updatedAt: new Date().toISOString(),
-        assets: cachedAvatar.assets,
-      },
-    });
-  }
-  const nextState = upsertAccount(await readStoredAuth(), {
-    did: session.did,
-    identifier,
-    handle: session.handle,
-    service: normalizedService,
-    pdsUrl,
-    webApp: requestedWebApp,
-    avatar,
-    avatarPath: cachedAvatar?.account?.avatarPath || "",
-    appPassword,
-    session,
-    updatedAt: new Date().toISOString(),
-  });
-  nextState.activeDid = session.did;
-  const storedState = await writeStoredAuth(nextState);
-  return buildAuthResponse(storedState, storedState.accounts.find((entry) => entry.did === session.did));
-}
-
 async function authStatus() {
   const state = await readStoredAuth();
   const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid);
@@ -2772,6 +3399,12 @@ async function getAppState({ browserLocale } = {}) {
     segmentOverrides: normalizeSegmentOverrides(draft?.segmentOverrides),
     replyTarget: normalizeStoredReplyTarget(draft?.replyTarget),
     postingHistory: normalizePostingHistory(storedSettings?.postingHistory),
+    threadExplorerFavorites: Array.isArray(storedSettings?.threadExplorerFavorites)
+      ? storedSettings.threadExplorerFavorites
+      : [],
+    savedSearches: Array.isArray(storedSettings?.savedSearches)
+      ? storedSettings.savedSearches
+      : [],
     archivePreferences: storedSettings?.archivePreferences && typeof storedSettings.archivePreferences === "object"
       ? storedSettings.archivePreferences
       : null,
@@ -2927,6 +3560,12 @@ async function saveSettings(settings = {}) {
     postingHistory: Array.isArray(settings.postingHistory)
       ? normalizePostingHistory(settings.postingHistory)
       : normalizePostingHistory(existing.postingHistory),
+    threadExplorerFavorites: Array.isArray(settings.threadExplorerFavorites)
+      ? settings.threadExplorerFavorites
+      : (Array.isArray(existing.threadExplorerFavorites) ? existing.threadExplorerFavorites : []),
+    savedSearches: Array.isArray(settings.savedSearches)
+      ? settings.savedSearches
+      : (Array.isArray(existing.savedSearches) ? existing.savedSearches : []),
     archivePreferences: settings.archivePreferences && typeof settings.archivePreferences === "object"
       ? settings.archivePreferences
       : (existing.archivePreferences && typeof existing.archivePreferences === "object" ? existing.archivePreferences : null),
@@ -2950,8 +3589,13 @@ async function getDmPartnerCache() {
   return await readStoredValue(DM_PARTNER_CACHE_KEY) || null;
 }
 
+/**
+ * Reads the shared account-avatar cache without rewriting it on every lookup.
+ * @returns {Promise<object>} Pruned avatar cache.
+ */
 async function getAccountAvatarCache() {
-  return await readStoredValue(ACCOUNT_AVATAR_CACHE_KEY) || null;
+  const storedCache = await readStoredValue(ACCOUNT_AVATAR_CACHE_KEY) || null;
+  return pruneAccountAvatarCache(storedCache);
 }
 
 async function saveArchiveSession({ session } = {}) {
@@ -2970,7 +3614,7 @@ async function saveDmPartnerCache({ cache } = {}) {
 }
 
 async function saveAccountAvatarCache({ cache } = {}) {
-  await writeStoredValue(ACCOUNT_AVATAR_CACHE_KEY, cache || null);
+  await writeStoredValue(ACCOUNT_AVATAR_CACHE_KEY, pruneAccountAvatarCache(cache || null));
   return { ok: true };
 }
 
@@ -2997,9 +3641,26 @@ function normalizeAccountAvatarAssets(assets = []) {
       path: String(asset?.path || ""),
       type: String(asset?.type || "application/octet-stream"),
       sizeBytes: Number(asset?.sizeBytes) || 0,
+      cachedAt: Number(asset?.cachedAt) || Date.now(),
       bytes: asset?.bytes instanceof Uint8Array ? asset.bytes : new Uint8Array(asset?.bytes || []),
     }))
     .filter((asset) => asset.did && asset.url && asset.path && asset.bytes.length > 0);
+}
+
+/**
+ * Removes expired account-avatar assets from the shared avatar cache.
+ * @param {object|null} cache - Raw persisted avatar cache.
+ * @param {number} now - Current epoch milliseconds.
+ * @returns {object} Pruned cache with normalized assets.
+ */
+function pruneAccountAvatarCache(cache = null, now = Date.now()) {
+  const assets = normalizeAccountAvatarAssets(cache?.assets)
+    .filter((asset) => now - asset.cachedAt <= ACCOUNT_AVATAR_CACHE_TTL_MS);
+  return {
+    ...cache,
+    assets,
+    updatedAt: cache?.updatedAt || new Date(now).toISOString(),
+  };
 }
 
 async function cacheStoredAccountAvatar(account = {}, assets = null, serviceCache = null) {
@@ -3040,6 +3701,7 @@ async function cacheStoredAccountAvatar(account = {}, assets = null, serviceCach
     path,
     type: blob.type,
     sizeBytes: blob.bytes.length,
+    cachedAt: Date.now(),
     bytes: blob.bytes,
   });
   return {
@@ -3226,183 +3888,6 @@ async function verifySession() {
   }
 }
 
-async function ensureSession(targetDid = null) {
-  const state = await readStoredAuth();
-  const desiredDid = targetDid || state.activeDid;
-  const auth = state.accounts.find((entry) => entry.did && entry.did === desiredDid);
-
-  if (!auth?.did) {
-    throw new Error("Keine gespeicherte Bluesky-Session gefunden.");
-  }
-
-  if (auth.session?.accessJwt && isJwtValid(auth.session.accessJwt)) {
-    return auth;
-  }
-
-  if (auth.session?.refreshJwt) {
-    try {
-      const refreshedSession = await bskyFetch("com.atproto.server.refreshSession", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${auth.session.refreshJwt}`,
-        },
-        base: xrpcBaseForService(auth.pdsUrl || auth.service),
-      });
-
-      const avatar = auth.avatar || await fetchAccountAvatar(auth.did, {
-        session: refreshedSession,
-        service: freshAuth.service || auth.service,
-        pdsUrl: freshAuth.pdsUrl || auth.pdsUrl,
-      });
-      const serviceCache = new Map();
-      const avatarCache = await getAccountAvatarCache();
-      const cachedAvatar = avatar
-        ? await cacheStoredAccountAvatar({
-            ...auth,
-            session: refreshedSession,
-            avatar,
-          }, avatarCache?.assets, serviceCache).catch(() => null)
-        : null;
-      if (cachedAvatar) {
-        await saveAccountAvatarCache({
-          cache: {
-            updatedAt: new Date().toISOString(),
-            assets: cachedAvatar.assets,
-          },
-        });
-      }
-      const nextState = upsertAccount(state, {
-        ...auth,
-        session: refreshedSession,
-        avatar,
-        avatarPath: cachedAvatar?.account?.avatarPath || auth.avatarPath || "",
-        updatedAt: new Date().toISOString(),
-      });
-      nextState.activeDid = auth.did;
-      const storedState = await writeStoredAuth(nextState);
-      return storedState.accounts.find((entry) => entry.did === auth.did);
-    } catch (error) {
-      console.warn("refreshSession fehlgeschlagen, versuche createSession erneut", error);
-    }
-  }
-
-  if (!auth.identifier || !auth.appPassword) {
-    throw new Error("Die Session ist abgelaufen und es ist kein App-Passwort zum Erneuern gespeichert.");
-  }
-
-  return login({
-    identifier: auth.identifier,
-    appPassword: auth.appPassword,
-    service: auth.service,
-    webApp: auth.webApp,
-  }).then(async () => {
-    const refreshedState = await readStoredAuth();
-    const refreshedAuth = refreshedState.accounts.find((entry) => entry.did === auth.did);
-    if (!refreshedAuth) {
-      throw new Error("Session konnte nicht erneuert werden.");
-    }
-    return refreshedAuth;
-  });
-}
-
-async function checkConnectivity() {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const state = await readStoredAuth();
-    const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid);
-    const serviceBase = xrpcBaseForService(activeAccount?.pdsUrl || activeAccount?.service || DEFAULT_LOGIN_SERVICE);
-    const response = await fetch(`${serviceBase}/com.atproto.server.describeServer`, {
-      method: "GET",
-      cache: "no-store",
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      throw createServiceWorkerError(
-        `Bluesky request failed (${response.status}).`,
-        "CONNECTIVITY_FAILED",
-        { status: response.status },
-      );
-    }
-
-    return { ok: true };
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw createServiceWorkerError(
-        "The Bluesky connectivity check timed out.",
-        "CONNECTIVITY_TIMEOUT",
-      );
-    }
-
-    if (error?.details?.code === "INSECURE_SERVICE_URL") {
-      throw error;
-    }
-    throw createServiceWorkerError(
-      "Could not connect to Bluesky.",
-      "CONNECTIVITY_FAILED",
-    );
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-function parseAtUri(uri = "") {
-  const match = /^at:\/\/([^/]+)\/([^/]+)\/(.+)$/.exec(String(uri || ""));
-  if (!match) {
-    return { did: "", collection: "", rkey: "" };
-  }
-  return {
-    did: match[1],
-    collection: match[2],
-    rkey: match[3],
-  };
-}
-
-function getBlobCidFromRef(image = {}) {
-  return image?.image?.ref?.$link
-    || image?.image?.cid
-    || image?.cid
-    || image?.ref?.$link
-    || "";
-}
-
-function parseBlobUrlInfo(url = "") {
-  const value = String(url || "").trim();
-  if (!value) {
-    return null;
-  }
-  try {
-    const parsed = new URL(value);
-    const parts = parsed.pathname.split("/").filter(Boolean);
-    const plainIndex = parts.findIndex((part) => part === "plain");
-    if (plainIndex === -1 || parts.length < plainIndex + 3) {
-      return null;
-    }
-    const did = decodeURIComponent(parts[plainIndex + 1] || "");
-    const rawCid = decodeURIComponent(parts[plainIndex + 2] || "");
-    const cid = rawCid.split("@")[0].split(".")[0];
-    if (!did || !cid) {
-      return null;
-    }
-    return { did, cid };
-  } catch {
-    return null;
-  }
-}
-
-async function downloadRemoteAssetViaBlob(auth, url, fallbackDid = "", serviceCache = null, options = {}) {
-  const blobInfo = parseBlobUrlInfo(url);
-  if (blobInfo?.did && blobInfo?.cid) {
-    return downloadBlobForDid(auth, blobInfo.did, blobInfo.cid, serviceCache, options);
-  }
-  if (fallbackDid && blobInfo?.cid) {
-    return downloadBlobForDid(auth, fallbackDid, blobInfo.cid, serviceCache, options);
-  }
-  return downloadRemoteAsset(url);
-}
-
 function getAssetExtensionFromMimeType(mimeType = "") {
   const value = String(mimeType || "").toLowerCase();
   if (value.includes("mp4")) {
@@ -3436,6 +3921,55 @@ function getAssetExtensionFromMimeType(mimeType = "") {
     return "json";
   }
   return "jpg";
+}
+
+const ARCHIVE_SAFE_IMAGE_PLACEHOLDER_MIME_TYPE = "image/png";
+const ARCHIVE_SAFE_IMAGE_PLACEHOLDER_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAGAAAABICAYAAAAJZ/BjAAAAvUlEQVR4nO3XMRUCQRAFwVWEHNwgBj/EKLn8yJDA3NIVdD7vVzTr/bydmmtNH1DvC3AeL/0wAADaAQDQDgCAdgAAtAMAoB0AAO0AAGgHoAbwuK+tAgAAAAAAAAAAAAAAAAAAAAAAAABgWwABuFQAALQDAKAdAADtAPwLwPTHOh0AAPMjAAgHAMD8CADCAQAwPwKAcADqAAKwZQAAtAMAoB0AAO0AAGgHAEA7AADaAQDQDgCAdgCuBqCZAAz3AYEOqDkEidkXAAAAAElFTkSuQmCC";
+
+/**
+ * Decodes a base64 string into a Uint8Array.
+ * @param {string} value Base64-encoded string.
+ * @returns {Uint8Array} Decoded bytes.
+ */
+function decodeBase64ToBytes(value = "") {
+  const binary = atob(String(value || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+/**
+ * Checks whether a MIME type points to an SVG image.
+ * @param {string} mimeType MIME type to inspect.
+ * @returns {boolean} True when the type represents SVG.
+ */
+function isSvgMimeType(mimeType = "") {
+  const value = String(mimeType || "").toLowerCase();
+  return value.includes("image/svg") || value.includes("svg+xml");
+}
+
+/**
+ * Replaces SVG archive assets with a small PNG placeholder for safer offline archives.
+ * @param {{ type?: string, bytes?: Uint8Array }} blob Downloaded blob descriptor.
+ * @returns {{ type: string, bytes: Uint8Array, replacedSvg: boolean }} Safe archive blob descriptor.
+ */
+function normalizeArchiveImageBlob(blob = {}) {
+  const mimeType = String(blob?.type || "application/octet-stream");
+  const bytes = blob?.bytes instanceof Uint8Array ? blob.bytes : new Uint8Array(blob?.bytes || []);
+  if (!isSvgMimeType(mimeType)) {
+    return {
+      type: mimeType,
+      bytes,
+      replacedSvg: false,
+    };
+  }
+  return {
+    type: ARCHIVE_SAFE_IMAGE_PLACEHOLDER_MIME_TYPE,
+    bytes: decodeBase64ToBytes(ARCHIVE_SAFE_IMAGE_PLACEHOLDER_BASE64),
+    replacedSvg: true,
+  };
 }
 
 async function downloadRemoteAsset(url) {
@@ -3630,7 +4164,7 @@ async function scanAccountMediaExport({ actor = "", filters = {}, includeImages 
   const normalizedFilters = normalizeArchiveFilters(filters);
   const actorProfile = await resolveMediaExportActor(auth, actor);
   if (!actorProfile.did) {
-    throw new Error("Account fuer Medienexport konnte nicht aufgeloest werden.");
+    throw new Error("Account für Medienexport konnte nicht aufgelöst werden.");
   }
 
   const posts = [];
@@ -3795,7 +4329,7 @@ async function scanAccountMediaExport({ actor = "", filters = {}, includeImages 
 async function downloadAccountMediaAsset({ item } = {}, notifyProgress = () => {}) {
   const auth = await ensureSession();
   if (!item || typeof item !== "object") {
-    throw new Error("Kein Medium zum Laden uebergeben.");
+    throw new Error("Kein Medium zum Laden übergeben.");
   }
 
   const pathStem = String(item.pathStem || "").trim();
@@ -3865,13 +4399,14 @@ async function attachArchiveAvatarAssets(posts, assets, seenAssetPaths, auth = n
   await mapWithConcurrency(avatarEntries, ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY, async ([avatarUrl, linkedPosts]) => {
     const samplePost = linkedPosts[0] || null;
     try {
-      const blob = await downloadRemoteAssetViaBlob(
+      const downloadedBlob = await downloadRemoteAssetViaBlob(
         auth,
         avatarUrl,
         samplePost?.authorDid || "",
         serviceCache,
         { cacheMap: blobCache },
       );
+      const blob = normalizeArchiveImageBlob(downloadedBlob);
       const extension = getAssetExtensionFromMimeType(blob.type);
       const authorSlug = String(samplePost?.authorHandle || samplePost?.authorDid || "author")
         .replace(/[^\w.-]+/g, "-")
@@ -4244,6 +4779,7 @@ function extractArchiveExternalCardFromRecord(record = {}) {
     description,
     thumb,
     thumbRef,
+    standardSite: normalizeStandardSiteMetadata(external.standardSite || external.standardSiteMetadata || external.publication),
     thumbPath: "",
     thumbLoadFailed: false,
     thumbLoadAttempts: 0,
@@ -4281,6 +4817,7 @@ function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", auth
     authorAvatar,
     authorAvatarPath: "",
     externalCard: extractArchiveExternalCardFromRecord(record),
+    editInfo: normalizePostEditInfoFromRecord(record),
     images: [],
   };
 }
@@ -4306,6 +4843,7 @@ function mergeArchivePostEntity(existing, incoming) {
   existing.authorAvatar = incoming.authorAvatar || existing.authorAvatar;
   existing.authorAvatarPath = incoming.authorAvatarPath || existing.authorAvatarPath;
   existing.externalCard = incoming.externalCard || existing.externalCard;
+  existing.editInfo = incoming.editInfo || existing.editInfo || null;
   if ((!existing.images || existing.images.length === 0) && incoming.images?.length) {
     existing.images = incoming.images;
   }
@@ -4499,12 +5037,12 @@ async function expandArchiveConversationContexts({
       }
       notifyProgress({
         title: "Archiv wird gelesen",
-        step: `Konversation ${index + 1}/${rootUris.length} wird uebersprungen`,
+        step: `Konversation ${index + 1}/${rootUris.length} wird übersprungen`,
         percent: 48 + Math.round(((index + 1) / Math.max(1, rootUris.length)) * 10),
         detail: isArchiveThreadTimeoutError(error)
           ? `Antwortkontext zu langsam - ${rootUri}`
           : `Konversation nicht mehr verfuegbar - ${rootUri}`,
-        checkpoint: `Konversation ${index + 1}/${rootUris.length} uebersprungen`,
+        checkpoint: `Konversation ${index + 1}/${rootUris.length} übersprungen`,
         state: "running",
       });
       continue;
@@ -6225,6 +6763,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         }
       }
       if (blob) {
+        blob = normalizeArchiveImageBlob(blob);
         externalCard.thumbLoadFailed = false;
         const extension = getAssetExtensionFromMimeType(blob.type);
         const authorSlug = String(post.authorHandle || post.authorDid || "author")
@@ -6236,9 +6775,9 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
           seenAssetPaths.add(path);
           assets.push({
             path,
-            type: blob.type,
-            sizeBytes: blob.bytes.length,
-            bytes: blob.bytes,
+            type: normalizedBlob.type,
+            sizeBytes: normalizedBlob.bytes.length,
+            bytes: normalizedBlob.bytes,
           });
         }
       } else {
@@ -6321,21 +6860,22 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
         skippedImageCount += 1;
         notifyProgress({
           title: "Archiv wird gelesen",
-          step: "Ein Bild konnte nicht geladen werden und wird uebersprungen",
+          step: "Ein Bild konnte nicht geladen werden und wird übersprungen",
           percent: 65 + Math.round(((processedImageTasks + 1) / Math.max(1, imageTasks.length)) * 30),
           detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
-          checkpoint: `Ein Bild wurde uebersprungen (${skippedImageCount} insgesamt)`,
+          checkpoint: `Ein Bild wurde übersprungen (${skippedImageCount} insgesamt)`,
           preview: {
-            meta: `Bild uebersprungen (${lastBlobError?.message || "unbekannter Fehler"})`,
+            meta: `Bild übersprungen (${lastBlobError?.message || "unbekannter Fehler"})`,
             text: String(post.text || "").slice(0, 180),
             metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
           },
           state: "running",
         });
       } else {
-        const extension = blob.type.includes("png")
+        const normalizedBlob = normalizeArchiveImageBlob(blob);
+        const extension = normalizedBlob.type.includes("png")
           ? "png"
-          : (blob.type.includes("webp") ? "webp" : "jpg");
+          : (normalizedBlob.type.includes("webp") ? "webp" : "jpg");
         const authorSlug = String(post.authorHandle || post.authorDid || "author")
           .replace(/[^\w.-]+/g, "-")
           .slice(0, 60) || "author";
@@ -6349,8 +6889,8 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
           sourceDid: blobDid,
           sourceCid: cid,
           remoteUrl: await buildPublicBlobUrlForDid(auth, blobDid, cid, pdsServiceCache),
-          mimeType: blob.type,
-          sizeBytes: blob.bytes.length,
+          mimeType: normalizedBlob.type,
+          sizeBytes: normalizedBlob.bytes.length,
         };
 
         if (!seenAssetPaths.has(path)) {
@@ -6367,7 +6907,7 @@ async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor 
               preview: {
                 meta: `Bild ${imageCount} heruntergeladen`,
                 text: String(post.text || "").slice(0, 180),
-                imageDataUrl: bytesToDataUrl(blob.bytes, blob.type),
+                imageDataUrl: bytesToDataUrl(normalizedBlob.bytes, normalizedBlob.type),
                 metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
                 alt: image.alt || "Archivbild",
               },
@@ -6634,10 +7174,11 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
     }
     try {
       externalCard.thumbLoadAttempts = 1;
-      const blob = await downloadBlobForDid(auth, post.authorDid || actorDid, thumbCid, pdsServiceCache, {
+      let blob = await downloadBlobForDid(auth, post.authorDid || actorDid, thumbCid, pdsServiceCache, {
         timeoutMs: 5000,
         cacheMap: archiveBlobCache,
       });
+      blob = normalizeArchiveImageBlob(blob);
       externalCard.thumbLoadFailed = false;
       const extension = getAssetExtensionFromMimeType(blob.type);
       const authorSlug = String(post.authorHandle || post.authorDid || "author")
@@ -6709,10 +7250,10 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
 
       notifyProgress({
         title: "Thread wird geladen",
-        step: `Bild ${imageIndex + 1}/${images.length} fuer Thread-Post ${postIndex + 1}/${orderedPosts.length} wird geladen`,
+        step: `Bild ${imageIndex + 1}/${images.length} für Thread-Post ${postIndex + 1}/${orderedPosts.length} wird geladen`,
         percent: 45 + Math.round(((postIndex + 1) / Math.max(1, orderedPosts.length)) * 50),
         detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
-        checkpoint: `Bild ${imageIndex + 1} fuer Thread-Post ${postIndex + 1}`,
+        checkpoint: `Bild ${imageIndex + 1} für Thread-Post ${postIndex + 1}`,
         state: "running",
       });
 
@@ -6736,20 +7277,21 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
         skippedImageCount += 1;
         notifyProgress({
           preview: {
-            meta: `Bild uebersprungen (${lastBlobError?.message || "unbekannter Fehler"})`,
+            meta: `Bild übersprungen (${lastBlobError?.message || "unbekannter Fehler"})`,
             text: String(post.text || "").slice(0, 180),
             metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
           },
           detail: `${imageCount} Bilder gespeichert · ${skippedImageCount} Bilder ausgelassen`,
-          checkpoint: `Ein Thread-Bild wurde uebersprungen`,
+          checkpoint: `Ein Thread-Bild wurde übersprungen`,
           state: "running",
         });
         continue;
       }
 
-      const extension = blob.type.includes("png")
+      const normalizedBlob = normalizeArchiveImageBlob(blob);
+      const extension = normalizedBlob.type.includes("png")
         ? "png"
-        : (blob.type.includes("webp") ? "webp" : "jpg");
+        : (normalizedBlob.type.includes("webp") ? "webp" : "jpg");
       const authorSlug = String(post.authorHandle || post.authorDid || "author")
         .replace(/[^\w.-]+/g, "-")
         .slice(0, 60) || "author";
@@ -6763,17 +7305,17 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
         sourceDid: post.authorDid || actorDid,
         sourceCid: cid,
         remoteUrl: await buildPublicBlobUrlForDid(auth, post.authorDid || actorDid, cid, pdsServiceCache),
-        mimeType: blob.type,
-        sizeBytes: blob.bytes.length,
+        mimeType: normalizedBlob.type,
+        sizeBytes: normalizedBlob.bytes.length,
       });
 
       if (!seenAssetPaths.has(path)) {
         seenAssetPaths.add(path);
         assets.push({
           path,
-          type: blob.type,
-          sizeBytes: blob.bytes.length,
-          bytes: blob.bytes,
+          type: normalizedBlob.type,
+          sizeBytes: normalizedBlob.bytes.length,
+          bytes: normalizedBlob.bytes,
         });
         imageCount += 1;
         if (imageCount % 5 === 0) {
@@ -6781,7 +7323,7 @@ async function importArchiveThreadFromUrl({ runId, url, importMode } = {}, notif
             preview: {
               meta: `Thread-Bild ${imageCount} heruntergeladen`,
               text: String(post.text || "").slice(0, 180),
-              imageDataUrl: bytesToDataUrl(blob.bytes, blob.type),
+              imageDataUrl: bytesToDataUrl(normalizedBlob.bytes, normalizedBlob.type),
               metric: `Likes ${post.counts.likeCount} · Replies ${post.counts.replyCount} · Reposts ${post.counts.repostCount} · Quotes ${post.counts.quoteCount}`,
               alt: image.alt || "Archivbild",
             },
@@ -6842,12 +7384,14 @@ async function applyPostInteractionGates(auth, postRef, settings) {
     authorization: `Bearer ${auth.session.accessJwt}`,
   };
   const threadGateAllow = buildThreadGateAllowRules(normalizedSettings);
+  let latestRateLimit = null;
 
   if (threadGateAllow !== null) {
-    await bskyFetch("com.atproto.repo.createRecord", {
+    const result = await bskyFetch("com.atproto.repo.createRecord", {
       method: "POST",
       headers,
       base,
+      returnMeta: true,
       body: JSON.stringify({
         repo: auth.session.did,
         collection: "app.bsky.feed.threadgate",
@@ -6860,13 +7404,15 @@ async function applyPostInteractionGates(auth, postRef, settings) {
         },
       }),
     });
+    latestRateLimit = result.meta?.rateLimit || latestRateLimit;
   }
 
   if (!normalizedSettings.quotePostsAllowed) {
-    await bskyFetch("com.atproto.repo.createRecord", {
+    const result = await bskyFetch("com.atproto.repo.createRecord", {
       method: "POST",
       headers,
       base,
+      returnMeta: true,
       body: JSON.stringify({
         repo: auth.session.did,
         collection: "app.bsky.feed.postgate",
@@ -6881,7 +7427,10 @@ async function applyPostInteractionGates(auth, postRef, settings) {
         },
       }),
     });
+    latestRateLimit = result.meta?.rateLimit || latestRateLimit;
   }
+
+  return latestRateLimit;
 }
 
 async function publishThread({ segments, langs, postInteraction, replyTarget } = {}, notifyProgress = () => {}) {
@@ -6906,6 +7455,7 @@ async function publishThread({ segments, langs, postInteraction, replyTarget } =
     : null;
   const resolveCache = new Map();
   const posts = [];
+  let latestRateLimit = null;
   let root = normalizedReplyTarget?.replyRoot?.uri && normalizedReplyTarget?.replyRoot?.cid ? normalizedReplyTarget.replyRoot : null;
   let parent = normalizedReplyTarget?.replyParent?.uri && normalizedReplyTarget?.replyParent?.cid ? normalizedReplyTarget.replyParent : null;
 
@@ -6939,7 +7489,7 @@ async function publishThread({ segments, langs, postInteraction, replyTarget } =
           description: String(externalCard.description || "").slice(0, 1000),
         };
         if (segment.externalCard?.thumb instanceof Blob) {
-          notifyProgress({ message: `Link-Card-Vorschaubild fuer Abschnitt ${segmentIndex + 1} wird hochgeladen …` });
+          notifyProgress({ message: `Link-Card-Vorschaubild für Abschnitt ${segmentIndex + 1} wird hochgeladen …` });
           external.thumb = await uploadBlob(auth, segment.externalCard.thumb);
         }
         record.embed = {
@@ -6979,26 +7529,29 @@ async function publishThread({ segments, langs, postInteraction, replyTarget } =
         };
       }
 
-      const created = await bskyFetch("com.atproto.repo.createRecord", {
+      const createdResult = await bskyFetch("com.atproto.repo.createRecord", {
         method: "POST",
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },
         base: xrpcBaseForService(auth.pdsUrl || auth.service),
+        returnMeta: true,
         body: JSON.stringify({
           repo: auth.session.did,
           collection: "app.bsky.feed.post",
           record,
         }),
       });
+      latestRateLimit = createdResult.meta?.rateLimit || latestRateLimit;
+      const created = createdResult.data || {};
 
       const ref = {
         uri: created.uri,
         cid: created.cid,
       };
 
-      notifyProgress({ message: `Interaktionseinstellungen fuer Abschnitt ${segmentIndex + 1}/${segments.length} werden gesetzt …` });
-      await applyPostInteractionGates(auth, ref, normalizedPostInteraction);
+      notifyProgress({ message: `Interaktionseinstellungen für Abschnitt ${segmentIndex + 1}/${segments.length} werden gesetzt …` });
+      latestRateLimit = await applyPostInteractionGates(auth, ref, normalizedPostInteraction) || latestRateLimit;
 
       if (!root) {
         root = ref;
@@ -7014,6 +7567,9 @@ async function publishThread({ segments, langs, postInteraction, replyTarget } =
         code: "PARTIAL_PUBLISH",
         postedCount: posts.length,
         totalCount: segments.length,
+        rateLimit: error?.details?.rateLimit || latestRateLimit || null,
+        retryAfterMs: error?.details?.retryAfterMs || 0,
+        status: error?.details?.status || 0,
       };
       throw partialError;
     }
@@ -7026,5 +7582,6 @@ async function publishThread({ segments, langs, postInteraction, replyTarget } =
     handle: auth.session.handle,
     service: auth.service || DEFAULT_LOGIN_SERVICE,
     webApp: auth.webApp || resolvePostWebBase(auth.service),
+    rateLimit: latestRateLimit,
   };
 }

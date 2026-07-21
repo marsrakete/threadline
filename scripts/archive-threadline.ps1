@@ -19,7 +19,8 @@ param(
   [string]$WaitProfile = "",
   [switch]$Resume,
   [switch]$CompactWorkingState,
-  [switch]$CreateZip
+  [switch]$CreateZip,
+  [switch]$AllowSvg
 )
 
 Set-StrictMode -Version Latest
@@ -1000,6 +1001,34 @@ function Get-AssetExtensionFromMimeType {
   return "bin"
 }
 
+function Test-IsSvgMimeType {
+  param([string]$MimeType)
+  $value = [string]$MimeType
+  return $value -match "image/svg|svg\+xml"
+}
+
+function Get-ArchivePlaceholderImageBytes {
+  $base64 = "iVBORw0KGgoAAAANSUhEUgAAAGAAAABICAYAAAAJZ/BjAAAAvUlEQVR4nO3XMRUCQRAFwVWEHNwgBj/EKLn8yJDA3NIVdD7vVzTr/bydmmtNH1DvC3AeL/0wAADaAQDQDgCAdgAAtAMAoB0AAO0AAGgHoAbwuK+tAgAAAAAAAAAAAAAAAAAAAAAAAABgWwABuFQAALQDAKAdAADtAPwLwPTHOh0AAPMjAAgHAMD8CADCAQAwPwKAcADqAAKwZQAAtAMAoB0AAO0AAGgHAEA7AADaAQDQDgCAdgCuBqCZAAz3AYEOqDkEidkXAAAAAElFTkSuQmCC"
+  return [Convert]::FromBase64String($base64)
+}
+
+function Normalize-ArchiveImageAsset {
+  param(
+    [Parameter(Mandatory = $true)][byte[]]$Bytes,
+    [Parameter(Mandatory = $true)][string]$ContentType
+  )
+  if ($AllowSvg -or -not (Test-IsSvgMimeType -MimeType $ContentType)) {
+    return [ordered]@{
+      Bytes = $Bytes
+      ContentType = if ([string]::IsNullOrWhiteSpace($ContentType)) { "application/octet-stream" } else { $ContentType }
+    }
+  }
+  return [ordered]@{
+    Bytes = Get-ArchivePlaceholderImageBytes
+    ContentType = "image/png"
+  }
+}
+
 function Save-ByteAsset {
   param(
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
@@ -1151,14 +1180,15 @@ function Try-DownloadLinkCardThumbnailAsset {
     return $null
   }
 
-  $extension = Get-AssetExtensionFromMimeType -MimeType $download.ContentType
+  $normalizedAsset = Normalize-ArchiveImageAsset -Bytes $download.Bytes -ContentType $download.ContentType
+  $extension = Get-AssetExtensionFromMimeType -MimeType $normalizedAsset.ContentType
   $authorSlug = ([string]$Post.authorHandle, [string]$Post.authorDid -join "-").Replace(":", "-").Replace("/", "-")
   $authorSlug = ($authorSlug -replace "[^\w.-]+", "-").Trim("-")
   if ([string]::IsNullOrWhiteSpace($authorSlug)) {
     $authorSlug = "author"
   }
   $relativePath = "link-cards/$authorSlug-$($Post.rkey).$extension"
-  $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $download.Bytes -ContentType $download.ContentType
+  $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $normalizedAsset.Bytes -ContentType $normalizedAsset.ContentType
   Set-CachedAsset -AssetIndex $AssetIndex -CacheKey $thumbCacheKey -Asset $asset
   if ($downloadSource -eq "url") {
     $urlCacheKey = Get-UrlAssetCacheKey -Url $ThumbUrl
@@ -1191,14 +1221,15 @@ function Download-AvatarAsset {
   }
   try {
     $download = Invoke-HttpBytes -Uri $avatarUrl -Headers @{}
-    $extension = Get-AssetExtensionFromMimeType -MimeType $download.ContentType
+    $normalizedAsset = Normalize-ArchiveImageAsset -Bytes $download.Bytes -ContentType $download.ContentType
+    $extension = Get-AssetExtensionFromMimeType -MimeType $normalizedAsset.ContentType
     $slug = ([string]$Post.authorHandle, [string]$Post.authorDid -join "-").Replace(":", "-").Replace("/", "-")
     $slug = ($slug -replace "[^\w.-]+", "-").Trim("-")
     if ([string]::IsNullOrWhiteSpace($slug)) {
       $slug = "account"
     }
     $relativePath = "avatars/$slug.$extension"
-    $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $download.Bytes -ContentType $download.ContentType
+    $asset = Save-ByteAsset -OutputDirectory $OutputDirectory -RelativePath $relativePath -Bytes $normalizedAsset.Bytes -ContentType $normalizedAsset.ContentType
     $AssetIndex[$avatarUrl] = $asset
     $Post.authorAvatarPath = $asset.path
     return $asset
@@ -2431,7 +2462,8 @@ if ([string](Get-ObjectPropertyValue -Object $phaseStatus -Name "media" -Default
         $asset = Get-CachedAsset -AssetIndex $assetIndex -CacheKey $imageCacheKey -OutputDirectory $resolvedOutputDirectory
         if ($null -eq $asset) {
           $download = Download-BlobAsset -SessionState $sessionState -Did ([string]$post.authorDid) -Cid $cid
-          $extension = Get-AssetExtensionFromMimeType -MimeType $download.ContentType
+          $normalizedAsset = Normalize-ArchiveImageAsset -Bytes $download.Bytes -ContentType $download.ContentType
+          $extension = Get-AssetExtensionFromMimeType -MimeType $normalizedAsset.ContentType
           $authorSlug = ([string]$post.authorHandle, [string]$post.authorDid -join "-").Replace(":", "-").Replace("/", "-")
           $authorSlug = ($authorSlug -replace "[^\w.-]+", "-").Trim("-")
           if ([string]::IsNullOrWhiteSpace($authorSlug)) {
@@ -2439,7 +2471,7 @@ if ([string](Get-ObjectPropertyValue -Object $phaseStatus -Name "media" -Default
           }
           $yearPart = if ($post.createdAt) { ([string]$post.createdAt).Substring(0, 4) } else { "misc" }
           $relativePath = "images/$yearPart/$authorSlug-$($post.rkey)-$imageIndex.$extension"
-          $asset = Save-ByteAsset -OutputDirectory $resolvedOutputDirectory -RelativePath $relativePath -Bytes $download.Bytes -ContentType $download.ContentType
+          $asset = Save-ByteAsset -OutputDirectory $resolvedOutputDirectory -RelativePath $relativePath -Bytes $normalizedAsset.Bytes -ContentType $normalizedAsset.ContentType
           Set-CachedAsset -AssetIndex $assetIndex -CacheKey $imageCacheKey -Asset $asset
         }
         Add-AssetToListIfMissing -AssetList $assetList -AssetPathIndex $assetPathIndex -Asset $asset

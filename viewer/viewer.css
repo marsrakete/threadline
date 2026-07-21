@@ -178,6 +178,24 @@ h2 {
   font-size: 12px;
 }
 
+.edit-marker-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.archive-viewer-edit-button {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(217, 119, 6, 0.28);
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #92560d;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
 .post-list-text {
   display: -webkit-box;
   margin: 6px 0 0;
@@ -490,6 +508,63 @@ h2 {
 
 .error-text {
   color: var(--danger);
+}
+
+.edit-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(8, 15, 28, 0.72);
+}
+
+.edit-dialog {
+  width: min(980px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px;
+  background: var(--panel);
+  box-shadow: 0 30px 70px rgba(8, 15, 28, 0.28);
+}
+
+.edit-dialog-close {
+  justify-self: end;
+}
+
+.edit-dialog-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.edit-dialog-grid section {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--soft);
+}
+
+.edit-dialog-text {
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.edit-added {
+  background: rgba(34, 197, 94, 0.22);
+}
+
+.edit-removed {
+  background: rgba(248, 113, 113, 0.24);
+  text-decoration: line-through;
 }
 
 @media (max-width: 860px) {
