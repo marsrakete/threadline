@@ -112,6 +112,15 @@
             </div>
 
             <div class="workspace-launch-chip">
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="thread-explorer-button" data-i18n="threadExplorerLaunchButton" disabled>
+                Thread Explorer
+              </button>
+              <p id="thread-explorer-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="threadExplorerLaunchDisabledNote">
+                Zum Lesen aktueller Threads bitte zuerst verbinden.
+              </p>
+            </div>
+
+            <div class="workspace-launch-chip">
               <button type="button" class="ghost-button status-history-button workspace-chip-button" id="analysis-button" data-i18n="analysisLaunchButton" disabled>
                 Analyse
               </button>
@@ -211,18 +220,24 @@
                 <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
                 <button type="button" class="help-trigger" data-help-topic="composer_input" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
               </div>
-              <textarea id="source-text" maxlength="5000" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …"></textarea>
+              <textarea id="source-text" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …"></textarea>
+              <p id="composer-input-warning" class="settings-note" hidden></p>
 
               <div class="composer-meta">
                 <span id="character-count">0 Zeichen</span>
                 <span id="segment-summary">Ein einzelner Post bis 300 Zeichen.</span>
               </div>
+              <p id="composer-length-warning" class="settings-note" hidden></p>
               <p class="composer-note" data-i18n="manualSplitHint">
                 Manueller Abschnittswechsel: Mit <code>%%</code> beginnt der folgende Text sicher im naechsten Thread-Abschnitt.
               </p>
               <div id="composer-lock-note" class="composer-lock-note" hidden>
                 <p data-i18n="composerLockWarning">Es wurde eine Änderung im Thread-Abschnitt vorgenommen. Änderungen in diesem Editor überschreiben die Änderung im Abschnitt dann wieder.</p>
                 <button id="composer-unlock-button" type="button" class="ghost-button" data-i18n="composerUnlockButton">Änderung ignorieren</button>
+              </div>
+              <div id="composer-posted-note" class="composer-posted-note" hidden>
+                <p data-i18n="composerPostedWarning">Thread wurde erfolgreich gepostet. Du kannst nun mit einem neuen Thread anfangen oder diesen Hinweis ignorieren.</p>
+                <button id="composer-posted-dismiss-button" type="button" class="ghost-button" data-i18n="composerPostedDismissButton">Hinweis ignorieren</button>
               </div>
 
               <div class="editor-actions">
@@ -302,6 +317,9 @@
               <p id="publish-warning" class="publish-warning" hidden data-i18n="publishAltTextWarning">
                 Bitte die ALT-Texte vollständig ausfüllen.
               </p>
+              <!-- Rate-limit note intentionally disabled for now; keep the hook for possible later reuse.
+              <p id="publish-rate-limit-note" class="settings-note publish-rate-limit-note" hidden></p>
+              -->
               <div class="primary-actions split-actions">
                 <button id="publish-button" type="button" data-i18n="publishButton">Auf Bluesky posten</button>
               </div>
@@ -339,7 +357,7 @@
                   id="archive-source-input"
                   type="text"
                   inputmode="text"
-                  placeholder="@handle oder leer fuer mein Konto"
+                  placeholder="@handle oder leer für mein Konto"
                   data-i18n-placeholder="archiveSourcePlaceholder"
                 >
               </label>
@@ -348,9 +366,7 @@
               <label>
                 <span data-i18n="archiveScopeLabel">Auswahl</span>
                 <select id="archive-scope-select">
-                  <option value="all" data-i18n="archiveScopeAll">Kompletter Account</option>
-                  <option value="year" data-i18n="archiveScopeYear">Ein Jahr</option>
-                  <option value="range" data-i18n="archiveScopeRange">Benutzerdefinierter Zeitraum</option>
+                  <option value="range" data-i18n="archiveScopeRange">Bis zu drei Monate</option>
                 </select>
               </label>
               <label>
@@ -363,7 +379,7 @@
                 </select>
               </label>
               <div class="archive-range-grid">
-                <label id="archive-year-wrap">
+                <label id="archive-year-wrap" hidden>
                   <span data-i18n="archiveYearLabel">Jahr</span>
                   <input id="archive-year-input" type="number" min="2010" max="2100" step="1" placeholder="2026">
                 </label>
@@ -473,7 +489,7 @@
                   id="archive-media-actor-input"
                   type="text"
                   inputmode="text"
-                  placeholder="@handle oder leer fuer mein Konto"
+                  placeholder="@handle oder leer für mein Konto"
                 >
               </label>
               <label class="settings-check">
@@ -556,7 +572,7 @@
                 </div>
               </div>
               <div id="archive-results" class="archive-results"></div>
-              <div class="archive-script-help" hidden>
+              <div class="archive-script-help archive-warning" hidden>
                 <strong data-i18n="archiveZipHtmlScriptTitle">ZIP zu HTML per PowerShell</strong>
                 <p class="settings-note" data-i18n="archiveZipHtmlScriptNote">
                   Wenn das HTML-Archiv zu groß wird, sichere zuerst das ZIP und erzeuge daraus außerhalb der App ein vollständiges lokales HTML-Archiv.
@@ -603,6 +619,9 @@
                 <button type="button" class="ghost-button" id="archive-check-post-edit-button" data-i18n="postEditCheckOpenButton">
                   Post-Änderung prüfen
                 </button>
+                <button type="button" class="ghost-button" id="archive-saved-searches-button" data-i18n="savedSearchesButton">
+                  Suchen
+                </button>
                 <button type="button" class="ghost-button" id="archive-export-html-button" data-i18n="archiveExportHtmlButton">HTML-Archiv erzeugen</button>
                 <button type="button" class="ghost-button" id="archive-export-html-compact-button" data-i18n="archiveExportHtmlCompactButton">Kompaktes HTML erzeugen</button>
                 <button type="button" class="ghost-button" id="archive-export-pdf-button" data-i18n="archiveExportPdfButton">PDF-Bände erzeugen</button>
@@ -610,7 +629,7 @@
               <p id="archive-thread-url-note" class="settings-note" data-i18n="archiveThreadUrlHint">
                 Lade einen einzelnen Bluesky-Thread direkt aus einer Posting-URL. Wenn die URL auf eine Antwort zeigt, beginnt der Import automatisch beim Thread-Start.
               </p>
-              <div class="archive-script-help">
+              <div class="archive-script-help archive-warning">
                 <strong data-i18n="archiveZipHtmlScriptTitle">ZIP zu HTML per PowerShell</strong>
                 <p class="settings-note" data-i18n="archiveZipHtmlScriptNote">
                   Wenn das HTML-Archiv zu groß wird, sichere zuerst das ZIP und erzeuge daraus außerhalb der App ein vollständiges lokales HTML-Archiv.
@@ -626,6 +645,208 @@
               <div id="archive-spec-content" class="archive-spec-content"></div>
             </section>
           </div>
+        </section>
+
+        <section id="thread-explorer-workspace" class="archive-workspace thread-explorer-workspace workspace-view" hidden>
+          <div class="archive-header-panel">
+            <div>
+              <p class="eyebrow" data-i18n="threadExplorerHeaderEyebrow">Thread Explorer</p>
+              <div class="help-heading">
+                <h2 data-i18n="threadExplorerHeaderTitle">Aktuelle Gespräche als Baum lesen</h2>
+                <button type="button" class="help-trigger" data-help-topic="thread_explorer_workspace" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <p class="section-note" data-i18n="threadExplorerHeaderNote">
+                Lade aktuelle Posts aus deinem Feed und öffne den vollständigen Thread direkt daneben.
+              </p>
+            </div>
+          </div>
+
+          <div class="thread-explorer-layout">
+            <section class="archive-card thread-explorer-feed-card">
+              <div class="thread-explorer-card-head">
+                <div>
+                  <p class="eyebrow" data-i18n="threadExplorerFeedEyebrow">Einstieg</p>
+                  <div class="help-heading">
+                    <h3 data-i18n="threadExplorerFeedTitle">Latest</h3>
+                    <button type="button" class="help-trigger" data-help-topic="thread_explorer_entry" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+                  </div>
+                </div>
+                <div class="thread-explorer-entry-actions">
+                  <button type="button" class="ghost-button" id="thread-explorer-url-button" data-i18n="threadExplorerUrlButton">URL laden</button>
+                  <button type="button" class="ghost-button" id="thread-explorer-searches-button" data-i18n="savedSearchesButton">Suchen</button>
+                  <button type="button" class="ghost-button" id="thread-explorer-refresh-button" data-i18n="threadExplorerRefreshButton">Aktualisieren</button>
+                </div>
+              </div>
+              <div class="network-filter-group thread-explorer-source-tabs" role="toolbar" aria-label="Thread Explorer Quelle">
+                <button type="button" class="ghost-button thread-explorer-source-button is-active" id="thread-explorer-follows-button" data-thread-explorer-source="follows" data-i18n="threadExplorerFollowsButton">Latest from Follows</button>
+                <button type="button" class="ghost-button thread-explorer-source-button" id="thread-explorer-mutuals-button" data-thread-explorer-source="mutuals" data-i18n="threadExplorerMutualsButton">Latest from Mutuals</button>
+              </div>
+              <label class="settings-field thread-explorer-feed-picker">
+                <span data-i18n="threadExplorerFeedPickerLabel">Angepinnte Feeds</span>
+                <select id="thread-explorer-feed-select">
+                  <option value="" data-i18n="threadExplorerFeedPickerPlaceholder">Feed auswaehlen ...</option>
+                </select>
+              </label>
+              <p id="thread-explorer-feed-status" class="archive-run-status-line" data-i18n="threadExplorerFeedIdle">Noch keine Posts geladen.</p>
+              <div id="thread-explorer-feed-list" class="thread-explorer-feed-list" aria-live="polite"></div>
+            </section>
+
+            <section class="archive-card thread-explorer-thread-card">
+              <div class="thread-explorer-card-head">
+                <div>
+                  <p class="eyebrow" data-i18n="threadExplorerThreadEyebrow">Thread</p>
+                  <div class="help-heading">
+                    <h3 id="thread-explorer-thread-title" data-i18n="threadExplorerThreadTitle">Kein Thread geladen</h3>
+                    <button type="button" class="help-trigger" data-help-topic="thread_explorer_thread" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+                  </div>
+                </div>
+                <div class="thread-explorer-thread-actions">
+                  <button type="button" class="ghost-button" id="thread-explorer-root-button" data-i18n="threadExplorerRootButton">To Root</button>
+                  <button type="button" class="ghost-button" id="thread-explorer-reload-thread-button" data-i18n="threadExplorerReloadThreadButton">Thread neu laden</button>
+                  <div class="thread-explorer-action-group thread-explorer-export-actions" aria-label="Snapshot exportieren">
+                    <span class="thread-explorer-action-group-icon" aria-hidden="true">⇩</span>
+                    <button type="button" class="ghost-button" id="thread-explorer-snapshot-png-button" data-i18n="threadExplorerSnapshotPngButton" data-i18n-title="threadExplorerSnapshotPngTitle" title="Snapshot als PNG exportieren">PNG</button>
+                  </div>
+                  <button type="button" class="ghost-button thread-explorer-icon-action" id="thread-explorer-save-button" data-i18n-title="threadExplorerSaveButton" title="Speichern" aria-label="Speichern">
+                    <span aria-hidden="true">★</span>
+                    <span aria-hidden="true">▣</span>
+                  </button>
+                  <button type="button" class="ghost-button" id="thread-explorer-favorites-button" data-i18n="threadExplorerFavoritesButton">Favoriten</button>
+                  <button type="button" class="ghost-button" id="thread-explorer-zoom-out-button" data-i18n="threadExplorerZoomOutButton">-</button>
+                  <button type="button" class="ghost-button" id="thread-explorer-zoom-reset-button" data-i18n="threadExplorerZoomResetButton">100%</button>
+                  <button type="button" class="ghost-button" id="thread-explorer-zoom-in-button" data-i18n="threadExplorerZoomInButton">+</button>
+                  <button type="button" class="ghost-button" id="thread-explorer-orientation-button" data-i18n="threadExplorerHorizontalButton">Horizontal</button>
+                  <button type="button" class="ghost-button" id="thread-explorer-collapse-button" data-i18n="threadExplorerCollapseButton">Fold</button>
+                  <button type="button" class="ghost-button" id="thread-explorer-expand-button" data-i18n="threadExplorerExpandButton">Open</button>
+                </div>
+              </div>
+              <p id="thread-explorer-thread-status" class="archive-run-status-line" data-i18n="threadExplorerThreadIdle">Wähle links einen Post aus.</p>
+              <div id="thread-explorer-thread-tree" class="thread-explorer-thread-tree">
+                <div id="thread-explorer-thread-stage" class="thread-explorer-thread-stage"></div>
+              </div>
+            </section>
+          </div>
+
+          <template id="thread-explorer-feed-item-template">
+            <button type="button" class="thread-explorer-feed-item">
+              <span class="thread-explorer-feed-item-head">
+                <img class="thread-explorer-avatar" alt="" loading="lazy">
+                <span class="thread-explorer-feed-item-copy">
+                  <strong class="thread-explorer-feed-author"></strong>
+                  <span class="thread-explorer-feed-meta"></span>
+                </span>
+              </span>
+              <span class="thread-explorer-feed-text"></span>
+            </button>
+          </template>
+
+          <template id="thread-explorer-feed-option-template">
+            <option></option>
+          </template>
+
+          <template id="thread-explorer-node-template">
+            <li class="thread-explorer-node-item">
+              <div class="thread-explorer-node">
+                <article class="thread-explorer-post-card">
+                  <header class="thread-explorer-post-head">
+                    <img class="thread-explorer-avatar" alt="" loading="lazy">
+                    <div>
+                      <strong class="thread-explorer-post-author"></strong>
+                      <p class="thread-explorer-post-handle"></p>
+                    </div>
+                    <button type="button" class="thread-explorer-node-toggle" aria-label="Antworten einklappen">-</button>
+                  </header>
+                  <p class="thread-explorer-post-meta"></p>
+                  <div class="thread-explorer-post-actions">
+                    <button type="button" class="thread-explorer-edit-button" data-i18n-title="threadExplorerEditDetailsButton" title="Bearbeitungsdetails anzeigen" hidden>
+                      <span aria-hidden="true">✎</span>
+                      <span data-i18n="threadExplorerEditedBadge">Wurde bearbeitet</span>
+                    </button>
+                    <a class="thread-explorer-view-link" target="_blank" rel="noreferrer noopener" data-i18n-title="threadExplorerViewInBskyButton" title="Post öffnen">↗</a>
+                  </div>
+                  <p class="thread-explorer-post-text"></p>
+                  <div class="thread-explorer-post-gallery"></div>
+                  <a class="thread-explorer-link-card" target="_blank" rel="noreferrer noopener" hidden>
+                    <img class="thread-explorer-link-card-image" alt="" loading="lazy">
+                    <span>
+                      <strong class="thread-explorer-link-card-title"></strong>
+                      <span class="thread-explorer-link-card-description"></span>
+                      <small class="thread-explorer-link-card-url"></small>
+                    </span>
+                  </a>
+                  <a class="thread-explorer-quote-card" target="_blank" rel="noreferrer noopener" hidden>
+                    <span class="thread-explorer-quote-card-head">
+                      <img class="thread-explorer-quote-card-avatar" alt="" loading="lazy">
+                      <span>
+                        <strong class="thread-explorer-quote-card-author"></strong>
+                        <small class="thread-explorer-quote-card-handle"></small>
+                      </span>
+                    </span>
+                    <span class="thread-explorer-quote-card-text"></span>
+                    <span class="thread-explorer-quote-card-gallery"></span>
+                    <span class="thread-explorer-quote-link-card" hidden>
+                      <img class="thread-explorer-quote-link-card-image" alt="" loading="lazy">
+                      <span>
+                        <strong class="thread-explorer-quote-link-card-title"></strong>
+                        <span class="thread-explorer-quote-link-card-description"></span>
+                        <small class="thread-explorer-quote-link-card-url"></small>
+                      </span>
+                    </span>
+                    <small class="thread-explorer-quote-card-meta"></small>
+                  </a>
+                  <p class="thread-explorer-post-counts"></p>
+                </article>
+              </div>
+              <ul class="thread-explorer-children"></ul>
+            </li>
+          </template>
+
+          <template id="thread-explorer-image-template">
+            <figure class="thread-explorer-image">
+              <button type="button" class="thread-explorer-image-button">
+                <img alt="" loading="lazy">
+              </button>
+              <figcaption></figcaption>
+            </figure>
+          </template>
+
+          <template id="thread-explorer-gallery-thumb-template">
+            <button type="button" class="thread-explorer-gallery-thumb">
+              <img alt="" loading="lazy">
+            </button>
+          </template>
+
+          <template id="thread-explorer-favorite-item-template">
+            <article class="thread-explorer-favorite-item">
+              <button type="button" class="thread-explorer-favorite-load">
+                <strong class="thread-explorer-favorite-title"></strong>
+                <span class="thread-explorer-favorite-meta"></span>
+                <span class="thread-explorer-favorite-text"></span>
+              </button>
+              <button type="button" class="thread-explorer-favorite-remove" data-i18n-title="threadExplorerFavoriteRemoveButton" title="Entfernen">×</button>
+            </article>
+          </template>
+
+          <template id="saved-search-item-template">
+            <article class="thread-explorer-favorite-item saved-search-item">
+              <button type="button" class="thread-explorer-favorite-load saved-search-load">
+                <strong class="thread-explorer-favorite-title saved-search-title"></strong>
+                <span class="thread-explorer-favorite-meta saved-search-meta"></span>
+                <span class="thread-explorer-favorite-text saved-search-url"></span>
+              </button>
+              <button type="button" class="thread-explorer-favorite-remove saved-search-remove" data-i18n-title="savedSearchRemoveButton" title="Entfernen">×</button>
+            </article>
+          </template>
+
+          <template id="thread-explorer-actor-item-template">
+            <article class="thread-explorer-actor-item">
+              <img class="thread-explorer-avatar" alt="" loading="lazy">
+              <span>
+                <strong class="thread-explorer-actor-name"></strong>
+                <small class="thread-explorer-actor-handle"></small>
+              </span>
+            </article>
+          </template>
         </section>
 
         <section id="network-workspace" class="archive-workspace network-workspace workspace-view" hidden>
@@ -1070,7 +1291,7 @@
 
         <section class="settings-block">
           <p class="eyebrow" data-i18n="linkCardSettingsEyebrow">Link-Cards</p>
-          <p class="settings-note" data-i18n="linkCardSettingsNote">Optionaler WordPress-Proxy fuer Link-Card-Metadaten.</p>
+          <p class="settings-note" data-i18n="linkCardSettingsNote">Optionaler WordPress-Proxy für Link-Card-Metadaten.</p>
           <label>
             <span data-i18n="linkCardEndpointLabel">Proxy-Endpunkt</span>
             <input id="link-card-endpoint-input" name="threadline-proxy-endpoint" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="https://example.com/wp-json/threadline/v1/link-card">
@@ -1188,6 +1409,9 @@
         </div>
 
         <p id="publish-result-text" class="settings-note"></p>
+        <!-- Rate-limit note intentionally disabled for now; keep the hook for possible later reuse.
+        <p id="publish-result-rate-limit-note" class="settings-note" hidden></p>
+        -->
         <div class="settings-actions">
           <a id="publish-result-link" class="ghost-button link-button" href="#" target="_blank" rel="noreferrer noopener" data-i18n="openPostLink">Post auf Bluesky öffnen</a>
         </div>
@@ -1582,6 +1806,27 @@
       </form>
     </dialog>
 
+    <dialog id="backup-reminder-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="backupEyebrow">Backup</p>
+            <h2 data-i18n="backupReminderTitle">Backup speichern?</h2>
+          </div>
+          <button type="button" id="backup-reminder-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+
+        <p id="backup-reminder-message" class="settings-note" data-i18n="backupReminderDueMessage">
+          Dein letztes Backup ist mehr als 30 Tage her.
+        </p>
+
+        <div class="settings-actions">
+          <button type="button" id="backup-reminder-save-button" data-i18n="backupReminderSaveButton">Backup speichern</button>
+          <button type="button" id="backup-reminder-later-button" class="ghost-button" data-i18n="backupReminderLaterButton">Später</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="reply-target-dialog" class="settings-dialog">
       <form method="dialog" class="settings-sheet post-edit-check-sheet">
         <div class="section-heading settings-heading">
@@ -1615,6 +1860,117 @@
       </form>
     </dialog>
 
+    <dialog id="thread-explorer-favorites-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet thread-explorer-dialog-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="threadExplorerFavoritesEyebrow">Thread Explorer</p>
+            <h2 data-i18n="threadExplorerFavoritesTitle">Gespeicherte Threads</h2>
+          </div>
+          <button type="button" id="thread-explorer-favorites-close-button" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+        <p id="thread-explorer-favorites-status" class="settings-note"></p>
+        <div id="thread-explorer-favorites-list" class="thread-explorer-favorites-list"></div>
+      </form>
+    </dialog>
+
+    <dialog id="thread-explorer-url-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet thread-explorer-dialog-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="threadExplorerUrlEyebrow">Thread Explorer</p>
+            <h2 data-i18n="threadExplorerUrlTitle">Thread per URL laden</h2>
+          </div>
+          <button type="button" id="thread-explorer-url-close-top-button" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+        <p class="settings-note" data-i18n="threadExplorerUrlNote">
+          Füge eine bsky.app-, mu.social- oder at://-Posting-URL ein. Threadline prüft die URL und lädt danach den Live-Thread.
+        </p>
+        <label class="settings-field" for="thread-explorer-url-input">
+          <span data-i18n="threadExplorerUrlLabel">Posting-URL</span>
+          <input id="thread-explorer-url-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://bsky.app/profile/handle/post/...">
+        </label>
+        <p id="thread-explorer-url-status" class="settings-note"></p>
+        <div class="settings-actions">
+          <button type="button" id="thread-explorer-url-load-button" data-i18n="threadExplorerUrlLoadButton">Thread laden</button>
+          <button type="button" id="thread-explorer-url-close-button" class="ghost-button" data-i18n="closeButton">Schließen</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="saved-searches-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet thread-explorer-dialog-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="savedSearchesEyebrow">Suche</p>
+            <h2 id="saved-searches-title" data-i18n="savedSearchesTitle">Gespeicherte Suchen</h2>
+          </div>
+          <button type="button" id="saved-searches-close-button" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+        <p class="settings-note" data-i18n="savedSearchesNote">
+          Speichere geteilte Bluesky-Such-URLs und lade sie später im Thread Explorer oder Archiv wieder.
+        </p>
+        <label class="settings-field" for="saved-search-url-input">
+          <span data-i18n="savedSearchUrlLabel">Such-URL</span>
+          <input id="saved-search-url-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://bsky.app/search?q=...">
+        </label>
+        <div class="settings-actions">
+          <button type="button" id="saved-search-add-button" data-i18n="savedSearchAddButton">Suche hinzufügen</button>
+        </div>
+        <p id="saved-searches-status" class="settings-note"></p>
+        <div id="saved-searches-list" class="thread-explorer-favorites-list saved-searches-list"></div>
+      </form>
+    </dialog>
+
+    <dialog id="thread-explorer-reactions-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet thread-explorer-dialog-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="threadExplorerReactionsEyebrow">Interaktionen</p>
+            <h2 id="thread-explorer-reactions-title" data-i18n="threadExplorerReactionsTitle">Accounts</h2>
+          </div>
+          <button type="button" id="thread-explorer-reactions-close-button" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+        <p id="thread-explorer-reactions-status" class="settings-note"></p>
+        <div id="thread-explorer-reactions-list" class="thread-explorer-actor-list"></div>
+      </form>
+    </dialog>
+
+    <dialog id="thread-explorer-replies-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet thread-explorer-dialog-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="threadExplorerRepliesEyebrow">Replies</p>
+            <h2 id="thread-explorer-replies-title" data-i18n="threadExplorerRepliesTitle">Antworten</h2>
+          </div>
+          <button type="button" id="thread-explorer-replies-close-button" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+        <p id="thread-explorer-replies-status" class="settings-note"></p>
+        <div id="thread-explorer-replies-list" class="thread-explorer-actor-list"></div>
+      </form>
+    </dialog>
+
+    <dialog id="thread-explorer-gallery-dialog" class="settings-dialog thread-explorer-gallery-dialog">
+      <form method="dialog" class="settings-sheet thread-explorer-gallery-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="threadExplorerGalleryEyebrow">Bilder</p>
+            <h2 id="thread-explorer-gallery-title" data-i18n="threadExplorerGalleryTitle">Bild ansehen</h2>
+          </div>
+          <button type="button" id="thread-explorer-gallery-close-button" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+        <figure class="thread-explorer-gallery-main">
+          <img id="thread-explorer-gallery-image" alt="">
+          <figcaption id="thread-explorer-gallery-caption"></figcaption>
+        </figure>
+        <div id="thread-explorer-gallery-thumbs" class="thread-explorer-gallery-thumbs"></div>
+        <div class="settings-actions">
+          <button type="button" id="thread-explorer-gallery-fullscreen-button" data-i18n="threadExplorerGalleryFullscreenButton">Fullscreen</button>
+          <button type="button" id="thread-explorer-gallery-close-bottom-button" class="ghost-button" data-i18n="closeButton">Schließen</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="link-card-dialog" class="settings-dialog">
       <form method="dialog" class="settings-sheet link-card-sheet">
         <div class="section-heading settings-heading">
@@ -1643,6 +1999,7 @@
           <span class="segment-index"></span>
           <span class="segment-length"></span>
         </div>
+        <p class="settings-note segment-warning" hidden></p>
         <textarea class="segment-text" rows="5"></textarea>
         <div class="segment-image-actions">
           <button type="button" class="ghost-button segment-add-image-button" data-i18n="addImagesButton">Bilder laden</button>
@@ -1651,6 +2008,101 @@
         <div class="segment-link-card"></div>
         <div class="segment-images"></div>
       </article>
+    </template>
+
+    <!-- Analyse Table Templates -->
+    <template id="analysis-table-head-template">
+      <tr>
+        <th data-i18n="analysisMetricsColumnMetric"></th>
+        <th data-i18n="analysisAccountALabel"></th>
+        <th data-i18n="analysisAccountBLabel"></th>
+        <th></th>
+      </tr>
+    </template>
+
+    <template id="analysis-table-row-template">
+      <tr>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    </template>
+
+    <template id="analysis-table-row-3col-template">
+      <tr>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    </template>
+
+    <!-- Hashtag Item Template -->
+    <template id="hashtag-item-template">
+      <div class="hashtag-item">
+        <button type="button" class="hashtag-chip"></button>
+        <button type="button" class="hashtag-tool" aria-label="">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 16.75V20h3.25L18.4 8.84l-3.24-3.24L4 16.75zm14.71-9.04a1 1 0 0 0 0-1.42l-1-1a1 1 0 0 0-1.42 0l-.88.88 3.24 3.24.06-.06z"></path>
+          </svg>
+        </button>
+        <button type="button" class="hashtag-tool danger" aria-label="">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path>
+          </svg>
+        </button>
+      </div>
+    </template>
+
+    <!-- Account Switcher Item Template -->
+    <template id="account-switcher-item-template">
+      <div class="account-chip-wrap">
+        <button type="button" class="account-chip">
+          <img class="account-chip-avatar" alt="" loading="lazy">
+          <span class="account-chip-copy">
+            <strong class="account-chip-name"></strong>
+            <small class="account-chip-handle"></small>
+          </span>
+        </button>
+        <button type="button" class="account-chip-toggle" aria-label="">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d=""></path>
+          </svg>
+        </button>
+        <button type="button" class="account-chip-remove" aria-label="" title="">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path>
+          </svg>
+        </button>
+      </div>
+    </template>
+
+    <!-- History Item Template -->
+    <template id="history-item-template">
+      <article class="history-item">
+        <div class="history-item-header">
+          <span class="history-item-timestamp"></span>
+          <span class="history-item-account"></span>
+        </div>
+        <p class="history-item-preview"></p>
+        <div class="history-item-meta">
+          <span class="history-item-count"></span>
+          <span class="history-item-images"></span>
+        </div>
+        <div class="history-item-actions">
+          <button type="button" class="ghost-button history-continue-button" data-i18n="threadContinueButton">Thread fortsetzen</button>
+          <button type="button" class="ghost-button history-delete-button" data-i18n="deleteButton">Löschen</button>
+        </div>
+      </article>
+    </template>
+
+    <!-- Generic Icon Button Templates -->
+    <template id="icon-button-template">
+      <button type="button" class="">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d=""></path>
+        </svg>
+      </button>
     </template>
 
     <script src="version.js"></script>
