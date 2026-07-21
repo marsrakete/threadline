@@ -2,6 +2,8 @@
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./translations.js";
 
 const MAX_POST_LENGTH = 300;
+const MAX_POST_UTF8_BYTES = 3000;
+const MAX_COMPOSER_GRAPHEME_LENGTH = 10_000;
 const MANUAL_SPLIT_MARKER = "%%";
 const MAX_IMAGES_PER_SEGMENT = 10;
 const MAX_ALT_TEXT_LENGTH = 2000;
@@ -46,22 +48,185 @@ const DM_ACCESS_HASH_PARAM = "dmsecret";
 const DM_ACCESS_SESSION_KEY = "threadline:dm-access";
 const DM_ACCESS_GATE_ENABLED = false;
 const WORKSPACE_STORAGE_KEY = "threadline:last-workspace";
+const THREAD_EXPLORER_SELECTION_STORAGE_KEY = "threadline:thread-explorer-selection";
+const THREAD_EXPLORER_ORIENTATION_STORAGE_KEY = "threadline:thread-explorer-orientation";
+const SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY = "threadline:last-settings-backup-export";
+const SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY = "threadline:settings-backup-reminder-dismissed-at";
+const SETTINGS_BACKUP_REMINDER_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
+const SETTINGS_BACKUP_REMINDER_SNOOZE_MS = 24 * 60 * 60 * 1000;
+const THREAD_EXPLORER_ORIENTATION_VERTICAL = "vertical";
+const THREAD_EXPLORER_ORIENTATION_HORIZONTAL = "horizontal";
+const THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION = 8192;
+const THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS = 24000000;
+const THREAD_EXPLORER_SNAPSHOT_TILE_SIZE = 2048;
 const NETWORK_STAGE_SHAPE_STORAGE_KEY = "threadline:network-stage-shape";
 const NETWORK_STAGE_SHAPE_ROUND = "round";
 const NETWORK_STAGE_SHAPE_SQUIRCLE = "squircle";
 const APP_SHARE_TITLE = "Threadline";
 const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
+const DEFAULT_AVATAR_SVG = '<svg width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="none" xmlns="http://www.w3.org/2000/svg" data-testid="userAvatarFallback"><circle cx="12" cy="12" r="12" fill="#0070ff"></circle><circle cx="12" cy="9.5" r="3.5" fill="#fff"></circle><path stroke-linecap="round" stroke-linejoin="round" fill="#fff" d="M 12.058 22.784 C 9.422 22.784 7.007 21.836 5.137 20.262 C 5.667 17.988 8.534 16.25 11.99 16.25 C 15.494 16.25 18.391 18.036 18.864 20.357 C 17.01 21.874 14.64 22.784 12.058 22.784 Z"></path></svg>';
+const DEFAULT_AVATAR_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(DEFAULT_AVATAR_SVG)}`;
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.181",
-  cacheVersion: "v200",
-  label: "Repair encoding glitches",
+  appVersion: "0.4.222",
+  cacheVersion: "v241",
+  label: "Bump after AT Protocol extraction",
 });
+
+/**
+ * Applies an account avatar URL to an image with the Bluesky-style fallback.
+ * @param {HTMLImageElement|null} image - Target image element.
+ * @param {string} avatarUrl - Optional remote avatar URL.
+ * @param {string} altText - Accessible fallback text for the image.
+ * @returns {void}
+ */
+function setAvatarImage(image, avatarUrl, altText) {
+  if (!image) {
+    return;
+  }
+
+  const normalizedUrl = String(avatarUrl || "").trim();
+  image.alt = String(altText || "").trim();
+  image.onerror = () => {
+    image.onerror = null;
+    image.src = DEFAULT_AVATAR_URI;
+  };
+  if (normalizedUrl) {
+    image.src = normalizedUrl;
+  } else {
+    image.src = DEFAULT_AVATAR_URI;
+  }
+}
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Template helper utilities for DOM-based rendering.
+ * These functions help migrate from innerHTML string concatenation to structured DOM creation.
+ */
+
+/**
+ * Clones a template by ID and returns its content as a DocumentFragment.
+ * @param {string} templateId - The ID of the template element.
+ * @returns {DocumentFragment|null} The cloned template content, or null if template not found.
+ */
+function cloneTemplate(templateId) {
+  const template = document.getElementById(templateId);
+  if (!template) {
+    console.warn(`Template not found: ${templateId}`);
+    return null;
+  }
+  return template.content.cloneNode(true);
+}
+
+/**
+ * Sets text content on an element with proper escaping.
+ * @param {HTMLElement} element - The target element.
+ * @param {string} text - The text content to set.
+ * @returns {void}
+ */
+function setSafeText(element, text) {
+  if (element) {
+    element.textContent = text;
+  }
+}
+
+/**
+ * Sets HTML content on an element with proper escaping.
+ * Use sparingly - only when you need to render HTML from trusted sources.
+ * @param {HTMLElement} element - The target element.
+ * @param {string} html - The HTML content to set.
+ * @returns {void}
+ */
+function setSafeHtml(element, html) {
+  if (element) {
+    element.innerHTML = html;
+  }
+}
+
+/**
+ * Sets an attribute on an element.
+ * @param {HTMLElement} element - The target element.
+ * @param {string} name - The attribute name.
+ * @param {string} value - The attribute value.
+ * @returns {void}
+ */
+function setAttr(element, name, value) {
+  if (element && value !== undefined && value !== null) {
+    element.setAttribute(name, String(value));
+  }
+}
+
+/**
+ * Sets multiple attributes on an element.
+ * @param {HTMLElement} element - The target element.
+ * @param {Object} attrs - Object with attribute name-value pairs.
+ * @returns {void}
+ */
+function setAttrs(element, attrs) {
+  if (!element) return;
+  for (const [name, value] of Object.entries(attrs)) {
+    if (value !== undefined && value !== null) {
+      element.setAttribute(name, String(value));
+    }
+  }
+}
+
+/**
+ * Adds CSS classes to an element.
+ * @param {HTMLElement} element - The target element.
+ * @param {...string} classes - Class names to add.
+ * @returns {void}
+ */
+function addClasses(element, ...classes) {
+  if (element) {
+    element.classList.add(...classes.filter(Boolean));
+  }
+}
+
+/**
+ * Sets or toggles CSS classes based on a condition.
+ * @param {HTMLElement} element - The target element.
+ * @param {string} className - The class name.
+ * @param {boolean} condition - Whether to add or remove the class.
+ * @returns {void}
+ */
+function toggleClass(element, className, condition) {
+  if (element) {
+    element.classList.toggle(className, condition);
+  }
+}
+
+/**
+ * Creates an icon SVG element from a path definition.
+ * @param {string} pathD - The SVG path d attribute.
+ * @param {string} [viewBox="0 0 24 24"] - The SVG viewBox.
+ * @returns {SVGElement} The created SVG element.
+ */
+function createIconSvgElement(pathD, viewBox = "0 0 24 24") {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", viewBox);
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", pathD);
+  svg.appendChild(path);
+  return svg;
+}
+
+/**
+ * Appends multiple children to a parent element.
+ * @param {HTMLElement} parent - The parent element.
+ * @param {...HTMLElement} children - The child elements to append.
+ * @returns {void}
+ */
+function appendChildren(parent, ...children) {
+  if (parent) {
+    children.filter(Boolean).forEach((child) => parent.appendChild(child));
+  }
 }
 
 function normalizeStoredDesktopLayout(rawSidebarWidth, rawComposerWidth, rawLayoutVersion) {
@@ -122,6 +287,8 @@ const archiveButton = document.querySelector("#archive-button");
 const archiveLaunchNote = document.querySelector("#archive-launch-note");
 const networkButton = document.querySelector("#network-button");
 const networkLaunchNote = document.querySelector("#network-launch-note");
+const threadExplorerButton = document.querySelector("#thread-explorer-button");
+const threadExplorerLaunchNote = document.querySelector("#thread-explorer-launch-note");
 const analysisButton = document.querySelector("#analysis-button");
 const analysisLaunchNote = document.querySelector("#analysis-launch-note");
 const dmLaunchPanel = document.querySelector(".dm-launch-panel");
@@ -173,6 +340,7 @@ const checkUpdatesButton = document.querySelector("#check-updates-button");
 const reloadAppButton = document.querySelector("#reload-app-button");
 const updateStatus = document.querySelector("#update-status");
 const publishResultText = document.querySelector("#publish-result-text");
+const publishResultRateLimitNote = document.querySelector("#publish-result-rate-limit-note");
 const publishResultLink = document.querySelector("#publish-result-link");
 const progressTitle = document.querySelector("#progress-title");
 const progressMessage = document.querySelector("#progress-message");
@@ -192,6 +360,11 @@ const exportSettingsButton = document.querySelector("#export-settings-button");
 const importSettingsButton = document.querySelector("#import-settings-button");
 const importSettingsInput = document.querySelector("#import-settings-input");
 const backupStatus = document.querySelector("#backup-status");
+const backupReminderDialog = document.querySelector("#backup-reminder-dialog");
+const backupReminderMessage = document.querySelector("#backup-reminder-message");
+const backupReminderSaveButton = document.querySelector("#backup-reminder-save-button");
+const backupReminderLaterButton = document.querySelector("#backup-reminder-later-button");
+const backupReminderCloseTop = document.querySelector("#backup-reminder-close-top");
 const shareAppButton = document.querySelector("#share-app-button");
 const shareQrImage = document.querySelector("#share-qr-image");
 const shareUrl = document.querySelector("#share-url");
@@ -265,14 +438,19 @@ const hashtagCloud = document.querySelector("#hashtag-cloud");
 const hashtagSelectionNote = document.querySelector("#hashtag-selection-note");
 const archiveHashtagNote = document.querySelector("#archive-hashtag-note");
 const sourceText = document.querySelector("#source-text");
+const composerInputWarning = document.querySelector("#composer-input-warning");
 const composerLockNote = document.querySelector("#composer-lock-note");
 const composerUnlockButton = document.querySelector("#composer-unlock-button");
+const composerPostedNote = document.querySelector("#composer-posted-note");
+const composerPostedDismissButton = document.querySelector("#composer-posted-dismiss-button");
 const counterToggle = document.querySelector("#counter-toggle");
 const threadEmojiToggle = document.querySelector("#thread-emoji-toggle");
 const markerSpacingToggle = document.querySelector("#marker-spacing-toggle");
 const characterCount = document.querySelector("#character-count");
 const segmentSummary = document.querySelector("#segment-summary");
+const composerLengthWarning = document.querySelector("#composer-length-warning");
 const publishWarning = document.querySelector("#publish-warning");
+const publishRateLimitNote = document.querySelector("#publish-rate-limit-note");
 const segmentsPane = document.querySelector("#segments-pane");
 const segmentsList = document.querySelector("#segments-list");
 const segmentTemplate = document.querySelector("#segment-template");
@@ -302,8 +480,74 @@ const passwordField = document.querySelector("#password");
 const composerWorkspace = document.querySelector("#composer-workspace");
 const archiveWorkspace = document.querySelector("#archive-workspace");
 const networkWorkspace = document.querySelector("#network-workspace");
+const threadExplorerWorkspace = document.querySelector("#thread-explorer-workspace");
 const analysisWorkspace = document.querySelector("#analysis-workspace");
 const dmWorkspace = document.querySelector("#dm-workspace");
+const threadExplorerUrlButton = document.querySelector("#thread-explorer-url-button");
+const threadExplorerSearchesButton = document.querySelector("#thread-explorer-searches-button");
+const threadExplorerRefreshButton = document.querySelector("#thread-explorer-refresh-button");
+const threadExplorerFollowsButton = document.querySelector("#thread-explorer-follows-button");
+const threadExplorerMutualsButton = document.querySelector("#thread-explorer-mutuals-button");
+const threadExplorerFeedSelect = document.querySelector("#thread-explorer-feed-select");
+const threadExplorerFeedStatus = document.querySelector("#thread-explorer-feed-status");
+const threadExplorerFeedList = document.querySelector("#thread-explorer-feed-list");
+const threadExplorerThreadTitle = document.querySelector("#thread-explorer-thread-title");
+const threadExplorerThreadStatus = document.querySelector("#thread-explorer-thread-status");
+const threadExplorerThreadTree = document.querySelector("#thread-explorer-thread-tree");
+const threadExplorerThreadStage = document.querySelector("#thread-explorer-thread-stage");
+const threadExplorerRootButton = document.querySelector("#thread-explorer-root-button");
+const threadExplorerReloadThreadButton = document.querySelector("#thread-explorer-reload-thread-button");
+const threadExplorerSnapshotPngButton = document.querySelector("#thread-explorer-snapshot-png-button");
+const threadExplorerSaveButton = document.querySelector("#thread-explorer-save-button");
+const threadExplorerFavoritesButton = document.querySelector("#thread-explorer-favorites-button");
+const threadExplorerZoomOutButton = document.querySelector("#thread-explorer-zoom-out-button");
+const threadExplorerZoomResetButton = document.querySelector("#thread-explorer-zoom-reset-button");
+const threadExplorerZoomInButton = document.querySelector("#thread-explorer-zoom-in-button");
+const threadExplorerOrientationButton = document.querySelector("#thread-explorer-orientation-button");
+const threadExplorerCollapseButton = document.querySelector("#thread-explorer-collapse-button");
+const threadExplorerExpandButton = document.querySelector("#thread-explorer-expand-button");
+const threadExplorerFeedItemTemplate = document.querySelector("#thread-explorer-feed-item-template");
+const threadExplorerFeedOptionTemplate = document.querySelector("#thread-explorer-feed-option-template");
+const threadExplorerNodeTemplate = document.querySelector("#thread-explorer-node-template");
+const threadExplorerImageTemplate = document.querySelector("#thread-explorer-image-template");
+const threadExplorerFavoriteItemTemplate = document.querySelector("#thread-explorer-favorite-item-template");
+const savedSearchItemTemplate = document.querySelector("#saved-search-item-template");
+const threadExplorerActorItemTemplate = document.querySelector("#thread-explorer-actor-item-template");
+const threadExplorerGalleryThumbTemplate = document.querySelector("#thread-explorer-gallery-thumb-template");
+const threadExplorerUrlDialog = document.querySelector("#thread-explorer-url-dialog");
+const threadExplorerUrlCloseTopButton = document.querySelector("#thread-explorer-url-close-top-button");
+const threadExplorerUrlCloseButton = document.querySelector("#thread-explorer-url-close-button");
+const threadExplorerUrlInput = document.querySelector("#thread-explorer-url-input");
+const threadExplorerUrlLoadButton = document.querySelector("#thread-explorer-url-load-button");
+const threadExplorerUrlStatus = document.querySelector("#thread-explorer-url-status");
+const threadExplorerFavoritesDialog = document.querySelector("#thread-explorer-favorites-dialog");
+const threadExplorerFavoritesCloseButton = document.querySelector("#thread-explorer-favorites-close-button");
+const threadExplorerFavoritesStatus = document.querySelector("#thread-explorer-favorites-status");
+const threadExplorerFavoritesList = document.querySelector("#thread-explorer-favorites-list");
+const savedSearchesDialog = document.querySelector("#saved-searches-dialog");
+const savedSearchesCloseButton = document.querySelector("#saved-searches-close-button");
+const savedSearchUrlInput = document.querySelector("#saved-search-url-input");
+const savedSearchAddButton = document.querySelector("#saved-search-add-button");
+const savedSearchesStatus = document.querySelector("#saved-searches-status");
+const savedSearchesList = document.querySelector("#saved-searches-list");
+const threadExplorerReactionsDialog = document.querySelector("#thread-explorer-reactions-dialog");
+const threadExplorerReactionsCloseButton = document.querySelector("#thread-explorer-reactions-close-button");
+const threadExplorerReactionsTitle = document.querySelector("#thread-explorer-reactions-title");
+const threadExplorerReactionsStatus = document.querySelector("#thread-explorer-reactions-status");
+const threadExplorerReactionsList = document.querySelector("#thread-explorer-reactions-list");
+const threadExplorerRepliesDialog = document.querySelector("#thread-explorer-replies-dialog");
+const threadExplorerRepliesCloseButton = document.querySelector("#thread-explorer-replies-close-button");
+const threadExplorerRepliesTitle = document.querySelector("#thread-explorer-replies-title");
+const threadExplorerRepliesStatus = document.querySelector("#thread-explorer-replies-status");
+const threadExplorerRepliesList = document.querySelector("#thread-explorer-replies-list");
+const threadExplorerGalleryDialog = document.querySelector("#thread-explorer-gallery-dialog");
+const threadExplorerGalleryCloseButton = document.querySelector("#thread-explorer-gallery-close-button");
+const threadExplorerGalleryCloseBottomButton = document.querySelector("#thread-explorer-gallery-close-bottom-button");
+const threadExplorerGalleryTitle = document.querySelector("#thread-explorer-gallery-title");
+const threadExplorerGalleryImage = document.querySelector("#thread-explorer-gallery-image");
+const threadExplorerGalleryCaption = document.querySelector("#thread-explorer-gallery-caption");
+const threadExplorerGalleryThumbs = document.querySelector("#thread-explorer-gallery-thumbs");
+const threadExplorerGalleryFullscreenButton = document.querySelector("#thread-explorer-gallery-fullscreen-button");
 const archiveScopeSelect = document.querySelector("#archive-scope-select");
 const archiveSourceInput = document.querySelector("#archive-source-input");
 const archiveSourceStatus = document.querySelector("#archive-source-status");
@@ -326,6 +570,7 @@ const archiveThreadUrlInput = document.querySelector("#archive-thread-url-input"
 const archiveThreadImportModeSelect = document.querySelector("#archive-thread-import-mode-select");
 const archiveLoadThreadUrlButton = document.querySelector("#archive-load-thread-url-button");
 const archiveCheckPostEditButton = document.querySelector("#archive-check-post-edit-button");
+const archiveSavedSearchesButton = document.querySelector("#archive-saved-searches-button");
 const archiveThreadUrlNote = document.querySelector("#archive-thread-url-note");
 const archiveNextWaveButton = document.querySelector("#archive-next-wave-button");
 const archiveExportZipButton = document.querySelector("#archive-export-zip-button");
@@ -491,6 +736,7 @@ let hashtagPlacement = "first";
 let archiveSelectedHashtags = [];
 let archiveHashtagScope = "thread";
 let archiveSourceProfile = null;
+let archiveSavedSearchId = "";
 let archiveSourceValidationToken = 0;
 let archiveSourceValidationTimer = null;
 let postingHistory = [];
@@ -499,6 +745,8 @@ let selectedPostLanguages = [];
 let appendThreadIntro = false;
 let appendThreadEmoji = false;
 let addMarkerSpacing = false;
+let graphemeSegmenter = null;
+let lastPublishRateLimit = null;
 let replyMode = DEFAULT_POST_INTERACTION_SETTINGS.replyMode;
 let replyAllowFollowers = DEFAULT_POST_INTERACTION_SETTINGS.allowFollowers;
 let replyAllowFollowing = DEFAULT_POST_INTERACTION_SETTINGS.allowFollowing;
@@ -506,6 +754,12 @@ let replyAllowMentioned = DEFAULT_POST_INTERACTION_SETTINGS.allowMentioned;
 let quotePostsAllowed = DEFAULT_POST_INTERACTION_SETTINGS.quotePostsAllowed;
 let segmentOverrides = null;
 let composerLocked = false;
+let composerPosted = false;
+let composerInputWarningPendingTruncation = false;
+let composerInputEventSuppressed = false;
+let composerInputWasTruncated = false;
+let lastComposerTruncationAlertAt = 0;
+let composerTruncationDialogTimer = 0;
 let backupStatusTimer = null;
 let shareStatusTimer = null;
 let editingHashtagNormalized = null;
@@ -593,6 +847,31 @@ let networkCommonMutualsTargetDid = "";
 let networkCommonMutualsDids = new Set();
 let networkCommonMutualsLoadingDid = "";
 let networkCommonMutualsHasMore = false;
+let threadExplorerSource = "follows";
+let threadExplorerFeedSources = [];
+let threadExplorerFeedSourcesLoaded = false;
+let threadExplorerFeedSourcesLoading = false;
+let threadExplorerFeedSourcesAccountDid = "";
+let threadExplorerItems = [];
+let threadExplorerCursor = "";
+let threadExplorerHasMore = true;
+let threadExplorerSelectedUri = "";
+let threadExplorerTree = null;
+let threadExplorerLoadingFeed = false;
+let threadExplorerLoadingThread = false;
+let threadExplorerCollapsedUris = new Set();
+let threadExplorerFeedError = "";
+let threadExplorerThreadError = "";
+let threadExplorerZoom = 1;
+let threadExplorerDragState = null;
+let threadExplorerOrientation = THREAD_EXPLORER_ORIENTATION_VERTICAL;
+let threadExplorerEdgeRenderFrame = 0;
+let threadExplorerFavorites = [];
+let savedSearches = [];
+let savedSearchDialogContext = "threadExplorer";
+let threadExplorerReactionsLoading = false;
+let threadExplorerGalleryImages = [];
+let threadExplorerGalleryIndex = 0;
 let analysisLoading = false;
 let analysisStatusLine = "";
 let analysisAccountDataA = null;
@@ -813,6 +1092,233 @@ function localizeLoginErrorMessage(error) {
 function setStatus(message, tone = "neutral") {
   statusText.textContent = message;
   statusText.style.color = tone === "error" ? "var(--danger)" : "var(--text)";
+}
+
+/**
+ * Shows or clears a local warning directly below the composer textarea.
+ * @param {string} message - Warning text to show. Empty text hides the note.
+ * @param {string} tone - Visual tone for the note.
+ * @returns {void} No return value.
+ */
+function setComposerInputWarning(message = "", tone = "error") {
+  if (!composerInputWarning) {
+    return;
+  }
+
+  const text = String(message || "").trim();
+  composerInputWarning.hidden = text.length === 0;
+  composerInputWarning.textContent = text;
+  if (text.length === 0) {
+    delete composerInputWarning.dataset.tone;
+    return;
+  }
+
+  composerInputWarning.dataset.tone = tone;
+}
+
+/**
+ * Returns the localized composer hard-limit label for warning messages.
+ * @param {void} - No parameters.
+ * @returns {string} Localized representation of the composer limit.
+ */
+function getComposerLimitLabel() {
+  return new Intl.NumberFormat(currentLocale || undefined).format(MAX_COMPOSER_GRAPHEME_LENGTH);
+}
+
+/**
+ * Updates the composer warning below the textarea based on the current text length.
+ * @param {boolean} wasTruncated - Whether the latest input had to be truncated.
+ * @returns {void} No return value.
+ */
+function updateComposerInputWarning(wasTruncated = false) {
+  const composerLength = countGraphemes(sourceText.value);
+  const composerLimitLabel = getComposerLimitLabel();
+  const shouldShowTruncationWarning = wasTruncated || composerInputWasTruncated;
+
+  if (shouldShowTruncationWarning) {
+    setComposerInputWarning(t("composerTextTruncated", { count: composerLimitLabel }), "error");
+    return;
+  }
+
+  if (composerLength > MAX_COMPOSER_GRAPHEME_LENGTH) {
+    setComposerInputWarning(t("composerTextTooLong", { count: composerLimitLabel }), "error");
+    return;
+  }
+
+  setComposerInputWarning("");
+}
+
+/**
+ * Normalizes rate-limit metadata received from the service worker.
+ * @param {object|null} value - Raw rate-limit metadata.
+ * @returns {object|null} Sanitized rate-limit metadata or null when empty.
+ */
+function normalizePublishRateLimit(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  let limit = null;
+  if (Number.isFinite(Number(value.limit))) {
+    limit = Number(value.limit);
+  }
+
+  let remaining = null;
+  if (Number.isFinite(Number(value.remaining))) {
+    remaining = Number(value.remaining);
+  }
+
+  const normalized = {
+    limit,
+    remaining,
+    resetAt: String(value.resetAt || "").trim(),
+    policy: String(value.policy || "").trim(),
+    retryAfter: String(value.retryAfter || "").trim(),
+  };
+
+  if (
+    normalized.limit === null
+    && normalized.remaining === null
+    && !normalized.resetAt
+    && !normalized.policy
+    && !normalized.retryAfter
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+/**
+ * Formats a rate-limit policy header into a short human-readable window label.
+ * @param {string} policy - Raw `ratelimit-policy` header value.
+ * @returns {string} Localized compact policy description, or an empty string.
+ */
+function formatPublishRateLimitPolicy(policy) {
+  const normalizedPolicy = String(policy || "").trim();
+  if (!normalizedPolicy) {
+    return "";
+  }
+
+  const windowMatch = normalizedPolicy.match(/(?:^|;)w=(\d+)/i);
+  if (!windowMatch) {
+    return normalizedPolicy;
+  }
+
+  const windowSeconds = Number.parseInt(windowMatch[1], 10);
+  if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) {
+    return normalizedPolicy;
+  }
+
+  if (windowSeconds % 86400 === 0) {
+    return t("publishRateLimitWindowDays", { count: String(windowSeconds / 86400) });
+  }
+  if (windowSeconds % 3600 === 0) {
+    return t("publishRateLimitWindowHours", { count: String(windowSeconds / 3600) });
+  }
+  if (windowSeconds % 60 === 0) {
+    return t("publishRateLimitWindowMinutes", { count: String(windowSeconds / 60) });
+  }
+
+  return t("publishRateLimitWindowSeconds", { count: String(windowSeconds) });
+}
+
+/**
+ * Formats an ISO reset timestamp for the compact publish status note.
+ * @param {string} resetAt - ISO timestamp from the last observed rate-limit header.
+ * @returns {string} Localized short time, or an empty string.
+ */
+function formatPublishRateLimitResetAt(resetAt) {
+  const normalizedResetAt = String(resetAt || "").trim();
+  if (!normalizedResetAt) {
+    return "";
+  }
+
+  const parsedResetAt = Date.parse(normalizedResetAt);
+  if (!Number.isFinite(parsedResetAt)) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsedResetAt);
+}
+
+/**
+ * Renders the latest observed server-side rate-limit note below the publish button.
+ * @param {object|null} value - Raw or normalized rate-limit metadata.
+ * @returns {void} No return value.
+ */
+function renderPublishRateLimitNote(value) {
+  if (!publishRateLimitNote) {
+    return;
+  }
+
+  const message = buildPublishRateLimitMessage(value, false);
+  if (!message) {
+    publishRateLimitNote.hidden = true;
+    publishRateLimitNote.textContent = "";
+    publishRateLimitNote.dataset.tone = "neutral";
+    return;
+  }
+
+  publishRateLimitNote.hidden = false;
+  publishRateLimitNote.dataset.tone = "neutral";
+  publishRateLimitNote.textContent = message;
+}
+
+/**
+ * Builds a compact publish rate-limit line for success dialogs and inline notes.
+ * @param {object|null} value - Raw or normalized rate-limit metadata.
+ * @param {boolean} includeUnavailable - Whether to return a fallback message when no headers exist.
+ * @returns {string} Localized note text, or an empty string when nothing should be shown.
+ */
+function buildPublishRateLimitMessage(value, includeUnavailable = false) {
+  const rateLimit = normalizePublishRateLimit(value);
+  if (!rateLimit) {
+    if (includeUnavailable) {
+      return t("publishRateLimitUnavailable");
+    }
+    return "";
+  }
+
+  const parts = [];
+  if (rateLimit.remaining !== null && rateLimit.limit !== null) {
+    parts.push(t("publishRateLimitRemaining", {
+      remaining: String(rateLimit.remaining),
+      limit: String(rateLimit.limit),
+    }));
+  } else if (rateLimit.limit !== null) {
+    parts.push(t("publishRateLimitLimit", {
+      limit: String(rateLimit.limit),
+    }));
+  }
+
+  const policyLabel = formatPublishRateLimitPolicy(rateLimit.policy);
+  if (policyLabel) {
+    parts.push(t("publishRateLimitWindow", { value: policyLabel }));
+  }
+
+  const resetLabel = formatPublishRateLimitResetAt(rateLimit.resetAt);
+  if (resetLabel) {
+    parts.push(t("publishRateLimitResetAt", { time: resetLabel }));
+  }
+
+  if (!resetLabel && rateLimit.retryAfter) {
+    parts.push(t("publishRateLimitRetryAfter", { value: rateLimit.retryAfter }));
+  }
+
+  if (parts.length === 0) {
+    if (includeUnavailable) {
+      return t("publishRateLimitUnavailable");
+    }
+    return "";
+  }
+
+  return t("publishRateLimitLabel", {
+    details: parts.join(" · "),
+  });
 }
 
 function setBusy(button, isBusy, busyLabel, idleLabel) {
@@ -1699,15 +2205,10 @@ function renderAccountSwitcher() {
     }
 
     const avatarUri = getStoredAccountAvatarUri(account);
-    const avatar = document.createElement(avatarUri ? "img" : "span");
+    const avatar = document.createElement("img");
     avatar.className = "account-chip-avatar";
-    if (avatarUri) {
-      avatar.src = avatarUri;
-      avatar.alt = account.handle || account.identifier || "account";
-      avatar.loading = "lazy";
-    } else {
-      avatar.textContent = getAccountInitials(account);
-    }
+    avatar.loading = "lazy";
+    setAvatarImage(avatar, avatarUri, account.handle || account.identifier || "account");
 
     const label = document.createElement("span");
     label.className = "account-chip-label";
@@ -1891,21 +2392,32 @@ function updateAuthButtons() {
   composerButton.disabled = false;
   archiveButton.disabled = !isAuthenticated;
   networkButton.disabled = !isAuthenticated;
+  threadExplorerButton.disabled = !isAuthenticated;
   analysisButton.disabled = !isAuthenticated;
   dmButton.disabled = !isAuthenticated || !isDmAccessAvailable();
   [
     [composerButton, currentWorkspace === "composer"],
     [archiveButton, currentWorkspace === "archive"],
     [networkButton, currentWorkspace === "network"],
+    [threadExplorerButton, currentWorkspace === "threadExplorer"],
     [analysisButton, currentWorkspace === "analysis"],
     [dmButton, currentWorkspace === "dm"],
   ].forEach(([button, isActive]) => {
+    let pressed = "false";
+    if (isActive) {
+      pressed = "true";
+    }
     button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    button.setAttribute("aria-pressed", pressed);
   });
   composerLaunchNote.textContent = t("composerLaunchNote");
   archiveLaunchNote.textContent = isAuthenticated ? t("archiveLaunchEnabledNote") : t("archiveLaunchDisabledNote");
   networkLaunchNote.textContent = isAuthenticated ? t("networkLaunchEnabledNote") : t("networkLaunchDisabledNote");
+  if (isAuthenticated) {
+    threadExplorerLaunchNote.textContent = t("threadExplorerLaunchEnabledNote");
+  } else {
+    threadExplorerLaunchNote.textContent = t("threadExplorerLaunchDisabledNote");
+  }
   analysisLaunchNote.textContent = isAuthenticated ? t("analysisLaunchEnabledNote") : t("analysisLaunchDisabledNote");
   dmLaunchNote.textContent = isAuthenticated ? t("dmLaunchEnabledNote") : t("dmLaunchDisabledNote");
   renderAccountSwitcher();
@@ -1918,7 +2430,7 @@ function applyDisconnectedState(showStatus = true) {
   authAccountDid = "";
   resetNetworkState();
   updateAuthButtons();
-  if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network" || currentWorkspace === "analysis") {
+  if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network" || currentWorkspace === "threadExplorer" || currentWorkspace === "analysis") {
     showComposerWorkspace({ persist: false });
   }
 
@@ -1955,6 +2467,230 @@ function getStoredWorkspacePreference() {
   } catch {
     return "composer";
   }
+}
+
+/**
+ * Renders the selected saved search hint in the archive special tools area.
+ * @returns {void}
+ */
+function renderArchiveSavedSearchNote() {
+  if (!archiveThreadUrlNote) {
+    return;
+  }
+
+  const search = getSavedSearchById(archiveSavedSearchId);
+  if (!search) {
+    archiveThreadUrlNote.textContent = t("archiveThreadUrlHint");
+    return;
+  }
+
+  archiveThreadUrlNote.textContent = t("archiveSavedSearchSelected", {
+    label: search.label || buildSavedSearchLabel(search),
+    url: search.sourceUrl,
+  });
+}
+
+/**
+ * Returns a normalized Thread Explorer feed source.
+ * @param {string} source - Raw source name from state or storage.
+ * @returns {string} A timeline, feed, or saved-search source.
+ */
+function normalizeThreadExplorerSource(source) {
+  const normalizedSource = String(source || "").trim();
+  if (normalizedSource === "mutuals") {
+    return "mutuals";
+  }
+  if (normalizedSource.startsWith("feed:")) {
+    const feedUri = normalizedSource.slice(5).trim();
+    if (isThreadExplorerFeedUri(feedUri)) {
+      return `feed:${feedUri}`;
+    }
+  }
+  if (normalizedSource.startsWith("search:")) {
+    const searchId = normalizedSource.slice(7).trim();
+    if (getSavedSearchById(searchId)) {
+      return `search:${searchId}`;
+    }
+  }
+  return "follows";
+}
+
+/**
+ * Checks whether a value is an AT URI for a Bluesky feed generator.
+ * @param {string} value - Raw URI candidate.
+ * @returns {boolean} True when the URI looks like a feed generator URI.
+ */
+function isThreadExplorerFeedUri(value) {
+  return /^at:\/\/[^/]+\/app\.bsky\.feed\.generator\/[^/]+$/i.test(String(value || "").trim());
+}
+
+/**
+ * Converts a feed generator URI into the internal Thread Explorer source value.
+ * @param {string} uri - Feed generator AT URI.
+ * @returns {string} Source value, or an empty string when invalid.
+ */
+function buildThreadExplorerFeedSource(uri) {
+  const feedUri = String(uri || "").trim();
+  if (!isThreadExplorerFeedUri(feedUri)) {
+    return "";
+  }
+  return `feed:${feedUri}`;
+}
+
+/**
+ * Extracts a feed generator URI from a Thread Explorer source value.
+ * @param {string} source - Thread Explorer source value.
+ * @returns {string} Feed generator AT URI, or an empty string.
+ */
+function getThreadExplorerFeedUriFromSource(source) {
+  const normalizedSource = normalizeThreadExplorerSource(source);
+  if (!normalizedSource.startsWith("feed:")) {
+    return "";
+  }
+  return normalizedSource.slice(5);
+}
+
+/**
+ * Extracts a saved search id from a Thread Explorer source value.
+ * @param {string} source - Thread Explorer source value.
+ * @returns {string} Saved search id or an empty string.
+ */
+function getThreadExplorerSearchIdFromSource(source) {
+  const normalizedSource = normalizeThreadExplorerSource(source);
+  if (!normalizedSource.startsWith("search:")) {
+    return "";
+  }
+  return normalizedSource.slice(7);
+}
+
+/**
+ * Saves the currently selected Thread Explorer post for reload recovery.
+ * @param {string} uri - AT URI of the currently opened post.
+ * @returns {void}
+ */
+function persistThreadExplorerSelectionPreference(uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(THREAD_EXPLORER_SELECTION_STORAGE_KEY, JSON.stringify({
+      accountDid: authAccountDid || "",
+      source: normalizeThreadExplorerSource(threadExplorerSource),
+      selectedUri: normalizedUri,
+      updatedAt: new Date().toISOString(),
+    }));
+  } catch {
+    // Ignore storage errors in private or restricted contexts.
+  }
+}
+
+/**
+ * Removes the saved Thread Explorer post selection.
+ * @returns {void}
+ */
+function clearThreadExplorerSelectionPreference() {
+  try {
+    window.localStorage.removeItem(THREAD_EXPLORER_SELECTION_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors in private or restricted contexts.
+  }
+}
+
+/**
+ * Reads the saved Thread Explorer post selection for the active account.
+ * @returns {object|null} Saved source and selected URI, or null when unavailable.
+ */
+function getStoredThreadExplorerSelectionPreference() {
+  try {
+    const raw = String(window.localStorage.getItem(THREAD_EXPLORER_SELECTION_STORAGE_KEY) || "").trim();
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    const selectedUri = String(parsed?.selectedUri || "").trim();
+    const accountDid = String(parsed?.accountDid || "").trim();
+    if (!selectedUri) {
+      return null;
+    }
+    if (accountDid && authAccountDid && accountDid !== authAccountDid) {
+      return null;
+    }
+
+    return {
+      source: normalizeThreadExplorerSource(parsed?.source),
+      selectedUri,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Restores the saved Thread Explorer source and selected URI into memory.
+ * @returns {string} Restored selected URI, or an empty string when none exists.
+ */
+function restoreThreadExplorerSelectionPreference() {
+  const storedSelection = getStoredThreadExplorerSelectionPreference();
+  if (!storedSelection) {
+    return "";
+  }
+
+  threadExplorerSource = storedSelection.source;
+  threadExplorerSelectedUri = storedSelection.selectedUri;
+  return storedSelection.selectedUri;
+}
+
+/**
+ * Returns a normalized Thread Explorer orientation.
+ * @param {string} orientation - Raw orientation from state or storage.
+ * @returns {string} Either "vertical" or "horizontal".
+ */
+function normalizeThreadExplorerOrientation(orientation) {
+  if (orientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
+    return THREAD_EXPLORER_ORIENTATION_HORIZONTAL;
+  }
+  return THREAD_EXPLORER_ORIENTATION_VERTICAL;
+}
+
+/**
+ * Saves the current Thread Explorer layout orientation.
+ * @param {string} orientation - Orientation to persist.
+ * @returns {void}
+ */
+function persistThreadExplorerOrientationPreference(orientation) {
+  try {
+    window.localStorage.setItem(
+      THREAD_EXPLORER_ORIENTATION_STORAGE_KEY,
+      normalizeThreadExplorerOrientation(orientation),
+    );
+  } catch {
+    // Ignore storage errors in private or restricted contexts.
+  }
+}
+
+/**
+ * Reads the saved Thread Explorer layout orientation.
+ * @returns {string} Saved orientation, or the vertical default.
+ */
+function getStoredThreadExplorerOrientationPreference() {
+  try {
+    const value = String(window.localStorage.getItem(THREAD_EXPLORER_ORIENTATION_STORAGE_KEY) || "").trim();
+    return normalizeThreadExplorerOrientation(value);
+  } catch {
+    return THREAD_EXPLORER_ORIENTATION_VERTICAL;
+  }
+}
+
+/**
+ * Restores the saved Thread Explorer layout orientation into memory.
+ * @returns {string} Restored orientation.
+ */
+function restoreThreadExplorerOrientationPreference() {
+  threadExplorerOrientation = getStoredThreadExplorerOrientationPreference();
+  return threadExplorerOrientation;
 }
 
 async function enterNetworkStageMode() {
@@ -2037,6 +2773,10 @@ function restorePreferredWorkspaceIfPossible() {
   }
   if (preferred === "network") {
     showNetworkWorkspace();
+    return;
+  }
+  if (preferred === "threadExplorer") {
+    showThreadExplorerWorkspace();
     return;
   }
   if (preferred === "analysis") {
@@ -2409,6 +3149,7 @@ function showArchiveWorkspace() {
   persistWorkspacePreference(currentWorkspace);
   composerWorkspace.hidden = true;
   networkWorkspace.hidden = true;
+  threadExplorerWorkspace.hidden = true;
   analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   archiveWorkspace.hidden = false;
@@ -2428,6 +3169,7 @@ function showNetworkWorkspace() {
   persistWorkspacePreference(currentWorkspace);
   composerWorkspace.hidden = true;
   archiveWorkspace.hidden = true;
+  threadExplorerWorkspace.hidden = true;
   analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   networkWorkspace.hidden = false;
@@ -2436,6 +3178,34 @@ function showNetworkWorkspace() {
   renderNetworkWorkspace();
   if (!networkNodes.size && !networkLoading) {
     void loadNetworkWave({ silentErrors: false });
+  }
+}
+
+/**
+ * Shows the live Thread Explorer workspace and loads the first feed slice when needed.
+ * @returns {void}
+ */
+function showThreadExplorerWorkspace() {
+  if (!authAccount) {
+    return;
+  }
+
+  restoreThreadExplorerSelectionPreference();
+  restoreThreadExplorerOrientationPreference();
+  currentWorkspace = "threadExplorer";
+  persistWorkspacePreference(currentWorkspace);
+  composerWorkspace.hidden = true;
+  archiveWorkspace.hidden = true;
+  networkWorkspace.hidden = true;
+  analysisWorkspace.hidden = true;
+  dmWorkspace.hidden = true;
+  threadExplorerWorkspace.hidden = false;
+  applyHashtagPaneContext();
+  updateAuthButtons();
+  renderThreadExplorerWorkspace();
+  void loadThreadExplorerFeedSources();
+  if (!threadExplorerItems.length && !threadExplorerLoadingFeed) {
+    void loadThreadExplorerFeed({ reset: true });
   }
 }
 
@@ -2449,6 +3219,7 @@ function showAnalysisWorkspace() {
   composerWorkspace.hidden = true;
   archiveWorkspace.hidden = true;
   networkWorkspace.hidden = true;
+  threadExplorerWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   analysisWorkspace.hidden = false;
   applyHashtagPaneContext();
@@ -2466,6 +3237,7 @@ function showDmWorkspace() {
   composerWorkspace.hidden = true;
   archiveWorkspace.hidden = true;
   networkWorkspace.hidden = true;
+  threadExplorerWorkspace.hidden = true;
   analysisWorkspace.hidden = true;
   dmWorkspace.hidden = false;
   applyHashtagPaneContext();
@@ -2487,6 +3259,7 @@ function showComposerWorkspace(options = {}) {
   }
   archiveWorkspace.hidden = true;
   networkWorkspace.hidden = true;
+  threadExplorerWorkspace.hidden = true;
   analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   composerWorkspace.hidden = false;
@@ -2503,6 +3276,3993 @@ function setNetworkStatus(message) {
 
 function formatCount(value) {
   return new Intl.NumberFormat(currentLocale).format(Number(value) || 0);
+}
+
+/**
+ * Returns the visible label for a Thread Explorer actor.
+ * @param {object} actor - Normalized Thread Explorer actor data.
+ * @returns {string} Display name, handle, DID, or fallback label.
+ */
+function getThreadExplorerActorLabel(actor) {
+  const displayName = String(actor?.displayName || "").trim();
+  if (displayName) {
+    return displayName;
+  }
+
+  const handle = String(actor?.handle || "").trim();
+  if (handle) {
+    return `@${handle}`;
+  }
+
+  const did = String(actor?.did || "").trim();
+  if (did) {
+    return did;
+  }
+
+  return t("threadExplorerUnknownAuthor");
+}
+
+/**
+ * Returns a compact preview string for a Thread Explorer post.
+ * @param {object} post - Normalized Thread Explorer post data.
+ * @returns {string} Short text suitable for feed buttons.
+ */
+function getThreadExplorerPreviewText(post) {
+  const text = String(post?.text || "").replace(/\s+/g, " ").trim();
+  if (!text) {
+    return t("threadExplorerNoText");
+  }
+  if (text.length <= 220) {
+    return text;
+  }
+  return `${text.slice(0, 217)}...`;
+}
+
+/**
+ * Formats a Thread Explorer timestamp for the active locale.
+ * @param {string} value - ISO timestamp from Bluesky.
+ * @returns {string} Localized date/time text or an empty string.
+ */
+function formatThreadExplorerDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+
+  return new Intl.DateTimeFormat(currentLocale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+/**
+ * Counts all posts in a normalized Thread Explorer tree.
+ * @param {object|null} node - Root node from the Service Worker.
+ * @returns {number} Number of posts contained in the tree.
+ */
+function countThreadExplorerPosts(node) {
+  if (!node) {
+    return 0;
+  }
+
+  let count = 0;
+  if (node.post?.isDeletedThreadAnchor !== true) {
+    count = 1;
+  }
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => {
+      count += countThreadExplorerPosts(reply);
+    });
+  }
+  return count;
+}
+
+/**
+ * Normalizes locally saved Thread Explorer favorites.
+ * @param {Array<object>} favorites - Raw favorite entries from state or backup.
+ * @returns {Array<object>} Clean favorite entries with stable fields.
+ */
+function normalizeThreadExplorerFavorites(favorites) {
+  if (!Array.isArray(favorites)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const normalized = [];
+  favorites.forEach((favorite) => {
+    const rootUri = String(favorite?.rootUri || favorite?.uri || "").trim();
+    if (!rootUri || seen.has(rootUri)) {
+      return;
+    }
+    seen.add(rootUri);
+    normalized.push({
+      rootUri,
+      selectedUri: String(favorite?.selectedUri || rootUri).trim(),
+      authorHandle: String(favorite?.authorHandle || "").trim(),
+      authorName: String(favorite?.authorName || "").trim(),
+      text: String(favorite?.text || "").trim().slice(0, 260),
+      createdAt: String(favorite?.createdAt || "").trim(),
+      savedAt: String(favorite?.savedAt || "").trim(),
+      webApp: String(favorite?.webApp || "").trim(),
+    });
+  });
+  return normalized.slice(0, 100);
+}
+
+/**
+ * Reads one string parameter from a URLSearchParams object.
+ * @param {URLSearchParams} params - Search params from a Bluesky search URL.
+ * @param {string} name - Parameter name.
+ * @returns {string} Trimmed parameter value.
+ */
+function getSavedSearchStringParam(params, name) {
+  return String(params.get(name) || "").trim();
+}
+
+/**
+ * Normalizes a Bluesky search sort value.
+ * @param {string} value - Raw sort value from URL or saved search data.
+ * @returns {string} Either "latest" or "top".
+ */
+function normalizeSavedSearchSort(value) {
+  if (String(value || "").trim() === "top") {
+    return "top";
+  }
+  return "latest";
+}
+
+/**
+ * Parses a shared Bluesky search URL into searchPosts parameters.
+ * @param {string} sourceUrl - Shared bsky.app search URL.
+ * @returns {object} Normalized source URL and API search params.
+ */
+function parseSavedSearchUrl(sourceUrl) {
+  const raw = String(sourceUrl || "").trim();
+  if (!raw) {
+    throw new Error(t("savedSearchUrlInvalid"));
+  }
+
+  let parsedUrl = null;
+  try {
+    parsedUrl = new URL(raw);
+  } catch {
+    throw new Error(t("savedSearchUrlInvalid"));
+  }
+
+  const path = parsedUrl.pathname.replace(/\/+$/g, "");
+  const host = parsedUrl.hostname.toLowerCase();
+  if (host !== "bsky.app" && !host.endsWith(".bsky.app")) {
+    throw new Error(t("savedSearchUrlInvalid"));
+  }
+  if (path !== "/search") {
+    throw new Error(t("savedSearchUrlInvalid"));
+  }
+
+  const params = parsedUrl.searchParams;
+  const searchParams = {
+    q: getSavedSearchStringParam(params, "q"),
+    tag: params.getAll("tag").map((tag) => String(tag || "").trim().replace(/^#+/, "")).filter(Boolean),
+    sort: normalizeSavedSearchSort(getSavedSearchStringParam(params, "sort")),
+    since: getSavedSearchStringParam(params, "since"),
+    until: getSavedSearchStringParam(params, "until"),
+    author: getSavedSearchStringParam(params, "author"),
+    mentions: getSavedSearchStringParam(params, "mentions"),
+    lang: getSavedSearchStringParam(params, "lang"),
+    domain: getSavedSearchStringParam(params, "domain"),
+    url: getSavedSearchStringParam(params, "url"),
+  };
+
+  if (!searchParams.q && searchParams.tag.length === 0 && !searchParams.author && !searchParams.domain && !searchParams.url) {
+    throw new Error(t("savedSearchUrlInvalid"));
+  }
+
+  return {
+    sourceUrl: parsedUrl.toString(),
+    params: searchParams,
+  };
+}
+
+/**
+ * Builds a stable label for a saved search.
+ * @param {object} search - Normalized saved search entry.
+ * @returns {string} Human-readable search label.
+ */
+function buildSavedSearchLabel(search = {}) {
+  const params = search.params || {};
+  const q = String(params.q || "").trim();
+  if (q) {
+    return q;
+  }
+  let tags = [];
+  if (Array.isArray(params.tag)) {
+    tags = params.tag;
+  }
+  if (tags.length > 0) {
+    return `#${tags[0]}`;
+  }
+  const author = String(params.author || "").trim();
+  if (author) {
+    return `@${author.replace(/^@+/, "")}`;
+  }
+  const domain = String(params.domain || "").trim();
+  if (domain) {
+    return domain;
+  }
+  const url = String(params.url || "").trim();
+  if (url) {
+    return url;
+  }
+  return t("savedSearchFallbackTitle");
+}
+
+/**
+ * Builds a compact metadata line for a saved search.
+ * @param {object} search - Normalized saved search entry.
+ * @returns {string} Metadata summary for list display.
+ */
+function buildSavedSearchMeta(search = {}) {
+  const params = search.params || {};
+  const parts = [];
+  let tags = [];
+  if (Array.isArray(params.tag)) {
+    tags = params.tag;
+  }
+  tags.forEach((tag) => {
+    parts.push(`#${tag}`);
+  });
+  if (params.sort) {
+    parts.push(params.sort);
+  }
+  ["author", "mentions", "lang", "domain", "since", "until"].forEach((key) => {
+    const value = String(params[key] || "").trim();
+    if (value) {
+      parts.push(`${key}: ${value}`);
+    }
+  });
+  if (parts.length === 0) {
+    return t("savedSearchMetaDefault");
+  }
+  return parts.join(" · ");
+}
+
+/**
+ * Normalizes locally saved search entries from settings or backup.
+ * @param {Array<object>} searches - Raw saved search entries.
+ * @returns {Array<object>} Clean saved search entries.
+ */
+function normalizeSavedSearches(searches) {
+  if (!Array.isArray(searches)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const normalized = [];
+  searches.forEach((search, index) => {
+    let parsed = null;
+    try {
+      parsed = parseSavedSearchUrl(search?.sourceUrl || search?.url || "");
+    } catch {
+      return;
+    }
+    const sourceKey = parsed.sourceUrl.toLowerCase();
+    if (seen.has(sourceKey)) {
+      return;
+    }
+    seen.add(sourceKey);
+    let id = String(search?.id || "").trim();
+    if (!id) {
+      id = `search-${index + 1}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+    const entry = {
+      id,
+      sourceUrl: parsed.sourceUrl,
+      params: parsed.params,
+      label: String(search?.label || "").trim(),
+      createdAt: String(search?.createdAt || new Date().toISOString()).trim(),
+      updatedAt: String(search?.updatedAt || search?.createdAt || new Date().toISOString()).trim(),
+      lastLoadedAt: String(search?.lastLoadedAt || "").trim(),
+    };
+    if (!entry.label) {
+      entry.label = buildSavedSearchLabel(entry);
+    }
+    normalized.push(entry);
+  });
+  return normalized.slice(0, 100);
+}
+
+/**
+ * Finds a saved search by id.
+ * @param {string} id - Saved search id.
+ * @returns {object|null} Saved search entry or null.
+ */
+function getSavedSearchById(id) {
+  const normalizedId = String(id || "").trim();
+  if (!normalizedId) {
+    return null;
+  }
+  return savedSearches.find((search) => search.id === normalizedId) || null;
+}
+
+/**
+ * Creates a saved search entry from a shared Bluesky search URL.
+ * @param {string} sourceUrl - Shared bsky.app search URL.
+ * @returns {object} Saved search entry.
+ */
+function createSavedSearchFromUrl(sourceUrl) {
+  const parsed = parseSavedSearchUrl(sourceUrl);
+  const now = new Date().toISOString();
+  const entry = {
+    id: `search-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    sourceUrl: parsed.sourceUrl,
+    params: parsed.params,
+    label: "",
+    createdAt: now,
+    updatedAt: now,
+    lastLoadedAt: "",
+  };
+  entry.label = buildSavedSearchLabel(entry);
+  return entry;
+}
+
+/**
+ * Extracts the record key from an AT Protocol post URI.
+ * @param {string} uri - AT URI of a post.
+ * @returns {string} Record key, or an empty string when invalid.
+ */
+function getThreadExplorerPostRecordKey(uri) {
+  const raw = String(uri || "").trim();
+  if (!raw.startsWith("at://")) {
+    return "";
+  }
+
+  const parts = raw.slice(5).split("/");
+  if (parts.length < 3) {
+    return "";
+  }
+  if (parts[1] !== "app.bsky.feed.post") {
+    return "";
+  }
+  return String(parts[2] || "").trim();
+}
+
+/**
+ * Chooses the best web frontend for a Thread Explorer post author.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @returns {string} Web app base URL.
+ */
+function getThreadExplorerPostWebApp(post) {
+  const handle = String(post?.author?.handle || "").toLowerCase();
+  if (handle.endsWith(".eurosky.social") || handle.endsWith(".mu.social")) {
+    return LOGIN_SERVICE_PRESETS["mu.social"];
+  }
+
+  const favorite = threadExplorerFavorites.find((entry) => entry.rootUri === post?.uri || entry.selectedUri === post?.uri);
+  if (favorite?.webApp) {
+    return favorite.webApp;
+  }
+
+  return DEFAULT_POST_WEB_APP;
+}
+
+/**
+ * Builds a web URL for a Thread Explorer post.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @returns {string} Web URL for the post, or an empty string.
+ */
+function buildThreadExplorerPostWebUrl(post) {
+  const handle = String(post?.author?.handle || "").trim();
+  const recordKey = getThreadExplorerPostRecordKey(post?.uri);
+  if (!handle || !recordKey) {
+    return "";
+  }
+
+  const webApp = getThreadExplorerPostWebApp(post);
+  return `${webApp}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordKey)}`;
+}
+
+/**
+ * Returns the currently visible Thread Explorer root post.
+ * @returns {object|null} Root post or null.
+ */
+function getThreadExplorerRootPost() {
+  if (!threadExplorerTree?.post) {
+    return null;
+  }
+  return threadExplorerTree.post;
+}
+
+/**
+ * Checks whether the current Thread Explorer root thread is locally saved.
+ * @returns {boolean} True when the visible root thread is in favorites.
+ */
+function isCurrentThreadExplorerThreadSaved() {
+  const rootPost = getThreadExplorerRootPost();
+  if (!rootPost?.uri) {
+    return false;
+  }
+  return threadExplorerFavorites.some((favorite) => favorite.rootUri === rootPost.uri);
+}
+
+/**
+ * Creates a local favorite entry from the currently loaded Thread Explorer tree.
+ * @returns {object|null} Favorite entry, or null when no thread is loaded.
+ */
+function createThreadExplorerFavoriteFromCurrentThread() {
+  const rootPost = getThreadExplorerRootPost();
+  if (!rootPost?.uri) {
+    return null;
+  }
+
+  return {
+    rootUri: rootPost.uri,
+    selectedUri: String(threadExplorerSelectedUri || rootPost.uri),
+    authorHandle: String(rootPost.author?.handle || ""),
+    authorName: getThreadExplorerActorLabel(rootPost.author),
+    text: getThreadExplorerPreviewText(rootPost),
+    createdAt: String(rootPost.createdAt || rootPost.indexedAt || ""),
+    savedAt: new Date().toISOString(),
+    webApp: getThreadExplorerPostWebApp(rootPost),
+  };
+}
+
+/**
+ * Saves the current Thread Explorer root thread locally.
+ * @returns {Promise<void>} Resolves after settings are persisted.
+ */
+async function saveCurrentThreadExplorerFavorite() {
+  const favorite = createThreadExplorerFavoriteFromCurrentThread();
+  if (!favorite) {
+    return;
+  }
+
+  const remaining = threadExplorerFavorites.filter((entry) => entry.rootUri !== favorite.rootUri);
+  threadExplorerFavorites = normalizeThreadExplorerFavorites([favorite, ...remaining]);
+  await persistSettings();
+  updateThreadExplorerControls();
+}
+
+/**
+ * Removes a locally saved Thread Explorer favorite.
+ * @param {string} rootUri - Root post URI of the favorite to remove.
+ * @returns {Promise<void>} Resolves after settings are persisted.
+ */
+async function removeThreadExplorerFavorite(rootUri) {
+  const normalizedUri = String(rootUri || "").trim();
+  if (!normalizedUri) {
+    return;
+  }
+  threadExplorerFavorites = threadExplorerFavorites.filter((favorite) => favorite.rootUri !== normalizedUri);
+  await persistSettings();
+  updateThreadExplorerControls();
+  renderThreadExplorerFavoritesDialog();
+}
+
+/**
+ * Creates one Thread Explorer count button or passive count label.
+ * @param {string} type - Count type such as likes, replies, reposts, quotes, or saves.
+ * @param {number} value - Numeric count value.
+ * @param {boolean} isInteractive - Whether the count opens a popup.
+ * @returns {HTMLElement} Rendered count element.
+ */
+function createThreadExplorerCountElement(type, value, isInteractive) {
+  let element = null;
+  if (isInteractive) {
+    element = document.createElement("button");
+    element.type = "button";
+    element.className = "thread-explorer-count-button";
+    element.dataset.reactionType = type;
+  } else {
+    element = document.createElement("span");
+    element.className = "thread-explorer-count-label";
+  }
+
+  element.textContent = t(`threadExplorerCount${type}`, {
+    count: formatCount(value),
+  });
+  return element;
+}
+
+/**
+ * Escapes a string for safe use inside a regular expression.
+ * @param {string} value - Raw string to escape.
+ * @returns {string} Escaped regular expression literal.
+ */
+function escapeThreadExplorerRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Returns a compact display URL for Thread Explorer cards.
+ * @param {string} url - Full target URL.
+ * @returns {string} Short host/path label without tracking query parameters.
+ */
+function shortenThreadExplorerUrlForDisplay(url) {
+  const value = String(url || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(value);
+    let compact = parsed.hostname;
+    if (parsed.pathname && parsed.pathname !== "/") {
+      compact += parsed.pathname;
+    }
+    if (parsed.hash) {
+      compact += parsed.hash;
+    }
+    if (compact.length > 72) {
+      return `${compact.slice(0, 69)}...`;
+    }
+    return compact;
+  } catch (error) {
+    if (value.length > 72) {
+      return `${value.slice(0, 69)}...`;
+    }
+    return value;
+  }
+}
+
+/**
+ * Removes URL variants for a rendered card from Thread Explorer post text.
+ * @param {string} text - Current display text.
+ * @param {string} url - Card target URL.
+ * @returns {string} Text without duplicate URL fragments.
+ */
+function removeThreadExplorerCardUrlFromText(text, url) {
+  let nextText = String(text || "");
+  const value = String(url || "").trim();
+  if (!nextText || !value) {
+    return nextText;
+  }
+
+  const variants = new Set([value]);
+  try {
+    const parsed = new URL(value);
+    let hostPath = parsed.hostname;
+    if (parsed.pathname && parsed.pathname !== "/") {
+      hostPath += parsed.pathname;
+    }
+    variants.add(hostPath);
+    if (hostPath.startsWith("www.")) {
+      variants.add(hostPath.slice(4));
+    } else {
+      variants.add(`www.${hostPath}`);
+    }
+  } catch (error) {
+    // Keep exact variant only.
+  }
+
+  variants.forEach((variant) => {
+    if (!variant) {
+      return;
+    }
+    const escaped = escapeThreadExplorerRegExp(variant);
+    const exactPattern = new RegExp(`(^|\\s)(?:https?:\\/\\/)?${escaped}(?:[?#][^\\s]*)?(?:\\.\\.\\.|…)?(?=\\s|$)`, "g");
+    nextText = nextText.replace(exactPattern, "$1");
+  });
+
+  try {
+    const parsed = new URL(value);
+    let hostPattern = escapeThreadExplorerRegExp(parsed.hostname);
+    if (parsed.hostname.startsWith("www.")) {
+      hostPattern = `(?:www\\.)?${escapeThreadExplorerRegExp(parsed.hostname.slice(4))}`;
+    }
+    const linePattern = new RegExp(`(^|\\n)[ \\t]*(?:https?:\\/\\/)?${hostPattern}(?:\\/[^\\n\\s]*)?(?:\\.\\.\\.|…)?[ \\t]*(?=\\n|$)`, "g");
+    nextText = nextText.replace(linePattern, "$1");
+  } catch (error) {
+    // Invalid URLs do not get hostname line cleanup.
+  }
+
+  return nextText;
+}
+
+/**
+ * Removes the external card URL from post text before rendering the card.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @returns {string} Display text without a duplicate link-card URL.
+ */
+function getThreadExplorerPostDisplayText(post) {
+  let displayText = String(post?.text || "");
+  const cardUri = String(post?.externalCard?.uri || "").trim();
+  if (!displayText) {
+    return displayText;
+  }
+
+  displayText = removeThreadExplorerCardUrlFromText(displayText, cardUri);
+
+  const quoteUrl = buildThreadExplorerPostWebUrl(post?.quoteCard);
+  const quoteUrls = new Set();
+  if (quoteUrl) {
+    quoteUrls.add(quoteUrl);
+  }
+  const quoteHandle = String(post?.quoteCard?.author?.handle || "").trim();
+  const quoteRecordKey = getThreadExplorerPostRecordKey(post?.quoteCard?.uri);
+  if (quoteHandle && quoteRecordKey) {
+    quoteUrls.add(`${DEFAULT_POST_WEB_APP}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
+    quoteUrls.add(`${LOGIN_SERVICE_PRESETS["mu.social"]}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
+  }
+  quoteUrls.forEach((url) => {
+    displayText = removeThreadExplorerCardUrlFromText(displayText, url);
+  });
+
+  return displayText
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Renders interaction counts for a Thread Explorer post.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {HTMLElement} counts - Count container.
+ * @returns {void}
+ */
+function renderThreadExplorerCounts(post, counts) {
+  counts.replaceChildren();
+  const likeButton = createThreadExplorerCountElement("Likes", post.likeCount, Number(post.likeCount) > 0);
+  const replyButton = createThreadExplorerCountElement("Replies", post.replyCount, Number(post.replyCount) > 0);
+  const repostButton = createThreadExplorerCountElement("Reposts", post.repostCount, Number(post.repostCount) > 0);
+  const quoteButton = createThreadExplorerCountElement("Quotes", post.quoteCount, Number(post.quoteCount) > 0);
+
+  [likeButton, repostButton, quoteButton].forEach((button) => {
+    if (!button.classList.contains("thread-explorer-count-button")) {
+      return;
+    }
+    button.dataset.uri = post.uri;
+    button.dataset.cid = post.cid || "";
+    button.addEventListener("click", handleThreadExplorerCountClick);
+  });
+
+  if (replyButton.classList.contains("thread-explorer-count-button")) {
+    replyButton.dataset.uri = post.uri;
+    replyButton.addEventListener("click", handleThreadExplorerRepliesCountClick);
+  }
+  counts.append(likeButton, replyButton, repostButton, quoteButton);
+}
+
+/**
+ * Applies the external view URL to a Thread Explorer post card link.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {HTMLAnchorElement|null} link - Link element from the node template.
+ * @returns {void}
+ */
+function renderThreadExplorerViewLink(post, link) {
+  if (!link) {
+    return;
+  }
+
+  const url = buildThreadExplorerPostWebUrl(post);
+  if (!url) {
+    link.hidden = true;
+    link.removeAttribute("href");
+    return;
+  }
+
+  link.hidden = false;
+  link.href = url;
+  link.textContent = "↗";
+  applyTranslatedTitle(link, "threadExplorerViewInBskyButton");
+}
+
+/**
+ * Renders the Thread Explorer edit marker button for a Mu-edited post.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {HTMLButtonElement|null} button - Edit marker button from the node template.
+ * @returns {void}
+ */
+function renderThreadExplorerEditButton(post, button) {
+  if (!button) {
+    return;
+  }
+
+  const editInfo = post?.editInfo || null;
+  if (!editInfo?.isEdited) {
+    button.hidden = true;
+    button.removeAttribute("data-uri");
+    return;
+  }
+
+  button.hidden = false;
+  button.dataset.uri = post.uri || "";
+  applyTranslatedTitle(button, "threadExplorerEditDetailsButton");
+  button.addEventListener("click", handleThreadExplorerEditButtonClick);
+}
+
+/**
+ * Opens the existing post edit dialog for a Thread Explorer post.
+ * @param {object} post - Normalized Thread Explorer post with editInfo.
+ * @returns {void}
+ */
+function openThreadExplorerPostEditDialog(post) {
+  const editInfo = post?.editInfo || null;
+  if (!editInfo?.isEdited) {
+    return;
+  }
+
+  resetPostEditCheckResult();
+  postEditCheckUrlInput.value = buildThreadExplorerPostWebUrl(post);
+  renderPostEditCheckResult({
+    isEdited: true,
+    createdAt: editInfo.createdAt || post.createdAt || "",
+    updatedAt: editInfo.updatedAt || "",
+    originalText: editInfo.originalText || "",
+    text: editInfo.text || post.text || "",
+  });
+  postEditCheckDialog.showModal();
+}
+
+/**
+ * Handles a Thread Explorer edit marker click.
+ * @param {Event} event - Click event from a Thread Explorer edit button.
+ * @returns {void}
+ */
+function handleThreadExplorerEditButtonClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const uri = String(event.currentTarget?.dataset?.uri || "").trim();
+  const node = findThreadExplorerTreeNode(threadExplorerTree, uri);
+  openThreadExplorerPostEditDialog(node?.post || null);
+}
+
+/**
+ * Renders the local Thread Explorer favorites dialog.
+ * @returns {void}
+ */
+function renderThreadExplorerFavoritesDialog() {
+  threadExplorerFavoritesList.replaceChildren();
+  if (!threadExplorerFavorites.length) {
+    threadExplorerFavoritesStatus.textContent = t("threadExplorerFavoritesEmpty");
+    return;
+  }
+
+  threadExplorerFavoritesStatus.textContent = t("threadExplorerFavoritesLoaded", {
+    count: formatCount(threadExplorerFavorites.length),
+  });
+  threadExplorerFavorites.forEach((favorite) => {
+    const fragment = threadExplorerFavoriteItemTemplate.content.cloneNode(true);
+    const item = fragment.querySelector(".thread-explorer-favorite-item");
+    const loadButton = fragment.querySelector(".thread-explorer-favorite-load");
+    const removeButton = fragment.querySelector(".thread-explorer-favorite-remove");
+    const title = fragment.querySelector(".thread-explorer-favorite-title");
+    const meta = fragment.querySelector(".thread-explorer-favorite-meta");
+    const text = fragment.querySelector(".thread-explorer-favorite-text");
+
+    item.dataset.uri = favorite.rootUri;
+    loadButton.dataset.uri = favorite.rootUri;
+    removeButton.dataset.uri = favorite.rootUri;
+    applyTranslatedTitle(removeButton, "threadExplorerFavoriteRemoveButton");
+    title.textContent = favorite.authorName || favorite.authorHandle || t("threadExplorerUnknownAuthor");
+    meta.textContent = formatThreadExplorerDate(favorite.createdAt || favorite.savedAt);
+    text.textContent = favorite.text || t("threadExplorerNoText");
+    loadButton.addEventListener("click", handleThreadExplorerFavoriteLoadClick);
+    removeButton.addEventListener("click", handleThreadExplorerFavoriteRemoveClick);
+    threadExplorerFavoritesList.appendChild(fragment);
+  });
+}
+
+/**
+ * Opens the local Thread Explorer favorites dialog.
+ * @returns {void}
+ */
+function openThreadExplorerFavoritesDialog() {
+  renderThreadExplorerFavoritesDialog();
+  threadExplorerFavoritesDialog.showModal();
+}
+
+/**
+ * Renders the shared saved-searches dialog.
+ * @returns {void}
+ */
+function renderSavedSearchesDialog() {
+  savedSearchesList.replaceChildren();
+  if (!savedSearches.length) {
+    savedSearchesStatus.textContent = t("savedSearchesEmpty");
+    return;
+  }
+
+  savedSearchesStatus.textContent = t("savedSearchesLoaded", {
+    count: formatCount(savedSearches.length),
+  });
+  savedSearches.forEach((search) => {
+    const fragment = savedSearchItemTemplate.content.cloneNode(true);
+    const item = fragment.querySelector(".saved-search-item");
+    const loadButton = fragment.querySelector(".saved-search-load");
+    const removeButton = fragment.querySelector(".saved-search-remove");
+    const title = fragment.querySelector(".saved-search-title");
+    const meta = fragment.querySelector(".saved-search-meta");
+    const url = fragment.querySelector(".saved-search-url");
+
+    item.dataset.id = search.id;
+    loadButton.dataset.id = search.id;
+    removeButton.dataset.id = search.id;
+    applyTranslatedTitle(removeButton, "savedSearchRemoveButton");
+    title.textContent = search.label || buildSavedSearchLabel(search);
+    meta.textContent = buildSavedSearchMeta(search);
+    url.textContent = search.sourceUrl;
+    loadButton.addEventListener("click", handleSavedSearchLoadClick);
+    removeButton.addEventListener("click", handleSavedSearchRemoveClick);
+    savedSearchesList.appendChild(fragment);
+  });
+}
+
+/**
+ * Opens the shared saved-searches dialog for a workspace context.
+ * @param {string} context - Either "threadExplorer" or "archive".
+ * @returns {void}
+ */
+function openSavedSearchesDialog(context = "threadExplorer") {
+  if (context === "archive") {
+    savedSearchDialogContext = "archive";
+  } else {
+    savedSearchDialogContext = "threadExplorer";
+  }
+  savedSearchUrlInput.value = "";
+  renderSavedSearchesDialog();
+  savedSearchesDialog.showModal();
+}
+
+/**
+ * Adds a shared Bluesky search URL to local saved searches.
+ * @returns {Promise<void>} Resolves after settings are persisted.
+ */
+async function addSavedSearchFromInput() {
+  const sourceUrl = String(savedSearchUrlInput.value || "").trim();
+  const entry = createSavedSearchFromUrl(sourceUrl);
+  const existing = savedSearches.find((search) => search.sourceUrl.toLowerCase() === entry.sourceUrl.toLowerCase());
+  if (existing) {
+    savedSearchesStatus.textContent = t("savedSearchAlreadyExists");
+    return;
+  }
+
+  savedSearches = normalizeSavedSearches([entry, ...savedSearches]);
+  savedSearchUrlInput.value = "";
+  await persistSettings();
+  renderSavedSearchesDialog();
+}
+
+/**
+ * Removes a locally saved search.
+ * @param {string} id - Saved search id.
+ * @returns {Promise<void>} Resolves after settings are persisted.
+ */
+async function removeSavedSearch(id) {
+  const normalizedId = String(id || "").trim();
+  if (!normalizedId) {
+    return;
+  }
+  savedSearches = savedSearches.filter((search) => search.id !== normalizedId);
+  if (getThreadExplorerSearchIdFromSource(threadExplorerSource) === normalizedId) {
+    threadExplorerSource = "follows";
+    threadExplorerCursor = "";
+    threadExplorerHasMore = true;
+    threadExplorerItems = [];
+    threadExplorerSelectedUri = "";
+    threadExplorerTree = null;
+    clearThreadExplorerSelectionPreference();
+  }
+  if (archiveSavedSearchId === normalizedId) {
+    archiveSavedSearchId = "";
+    renderArchiveSavedSearchNote();
+  }
+  await persistSettings();
+  renderSavedSearchesDialog();
+  renderThreadExplorerWorkspace();
+}
+
+/**
+ * Loads a saved search into the Thread Explorer result list.
+ * @param {string} id - Saved search id.
+ * @returns {Promise<void>} Resolves after the search source starts loading.
+ */
+async function loadSavedSearchInThreadExplorer(id) {
+  const search = getSavedSearchById(id);
+  if (!search) {
+    return;
+  }
+  search.lastLoadedAt = new Date().toISOString();
+  search.updatedAt = search.lastLoadedAt;
+  await persistSettings();
+  if (savedSearchesDialog.open) {
+    savedSearchesDialog.close();
+  }
+  setThreadExplorerSource(`search:${search.id}`);
+}
+
+/**
+ * Applies a saved search to the archive special tools area.
+ * @param {string} id - Saved search id.
+ * @returns {Promise<void>} Resolves after archive preferences are persisted.
+ */
+async function loadSavedSearchInArchive(id) {
+  const search = getSavedSearchById(id);
+  if (!search) {
+    return;
+  }
+  search.lastLoadedAt = new Date().toISOString();
+  search.updatedAt = search.lastLoadedAt;
+  await persistSettings();
+  if (savedSearchesDialog.open) {
+    savedSearchesDialog.close();
+  }
+  archiveSavedSearchId = search.id;
+  await persistArchivePreferences();
+  archiveThreadUrlNote.textContent = t("archiveSavedSearchSelected", {
+    label: search.label || buildSavedSearchLabel(search),
+    url: search.sourceUrl,
+  });
+}
+
+/**
+ * Renders actors or quote authors into the Thread Explorer reactions dialog.
+ * @param {Array<object>} actors - Actor entries from the Service Worker.
+ * @returns {void}
+ */
+function renderThreadExplorerReactionActors(actors) {
+  threadExplorerReactionsList.replaceChildren();
+  if (!Array.isArray(actors) || actors.length === 0) {
+    threadExplorerReactionsStatus.textContent = t("threadExplorerReactionsEmpty");
+    return;
+  }
+
+  threadExplorerReactionsStatus.textContent = t("threadExplorerReactionsLoaded", {
+    count: formatCount(actors.length),
+  });
+  actors.forEach((actor) => {
+    const fragment = threadExplorerActorItemTemplate.content.cloneNode(true);
+    const avatar = fragment.querySelector(".thread-explorer-avatar");
+    const name = fragment.querySelector(".thread-explorer-actor-name");
+    const handle = fragment.querySelector(".thread-explorer-actor-handle");
+    setAvatarImage(avatar, actor.avatar, actor.displayName || actor.handle || actor.did || "account");
+    name.textContent = actor.displayName || actor.handle || actor.did || t("threadExplorerUnknownAuthor");
+    if (actor.handle) {
+      handle.textContent = `@${actor.handle}`;
+    } else {
+      handle.textContent = actor.did || "";
+    }
+    threadExplorerReactionsList.appendChild(fragment);
+  });
+}
+
+/**
+ * Opens and loads the reactions dialog for a Thread Explorer post count.
+ * @param {string} type - Reaction type: Likes, Reposts, or Quotes.
+ * @param {string} uri - Post URI.
+ * @param {string} cid - Optional post CID.
+ * @returns {Promise<void>} Resolves after the dialog renders.
+ */
+async function openThreadExplorerReactionsDialog(type, uri, cid) {
+  if (threadExplorerReactionsLoading) {
+    return;
+  }
+
+  const normalizedType = String(type || "").trim();
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedType || !normalizedUri) {
+    return;
+  }
+
+  threadExplorerReactionsLoading = true;
+  threadExplorerReactionsTitle.textContent = t(`threadExplorer${normalizedType}Title`);
+  threadExplorerReactionsStatus.textContent = t("threadExplorerReactionsLoading");
+  threadExplorerReactionsList.replaceChildren();
+  threadExplorerReactionsDialog.showModal();
+  try {
+    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_REACTIONS", {
+      type: normalizedType.toLowerCase(),
+      uri: normalizedUri,
+      cid: String(cid || "").trim(),
+      limit: 100,
+    }, {
+      timeoutMs: 120000,
+    });
+    renderThreadExplorerReactionActors(result?.actors || []);
+  } catch (error) {
+    threadExplorerReactionsStatus.textContent = error.message || t("threadExplorerReactionsFailed");
+  } finally {
+    threadExplorerReactionsLoading = false;
+  }
+}
+
+/**
+ * Finds a normalized Thread Explorer tree node by post URI.
+ * @param {object|null} node - Current normalized tree node.
+ * @param {string} uri - AT URI to locate.
+ * @returns {object|null} Matching tree node, or null.
+ */
+function findThreadExplorerTreeNode(node, uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!node || !normalizedUri) {
+    return null;
+  }
+
+  if (node.post?.uri === normalizedUri) {
+    return node;
+  }
+
+  if (!Array.isArray(node.replies)) {
+    return null;
+  }
+
+  for (const reply of node.replies) {
+    const found = findThreadExplorerTreeNode(reply, normalizedUri);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Renders loaded replies for a Thread Explorer post into the replies dialog.
+ * @param {object|null} node - Normalized tree node whose replies should be listed.
+ * @returns {void}
+ */
+function renderThreadExplorerRepliesDialog(node) {
+  threadExplorerRepliesList.replaceChildren();
+  let replies = [];
+  if (Array.isArray(node?.replies)) {
+    replies = node.replies;
+  }
+  const expectedCount = Number(node?.post?.replyCount) || 0;
+  threadExplorerRepliesTitle.textContent = t("threadExplorerRepliesTitle");
+
+  if (!replies.length) {
+    threadExplorerRepliesStatus.textContent = t("threadExplorerRepliesEmpty");
+    return;
+  }
+
+  threadExplorerRepliesStatus.textContent = t("threadExplorerRepliesLoaded", {
+    loaded: formatCount(replies.length),
+    total: formatCount(expectedCount),
+  });
+
+  replies.forEach((reply) => {
+    const post = reply.post || {};
+    const actor = post.author || {};
+    const fragment = threadExplorerActorItemTemplate.content.cloneNode(true);
+    const item = fragment.querySelector(".thread-explorer-actor-item");
+    const avatar = fragment.querySelector(".thread-explorer-avatar");
+    const name = fragment.querySelector(".thread-explorer-actor-name");
+    const handle = fragment.querySelector(".thread-explorer-actor-handle");
+
+    item.dataset.uri = post.uri || "";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    setAvatarImage(avatar, actor.avatar, getThreadExplorerActorLabel(actor));
+    name.textContent = getThreadExplorerActorLabel(actor);
+    if (actor.handle) {
+      handle.textContent = `@${actor.handle}`;
+    } else {
+      handle.textContent = actor.did || "";
+    }
+    item.addEventListener("click", () => {
+      if (!post.uri) {
+        return;
+      }
+      threadExplorerSelectedUri = post.uri;
+      persistThreadExplorerSelectionPreference(post.uri);
+      renderThreadExplorerWorkspace();
+      window.requestAnimationFrame(focusSelectedThreadExplorerNode);
+      threadExplorerRepliesDialog.close();
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      item.click();
+    });
+    threadExplorerRepliesList.appendChild(fragment);
+  });
+}
+
+/**
+ * Opens a popup with replies already loaded in the current Thread Explorer tree.
+ * @param {string} uri - AT URI of the post whose replies should be shown.
+ * @returns {void}
+ */
+function openThreadExplorerRepliesDialog(uri) {
+  const node = findThreadExplorerTreeNode(threadExplorerTree, uri);
+  renderThreadExplorerRepliesDialog(node);
+  threadExplorerRepliesDialog.showModal();
+}
+
+/**
+ * Normalizes a Thread Explorer image entry for gallery display.
+ * @param {object} image - Raw normalized image object from a post.
+ * @returns {object|null} Gallery image entry, or null when no URL exists.
+ */
+function normalizeThreadExplorerGalleryImage(image) {
+  const fullsize = String(image?.fullsize || "").trim();
+  const thumb = String(image?.thumb || "").trim();
+  let src = "";
+  if (fullsize) {
+    src = fullsize;
+  } else if (thumb) {
+    src = thumb;
+  }
+
+  if (!src) {
+    return null;
+  }
+
+  return {
+    src,
+    thumb: thumb || src,
+    alt: String(image?.alt || "").trim(),
+  };
+}
+
+/**
+ * Updates the visible image and selected thumbnail in the Thread Explorer gallery.
+ * @returns {void}
+ */
+function renderThreadExplorerGalleryImage() {
+  const image = threadExplorerGalleryImages[threadExplorerGalleryIndex];
+  if (!image) {
+    return;
+  }
+
+  threadExplorerGalleryImage.hidden = false;
+  threadExplorerGalleryImage.dataset.fallbackAttempted = "false";
+  threadExplorerGalleryImage.src = image.src;
+  threadExplorerGalleryImage.alt = image.alt;
+  threadExplorerGalleryCaption.textContent = image.alt;
+  threadExplorerGalleryCaption.hidden = !image.alt;
+  threadExplorerGalleryTitle.textContent = t("threadExplorerGalleryTitle");
+
+  const thumbs = threadExplorerGalleryThumbs.querySelectorAll(".thread-explorer-gallery-thumb");
+  thumbs.forEach((thumb, index) => {
+    let isSelected = false;
+    if (index === threadExplorerGalleryIndex) {
+      isSelected = true;
+    }
+    thumb.classList.toggle("is-selected", isSelected);
+    if (isSelected) {
+      thumb.setAttribute("aria-pressed", "true");
+    } else {
+      thumb.setAttribute("aria-pressed", "false");
+    }
+  });
+}
+
+/**
+ * Hides a failed Thread Explorer post image and redraws tree edges.
+ * @param {Event} event - Image error event from an inline post image.
+ * @returns {void}
+ */
+function handleThreadExplorerPostImageError(event) {
+  const image = event.currentTarget;
+  const figure = image.closest(".thread-explorer-image");
+  image.removeAttribute("src");
+  if (figure) {
+    figure.hidden = true;
+  }
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Hides a failed Thread Explorer quoted post image preview.
+ * @param {Event} event - Image error event from a quoted post image.
+ * @returns {void}
+ */
+function handleThreadExplorerQuoteImageError(event) {
+  const image = event.currentTarget;
+  image.removeAttribute("src");
+  image.hidden = true;
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Hides a failed Thread Explorer gallery thumbnail.
+ * @param {Event} event - Image error event from a gallery thumbnail.
+ * @returns {void}
+ */
+function handleThreadExplorerGalleryThumbError(event) {
+  const image = event.currentTarget;
+  const button = image.closest(".thread-explorer-gallery-thumb");
+  image.removeAttribute("src");
+  if (button) {
+    button.hidden = true;
+  }
+}
+
+/**
+ * Falls back from fullsize to thumbnail in the Thread Explorer image gallery.
+ * @param {Event} event - Image error event from the large gallery image.
+ * @returns {void}
+ */
+function handleThreadExplorerGalleryImageError(event) {
+  const imageElement = event.currentTarget;
+  const image = threadExplorerGalleryImages[threadExplorerGalleryIndex];
+  if (!image) {
+    imageElement.hidden = true;
+    return;
+  }
+
+  if (image.thumb && imageElement.dataset.fallbackAttempted !== "true") {
+    imageElement.dataset.fallbackAttempted = "true";
+    imageElement.src = image.thumb;
+    return;
+  }
+
+  imageElement.hidden = true;
+}
+
+/**
+ * Opens the Thread Explorer gallery at a selected image index.
+ * @param {Array<object>} images - Post images to render.
+ * @param {number} startIndex - Selected image index.
+ * @returns {void}
+ */
+function openThreadExplorerGallery(images, startIndex) {
+  const normalizedImages = [];
+  if (Array.isArray(images)) {
+    images.forEach((image) => {
+      const normalizedImage = normalizeThreadExplorerGalleryImage(image);
+      if (normalizedImage) {
+        normalizedImages.push(normalizedImage);
+      }
+    });
+  }
+
+  if (!normalizedImages.length) {
+    return;
+  }
+
+  threadExplorerGalleryImages = normalizedImages;
+  threadExplorerGalleryIndex = Math.min(normalizedImages.length - 1, Math.max(0, Number(startIndex) || 0));
+  threadExplorerGalleryThumbs.replaceChildren();
+
+  normalizedImages.forEach((image, index) => {
+    const fragment = threadExplorerGalleryThumbTemplate.content.cloneNode(true);
+    const button = fragment.querySelector(".thread-explorer-gallery-thumb");
+    const img = fragment.querySelector("img");
+    img.src = image.thumb;
+    img.alt = image.alt;
+    img.addEventListener("error", handleThreadExplorerGalleryThumbError);
+    button.dataset.index = String(index);
+    button.addEventListener("click", () => {
+      threadExplorerGalleryIndex = index;
+      renderThreadExplorerGalleryImage();
+    });
+    threadExplorerGalleryThumbs.appendChild(fragment);
+  });
+
+  renderThreadExplorerGalleryImage();
+  threadExplorerGalleryDialog.showModal();
+}
+
+/**
+ * Opens the current Thread Explorer gallery image through the Fullscreen API.
+ * @returns {Promise<void>} Resolves after the fullscreen request is attempted.
+ */
+async function openThreadExplorerGalleryFullscreen() {
+  if (!threadExplorerGalleryImage || !threadExplorerGalleryImage.requestFullscreen) {
+    return;
+  }
+
+  await threadExplorerGalleryImage.requestFullscreen();
+}
+
+/**
+ * Computes an engagement score for one Thread Explorer post.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @returns {number} Weighted score from likes, replies, reposts, and quotes.
+ */
+function getThreadExplorerEngagementScore(post) {
+  const likes = Number(post?.likeCount) || 0;
+  const replies = Number(post?.replyCount) || 0;
+  const reposts = Number(post?.repostCount) || 0;
+  const quotes = Number(post?.quoteCount) || 0;
+  return likes + (replies * 3) + (reposts * 4) + (quotes * 4);
+}
+
+/**
+ * Converts an engagement score into a visual intensity tier.
+ * @param {number} score - Weighted post engagement score.
+ * @returns {string} Engagement tier name for CSS classes.
+ */
+function getThreadExplorerEngagementTier(score) {
+  const numericScore = Number(score) || 0;
+  if (numericScore >= 1000) {
+    return "viral";
+  }
+  if (numericScore >= 180) {
+    return "hot";
+  }
+  if (numericScore >= 40) {
+    return "warm";
+  }
+  return "quiet";
+}
+
+/**
+ * Returns direct rendered child node items for a Thread Explorer item.
+ * @param {HTMLElement} item - Rendered Thread Explorer node item.
+ * @returns {HTMLElement[]} Direct child node items.
+ */
+function getRenderedThreadExplorerChildItems(item) {
+  const childrenList = item.querySelector(":scope > .thread-explorer-children");
+  if (!childrenList) {
+    return [];
+  }
+  return Array.from(childrenList.children).filter((child) => child.classList.contains("thread-explorer-node-item"));
+}
+
+/**
+ * Returns the visible post card for a rendered Thread Explorer item.
+ * @param {HTMLElement} item - Rendered Thread Explorer node item.
+ * @returns {HTMLElement|null} Direct post card element, or null.
+ */
+function getRenderedThreadExplorerCard(item) {
+  return item.querySelector(":scope > .thread-explorer-node > .thread-explorer-post-card");
+}
+
+/**
+ * Returns an element rectangle in unzoomed Thread Explorer stage coordinates.
+ * @param {HTMLElement} element - Element to measure.
+ * @param {DOMRect} stageRect - Stage viewport rectangle.
+ * @returns {object} Rectangle with position and center values.
+ */
+function getThreadExplorerStageRect(element, stageRect) {
+  const elementRect = element.getBoundingClientRect();
+  let zoom = Number(threadExplorerZoom) || 1;
+  if (zoom <= 0) {
+    zoom = 1;
+  }
+
+  const left = (elementRect.left - stageRect.left) / zoom;
+  const top = (elementRect.top - stageRect.top) / zoom;
+  const width = elementRect.width / zoom;
+  const height = elementRect.height / zoom;
+  const right = left + width;
+  const bottom = top + height;
+  const centerX = left + (width / 2);
+  const centerY = top + (height / 2);
+  return {
+    left,
+    top,
+    width,
+    height,
+    right,
+    bottom,
+    centerX,
+    centerY,
+  };
+}
+
+/**
+ * Builds a curved SVG path between two rendered Thread Explorer cards.
+ * @param {object} parentRect - Parent card rectangle in stage coordinates.
+ * @param {object} childRect - Child card rectangle in stage coordinates.
+ * @returns {string} SVG path data.
+ */
+function createThreadExplorerEdgePath(parentRect, childRect) {
+  if (threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
+    const startX = parentRect.right;
+    const startY = parentRect.centerY;
+    const endX = childRect.left;
+    const endY = childRect.centerY;
+    const distance = Math.max(72, Math.abs(endX - startX));
+    const controlOffset = Math.max(48, distance * 0.42);
+    return `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
+  }
+
+  const startX = parentRect.centerX;
+  const startY = parentRect.bottom;
+  const endX = childRect.centerX;
+  const endY = childRect.top;
+  const distance = Math.max(60, Math.abs(endY - startY));
+  const controlOffset = Math.max(36, distance * 0.45);
+  return `M ${startX} ${startY} C ${startX} ${startY + controlOffset}, ${endX} ${endY - controlOffset}, ${endX} ${endY}`;
+}
+
+/**
+ * Schedules a redraw of Thread Explorer SVG edges after layout settles.
+ * @returns {void}
+ */
+function scheduleThreadExplorerEdgeRender() {
+  if (threadExplorerEdgeRenderFrame) {
+    window.cancelAnimationFrame(threadExplorerEdgeRenderFrame);
+  }
+  threadExplorerEdgeRenderFrame = window.requestAnimationFrame(() => {
+    threadExplorerEdgeRenderFrame = 0;
+    renderThreadExplorerEdges();
+  });
+}
+
+/**
+ * Removes the current Thread Explorer SVG edge layer.
+ * @returns {void}
+ */
+function clearThreadExplorerEdges() {
+  const existingLayer = threadExplorerThreadStage.querySelector(":scope > .thread-explorer-edge-layer");
+  if (existingLayer) {
+    existingLayer.remove();
+  }
+}
+
+/**
+ * Renders curved SVG edges between visible Thread Explorer parent and child cards.
+ * @returns {void}
+ */
+function renderThreadExplorerEdges() {
+  clearThreadExplorerEdges();
+  if (!threadExplorerTree) {
+    threadExplorerThreadStage.classList.remove("has-svg-edges");
+    return;
+  }
+
+  const stageRect = threadExplorerThreadStage.getBoundingClientRect();
+  const rootItem = threadExplorerThreadStage.querySelector(":scope > ul > .thread-explorer-node-item");
+  if (!rootItem) {
+    threadExplorerThreadStage.classList.remove("has-svg-edges");
+    return;
+  }
+
+  const stageWidth = Math.max(threadExplorerThreadStage.scrollWidth, threadExplorerThreadStage.offsetWidth);
+  const stageHeight = Math.max(threadExplorerThreadStage.scrollHeight, threadExplorerThreadStage.offsetHeight);
+  const svg = createSvgNode("svg", {
+    class: "thread-explorer-edge-layer",
+    width: stageWidth,
+    height: stageHeight,
+    viewBox: `0 0 ${stageWidth} ${stageHeight}`,
+    "aria-hidden": "true",
+    focusable: "false",
+  });
+
+  /**
+   * Walks rendered Thread Explorer nodes and draws edges to direct children.
+   * @param {HTMLElement} item - Current rendered node item.
+   * @returns {void}
+   */
+  function visitRenderedThreadExplorerItem(item) {
+    if (item.classList.contains("is-collapsed")) {
+      return;
+    }
+
+    const parentCard = getRenderedThreadExplorerCard(item);
+    if (!parentCard) {
+      return;
+    }
+
+    const parentRect = getThreadExplorerStageRect(parentCard, stageRect);
+    const childItems = getRenderedThreadExplorerChildItems(item);
+    childItems.forEach((childItem) => {
+      const childCard = getRenderedThreadExplorerCard(childItem);
+      if (!childCard) {
+        return;
+      }
+
+      const childRect = getThreadExplorerStageRect(childCard, stageRect);
+      const tier = childItem.dataset.engagementTier || "quiet";
+      const path = createSvgNode("path", {
+        class: `thread-explorer-edge thread-explorer-edge-${tier}`,
+        d: createThreadExplorerEdgePath(parentRect, childRect),
+      });
+      svg.appendChild(path);
+      visitRenderedThreadExplorerItem(childItem);
+    });
+  }
+
+  visitRenderedThreadExplorerItem(rootItem);
+  threadExplorerThreadStage.prepend(svg);
+  threadExplorerThreadStage.classList.add("has-svg-edges");
+}
+
+/**
+ * Sets the active Thread Explorer source and refreshes the feed.
+ * @param {string} source - Either "follows" or "mutuals".
+ * @returns {void}
+ */
+function setThreadExplorerSource(source) {
+  threadExplorerSource = normalizeThreadExplorerSource(source);
+  threadExplorerCursor = "";
+  threadExplorerHasMore = true;
+  threadExplorerItems = [];
+  threadExplorerSelectedUri = "";
+  threadExplorerTree = null;
+  threadExplorerFeedError = "";
+  threadExplorerThreadError = "";
+  clearThreadExplorerSelectionPreference();
+  renderThreadExplorerWorkspace();
+  void loadThreadExplorerFeed({ reset: true });
+}
+
+/**
+ * Renders the pinned-feed dropdown options for the Thread Explorer.
+ * @returns {void}
+ */
+function renderThreadExplorerFeedSourceSelect() {
+  if (!threadExplorerFeedSelect) {
+    return;
+  }
+
+  const placeholder = threadExplorerFeedOptionTemplate.content.cloneNode(true);
+  const placeholderOption = placeholder.querySelector("option");
+  placeholderOption.value = "";
+  placeholderOption.textContent = t("threadExplorerFeedPickerPlaceholder");
+  threadExplorerFeedSelect.replaceChildren(placeholderOption);
+
+  threadExplorerFeedSources.forEach((feed) => {
+    const source = buildThreadExplorerFeedSource(feed.uri);
+    if (!source) {
+      return;
+    }
+    const fragment = threadExplorerFeedOptionTemplate.content.cloneNode(true);
+    const option = fragment.querySelector("option");
+    option.value = source;
+    option.textContent = feed.displayName || feed.uri;
+    threadExplorerFeedSelect.appendChild(option);
+  });
+
+  const activeFeedSource = getThreadExplorerFeedUriFromSource(threadExplorerSource) ? normalizeThreadExplorerSource(threadExplorerSource) : "";
+  threadExplorerFeedSelect.value = activeFeedSource;
+  threadExplorerFeedSelect.disabled = !authAccount || threadExplorerFeedSourcesLoading;
+}
+
+/**
+ * Resolves which Thread Explorer post should be opened after a feed load.
+ * @param {object} options - Selection behavior flags.
+ * @param {boolean} options.allowStoredOutsideFeed - Whether a saved URI may be opened even if it is not in the feed slice.
+ * @returns {string} Current, stored, first feed, or empty selected URI.
+ */
+function getThreadExplorerPreferredSelectionUri(options = {}) {
+  const allowStoredOutsideFeed = options.allowStoredOutsideFeed === true;
+  const currentUri = String(threadExplorerSelectedUri || "").trim();
+  if (currentUri && (allowStoredOutsideFeed || threadExplorerFeedContainsUri(currentUri))) {
+    return currentUri;
+  }
+
+  const storedSelection = getStoredThreadExplorerSelectionPreference();
+  if (storedSelection?.selectedUri && (allowStoredOutsideFeed || threadExplorerFeedContainsUri(storedSelection.selectedUri))) {
+    return storedSelection.selectedUri;
+  }
+
+  const firstItem = threadExplorerItems[0];
+  const firstUri = String(firstItem?.post?.uri || "").trim();
+  if (firstUri) {
+    return firstUri;
+  }
+
+  return "";
+}
+
+/**
+ * Checks whether a post URI exists in the currently loaded Thread Explorer feed.
+ * @param {string} uri - AT URI to look for.
+ * @returns {boolean} True when the URI is present in the current feed items.
+ */
+function threadExplorerFeedContainsUri(uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri) {
+    return false;
+  }
+
+  return threadExplorerItems.some((item) => String(item?.post?.uri || "").trim() === normalizedUri);
+}
+
+/**
+ * Returns the best avatar URL for a Thread Explorer actor.
+ * @param {object} actor - Normalized Thread Explorer actor.
+ * @returns {string} Cached data URI, remote avatar URL, or an empty string.
+ */
+function getThreadExplorerActorAvatarUri(actor = {}) {
+  const cachedAvatar = String(actor?.avatarDataUri || "").trim();
+  if (cachedAvatar) {
+    return cachedAvatar;
+  }
+  return String(actor?.avatar || "").trim();
+}
+
+/**
+ * Finds a cached avatar asset for a Thread Explorer actor.
+ * @param {object} actor - Normalized Thread Explorer actor.
+ * @returns {object|null} Cached avatar asset or null.
+ */
+function findThreadExplorerActorAvatarAsset(actor = {}) {
+  const did = String(actor?.did || "").trim();
+  const avatarUrl = String(actor?.avatar || "").trim();
+  if (!did || !avatarUrl) {
+    return null;
+  }
+
+  let assets = [];
+  if (Array.isArray(accountAvatarAssets)) {
+    assets = accountAvatarAssets;
+  }
+  const asset = assets.find((entry) => entry.did === did && entry.url === avatarUrl);
+  if (!asset) {
+    return null;
+  }
+  return asset;
+}
+
+/**
+ * Applies cached avatar data from the local avatar cache to one actor.
+ * @param {object|null} actor - Normalized Thread Explorer actor.
+ * @returns {void}
+ */
+function applyThreadExplorerActorAvatarFromCache(actor = null) {
+  if (!actor || typeof actor !== "object") {
+    return;
+  }
+
+  const asset = findThreadExplorerActorAvatarAsset(actor);
+  if (asset) {
+    actor.avatarDataUri = assetToDataUri(asset);
+  }
+}
+
+/**
+ * Adds cache lookup metadata to a Thread Explorer avatar image.
+ * @param {HTMLImageElement|null} image - Avatar image element.
+ * @param {object} actor - Normalized Thread Explorer actor.
+ * @returns {void}
+ */
+function markThreadExplorerAvatarImage(image, actor = {}) {
+  if (!image) {
+    return;
+  }
+
+  image.dataset.avatarDid = String(actor?.did || "").trim();
+  image.dataset.avatarUrl = String(actor?.avatar || "").trim();
+}
+
+/**
+ * Applies cached avatar data URIs to matching authors in the Thread Explorer tree.
+ * @param {object|null} node - Thread Explorer tree node.
+ * @param {object} avatars - Map-like object keyed by actor DID.
+ * @returns {void}
+ */
+function applyThreadExplorerAvatarHydration(node = null, avatars = {}) {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+
+  const author = node.post?.author || null;
+  if (author?.did && avatars[author.did]?.dataUri) {
+    author.avatarDataUri = avatars[author.did].dataUri;
+  }
+
+  const quoteAuthor = node.post?.quoteCard?.author || null;
+  if (quoteAuthor?.did && avatars[quoteAuthor.did]?.dataUri) {
+    quoteAuthor.avatarDataUri = avatars[quoteAuthor.did].dataUri;
+  }
+
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => {
+      applyThreadExplorerAvatarHydration(reply, avatars);
+    });
+  }
+}
+
+/**
+ * Applies cached avatar data URIs from the local cache to a Thread Explorer tree.
+ * @param {object|null} node - Thread Explorer tree node.
+ * @returns {void}
+ */
+function applyThreadExplorerAvatarCacheToTree(node = null) {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+
+  applyThreadExplorerActorAvatarFromCache(node.post?.author || null);
+  applyThreadExplorerActorAvatarFromCache(node.post?.quoteCard?.author || null);
+
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => {
+      applyThreadExplorerAvatarCacheToTree(reply);
+    });
+  }
+}
+
+/**
+ * Hydrates avatars for the currently loaded Thread Explorer tree through the service worker cache.
+ * @param {object|null} root - Thread Explorer root node.
+ * @returns {Promise<void>} Resolves after cached avatar data URIs were applied.
+ */
+async function hydrateThreadExplorerTreeAvatars(root = null) {
+  if (!root) {
+    return;
+  }
+
+  const result = await sendToServiceWorker("HYDRATE_THREAD_EXPLORER_AVATARS", {
+    root,
+  }, {
+    timeoutMs: 120000,
+  }).catch((error) => {
+    console.warn("Thread Explorer avatar hydration failed.", error);
+    return null;
+  });
+
+  if (result?.avatars && typeof result.avatars === "object") {
+    applyThreadExplorerAvatarHydration(root, result.avatars);
+  }
+}
+
+/**
+ * Appends newly loaded feed items while preserving the first occurrence of each post URI.
+ * @param {Array<object>} currentItems - Feed items already rendered.
+ * @param {Array<object>} nextItems - Feed items returned by the newest page.
+ * @param {object} options - Append options.
+ * @param {boolean} options.groupByRoot - Whether duplicates should be detected by root URI.
+ * @returns {Array<object>} Combined feed items without duplicate post URIs.
+ */
+function appendThreadExplorerFeedItems(currentItems, nextItems, options = {}) {
+  const seen = new Set();
+  const combined = [];
+  const items = [];
+  if (Array.isArray(currentItems)) {
+    items.push(...currentItems);
+  }
+  if (Array.isArray(nextItems)) {
+    items.push(...nextItems);
+  }
+  items.forEach((item) => {
+    let uri = String(item?.post?.uri || "").trim();
+    if (options.groupByRoot === true) {
+      uri = String(item?.post?.rootUri || item?.post?.uri || "").trim();
+    }
+    if (!uri || seen.has(uri)) {
+      return;
+    }
+    seen.add(uri);
+    combined.push(item);
+  });
+  return combined;
+}
+
+/**
+ * Updates Thread Explorer toolbar controls and status text.
+ * @returns {void}
+ */
+function updateThreadExplorerControls() {
+  const hasAuth = Boolean(authAccount);
+  threadExplorerUrlButton.disabled = !hasAuth || threadExplorerLoadingThread;
+  threadExplorerSearchesButton.disabled = !hasAuth;
+  if (archiveSavedSearchesButton) {
+    archiveSavedSearchesButton.disabled = !hasAuth;
+  }
+  threadExplorerRefreshButton.disabled = !hasAuth || threadExplorerLoadingFeed;
+  threadExplorerRootButton.disabled = !threadExplorerTree;
+  threadExplorerReloadThreadButton.disabled = !hasAuth || !threadExplorerSelectedUri || threadExplorerLoadingThread;
+  threadExplorerSnapshotPngButton.disabled = !threadExplorerTree || threadExplorerLoadingThread;
+  threadExplorerSaveButton.disabled = !threadExplorerTree;
+  threadExplorerFavoritesButton.disabled = !hasAuth;
+  threadExplorerZoomOutButton.disabled = !threadExplorerTree;
+  threadExplorerZoomResetButton.disabled = !threadExplorerTree;
+  threadExplorerZoomInButton.disabled = !threadExplorerTree;
+  threadExplorerOrientationButton.disabled = !hasAuth;
+  threadExplorerCollapseButton.disabled = !threadExplorerTree;
+  threadExplorerExpandButton.disabled = !threadExplorerTree;
+  threadExplorerZoomResetButton.textContent = `${Math.round(threadExplorerZoom * 100)}%`;
+  let saveButtonLabel = t("threadExplorerSaveButton");
+  let saveButtonActive = false;
+  if (isCurrentThreadExplorerThreadSaved()) {
+    saveButtonLabel = t("threadExplorerSavedButton");
+    saveButtonActive = true;
+  }
+  threadExplorerSaveButton.title = saveButtonLabel;
+  threadExplorerSaveButton.setAttribute("aria-label", saveButtonLabel);
+  threadExplorerSaveButton.classList.toggle("is-active", saveButtonActive);
+  if (threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
+    threadExplorerOrientationButton.textContent = t("threadExplorerVerticalButton");
+    threadExplorerOrientationButton.setAttribute("aria-pressed", "true");
+  } else {
+    threadExplorerOrientationButton.textContent = t("threadExplorerHorizontalButton");
+    threadExplorerOrientationButton.setAttribute("aria-pressed", "false");
+  }
+
+  [threadExplorerFollowsButton, threadExplorerMutualsButton].forEach((button) => {
+    const source = String(button?.dataset?.threadExplorerSource || "");
+    const isActive = source === threadExplorerSource;
+    let pressed = "false";
+    if (isActive) {
+      pressed = "true";
+    }
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", pressed);
+    button.disabled = !hasAuth || threadExplorerLoadingFeed;
+  });
+  renderThreadExplorerFeedSourceSelect();
+}
+
+/**
+ * Renders the live Thread Explorer workspace.
+ * @returns {void}
+ */
+function renderThreadExplorerWorkspace() {
+  applyThreadExplorerOrientation();
+  updateThreadExplorerControls();
+  renderThreadExplorerFeed();
+  renderThreadExplorerTree();
+}
+
+/**
+ * Loads pinned feed sources for the Thread Explorer dropdown.
+ * @returns {Promise<void>} Resolves when the dropdown sources are available.
+ */
+async function loadThreadExplorerFeedSources() {
+  if (!authAccount || threadExplorerFeedSourcesLoading) {
+    return;
+  }
+  const accountDid = String(authAccountDid || "").trim();
+  if (threadExplorerFeedSourcesLoaded && threadExplorerFeedSourcesAccountDid === accountDid) {
+    return;
+  }
+  if (threadExplorerFeedSourcesAccountDid !== accountDid) {
+    threadExplorerFeedSources = [];
+    threadExplorerFeedSourcesLoaded = false;
+  }
+
+  threadExplorerFeedSourcesLoading = true;
+  renderThreadExplorerFeedSourceSelect();
+  try {
+    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_FEED_SOURCES", {}, {
+      timeoutMs: 60000,
+    });
+    if (Array.isArray(result?.feeds)) {
+      threadExplorerFeedSources = result.feeds;
+    } else {
+      threadExplorerFeedSources = [];
+    }
+    threadExplorerFeedSourcesLoaded = true;
+    threadExplorerFeedSourcesAccountDid = accountDid;
+  } catch (error) {
+    console.warn("Thread Explorer feed sources failed.", error);
+    threadExplorerFeedSources = [];
+    threadExplorerFeedSourcesLoaded = true;
+    threadExplorerFeedSourcesAccountDid = accountDid;
+  } finally {
+    threadExplorerFeedSourcesLoading = false;
+    renderThreadExplorerFeedSourceSelect();
+  }
+}
+
+/**
+ * Applies the current Thread Explorer orientation to the tree viewport.
+ * @returns {void}
+ */
+function applyThreadExplorerOrientation() {
+  const isHorizontal = threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL;
+  threadExplorerThreadTree.classList.toggle("is-horizontal", isHorizontal);
+  threadExplorerThreadTree.classList.toggle("is-vertical", !isHorizontal);
+  threadExplorerThreadStage.classList.toggle("is-horizontal", isHorizontal);
+  threadExplorerThreadStage.classList.toggle("is-vertical", !isHorizontal);
+}
+
+/**
+ * Applies the current Thread Explorer zoom to the stage element.
+ * @returns {void}
+ */
+function applyThreadExplorerZoom() {
+  threadExplorerThreadStage.style.setProperty("--thread-explorer-zoom", String(threadExplorerZoom));
+  threadExplorerZoomResetButton.textContent = `${Math.round(threadExplorerZoom * 100)}%`;
+}
+
+/**
+ * Sets the Thread Explorer zoom level within supported bounds.
+ * @param {number} nextZoom - Desired zoom factor.
+ * @returns {void}
+ */
+function setThreadExplorerZoom(nextZoom) {
+  const numericZoom = Number(nextZoom);
+  if (!Number.isFinite(numericZoom)) {
+    return;
+  }
+  threadExplorerZoom = Math.min(2, Math.max(0.01, numericZoom));
+  applyThreadExplorerZoom();
+}
+
+/**
+ * Switches the Thread Explorer between vertical and horizontal tree layout.
+ * @returns {void}
+ */
+function toggleThreadExplorerOrientation() {
+  if (threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
+    threadExplorerOrientation = THREAD_EXPLORER_ORIENTATION_VERTICAL;
+  } else {
+    threadExplorerOrientation = THREAD_EXPLORER_ORIENTATION_HORIZONTAL;
+  }
+  persistThreadExplorerOrientationPreference(threadExplorerOrientation);
+  renderThreadExplorerWorkspace();
+  if (threadExplorerTree) {
+    scheduleThreadExplorerSelectedFocus();
+  }
+}
+
+/**
+ * Zooms the Thread Explorer stage around a viewport point.
+ * @param {number} factor - Multiplicative zoom factor.
+ * @param {number} clientX - Pointer x coordinate in viewport space.
+ * @param {number} clientY - Pointer y coordinate in viewport space.
+ * @returns {void}
+ */
+function zoomThreadExplorerAtPoint(factor, clientX, clientY) {
+  const previousZoom = threadExplorerZoom;
+  const bounds = threadExplorerThreadTree.getBoundingClientRect();
+  const offsetX = clientX - bounds.left + threadExplorerThreadTree.scrollLeft;
+  const offsetY = clientY - bounds.top + threadExplorerThreadTree.scrollTop;
+  setThreadExplorerZoom(previousZoom * factor);
+  const ratio = threadExplorerZoom / previousZoom;
+  threadExplorerThreadTree.scrollLeft = (offsetX * ratio) - (clientX - bounds.left);
+  threadExplorerThreadTree.scrollTop = (offsetY * ratio) - (clientY - bounds.top);
+}
+
+/**
+ * Renders the left Thread Explorer feed list from templates.
+ * @returns {void}
+ */
+function renderThreadExplorerFeed() {
+  threadExplorerFeedList.replaceChildren();
+
+  if (threadExplorerFeedError) {
+    threadExplorerFeedStatus.textContent = threadExplorerFeedError;
+  } else if (threadExplorerLoadingFeed) {
+    if (threadExplorerItems.length > 0) {
+      threadExplorerFeedStatus.textContent = t("threadExplorerFeedLoadingMore", {
+        count: formatCount(threadExplorerItems.length),
+      });
+    } else {
+      threadExplorerFeedStatus.textContent = t("threadExplorerFeedLoading");
+    }
+  } else if (!threadExplorerItems.length) {
+    threadExplorerFeedStatus.textContent = t("threadExplorerFeedEmpty");
+  } else {
+    if (getThreadExplorerSearchIdFromSource(threadExplorerSource)) {
+      threadExplorerFeedStatus.textContent = t("threadExplorerSearchLoaded", {
+        count: formatCount(threadExplorerItems.length),
+      });
+    } else {
+      threadExplorerFeedStatus.textContent = t("threadExplorerFeedLoaded", {
+        count: formatCount(threadExplorerItems.length),
+      });
+    }
+  }
+
+  threadExplorerItems.forEach((item) => {
+    const post = item.post;
+    const fragment = threadExplorerFeedItemTemplate.content.cloneNode(true);
+    const button = fragment.querySelector(".thread-explorer-feed-item");
+    const avatar = fragment.querySelector(".thread-explorer-avatar");
+    const author = fragment.querySelector(".thread-explorer-feed-author");
+    const meta = fragment.querySelector(".thread-explorer-feed-meta");
+    const text = fragment.querySelector(".thread-explorer-feed-text");
+
+    button.classList.toggle("is-active", post.uri === threadExplorerSelectedUri);
+    markThreadExplorerAvatarImage(avatar, post.author);
+    setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
+    author.textContent = getThreadExplorerActorLabel(post.author);
+    meta.textContent = formatThreadExplorerDate(post.createdAt || post.indexedAt);
+    text.textContent = getThreadExplorerPreviewText(post);
+    button.dataset.uri = post.uri;
+    button.addEventListener("click", handleThreadExplorerFeedItemClick);
+
+    threadExplorerFeedList.appendChild(fragment);
+  });
+}
+
+/**
+ * Opens the Thread Explorer thread for the clicked feed item.
+ * @param {Event} event - Click event from a feed item button.
+ * @returns {void}
+ */
+function handleThreadExplorerFeedItemClick(event) {
+  const button = event.currentTarget;
+  const uri = String(button?.dataset?.uri || "").trim();
+  void selectThreadExplorerPost(uri);
+}
+
+/**
+ * Loads the next Thread Explorer feed page when the feed list is scrolled near the bottom.
+ * @returns {void}
+ */
+function handleThreadExplorerFeedScroll() {
+  if (!threadExplorerHasMore || threadExplorerLoadingFeed) {
+    return;
+  }
+  const remaining = threadExplorerFeedList.scrollHeight - threadExplorerFeedList.scrollTop - threadExplorerFeedList.clientHeight;
+  if (remaining > 240) {
+    return;
+  }
+  void loadThreadExplorerFeed({ append: true });
+}
+
+/**
+ * Switches the Thread Explorer to the selected pinned feed.
+ * @returns {void}
+ */
+function handleThreadExplorerFeedSelectChange() {
+  const source = normalizeThreadExplorerSource(threadExplorerFeedSelect.value);
+  if (!source.startsWith("feed:")) {
+    return;
+  }
+  setThreadExplorerSource(source);
+}
+
+/**
+ * Opens a reaction account popup from a Thread Explorer count button.
+ * @param {Event} event - Click event from a count button.
+ * @returns {void}
+ */
+function handleThreadExplorerCountClick(event) {
+  const button = event.currentTarget;
+  const type = String(button?.dataset?.reactionType || "").trim();
+  const uri = String(button?.dataset?.uri || "").trim();
+  const cid = String(button?.dataset?.cid || "").trim();
+  void openThreadExplorerReactionsDialog(type, uri, cid);
+}
+
+/**
+ * Opens the loaded replies popup from a Thread Explorer reply count button.
+ * @param {Event} event - Click event from a reply count button.
+ * @returns {void}
+ */
+function handleThreadExplorerRepliesCountClick(event) {
+  const button = event.currentTarget;
+  const uri = String(button?.dataset?.uri || "").trim();
+  openThreadExplorerRepliesDialog(uri);
+}
+
+/**
+ * Renders the right Thread Explorer tree from templates.
+ * @returns {void}
+ */
+function renderThreadExplorerTree() {
+  threadExplorerThreadStage.replaceChildren();
+  threadExplorerThreadStage.classList.remove("has-svg-edges");
+  applyThreadExplorerZoom();
+
+  if (threadExplorerThreadError) {
+    threadExplorerThreadTitle.textContent = t("threadExplorerThreadLoadedTitle", {
+      count: formatCount(0),
+    });
+    threadExplorerThreadStatus.textContent = threadExplorerThreadError;
+    return;
+  }
+
+  if (threadExplorerLoadingThread) {
+    threadExplorerThreadTitle.textContent = t("threadExplorerThreadLoadedTitle", {
+      count: formatCount(0),
+    });
+    threadExplorerThreadStatus.textContent = t("threadExplorerThreadLoading");
+    return;
+  }
+
+  if (!threadExplorerTree) {
+    threadExplorerThreadTitle.textContent = t("threadExplorerThreadTitle");
+    threadExplorerThreadStatus.textContent = t("threadExplorerThreadIdle");
+    return;
+  }
+
+  const count = countThreadExplorerPosts(threadExplorerTree);
+  threadExplorerThreadTitle.textContent = t("threadExplorerThreadLoadedTitle", {
+    count: formatCount(count),
+  });
+  threadExplorerThreadStatus.textContent = t("threadExplorerThreadLoaded", {
+    count: formatCount(count),
+  });
+
+  const rootList = document.createElement("ul");
+  rootList.appendChild(createThreadExplorerNode(threadExplorerTree));
+  threadExplorerThreadStage.appendChild(rootList);
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Creates one Thread Explorer tree node from the node template.
+ * @param {object} node - Normalized Thread Explorer tree node.
+ * @returns {HTMLElement} A rendered list item containing the post and child replies.
+ */
+function createThreadExplorerNode(node) {
+  const fragment = threadExplorerNodeTemplate.content.cloneNode(true);
+  const item = fragment.querySelector(".thread-explorer-node-item");
+  const toggle = fragment.querySelector(".thread-explorer-node-toggle");
+  const card = fragment.querySelector(".thread-explorer-post-card");
+  const avatar = fragment.querySelector(".thread-explorer-avatar");
+  const author = fragment.querySelector(".thread-explorer-post-author");
+  const handle = fragment.querySelector(".thread-explorer-post-handle");
+  const meta = fragment.querySelector(".thread-explorer-post-meta");
+  const viewLink = fragment.querySelector(".thread-explorer-view-link");
+  const editButton = fragment.querySelector(".thread-explorer-edit-button");
+  const text = fragment.querySelector(".thread-explorer-post-text");
+  const gallery = fragment.querySelector(".thread-explorer-post-gallery");
+  const counts = fragment.querySelector(".thread-explorer-post-counts");
+  const children = fragment.querySelector(".thread-explorer-children");
+  const post = node.post;
+  let replies = [];
+  if (Array.isArray(node.replies)) {
+    replies = node.replies;
+  }
+  const engagementScore = getThreadExplorerEngagementScore(post);
+  const engagementTier = getThreadExplorerEngagementTier(engagementScore);
+  const isDeletedThreadAnchor = post.isDeletedThreadAnchor === true;
+
+  item.dataset.uri = post.uri;
+  item.dataset.engagementScore = String(engagementScore);
+  item.dataset.engagementTier = engagementTier;
+  item.classList.toggle("is-collapsed", threadExplorerCollapsedUris.has(post.uri));
+  card.classList.toggle("is-selected", post.uri === threadExplorerSelectedUri);
+  card.classList.toggle("is-deleted-thread-anchor", isDeletedThreadAnchor);
+  if (!isDeletedThreadAnchor) {
+    card.classList.add(`is-engagement-${engagementTier}`);
+  }
+
+  if (isDeletedThreadAnchor) {
+    avatar.hidden = true;
+    author.textContent = t("threadExplorerDeletedThreadTitle");
+    handle.textContent = post.uri.replace(/^at:\/\//, "");
+    meta.textContent = "";
+    viewLink.hidden = true;
+    editButton.hidden = true;
+    text.textContent = t("threadExplorerDeletedThreadText");
+    counts.replaceChildren();
+  } else {
+    markThreadExplorerAvatarImage(avatar, post.author);
+    setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
+    author.textContent = getThreadExplorerActorLabel(post.author);
+    if (post.author?.handle) {
+      handle.textContent = `@${post.author.handle}`;
+    } else if (post.author?.did) {
+      handle.textContent = post.author.did;
+    } else {
+      handle.textContent = "";
+    }
+    meta.textContent = formatThreadExplorerDate(post.createdAt || post.indexedAt);
+    renderThreadExplorerViewLink(post, viewLink);
+    renderThreadExplorerEditButton(post, editButton);
+    text.textContent = getThreadExplorerPostDisplayText(post) || t("threadExplorerNoText");
+    renderThreadExplorerCounts(post, counts);
+    renderThreadExplorerImages(post, gallery);
+    renderThreadExplorerExternalCard(post, fragment);
+    renderThreadExplorerQuoteCard(post, fragment);
+  }
+
+  if (!replies.length) {
+    toggle.classList.add("is-hidden");
+    toggle.disabled = true;
+  } else {
+    if (threadExplorerCollapsedUris.has(post.uri)) {
+      toggle.textContent = "+";
+    } else {
+      toggle.textContent = "-";
+    }
+    toggle.dataset.uri = post.uri;
+    toggle.addEventListener("click", handleThreadExplorerNodeToggleClick);
+  }
+
+  replies.forEach((reply) => {
+    children.appendChild(createThreadExplorerNode(reply));
+  });
+
+  return item;
+}
+
+/**
+ * Toggles the clicked Thread Explorer node button.
+ * @param {Event} event - Click event from a node toggle button.
+ * @returns {void}
+ */
+function handleThreadExplorerNodeToggleClick(event) {
+  const button = event.currentTarget;
+  const uri = String(button?.dataset?.uri || "").trim();
+  toggleThreadExplorerNode(uri);
+}
+
+/**
+ * Renders post images into a Thread Explorer gallery element.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {HTMLElement} gallery - Gallery container element.
+ * @returns {void}
+ */
+function renderThreadExplorerImages(post, gallery) {
+  gallery.replaceChildren();
+  let images = [];
+  if (Array.isArray(post.images)) {
+    images = post.images;
+  }
+  images.forEach((image, imageIndex) => {
+    const fragment = threadExplorerImageTemplate.content.cloneNode(true);
+    const figure = fragment.querySelector(".thread-explorer-image");
+    const button = fragment.querySelector(".thread-explorer-image-button");
+    const img = fragment.querySelector("img");
+    const caption = fragment.querySelector("figcaption");
+    img.src = image.fullsize || image.thumb || "";
+    img.alt = image.alt || "";
+    img.addEventListener("load", scheduleThreadExplorerEdgeRender, { once: true });
+    img.addEventListener("error", handleThreadExplorerPostImageError);
+    button.addEventListener("click", () => {
+      openThreadExplorerGallery(images, imageIndex);
+    });
+    caption.textContent = image.alt || "";
+    caption.hidden = !image.alt;
+    gallery.appendChild(figure);
+  });
+  gallery.hidden = images.length === 0;
+}
+
+/**
+ * Returns a likely favicon URL for a link-card URI.
+ * @param {string} uri - External link URI from a Bluesky embed.
+ * @returns {string} Absolute favicon URL, or an empty string when the URI is invalid.
+ */
+function getThreadExplorerFaviconUrl(uri) {
+  try {
+    const parsed = new URL(uri);
+    return `${parsed.origin}/favicon.ico`;
+  } catch (error) {
+    return "";
+  }
+}
+
+/**
+ * Hides a Thread Explorer link-card image when its fallback asset cannot load.
+ * @param {Event} event - Image error event.
+ * @returns {void}
+ */
+function handleThreadExplorerLinkImageError(event) {
+  const image = event.currentTarget;
+  const card = image.closest(".thread-explorer-link-card");
+  image.hidden = true;
+  image.removeAttribute("src");
+  if (card) {
+    card.classList.add("has-no-thumb");
+    card.classList.remove("has-favicon-thumb");
+  }
+}
+
+/**
+ * Hides a failed Thread Explorer quoted link-card thumbnail.
+ * @param {Event} event - Image error event.
+ * @returns {void}
+ */
+function handleThreadExplorerQuoteLinkImageError(event) {
+  const image = event.currentTarget;
+  const card = image.closest(".thread-explorer-quote-link-card");
+  image.hidden = true;
+  image.removeAttribute("src");
+  if (card) {
+    card.classList.add("has-no-thumb");
+    card.classList.remove("has-favicon-thumb");
+  }
+}
+
+/**
+ * Renders a post external card into a Thread Explorer node fragment.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {DocumentFragment} fragment - Node template fragment.
+ * @returns {void}
+ */
+function renderThreadExplorerExternalCard(post, fragment) {
+  const card = fragment.querySelector(".thread-explorer-link-card");
+  const image = fragment.querySelector(".thread-explorer-link-card-image");
+  const title = fragment.querySelector(".thread-explorer-link-card-title");
+  const description = fragment.querySelector(".thread-explorer-link-card-description");
+  const url = fragment.querySelector(".thread-explorer-link-card-url");
+  const external = post.externalCard;
+
+  if (!external || !external.uri) {
+    card.hidden = true;
+    card.classList.remove("is-publication");
+    return;
+  }
+
+  const standardSite = normalizeStandardSiteMetadata(external.standardSite);
+  card.hidden = false;
+  if (standardSite) {
+    card.classList.add("is-publication");
+  } else {
+    card.classList.remove("is-publication");
+  }
+  card.href = external.uri;
+  image.removeEventListener("error", handleThreadExplorerLinkImageError);
+  image.addEventListener("error", handleThreadExplorerLinkImageError);
+  image.addEventListener("load", scheduleThreadExplorerEdgeRender, { once: true });
+  if (external.thumb) {
+    card.classList.remove("has-no-thumb");
+    card.classList.remove("has-favicon-thumb");
+    image.hidden = false;
+    image.src = external.thumb;
+  } else {
+    const faviconUrl = getThreadExplorerFaviconUrl(external.uri);
+    if (faviconUrl) {
+      card.classList.remove("has-no-thumb");
+      card.classList.add("has-favicon-thumb");
+      image.hidden = false;
+      image.src = faviconUrl;
+    } else {
+      card.classList.add("has-no-thumb");
+      card.classList.remove("has-favicon-thumb");
+      image.hidden = true;
+      image.removeAttribute("src");
+    }
+  }
+  title.textContent = external.title || external.uri;
+  description.textContent = external.description || "";
+  const publicationFooterLabel = getPublicationCardFooterLabel(standardSite);
+  if (publicationFooterLabel) {
+    url.textContent = `${shortenThreadExplorerUrlForDisplay(external.uri)} - ${publicationFooterLabel}`;
+  } else {
+    url.textContent = shortenThreadExplorerUrlForDisplay(external.uri);
+  }
+}
+
+/**
+ * Renders preview images from a quoted Thread Explorer post.
+ * @param {object} quote - Normalized quoted post.
+ * @param {HTMLElement|null} gallery - Target gallery element inside the quote card.
+ * @returns {void}
+ */
+function renderThreadExplorerQuoteImages(quote, gallery) {
+  if (!gallery) {
+    return;
+  }
+
+  gallery.replaceChildren();
+  let images = [];
+  if (Array.isArray(quote?.images)) {
+    images = quote.images;
+  }
+
+  images.slice(0, 4).forEach((image, imageIndex) => {
+    const img = document.createElement("img");
+    img.src = image.thumb || image.fullsize || "";
+    img.alt = image.alt || "";
+    img.loading = "lazy";
+    img.addEventListener("load", scheduleThreadExplorerEdgeRender, { once: true });
+    img.addEventListener("error", handleThreadExplorerQuoteImageError);
+    img.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openThreadExplorerGallery(images, imageIndex);
+    });
+    gallery.appendChild(img);
+  });
+
+  gallery.hidden = images.length === 0;
+}
+
+/**
+ * Renders a quoted post's external link card preview.
+ * @param {object} quote - Normalized quoted post.
+ * @param {DocumentFragment} fragment - Node template fragment.
+ * @returns {void}
+ */
+function renderThreadExplorerQuoteExternalCard(quote, fragment) {
+  const card = fragment.querySelector(".thread-explorer-quote-link-card");
+  const image = fragment.querySelector(".thread-explorer-quote-link-card-image");
+  const title = fragment.querySelector(".thread-explorer-quote-link-card-title");
+  const description = fragment.querySelector(".thread-explorer-quote-link-card-description");
+  const url = fragment.querySelector(".thread-explorer-quote-link-card-url");
+  const external = quote?.externalCard;
+
+  if (!card || !external || !external.uri) {
+    if (card) {
+      card.hidden = true;
+      card.classList.remove("is-publication");
+    }
+    return;
+  }
+
+  const standardSite = normalizeStandardSiteMetadata(external.standardSite);
+  card.hidden = false;
+  if (standardSite) {
+    card.classList.add("is-publication");
+  } else {
+    card.classList.remove("is-publication");
+  }
+  image.removeEventListener("error", handleThreadExplorerQuoteLinkImageError);
+  image.addEventListener("error", handleThreadExplorerQuoteLinkImageError);
+  image.addEventListener("load", scheduleThreadExplorerEdgeRender, { once: true });
+  if (external.thumb) {
+    card.classList.remove("has-no-thumb");
+    card.classList.remove("has-favicon-thumb");
+    image.hidden = false;
+    image.src = external.thumb;
+  } else {
+    const faviconUrl = getThreadExplorerFaviconUrl(external.uri);
+    if (faviconUrl) {
+      card.classList.remove("has-no-thumb");
+      card.classList.add("has-favicon-thumb");
+      image.hidden = false;
+      image.src = faviconUrl;
+    } else {
+      card.classList.add("has-no-thumb");
+      card.classList.remove("has-favicon-thumb");
+      image.hidden = true;
+      image.removeAttribute("src");
+    }
+  }
+  title.textContent = external.title || external.uri;
+  description.textContent = external.description || "";
+  const publicationFooterLabel = getPublicationCardFooterLabel(standardSite);
+  if (publicationFooterLabel) {
+    url.textContent = `${shortenThreadExplorerUrlForDisplay(external.uri)} - ${publicationFooterLabel}`;
+  } else {
+    url.textContent = shortenThreadExplorerUrlForDisplay(external.uri);
+  }
+}
+
+/**
+ * Renders a quoted post card into a Thread Explorer node fragment.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {DocumentFragment} fragment - Node template fragment.
+ * @returns {void}
+ */
+function renderThreadExplorerQuoteCard(post, fragment) {
+  const card = fragment.querySelector(".thread-explorer-quote-card");
+  const avatar = fragment.querySelector(".thread-explorer-quote-card-avatar");
+  const author = fragment.querySelector(".thread-explorer-quote-card-author");
+  const handle = fragment.querySelector(".thread-explorer-quote-card-handle");
+  const text = fragment.querySelector(".thread-explorer-quote-card-text");
+  const gallery = fragment.querySelector(".thread-explorer-quote-card-gallery");
+  const meta = fragment.querySelector(".thread-explorer-quote-card-meta");
+  const quote = post.quoteCard;
+
+  if (!quote || !quote.uri) {
+    card.hidden = true;
+    return;
+  }
+
+  const url = buildThreadExplorerPostWebUrl(quote);
+  if (!url) {
+    card.hidden = true;
+    return;
+  }
+
+  card.hidden = false;
+  card.href = url;
+  markThreadExplorerAvatarImage(avatar, quote.author);
+  setAvatarImage(avatar, getThreadExplorerActorAvatarUri(quote.author), getThreadExplorerActorLabel(quote.author));
+  author.textContent = getThreadExplorerActorLabel(quote.author);
+  if (quote.author?.handle) {
+    handle.textContent = `@${quote.author.handle}`;
+  } else {
+    handle.textContent = quote.author?.did || "";
+  }
+  text.textContent = quote.text || t("threadExplorerNoText");
+  renderThreadExplorerQuoteImages(quote, gallery);
+  renderThreadExplorerQuoteExternalCard(quote, fragment);
+  let metaText = formatThreadExplorerDate(quote.createdAt || quote.indexedAt);
+  if (quote.editInfo?.isEdited === true) {
+    metaText = `${metaText} - ${t("threadExplorerEditedBadge")}`.trim();
+  }
+  meta.textContent = metaText;
+}
+
+/**
+ * Loads the Thread Explorer feed through the Service Worker.
+ * @param {object} options - Set reset true to reload from the beginning.
+ * @returns {Promise<void>} Resolves when the feed is rendered.
+ */
+async function loadThreadExplorerFeed(options = {}) {
+  if (!authAccount || threadExplorerLoadingFeed) {
+    return;
+  }
+  const append = options.append === true;
+  if (append && !threadExplorerHasMore) {
+    return;
+  }
+
+  if (options.reset === true) {
+    threadExplorerCursor = "";
+    threadExplorerHasMore = true;
+    threadExplorerItems = [];
+  }
+  if (options.clearSelection === true) {
+    threadExplorerSelectedUri = "";
+    threadExplorerTree = null;
+    threadExplorerCollapsedUris.clear();
+    clearThreadExplorerSelectionPreference();
+  }
+  threadExplorerFeedError = "";
+  threadExplorerThreadError = "";
+
+  threadExplorerLoadingFeed = true;
+  renderThreadExplorerWorkspace();
+  try {
+    const searchId = getThreadExplorerSearchIdFromSource(threadExplorerSource);
+    const savedSearch = getSavedSearchById(searchId);
+    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_FEED", {
+      source: threadExplorerSource,
+      cursor: threadExplorerCursor,
+      limit: 50,
+      search: savedSearch?.params || null,
+    }, {
+      timeoutMs: 120000,
+    });
+    threadExplorerCursor = String(result?.cursor || "");
+    threadExplorerHasMore = Boolean(threadExplorerCursor);
+    if (Array.isArray(result?.items)) {
+      if (append) {
+        threadExplorerItems = appendThreadExplorerFeedItems(threadExplorerItems, result.items, {
+          groupByRoot: Boolean(getThreadExplorerSearchIdFromSource(threadExplorerSource)),
+        });
+      } else {
+        threadExplorerItems = result.items;
+      }
+    } else {
+      if (!append) {
+        threadExplorerItems = [];
+      }
+    }
+    if (!append) {
+      const selectionUri = getThreadExplorerPreferredSelectionUri({
+        allowStoredOutsideFeed: options.clearSelection !== true,
+      });
+      if (selectionUri) {
+        await selectThreadExplorerPost(selectionUri);
+      }
+    }
+  } catch (error) {
+    threadExplorerFeedError = error.message || t("threadExplorerFeedFailed");
+  } finally {
+    threadExplorerLoadingFeed = false;
+    renderThreadExplorerWorkspace();
+  }
+}
+
+/**
+ * Loads and renders one live thread for a selected post URI.
+ * @param {string} uri - AT URI of the selected post.
+ * @returns {Promise<void>} Resolves when the thread tree is rendered.
+ */
+async function selectThreadExplorerPost(uri) {
+  const selectedUri = String(uri || "").trim();
+  if (!selectedUri || threadExplorerLoadingThread) {
+    return;
+  }
+
+  threadExplorerSelectedUri = selectedUri;
+  persistThreadExplorerSelectionPreference(selectedUri);
+  threadExplorerLoadingThread = true;
+  threadExplorerTree = null;
+  threadExplorerThreadError = "";
+  renderThreadExplorerWorkspace();
+  try {
+    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_THREAD", {
+      uri: selectedUri,
+    }, {
+      timeoutMs: 120000,
+    });
+    threadExplorerTree = result?.root || null;
+  } catch (error) {
+    threadExplorerThreadError = error.message || t("threadExplorerThreadFailed");
+  } finally {
+    threadExplorerLoadingThread = false;
+    renderThreadExplorerWorkspace();
+    if (threadExplorerTree) {
+      scheduleThreadExplorerSelectedFocus();
+    }
+  }
+}
+
+/**
+ * Schedules a reliable focus pass for the currently selected Thread Explorer node.
+ * @returns {void}
+ */
+function scheduleThreadExplorerSelectedFocus() {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      focusSelectedThreadExplorerNode();
+      window.setTimeout(focusSelectedThreadExplorerNode, 80);
+    });
+  });
+}
+
+/**
+ * Toggles collapsed state for a rendered Thread Explorer node.
+ * @param {string} uri - AT URI of the node to toggle.
+ * @returns {void}
+ */
+function toggleThreadExplorerNode(uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri) {
+    return;
+  }
+  if (threadExplorerCollapsedUris.has(normalizedUri)) {
+    threadExplorerCollapsedUris.delete(normalizedUri);
+  } else {
+    threadExplorerCollapsedUris.add(normalizedUri);
+  }
+  renderThreadExplorerTree();
+}
+
+/**
+ * Scrolls the Thread Explorer tree to its root node.
+ * @returns {void}
+ */
+function scrollThreadExplorerToRoot() {
+  const firstNode = threadExplorerThreadTree.querySelector(".thread-explorer-node-item");
+  if (!firstNode) {
+    return;
+  }
+
+  scrollThreadExplorerNodeIntoView(firstNode, {
+    block: "start",
+    inline: "start",
+  });
+}
+
+/**
+ * Scrolls one rendered Thread Explorer node into the viewport.
+ * @param {HTMLElement} item - Rendered node item to reveal.
+ * @param {object} options - Scroll placement options.
+ * @param {string} options.block - Vertical placement: "start" or "center".
+ * @param {string} options.inline - Horizontal placement: "start" or "center".
+ * @returns {void}
+ */
+function scrollThreadExplorerNodeIntoView(item, options = {}) {
+  if (!item) {
+    return;
+  }
+
+  const viewportRect = threadExplorerThreadTree.getBoundingClientRect();
+  const target = getRenderedThreadExplorerCard(item) || item;
+  const targetRect = target.getBoundingClientRect();
+  let zoom = Number(threadExplorerZoom) || 1;
+  if (zoom <= 0) {
+    zoom = 1;
+  }
+
+  const targetLeft = (targetRect.left - viewportRect.left) / zoom;
+  const targetTop = (targetRect.top - viewportRect.top) / zoom;
+  const targetWidth = targetRect.width / zoom;
+  const targetHeight = targetRect.height / zoom;
+  const visibleWidth = threadExplorerThreadTree.clientWidth / zoom;
+  const visibleHeight = threadExplorerThreadTree.clientHeight / zoom;
+  let nextLeft = threadExplorerThreadTree.scrollLeft + targetLeft;
+  let nextTop = threadExplorerThreadTree.scrollTop + targetTop;
+
+  if (options.inline === "center") {
+    nextLeft -= (visibleWidth - targetWidth) / 2;
+  }
+  if (options.block === "center") {
+    nextTop -= (visibleHeight - targetHeight) / 2;
+  }
+
+  threadExplorerThreadTree.scrollLeft = Math.max(0, nextLeft);
+  threadExplorerThreadTree.scrollTop = Math.max(0, nextTop);
+}
+
+/**
+ * Finds a rendered Thread Explorer node item by exact post URI.
+ * @param {string} uri - AT URI to locate in the rendered tree.
+ * @returns {HTMLElement|null} Matching rendered node item, or null.
+ */
+function findRenderedThreadExplorerNode(uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri) {
+    return null;
+  }
+
+  const items = threadExplorerThreadStage.querySelectorAll(".thread-explorer-node-item");
+  for (const item of items) {
+    if (item.dataset.uri === normalizedUri) {
+      return item;
+    }
+  }
+  return null;
+}
+
+/**
+ * Scrolls the selected Thread Explorer post into the center of the viewport.
+ * @returns {void}
+ */
+function focusSelectedThreadExplorerNode() {
+  const rootUri = String(threadExplorerTree?.post?.uri || "").trim();
+  if (rootUri && rootUri === threadExplorerSelectedUri) {
+    scrollThreadExplorerToRoot();
+    return;
+  }
+
+  const item = findRenderedThreadExplorerNode(threadExplorerSelectedUri);
+  if (!item) {
+    return;
+  }
+  scrollThreadExplorerNodeIntoView(item, {
+    block: "center",
+    inline: "center",
+  });
+}
+
+/**
+ * Returns whether a pointer target should keep its native interaction.
+ * @param {EventTarget|null} target - Event target from a pointer event.
+ * @returns {boolean} True when dragging should not start.
+ */
+function isThreadExplorerInteractiveTarget(target) {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  return Boolean(target.closest("button, a, input, textarea, select, summary"));
+}
+
+/**
+ * Starts mouse or pointer panning for the Thread Explorer viewport.
+ * @param {PointerEvent} event - Pointer down event from the tree viewport.
+ * @returns {void}
+ */
+function handleThreadExplorerPointerDown(event) {
+  if (event.button !== 0 || isThreadExplorerInteractiveTarget(event.target)) {
+    return;
+  }
+  threadExplorerDragState = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    scrollLeft: threadExplorerThreadTree.scrollLeft,
+    scrollTop: threadExplorerThreadTree.scrollTop,
+  };
+  threadExplorerThreadTree.classList.add("is-dragging");
+  threadExplorerThreadTree.setPointerCapture(event.pointerId);
+  event.preventDefault();
+}
+
+/**
+ * Pans the Thread Explorer viewport while the pointer is captured.
+ * @param {PointerEvent} event - Pointer move event from the tree viewport.
+ * @returns {void}
+ */
+function handleThreadExplorerPointerMove(event) {
+  if (!threadExplorerDragState || threadExplorerDragState.pointerId !== event.pointerId) {
+    return;
+  }
+  const deltaX = event.clientX - threadExplorerDragState.startX;
+  const deltaY = event.clientY - threadExplorerDragState.startY;
+  threadExplorerThreadTree.scrollLeft = threadExplorerDragState.scrollLeft - deltaX;
+  threadExplorerThreadTree.scrollTop = threadExplorerDragState.scrollTop - deltaY;
+}
+
+/**
+ * Stops mouse or pointer panning for the Thread Explorer viewport.
+ * @param {PointerEvent} event - Pointer release or cancel event.
+ * @returns {void}
+ */
+function handleThreadExplorerPointerUp(event) {
+  if (!threadExplorerDragState || threadExplorerDragState.pointerId !== event.pointerId) {
+    return;
+  }
+  threadExplorerDragState = null;
+  threadExplorerThreadTree.classList.remove("is-dragging");
+  if (threadExplorerThreadTree.hasPointerCapture(event.pointerId)) {
+    threadExplorerThreadTree.releasePointerCapture(event.pointerId);
+  }
+}
+
+/**
+ * Zooms the Thread Explorer with Ctrl + mouse wheel.
+ * @param {WheelEvent} event - Wheel event from the tree viewport.
+ * @returns {void}
+ */
+function handleThreadExplorerWheel(event) {
+  if (!event.ctrlKey) {
+    return;
+  }
+  event.preventDefault();
+  if (event.deltaY < 0) {
+    zoomThreadExplorerAtPoint(1.1, event.clientX, event.clientY);
+  } else {
+    zoomThreadExplorerAtPoint(1 / 1.1, event.clientX, event.clientY);
+  }
+}
+
+/**
+ * Redraws Thread Explorer edges after viewport size changes.
+ * @returns {void}
+ */
+function handleThreadExplorerResize() {
+  if (currentWorkspace !== "threadExplorer") {
+    return;
+  }
+  if (!threadExplorerTree) {
+    return;
+  }
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Adds all collapsible Thread Explorer node URIs to a target set.
+ * @param {object|null} node - Tree node to inspect.
+ * @param {Set<string>} targetSet - Set that receives post URIs for nodes with replies.
+ * @returns {void}
+ */
+function collectCollapsibleThreadExplorerUris(node, targetSet) {
+  if (!node || !Array.isArray(node.replies) || node.replies.length === 0) {
+    return;
+  }
+  if (node.post?.uri) {
+    targetSet.add(node.post.uri);
+  }
+  node.replies.forEach((reply) => {
+    collectCollapsibleThreadExplorerUris(reply, targetSet);
+  });
+}
+
+/**
+ * Expands or collapses all current Thread Explorer tree nodes.
+ * @param {boolean} shouldCollapse - True collapses all nodes with replies, false expands all nodes.
+ * @returns {void}
+ */
+function setAllThreadExplorerNodesCollapsed(shouldCollapse) {
+  threadExplorerCollapsedUris.clear();
+  if (shouldCollapse) {
+    collectCollapsibleThreadExplorerUris(threadExplorerTree, threadExplorerCollapsedUris);
+  }
+  renderThreadExplorerTree();
+}
+
+/**
+ * Creates a safe filename part for Thread Explorer exports.
+ * @param {string} value - Raw filename part.
+ * @returns {string} Filesystem-friendly filename part.
+ */
+function sanitizeThreadExplorerFileNamePart(value) {
+  const normalized = String(value || "").trim().replace(/^@+/, "");
+  const safe = normalized.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  if (safe) {
+    return safe.slice(0, 80);
+  }
+  return "thread";
+}
+
+/**
+ * Builds the Thread Explorer snapshot filename from the root post.
+ * @param {string} extension - File extension without leading dot.
+ * @returns {string} Snapshot filename.
+ */
+function buildThreadExplorerSnapshotFileName(extension = "png") {
+  const rootPost = threadExplorerTree?.post || {};
+  let handle = String(rootPost.author?.handle || rootPost.author?.displayName || rootPost.author?.did || "").trim();
+  if (!handle) {
+    handle = "thread";
+  }
+
+  let datePart = "";
+  const timestamp = Date.parse(String(rootPost.createdAt || rootPost.indexedAt || "").trim());
+  if (Number.isFinite(timestamp)) {
+    datePart = new Date(timestamp).toISOString().slice(0, 10);
+  } else {
+    datePart = new Date().toISOString().slice(0, 10);
+  }
+
+  const safeExtension = sanitizeThreadExplorerFileNamePart(extension || "png").toLowerCase();
+  return `threadline-thread-${sanitizeThreadExplorerFileNamePart(handle)}-${datePart}.${safeExtension}`;
+}
+
+/**
+ * Encodes an already loaded image element as a data URL when the browser allows it.
+ * @param {HTMLImageElement} image - Source image from the rendered Thread Explorer.
+ * @returns {string} Data URL, original data URL, or an empty string when unavailable.
+ */
+function encodeThreadExplorerImageElement(image) {
+  const source = String(image?.currentSrc || image?.src || "").trim();
+  if (!source) {
+    return "";
+  }
+  if (source.startsWith("data:")) {
+    return source;
+  }
+  if (!image.complete || !image.naturalWidth || !image.naturalHeight) {
+    return "";
+  }
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Reads a Thread Explorer avatar data URI from the shared local avatar cache.
+ * @param {HTMLImageElement|null} image - Avatar image with cache lookup metadata.
+ * @returns {string} Cached avatar data URI or an empty string.
+ */
+function getThreadExplorerSnapshotCachedAvatarUri(image = null) {
+  const did = String(image?.dataset?.avatarDid || "").trim();
+  const avatarUrl = String(image?.dataset?.avatarUrl || "").trim();
+  if (!did || !avatarUrl) {
+    return "";
+  }
+
+  let assets = [];
+  if (Array.isArray(accountAvatarAssets)) {
+    assets = accountAvatarAssets;
+  }
+  const asset = assets.find((entry) => entry.did === did && entry.url === avatarUrl);
+  if (!asset) {
+    return "";
+  }
+
+  return assetToDataUri(asset);
+}
+
+/**
+ * Builds the cache lookup key for a Thread Explorer avatar image.
+ * @param {HTMLImageElement|null} image - Avatar image with cache lookup metadata.
+ * @returns {string} Stable avatar cache key or an empty string.
+ */
+function getThreadExplorerSnapshotAvatarCacheKey(image = null) {
+  const did = String(image?.dataset?.avatarDid || "").trim();
+  const avatarUrl = String(image?.dataset?.avatarUrl || "").trim();
+  if (!did || !avatarUrl) {
+    return "";
+  }
+
+  return `${did}|${avatarUrl}`;
+}
+
+/**
+ * Loads one cached avatar data URI into an image object for canvas drawing.
+ * @param {string} dataUri - Cached avatar data URI.
+ * @returns {Promise<HTMLImageElement|null>} Loaded image or null when loading fails.
+ */
+function loadThreadExplorerSnapshotAvatarImage(dataUri) {
+  const source = String(dataUri || "").trim();
+  if (!source) {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.addEventListener("load", () => {
+      resolve(image);
+    }, { once: true });
+    image.addEventListener("error", () => {
+      resolve(null);
+    }, { once: true });
+    image.src = source;
+  });
+}
+
+/**
+ * Preloads all cached Thread Explorer avatars needed by the canvas snapshot renderers.
+ * @param {HTMLElement[]} cards - Rendered Thread Explorer post cards.
+ * @returns {Promise<Map<string, HTMLImageElement>>} Loaded avatar image map keyed by DID and URL.
+ */
+async function preloadThreadExplorerSnapshotAvatarImages(cards) {
+  const avatarEntries = new Map();
+  cards.forEach((card) => {
+    const avatar = card.querySelector(".thread-explorer-avatar");
+    const key = getThreadExplorerSnapshotAvatarCacheKey(avatar);
+    if (!key || avatarEntries.has(key)) {
+      return;
+    }
+
+    const dataUri = getThreadExplorerSnapshotCachedAvatarUri(avatar);
+    if (!dataUri) {
+      return;
+    }
+    avatarEntries.set(key, dataUri);
+  });
+
+  const loaded = new Map();
+  for (const [key, dataUri] of avatarEntries.entries()) {
+    const image = await loadThreadExplorerSnapshotAvatarImage(dataUri);
+    if (image) {
+      loaded.set(key, image);
+    }
+  }
+  return loaded;
+}
+
+/**
+ * Replaces cloned Thread Explorer images with data URLs read from rendered image elements.
+ * @param {HTMLElement} source - Original rendered tree stage.
+ * @param {HTMLElement} clone - Cloned tree stage.
+ * @returns {void}
+ */
+function inlineThreadExplorerSnapshotImages(source, clone) {
+  const sourceImages = Array.from(source.querySelectorAll("img"));
+  const cloneImages = Array.from(clone.querySelectorAll("img"));
+  cloneImages.forEach((cloneImage, index) => {
+    const cachedAvatarUri = getThreadExplorerSnapshotCachedAvatarUri(cloneImage)
+      || getThreadExplorerSnapshotCachedAvatarUri(sourceImages[index]);
+    if (cachedAvatarUri) {
+      cloneImage.setAttribute("src", cachedAvatarUri);
+      return;
+    }
+
+    const dataUrl = encodeThreadExplorerImageElement(sourceImages[index]);
+    if (dataUrl) {
+      cloneImage.setAttribute("src", dataUrl);
+      return;
+    }
+    cloneImage.setAttribute("src", DEFAULT_AVATAR_URI);
+    cloneImage.classList.add("is-snapshot-fallback-image");
+  });
+}
+
+/**
+ * Collects accessible CSS text for the Thread Explorer snapshot SVG.
+ * @returns {string} CSS text.
+ */
+function collectThreadExplorerSnapshotCss() {
+  const parts = [];
+  for (const styleSheet of Array.from(document.styleSheets)) {
+    try {
+      for (const rule of Array.from(styleSheet.cssRules || [])) {
+        parts.push(rule.cssText);
+      }
+    } catch {
+      // Cross-origin stylesheets cannot be read; local app styles are enough for Threadline.
+    }
+  }
+  return parts.join("\n");
+}
+
+/**
+ * Downloads a blob with the given filename.
+ * @param {Blob} blob - Blob to download.
+ * @param {string} fileName - Suggested download filename.
+ * @returns {void}
+ */
+function downloadThreadExplorerBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Draws rounded rectangle path for snapshot canvas rendering.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {number} x - Left coordinate.
+ * @param {number} y - Top coordinate.
+ * @param {number} width - Rectangle width.
+ * @param {number} height - Rectangle height.
+ * @param {number} radius - Corner radius.
+ * @returns {void}
+ */
+function drawThreadExplorerSnapshotRoundRect(context, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.lineTo(x + width - safeRadius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  context.lineTo(x + width, y + height - safeRadius);
+  context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  context.lineTo(x + safeRadius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  context.lineTo(x, y + safeRadius);
+  context.quadraticCurveTo(x, y, x + safeRadius, y);
+  context.closePath();
+}
+
+/**
+ * Wraps plain text for canvas snapshot rendering.
+ * @param {CanvasRenderingContext2D} context - Measuring canvas context.
+ * @param {string} text - Text to wrap.
+ * @param {number} maxWidth - Maximum line width.
+ * @param {number} maxLines - Maximum lines to return.
+ * @returns {string[]} Wrapped lines.
+ */
+function wrapThreadExplorerSnapshotText(context, text, maxWidth, maxLines = 8) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const words = normalized.split(" ");
+  const lines = [];
+  let current = "";
+  words.forEach((word) => {
+    const candidate = current ? `${current} ${word}` : word;
+    if (context.measureText(candidate).width <= maxWidth) {
+      current = candidate;
+      return;
+    }
+    if (current) {
+      lines.push(current);
+    }
+    current = word;
+  });
+  if (current) {
+    lines.push(current);
+  }
+
+  if (lines.length <= maxLines) {
+    return lines;
+  }
+  const clipped = lines.slice(0, maxLines);
+  clipped[clipped.length - 1] = `${clipped[clipped.length - 1].replace(/\.+$/, "")}...`;
+  return clipped;
+}
+
+/**
+ * Draws one text block for snapshot canvas rendering.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {string[]} lines - Lines to draw.
+ * @param {number} x - Left coordinate.
+ * @param {number} y - First baseline coordinate.
+ * @param {number} lineHeight - Distance between baselines.
+ * @returns {number} Next baseline coordinate after the block.
+ */
+function drawThreadExplorerSnapshotTextBlock(context, lines, x, y, lineHeight) {
+  let cursorY = y;
+  lines.forEach((line) => {
+    context.fillText(line, x, cursorY);
+    cursorY += lineHeight;
+  });
+  return cursorY;
+}
+
+/**
+ * Calculates a browser-safe scale for Thread Explorer snapshot canvases.
+ * @param {number} width - Snapshot layout width in CSS pixels.
+ * @param {number} height - Snapshot layout height in CSS pixels.
+ * @returns {number} Canvas scale factor.
+ */
+function getThreadExplorerSnapshotScale(width, height) {
+  let scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+  const longestSide = Math.max(width, height, 1);
+  const pixelCount = Math.max(width * height, 1);
+  const dimensionScale = THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION / longestSide;
+  const pixelScale = Math.sqrt(THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS / pixelCount);
+
+  if (dimensionScale < scale) {
+    scale = dimensionScale;
+  }
+  if (pixelScale < scale) {
+    scale = pixelScale;
+  }
+  if (!Number.isFinite(scale) || scale <= 0) {
+    scale = 0.1;
+  }
+
+  return Math.max(0.01, Math.min(2, scale));
+}
+
+/**
+ * Creates a canvas sized for the complete Thread Explorer snapshot.
+ * @param {number} width - CSS pixel width.
+ * @param {number} height - CSS pixel height.
+ * @returns {object} Canvas, context, scale, width, and height.
+ */
+function createThreadExplorerSnapshotCanvas(width, height) {
+  const canvas = document.createElement("canvas");
+  const scale = getThreadExplorerSnapshotScale(width, height);
+  canvas.width = Math.max(1, Math.floor(width * scale));
+  canvas.height = Math.max(1, Math.floor(height * scale));
+  const context = canvas.getContext("2d");
+  context.setTransform(scale, 0, 0, scale, 0, 0);
+  context.fillStyle = getComputedStyle(document.body).backgroundColor || "#ffffff";
+  context.fillRect(0, 0, width, height);
+  return {
+    canvas,
+    context,
+    scale,
+    width,
+    height,
+  };
+}
+
+/**
+ * Converts a snapshot canvas to a blob.
+ * @param {HTMLCanvasElement} canvas - Canvas to encode.
+ * @param {string} mimeType - Target MIME type.
+ * @returns {Promise<Blob>} Encoded image blob.
+ */
+async function encodeThreadExplorerSnapshotCanvas(canvas, mimeType) {
+  let quality = undefined;
+  if (mimeType === "image/jpeg") {
+    quality = 0.92;
+  }
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, mimeType, quality));
+  if (!blob) {
+    throw new Error(t("threadExplorerSnapshotFailed"));
+  }
+  return blob;
+}
+
+/**
+ * Writes an unsigned 32-bit integer in big-endian order.
+ * @param {Uint8Array} target - Target byte buffer.
+ * @param {number} offset - Write offset.
+ * @param {number} value - Unsigned integer value.
+ * @returns {void}
+ */
+function writeThreadExplorerPngUint32(target, offset, value) {
+  target[offset] = (value >>> 24) & 255;
+  target[offset + 1] = (value >>> 16) & 255;
+  target[offset + 2] = (value >>> 8) & 255;
+  target[offset + 3] = value & 255;
+}
+
+/**
+ * Builds the CRC table used by PNG chunks.
+ * @returns {Uint32Array} CRC lookup table.
+ */
+function createThreadExplorerPngCrcTable() {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      if ((value & 1) !== 0) {
+        value = 0xedb88320 ^ (value >>> 1);
+      } else {
+        value >>>= 1;
+      }
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+}
+
+/**
+ * Calculates a PNG CRC over chunk type and payload.
+ * @param {string} type - Four-character PNG chunk type.
+ * @param {Uint8Array} data - Chunk payload bytes.
+ * @param {Uint32Array} table - CRC lookup table.
+ * @returns {number} Unsigned CRC value.
+ */
+function calculateThreadExplorerPngCrc(type, data, table) {
+  let crc = 0xffffffff;
+  for (let index = 0; index < type.length; index += 1) {
+    crc = table[(crc ^ type.charCodeAt(index)) & 255] ^ (crc >>> 8);
+  }
+  for (let index = 0; index < data.length; index += 1) {
+    crc = table[(crc ^ data[index]) & 255] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * Creates one complete PNG chunk.
+ * @param {string} type - Four-character PNG chunk type.
+ * @param {Uint8Array} data - Chunk payload bytes.
+ * @param {Uint32Array} crcTable - CRC lookup table.
+ * @returns {Uint8Array} Encoded PNG chunk.
+ */
+function createThreadExplorerPngChunk(type, data, crcTable) {
+  const chunk = new Uint8Array(data.length + 12);
+  writeThreadExplorerPngUint32(chunk, 0, data.length);
+  for (let index = 0; index < type.length; index += 1) {
+    chunk[4 + index] = type.charCodeAt(index);
+  }
+  chunk.set(data, 8);
+  writeThreadExplorerPngUint32(chunk, data.length + 8, calculateThreadExplorerPngCrc(type, data, crcTable));
+  return chunk;
+}
+
+/**
+ * Creates PNG IHDR data for an RGBA image.
+ * @param {number} width - Image width in pixels.
+ * @param {number} height - Image height in pixels.
+ * @returns {Uint8Array} IHDR payload.
+ */
+function createThreadExplorerPngHeaderData(width, height) {
+  const data = new Uint8Array(13);
+  writeThreadExplorerPngUint32(data, 0, width);
+  writeThreadExplorerPngUint32(data, 4, height);
+  data[8] = 8;
+  data[9] = 6;
+  data[10] = 0;
+  data[11] = 0;
+  data[12] = 0;
+  return data;
+}
+
+/**
+ * Returns the Thread Explorer snapshot background color.
+ * @returns {string} CSS color string.
+ */
+function getThreadExplorerSnapshotBackgroundColor() {
+  const stageColor = getComputedStyle(threadExplorerThreadStage).backgroundColor;
+  if (stageColor && stageColor !== "rgba(0, 0, 0, 0)") {
+    return stageColor;
+  }
+
+  const treeColor = getComputedStyle(threadExplorerThreadTree).backgroundColor;
+  if (treeColor && treeColor !== "rgba(0, 0, 0, 0)") {
+    return treeColor;
+  }
+
+  const bodyColor = getComputedStyle(document.body).backgroundColor;
+  if (bodyColor && bodyColor !== "rgba(0, 0, 0, 0)") {
+    return bodyColor;
+  }
+
+  return "#f2f7ff";
+}
+
+/**
+ * Renders one full-resolution Thread Explorer snapshot tile.
+ * @param {number} tileX - Tile left coordinate in snapshot pixels.
+ * @param {number} tileY - Tile top coordinate in snapshot pixels.
+ * @param {number} tileWidth - Tile width in pixels.
+ * @param {number} tileHeight - Tile height in pixels.
+ * @param {DOMRect} stageRect - Thread Explorer stage rectangle.
+ * @param {HTMLElement[]} cards - Rendered post card elements.
+ * @param {Map<string, HTMLImageElement>} avatarImages - Preloaded cached avatars for canvas drawing.
+ * @returns {HTMLCanvasElement} Rendered tile canvas.
+ */
+function renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, stageRect, cards, avatarImages = new Map()) {
+  const canvas = document.createElement("canvas");
+  canvas.width = tileWidth;
+  canvas.height = tileHeight;
+  const context = canvas.getContext("2d");
+  context.fillStyle = getThreadExplorerSnapshotBackgroundColor();
+  context.fillRect(0, 0, tileWidth, tileHeight);
+  context.save();
+  context.translate(-tileX, -tileY);
+  drawThreadExplorerSnapshotEdges(context);
+  cards.forEach((card) => {
+    drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages);
+  });
+  context.restore();
+  return canvas;
+}
+
+/**
+ * Draws a circular fallback avatar into a snapshot canvas.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {number} x - Avatar left coordinate.
+ * @param {number} y - Avatar top coordinate.
+ * @param {number} size - Avatar diameter.
+ * @returns {void}
+ */
+function drawThreadExplorerSnapshotFallbackAvatar(context, x, y, size) {
+  const center = size / 2;
+  context.fillStyle = "#0070ff";
+  context.beginPath();
+  context.arc(x + center, y + center, center, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = "#ffffff";
+  context.beginPath();
+  context.arc(x + center, y + (size * 0.4), size * 0.18, 0, Math.PI * 2);
+  context.fill();
+  context.beginPath();
+  context.arc(x + center, y + (size * 0.78), size * 0.28, Math.PI, 0, true);
+  context.fill();
+}
+
+/**
+ * Checks whether an image URL can be drawn without tainting the snapshot canvas.
+ * @param {HTMLImageElement|null} image - Candidate image element.
+ * @returns {boolean} True when the image source is same-origin or local data.
+ */
+function canDrawThreadExplorerSnapshotImage(image) {
+  const source = String(image?.currentSrc || image?.src || "").trim();
+  if (!source) {
+    return false;
+  }
+  if (source.startsWith("data:") || source.startsWith("blob:")) {
+    return true;
+  }
+  try {
+    return new URL(source, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Draws a circular avatar image into a snapshot canvas when the image can be used safely.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {HTMLImageElement|null} image - Rendered avatar image element.
+ * @param {number} x - Avatar left coordinate.
+ * @param {number} y - Avatar top coordinate.
+ * @param {number} size - Avatar diameter.
+ * @returns {boolean} True when a real avatar was drawn.
+ */
+function drawThreadExplorerSnapshotAvatarImage(context, image, x, y, size) {
+  if (!canDrawThreadExplorerSnapshotImage(image)) {
+    return false;
+  }
+  if (!image || !image.complete || !image.naturalWidth || !image.naturalHeight) {
+    return false;
+  }
+
+  try {
+    const scale = Math.max(size / image.naturalWidth, size / image.naturalHeight);
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    const offsetX = x + ((size - drawWidth) / 2);
+    const offsetY = y + ((size - drawHeight) / 2);
+    context.save();
+    context.beginPath();
+    context.arc(x + (size / 2), y + (size / 2), size / 2, 0, Math.PI * 2);
+    context.clip();
+    context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+    context.restore();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Renders a full-resolution PNG through small canvas tiles and an assembled PNG stream.
+ * @param {number} width - Snapshot width in pixels.
+ * @param {number} height - Snapshot height in pixels.
+ * @returns {Promise<Blob>} Lossless PNG blob.
+ */
+async function renderThreadExplorerTiledPngSnapshotBlob(width, height) {
+  const crcTable = createThreadExplorerPngCrcTable();
+  const parts = [];
+  const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  parts.push(signature);
+  parts.push(createThreadExplorerPngChunk("IHDR", createThreadExplorerPngHeaderData(width, height), crcTable));
+
+  if (typeof CompressionStream !== "function") {
+    throw new Error("CompressionStream is not available.");
+  }
+  const compressionStream = new CompressionStream("deflate");
+  const compressionWriter = compressionStream.writable.getWriter();
+  const compressedBytesPromise = new Response(compressionStream.readable).arrayBuffer();
+  const stageRect = threadExplorerThreadStage.getBoundingClientRect();
+  const cards = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card"));
+  const avatarImages = await preloadThreadExplorerSnapshotAvatarImages(cards);
+
+  for (let tileY = 0; tileY < height; tileY += THREAD_EXPLORER_SNAPSHOT_TILE_SIZE) {
+    const tileHeight = Math.min(THREAD_EXPLORER_SNAPSHOT_TILE_SIZE, height - tileY);
+    const rowTiles = [];
+    for (let tileX = 0; tileX < width; tileX += THREAD_EXPLORER_SNAPSHOT_TILE_SIZE) {
+      const tileWidth = Math.min(THREAD_EXPLORER_SNAPSHOT_TILE_SIZE, width - tileX);
+      const tileCanvas = renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, stageRect, cards, avatarImages);
+      const tileContext = tileCanvas.getContext("2d");
+      rowTiles.push({
+        x: tileX,
+        width: tileWidth,
+        data: tileContext.getImageData(0, 0, tileWidth, tileHeight).data,
+      });
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    }
+
+    for (let row = 0; row < tileHeight; row += 1) {
+      const scanline = new Uint8Array((width * 4) + 1);
+      scanline[0] = 0;
+      rowTiles.forEach((tile) => {
+        const sourceOffset = row * tile.width * 4;
+        const targetOffset = 1 + (tile.x * 4);
+        scanline.set(tile.data.subarray(sourceOffset, sourceOffset + (tile.width * 4)), targetOffset);
+      });
+      await compressionWriter.write(scanline);
+    }
+  }
+
+  await compressionWriter.close();
+  const compressedScanlines = new Uint8Array(await compressedBytesPromise);
+  parts.push(createThreadExplorerPngChunk("IDAT", compressedScanlines, crcTable));
+  parts.push(createThreadExplorerPngChunk("IEND", new Uint8Array(0), crcTable));
+  return new Blob(parts, { type: "image/png" });
+}
+
+/**
+ * Checks whether PNG export should avoid one large canvas.
+ * @param {number} width - Snapshot width in pixels.
+ * @param {number} height - Snapshot height in pixels.
+ * @returns {boolean} True when tiled PNG assembly is safer.
+ */
+function shouldUseThreadExplorerTiledPngSnapshot(width, height) {
+  if (width > THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION) {
+    return true;
+  }
+  if (height > THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION) {
+    return true;
+  }
+  if ((width * height) > THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Draws Thread Explorer SVG edge paths on a snapshot canvas.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @returns {void}
+ */
+function drawThreadExplorerSnapshotEdges(context) {
+  const edges = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-edge"));
+  edges.forEach((edge) => {
+    const data = String(edge.getAttribute("d") || "").trim();
+    if (!data) {
+      return;
+    }
+    try {
+      context.save();
+      context.strokeStyle = getComputedStyle(edge).stroke || "#b8cce8";
+      context.lineWidth = Number.parseFloat(getComputedStyle(edge).strokeWidth) || 2;
+      context.lineCap = "round";
+      context.stroke(new Path2D(data));
+      context.restore();
+    } catch {
+      // Ignore malformed paths in fallback renderer.
+    }
+  });
+}
+
+/**
+ * Draws one rendered Thread Explorer card into the fallback snapshot canvas.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {HTMLElement} card - Rendered post card.
+ * @param {DOMRect} stageRect - Thread Explorer stage rectangle.
+ * @param {Map<string, HTMLImageElement>} avatarImages - Preloaded cached avatars for canvas drawing.
+ * @returns {void}
+ */
+function drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages = new Map()) {
+  const rect = getThreadExplorerStageRect(card, stageRect);
+  const computed = getComputedStyle(card);
+  context.save();
+  drawThreadExplorerSnapshotRoundRect(context, rect.left, rect.top, rect.width, rect.height, 8);
+  context.fillStyle = computed.backgroundColor || "#ffffff";
+  context.fill();
+  context.strokeStyle = computed.borderColor || "#d8e3f2";
+  context.lineWidth = 1.5;
+  context.stroke();
+
+  const avatarX = rect.left + 16;
+  const avatarY = rect.top + 16;
+  const avatar = card.querySelector(".thread-explorer-avatar");
+  const avatarKey = getThreadExplorerSnapshotAvatarCacheKey(avatar);
+  let avatarImage = null;
+  if (avatarKey && avatarImages.has(avatarKey)) {
+    avatarImage = avatarImages.get(avatarKey);
+  } else {
+    avatarImage = avatar;
+  }
+  const avatarWasDrawn = drawThreadExplorerSnapshotAvatarImage(context, avatarImage, avatarX, avatarY, 40);
+  if (!avatarWasDrawn) {
+    drawThreadExplorerSnapshotFallbackAvatar(context, avatarX, avatarY, 40);
+  }
+
+  const textX = rect.left + 66;
+  const textWidth = Math.max(80, rect.width - 86);
+  let y = rect.top + 28;
+  const author = card.querySelector(".thread-explorer-post-author")?.textContent || "";
+  const handle = card.querySelector(".thread-explorer-post-handle")?.textContent || "";
+  const meta = card.querySelector(".thread-explorer-post-meta")?.textContent || "";
+  const body = card.querySelector(".thread-explorer-post-text")?.textContent || "";
+  const counts = card.querySelector(".thread-explorer-post-counts")?.textContent || "";
+  const editMarker = card.querySelector(".thread-explorer-edit-button:not([hidden])")?.textContent || "";
+
+  context.fillStyle = "#14233d";
+  context.font = "700 16px Segoe UI, Arial, sans-serif";
+  drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, author, textWidth, 1), textX, y, 18);
+  y += 18;
+  context.fillStyle = "#5d7394";
+  context.font = "13px Segoe UI, Arial, sans-serif";
+  drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, handle, textWidth, 1), textX, y, 16);
+  y += 26;
+  if (meta) {
+    drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, meta, textWidth, 1), rect.left + 16, y, 16);
+    y += 24;
+  }
+  if (editMarker) {
+    context.fillStyle = "#92560d";
+    context.font = "700 12px Segoe UI, Arial, sans-serif";
+    y = drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, editMarker, rect.width - 32, 1), rect.left + 16, y, 15);
+    y += 8;
+  }
+
+  context.fillStyle = "#1e3150";
+  context.font = "14px Segoe UI, Arial, sans-serif";
+  y = drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, body, rect.width - 32, 10), rect.left + 16, y, 19);
+  if (counts) {
+    context.fillStyle = "#5d7394";
+    context.font = "12px Segoe UI, Arial, sans-serif";
+    drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, counts, rect.width - 32, 2), rect.left + 16, Math.min(rect.bottom - 16, y + 12), 15);
+  }
+  context.restore();
+}
+
+/**
+ * Renders the complete Thread Explorer tree directly to canvas as a robust fallback.
+ * @param {string} mimeType - Target image MIME type.
+ * @param {number} width - Snapshot width.
+ * @param {number} height - Snapshot height.
+ * @returns {Promise<Blob>} Image blob.
+ */
+async function renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height) {
+  const snapshot = createThreadExplorerSnapshotCanvas(width, height);
+  const stageRect = threadExplorerThreadStage.getBoundingClientRect();
+  drawThreadExplorerSnapshotEdges(snapshot.context);
+  const cards = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card"));
+  const avatarImages = await preloadThreadExplorerSnapshotAvatarImages(cards);
+  cards.forEach((card) => drawThreadExplorerSnapshotCard(snapshot.context, card, stageRect, avatarImages));
+  return encodeThreadExplorerSnapshotCanvas(snapshot.canvas, mimeType);
+}
+
+/**
+ * Renders the complete Thread Explorer tree through SVG foreignObject.
+ * @param {string} mimeType - Target image MIME type.
+ * @param {number} width - Snapshot width.
+ * @param {number} height - Snapshot height.
+ * @returns {Promise<Blob>} Image blob.
+ */
+async function renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, height) {
+  const sourceStage = threadExplorerThreadStage;
+  const clone = sourceStage.cloneNode(true);
+  clone.style.setProperty("--thread-explorer-zoom", "1");
+  clone.style.width = `${width}px`;
+  clone.style.minWidth = `${width}px`;
+  clone.style.height = `${height}px`;
+  clone.style.padding = getComputedStyle(sourceStage).padding;
+  inlineThreadExplorerSnapshotImages(sourceStage, clone);
+
+  const css = collectThreadExplorerSnapshotCss();
+  const html = `
+    <div xmlns="http://www.w3.org/1999/xhtml">
+      <style>${css}</style>
+      ${clone.outerHTML}
+    </div>
+  `;
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <foreignObject width="100%" height="100%">${html}</foreignObject>
+    </svg>
+  `;
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  try {
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.addEventListener("load", resolve, { once: true });
+      image.addEventListener("error", () => reject(new Error("foreignObject snapshot failed")), { once: true });
+      image.src = svgUrl;
+    });
+
+    const snapshot = createThreadExplorerSnapshotCanvas(width, height);
+    snapshot.context.drawImage(image, 0, 0);
+    return encodeThreadExplorerSnapshotCanvas(snapshot.canvas, mimeType);
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
+/**
+ * Renders the complete Thread Explorer tree as an image blob.
+ * @param {string} mimeType - Target image MIME type.
+ * @returns {Promise<Blob>} Image blob.
+ */
+async function renderThreadExplorerSnapshotBlob(mimeType = "image/png") {
+  if (!threadExplorerTree) {
+    throw new Error(t("threadExplorerSnapshotNoThread"));
+  }
+
+  await hydrateThreadExplorerTreeAvatars(threadExplorerTree);
+  await restoreAccountAvatarCache();
+  applyThreadExplorerAvatarCacheToTree(threadExplorerTree);
+  renderThreadExplorerTree();
+  await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+
+  const sourceStage = threadExplorerThreadStage;
+  const width = Math.ceil(Math.max(sourceStage.scrollWidth, sourceStage.offsetWidth, sourceStage.getBoundingClientRect().width));
+  const height = Math.ceil(Math.max(sourceStage.scrollHeight, sourceStage.offsetHeight, sourceStage.getBoundingClientRect().height));
+  if (!width || !height) {
+    throw new Error(t("threadExplorerSnapshotFailed"));
+  }
+
+  if (mimeType === "image/png" && shouldUseThreadExplorerTiledPngSnapshot(width, height)) {
+    try {
+      return await renderThreadExplorerTiledPngSnapshotBlob(width, height);
+    } catch (error) {
+      console.warn("Thread Explorer tiled PNG snapshot failed; using scaled fallback.", error);
+    }
+  }
+
+  try {
+    return await renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, height);
+  } catch (error) {
+    console.warn("Thread Explorer foreignObject snapshot failed; using canvas fallback.", error);
+    return renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height);
+  }
+}
+
+/**
+ * Downloads the complete Thread Explorer tree as a PNG snapshot.
+ * @returns {Promise<void>} Resolves after the browser download was triggered.
+ */
+async function downloadThreadExplorerSnapshot() {
+  try {
+    threadExplorerSnapshotPngButton.disabled = true;
+    threadExplorerSnapshotPngButton.textContent = t("threadExplorerSnapshotBusy");
+    const blob = await renderThreadExplorerSnapshotBlob("image/png");
+    downloadThreadExplorerBlob(blob, buildThreadExplorerSnapshotFileName("png"));
+  } catch (error) {
+    console.error(error);
+    threadExplorerThreadStatus.textContent = error.message || t("threadExplorerSnapshotFailed");
+  } finally {
+    threadExplorerSnapshotPngButton.textContent = t("threadExplorerSnapshotPngButton");
+    updateThreadExplorerControls();
+  }
+}
+
+/**
+ * Opens the Thread Explorer URL dialog and prepares the input field.
+ * @returns {void}
+ */
+function openThreadExplorerUrlDialog() {
+  threadExplorerUrlStatus.textContent = "";
+  threadExplorerUrlInput.value = "";
+  threadExplorerUrlDialog.showModal();
+  window.setTimeout(() => {
+    threadExplorerUrlInput.focus();
+  }, 0);
+}
+
+/**
+ * Closes the Thread Explorer URL dialog when it is open.
+ * @returns {void}
+ */
+function closeThreadExplorerUrlDialog() {
+  if (threadExplorerUrlDialog.open) {
+    threadExplorerUrlDialog.close();
+  }
+}
+
+/**
+ * Resolves a Bluesky post URL and opens the matching live thread.
+ * @returns {Promise<void>} Resolves after the thread selection was started.
+ */
+async function loadThreadExplorerPostFromUrl() {
+  const url = String(threadExplorerUrlInput.value || "").trim();
+  if (!url) {
+    threadExplorerUrlStatus.textContent = t("threadExplorerUrlMissing");
+    return;
+  }
+
+  threadExplorerUrlLoadButton.disabled = true;
+  threadExplorerUrlStatus.textContent = t("threadExplorerUrlLoading");
+  try {
+    const result = await sendToServiceWorker("RESOLVE_THREAD_EXPLORER_POST_URL", {
+      url,
+    }, {
+      timeoutMs: 30000,
+    });
+    const uri = String(result?.uri || "").trim();
+    if (!uri) {
+      throw new Error(t("threadExplorerUrlFailed"));
+    }
+    closeThreadExplorerUrlDialog();
+    await selectThreadExplorerPost(uri);
+  } catch (error) {
+    threadExplorerUrlStatus.textContent = error.message || t("threadExplorerUrlFailed");
+  } finally {
+    threadExplorerUrlLoadButton.disabled = false;
+  }
+}
+
+/**
+ * Shows the Thread Explorer workspace from the workspace hub.
+ * @returns {void}
+ */
+function handleThreadExplorerLaunchClick() {
+  showThreadExplorerWorkspace();
+}
+
+/**
+ * Refreshes the Thread Explorer feed from the active source.
+ * @returns {void}
+ */
+function handleThreadExplorerRefreshClick() {
+  void loadThreadExplorerFeed({ reset: true, clearSelection: true });
+}
+
+/**
+ * Opens the Thread Explorer URL prompt.
+ * @returns {void}
+ */
+function handleThreadExplorerUrlClick() {
+  openThreadExplorerUrlDialog();
+}
+
+/**
+ * Switches the Thread Explorer feed to follows.
+ * @returns {void}
+ */
+function handleThreadExplorerFollowsClick() {
+  setThreadExplorerSource("follows");
+}
+
+/**
+ * Switches the Thread Explorer feed to mutuals.
+ * @returns {void}
+ */
+function handleThreadExplorerMutualsClick() {
+  setThreadExplorerSource("mutuals");
+}
+
+/**
+ * Reloads or focuses the Thread Explorer root post.
+ * @returns {Promise<void>} Resolves after the root is focused.
+ */
+async function handleThreadExplorerRootClick() {
+  const rootUri = String(threadExplorerTree?.post?.uri || "").trim();
+  if (!rootUri) {
+    scrollThreadExplorerToRoot();
+    return;
+  }
+
+  threadExplorerCollapsedUris.clear();
+  if (rootUri !== threadExplorerSelectedUri) {
+    await selectThreadExplorerPost(rootUri);
+    window.requestAnimationFrame(scrollThreadExplorerToRoot);
+    return;
+  }
+
+  renderThreadExplorerTree();
+  window.requestAnimationFrame(scrollThreadExplorerToRoot);
+}
+
+/**
+ * Reloads the currently selected Thread Explorer thread from the live API.
+ * @returns {void}
+ */
+function handleThreadExplorerReloadThreadClick() {
+  const selectedUri = String(threadExplorerSelectedUri || "").trim();
+  if (!selectedUri) {
+    return;
+  }
+  threadExplorerCollapsedUris.clear();
+  void selectThreadExplorerPost(selectedUri);
+}
+
+/**
+ * Downloads the current Thread Explorer tree as a PNG snapshot.
+ * @returns {void}
+ */
+function handleThreadExplorerSnapshotPngClick() {
+  void downloadThreadExplorerSnapshot();
+}
+
+/**
+ * Saves the current Thread Explorer thread locally.
+ * @returns {void}
+ */
+function handleThreadExplorerSaveClick() {
+  void saveCurrentThreadExplorerFavorite();
+}
+
+/**
+ * Opens the Thread Explorer favorites menu.
+ * @returns {void}
+ */
+function handleThreadExplorerFavoritesClick() {
+  openThreadExplorerFavoritesDialog();
+}
+
+/**
+ * Opens saved searches from the Thread Explorer.
+ * @returns {void}
+ */
+function handleThreadExplorerSearchesClick() {
+  openSavedSearchesDialog("threadExplorer");
+}
+
+/**
+ * Opens saved searches from the Archive workspace.
+ * @returns {void}
+ */
+function handleArchiveSavedSearchesClick() {
+  openSavedSearchesDialog("archive");
+}
+
+/**
+ * Adds the URL currently typed into the saved-searches dialog.
+ * @returns {void}
+ */
+function handleSavedSearchAddClick() {
+  void addSavedSearchFromInput().catch((error) => {
+    savedSearchesStatus.textContent = error.message || t("savedSearchAddFailed");
+  });
+}
+
+/**
+ * Loads a saved search for the active dialog context.
+ * @param {Event} event - Click event from a saved-search load button.
+ * @returns {void}
+ */
+function handleSavedSearchLoadClick(event) {
+  const id = String(event.currentTarget?.dataset?.id || "").trim();
+  if (savedSearchDialogContext === "archive") {
+    void loadSavedSearchInArchive(id);
+    return;
+  }
+  void loadSavedSearchInThreadExplorer(id);
+}
+
+/**
+ * Removes a saved search from the shared list.
+ * @param {Event} event - Click event from a saved-search delete button.
+ * @returns {void}
+ */
+function handleSavedSearchRemoveClick(event) {
+  const id = String(event.currentTarget?.dataset?.id || "").trim();
+  void removeSavedSearch(id);
+}
+
+/**
+ * Zooms out of the Thread Explorer tree.
+ * @returns {void}
+ */
+function handleThreadExplorerZoomOutClick() {
+  setThreadExplorerZoom(threadExplorerZoom / 1.15);
+}
+
+/**
+ * Resets the Thread Explorer tree zoom.
+ * @returns {void}
+ */
+function handleThreadExplorerZoomResetClick() {
+  setThreadExplorerZoom(1);
+}
+
+/**
+ * Zooms into the Thread Explorer tree.
+ * @returns {void}
+ */
+function handleThreadExplorerZoomInClick() {
+  setThreadExplorerZoom(threadExplorerZoom * 1.15);
+}
+
+/**
+ * Toggles the Thread Explorer tree orientation.
+ * @returns {void}
+ */
+function handleThreadExplorerOrientationClick() {
+  toggleThreadExplorerOrientation();
+}
+
+/**
+ * Collapses all expandable Thread Explorer replies.
+ * @returns {void}
+ */
+function handleThreadExplorerCollapseClick() {
+  setAllThreadExplorerNodesCollapsed(true);
+}
+
+/**
+ * Expands all collapsed Thread Explorer replies.
+ * @returns {void}
+ */
+function handleThreadExplorerExpandClick() {
+  setAllThreadExplorerNodesCollapsed(false);
+}
+
+/**
+ * Loads a locally saved Thread Explorer favorite.
+ * @param {Event} event - Click event from a favorite item.
+ * @returns {void}
+ */
+function handleThreadExplorerFavoriteLoadClick(event) {
+  const button = event.currentTarget;
+  const uri = String(button?.dataset?.uri || "").trim();
+  if (threadExplorerFavoritesDialog.open) {
+    threadExplorerFavoritesDialog.close();
+  }
+  void selectThreadExplorerPost(uri);
+}
+
+/**
+ * Removes a locally saved Thread Explorer favorite.
+ * @param {Event} event - Click event from a remove button.
+ * @returns {void}
+ */
+function handleThreadExplorerFavoriteRemoveClick(event) {
+  const button = event.currentTarget;
+  const uri = String(button?.dataset?.uri || "").trim();
+  void removeThreadExplorerFavorite(uri);
 }
 
 function formatNetworkRelationshipDate(value) {
@@ -3896,8 +8656,7 @@ function renderAnalysisSummaryCard(slotLabel, account) {
   head.className = "analysis-account-card-head";
   const avatar = document.createElement("img");
   avatar.className = "analysis-account-avatar";
-  avatar.src = account.profile.avatar || "icons/threadline-icon.svg";
-  avatar.alt = account.profile.displayName || account.profile.handle || account.profile.did;
+  setAvatarImage(avatar, account.profile.avatar, account.profile.displayName || account.profile.handle || account.profile.did);
   const identity = document.createElement("div");
   identity.className = "analysis-account-identity";
   const eyebrow = document.createElement("p");
@@ -4071,13 +8830,31 @@ function renderAnalysisTemporal() {
     const table = document.createElement("table");
     table.className = "analysis-table";
     const head = document.createElement("thead");
-    head.innerHTML = `<tr><th>${escapeHtml(t("analysisMetricsColumnMetric"))}</th><th>${escapeHtml(t("analysisAccountALabel"))}</th><th>${escapeHtml(t("analysisAccountBLabel"))}</th><th>${escapeHtml(t("analysisTemporalColumnAssessment"))}</th></tr>`;
+    const headRow = cloneTemplate("analysis-table-head-template");
+    if (headRow) {
+      const headers = headRow.querySelectorAll("th");
+      if (headers.length >= 4) {
+        setSafeText(headers[0], t("analysisMetricsColumnMetric"));
+        setSafeText(headers[1], t("analysisAccountALabel"));
+        setSafeText(headers[2], t("analysisAccountBLabel"));
+        setSafeText(headers[3], t("analysisTemporalColumnAssessment"));
+      }
+      head.appendChild(headRow);
+    }
     table.appendChild(head);
     const body = document.createElement("tbody");
     getAnalysisTemporalTableRows().forEach((row) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.left)}</td><td>${escapeHtml(row.right)}</td><td>${escapeHtml(row.diff)}</td>`;
-      body.appendChild(tr);
+      const tr = cloneTemplate("analysis-table-row-template");
+      if (tr) {
+        const cells = tr.querySelectorAll("td");
+        if (cells.length >= 4) {
+          setSafeText(cells[0], row.label);
+          setSafeText(cells[1], row.left);
+          setSafeText(cells[2], row.right);
+          setSafeText(cells[3], row.diff);
+        }
+        body.appendChild(tr);
+      }
     });
     table.appendChild(body);
     comparisonCard.append(
@@ -4126,15 +8903,9 @@ function createAnalysisResolvedProfileList(entries = [], emptyKey = "analysisPat
 
     const avatar = document.createElement("img");
     avatar.className = "analysis-profile-chip-avatar";
-    const placeholderAvatar = "icons/threadline-icon.svg";
     const avatarSrc = String(entry?.avatar || "").trim();
-    avatar.src = avatarSrc || placeholderAvatar;
-    avatar.alt = String(entry?.displayName || entry?.handle || entry?.did || entry?.label || "profile").trim();
     avatar.loading = "lazy";
-    avatar.onerror = () => {
-      avatar.onerror = null;
-      avatar.src = placeholderAvatar;
-    };
+    setAvatarImage(avatar, avatarSrc, String(entry?.displayName || entry?.handle || entry?.did || entry?.label || "profile").trim());
 
     const body = document.createElement("div");
     body.className = "analysis-profile-chip-body";
@@ -4336,13 +9107,31 @@ function renderAnalysisNetwork() {
   const table = document.createElement("table");
   table.className = "analysis-table";
   const head = document.createElement("thead");
-  head.innerHTML = `<tr><th>${escapeHtml(t("analysisMetricsColumnMetric"))}</th><th>${escapeHtml(t("analysisAccountALabel"))}</th><th>${escapeHtml(t("analysisAccountBLabel"))}</th><th>${escapeHtml(t("analysisTemporalColumnAssessment"))}</th></tr>`;
+  const headRow = cloneTemplate("analysis-table-head-template");
+  if (headRow) {
+    const headers = headRow.querySelectorAll("th");
+    if (headers.length >= 4) {
+      setSafeText(headers[0], t("analysisMetricsColumnMetric"));
+      setSafeText(headers[1], t("analysisAccountALabel"));
+      setSafeText(headers[2], t("analysisAccountBLabel"));
+      setSafeText(headers[3], t("analysisTemporalColumnAssessment"));
+    }
+    head.appendChild(headRow);
+  }
   table.appendChild(head);
   const body = document.createElement("tbody");
   getAnalysisNetworkTableRows().forEach((row) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.left)}</td><td>${escapeHtml(row.right)}</td><td>${escapeHtml(row.diff)}</td>`;
-    body.appendChild(tr);
+    const tr = cloneTemplate("analysis-table-row-template");
+    if (tr) {
+      const cells = tr.querySelectorAll("td");
+      if (cells.length >= 4) {
+        setSafeText(cells[0], row.label);
+        setSafeText(cells[1], row.left);
+        setSafeText(cells[2], row.right);
+        setSafeText(cells[3], row.diff);
+      }
+      body.appendChild(tr);
+    }
   });
   table.appendChild(body);
   analysisNetwork.appendChild(table);
@@ -4380,15 +9169,33 @@ function renderAnalysisMetrics() {
   const table = document.createElement("table");
   table.className = "analysis-table";
   const head = document.createElement("thead");
-  head.innerHTML = `<tr><th>${escapeHtml(t("analysisMetricsColumnMetric"))}</th><th>${escapeHtml(t("analysisAccountALabel"))}</th><th>${escapeHtml(t("analysisAccountBLabel"))}</th><th>${escapeHtml(t("analysisMetricsColumnDiff"))}</th></tr>`;
+  const headRow = cloneTemplate("analysis-table-head-template");
+  if (headRow) {
+    const headers = headRow.querySelectorAll("th");
+    if (headers.length >= 4) {
+      setSafeText(headers[0], t("analysisMetricsColumnMetric"));
+      setSafeText(headers[1], t("analysisAccountALabel"));
+      setSafeText(headers[2], t("analysisAccountBLabel"));
+      setSafeText(headers[3], t("analysisMetricsColumnDiff"));
+    }
+    head.appendChild(headRow);
+  }
   table.appendChild(head);
 
   const body = document.createElement("tbody");
   analysisComparisonResult.metricRows.forEach((row) => {
-    const tr = document.createElement("tr");
-    const formatValue = (value) => (row.formatter === "percent" ? formatAnalysisPercent(value) : formatAnalysisNumber(value, 2));
-    tr.innerHTML = `<td>${escapeHtml(t(row.labelKey))}</td><td>${escapeHtml(formatValue(row.leftValue))}</td><td>${escapeHtml(formatValue(row.rightValue))}</td><td>${escapeHtml(formatAnalysisPercent(Math.min(1, row.normalizedDifference)))} </td>`;
-    body.appendChild(tr);
+    const tr = cloneTemplate("analysis-table-row-template");
+    if (tr) {
+      const cells = tr.querySelectorAll("td");
+      if (cells.length >= 4) {
+        const formatValue = (value) => (row.formatter === "percent" ? formatAnalysisPercent(value) : formatAnalysisNumber(value, 2));
+        setSafeText(cells[0], t(row.labelKey));
+        setSafeText(cells[1], formatValue(row.leftValue));
+        setSafeText(cells[2], formatValue(row.rightValue));
+        setSafeText(cells[3], formatAnalysisPercent(Math.min(1, row.normalizedDifference)));
+      }
+      body.appendChild(tr);
+    }
   });
   table.appendChild(body);
   analysisMetrics.appendChild(table);
@@ -6688,14 +11495,9 @@ function renderNetworkFocus() {
   const badge = document.createElement("div");
   badge.className = "network-avatar-badge";
   const activeAvatarUri = active.did ? getStoredAccountAvatarUri(active) : (active.avatar || "");
-  if (activeAvatarUri) {
-    const image = document.createElement("img");
-    image.src = activeAvatarUri;
-    image.alt = active.displayName || active.handle || "avatar";
-    badge.appendChild(image);
-  } else {
-    badge.textContent = node ? getProfileInitials(node) : "DU";
-  }
+  const image = document.createElement("img");
+  setAvatarImage(image, activeAvatarUri, active.displayName || active.handle || "avatar");
+  badge.appendChild(image);
 
   const copy = document.createElement("div");
   copy.className = "network-avatar-copy";
@@ -7404,15 +12206,10 @@ function renderDmContacts() {
         button.classList.add("is-selected");
       }
       const avatarUri = contact.avatarPath ? (contactAssetUris.get(contact.avatarPath) || "") : "";
-      const avatar = document.createElement(avatarUri ? "img" : "span");
+      const avatar = document.createElement("img");
       avatar.className = "account-chip-avatar dm-contact-avatar";
-      if (avatarUri) {
-        avatar.src = avatarUri;
-        avatar.alt = contact.displayName || contact.handle || contact.did || "DM contact";
-        avatar.loading = "lazy";
-      } else {
-        avatar.textContent = getProfileInitials(contact);
-      }
+      avatar.loading = "lazy";
+      setAvatarImage(avatar, avatarUri, contact.displayName || contact.handle || contact.did || "DM contact");
       const fullName = String(contact.displayName || "").trim();
       const fullHandle = contact.handle ? `@${contact.handle}` : "";
       const tooltip = [fullName, fullHandle].filter(Boolean).join("\n");
@@ -8505,18 +13302,251 @@ async function loadDmArchive() {
   });
 }
 
+const ARCHIVE_RANGE_MAX_MONTHS = 3;
+
+/**
+ * Formats a Date object for a date input field.
+ * @param {Date | null | undefined} date Date to format.
+ * @returns {string} Date string in YYYY-MM-DD format or an empty string.
+ */
+function formatArchiveDateInputValue(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Parses a date input value into a local Date object.
+ * @param {string} value Input value from a date field.
+ * @returns {Date | null} Parsed local date or null for invalid input.
+ */
+function parseArchiveDateInputValue(value) {
+  const normalizedValue = String(value || "").trim();
+  const match = normalizedValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, monthIndex, day);
+  if (
+    Number.isNaN(date.getTime())
+    || date.getFullYear() !== year
+    || date.getMonth() !== monthIndex
+    || date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+/**
+ * Returns a copy of a Date object with the time portion removed.
+ * @param {Date | null | undefined} date Source date.
+ * @returns {Date | null} Date at local midnight or null.
+ */
+function getArchiveDateAtLocalMidnight(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+/**
+ * Adds whole calendar months while keeping the day as stable as possible.
+ * @param {Date | null | undefined} date Base date.
+ * @param {number} monthDelta Number of months to add or subtract.
+ * @returns {Date | null} Shifted date or null for invalid input.
+ */
+function addArchiveMonths(date, monthDelta) {
+  const normalizedDate = getArchiveDateAtLocalMidnight(date);
+  const normalizedDelta = Number(monthDelta) || 0;
+  if (!normalizedDate) {
+    return null;
+  }
+  const targetMonthDate = new Date(normalizedDate.getFullYear(), normalizedDate.getMonth() + normalizedDelta, 1);
+  const lastDayOfTargetMonth = new Date(targetMonthDate.getFullYear(), targetMonthDate.getMonth() + 1, 0).getDate();
+  const day = Math.min(normalizedDate.getDate(), lastDayOfTargetMonth);
+  return new Date(targetMonthDate.getFullYear(), targetMonthDate.getMonth(), day);
+}
+
+/**
+ * Builds the default archive date range of up to three months ending today.
+ * @returns {{ from: string, to: string }} Default range values for the archive inputs.
+ */
+function getDefaultArchiveDateRange() {
+  const today = getArchiveDateAtLocalMidnight(new Date());
+  const defaultFromDate = addArchiveMonths(today, -ARCHIVE_RANGE_MAX_MONTHS);
+  return {
+    from: formatArchiveDateInputValue(defaultFromDate),
+    to: formatArchiveDateInputValue(today),
+  };
+}
+
+/**
+ * Ensures the archive date inputs always contain a valid bounded range.
+ * @param {"from" | "to" | "auto"} preferredEdge Which side should stay stable when clamping.
+ * @returns {{ from: string, to: string, changed: boolean }} Final values and whether the inputs changed.
+ */
+function enforceArchiveDateRangeLimit(preferredEdge = "auto") {
+  const defaultRange = getDefaultArchiveDateRange();
+  const today = parseArchiveDateInputValue(defaultRange.to);
+  let fromDate = parseArchiveDateInputValue(archiveFromInput?.value || "");
+  let toDate = parseArchiveDateInputValue(archiveToInput?.value || "");
+  let changed = false;
+
+  if (!toDate) {
+    toDate = today;
+    changed = true;
+  }
+  if (toDate && today && toDate.getTime() > today.getTime()) {
+    toDate = today;
+    changed = true;
+  }
+
+  if (!fromDate && toDate) {
+    fromDate = addArchiveMonths(toDate, -ARCHIVE_RANGE_MAX_MONTHS);
+    changed = true;
+  }
+
+  if (fromDate && toDate && fromDate.getTime() > toDate.getTime()) {
+    if (preferredEdge === "from") {
+      toDate = addArchiveMonths(fromDate, ARCHIVE_RANGE_MAX_MONTHS);
+      if (toDate && today && toDate.getTime() > today.getTime()) {
+        toDate = today;
+      }
+    } else {
+      fromDate = addArchiveMonths(toDate, -ARCHIVE_RANGE_MAX_MONTHS);
+    }
+    changed = true;
+  }
+
+  if (fromDate && toDate) {
+    const maxAllowedToDate = addArchiveMonths(fromDate, ARCHIVE_RANGE_MAX_MONTHS);
+    const minAllowedFromDate = addArchiveMonths(toDate, -ARCHIVE_RANGE_MAX_MONTHS);
+    if (preferredEdge === "from") {
+      if (maxAllowedToDate && toDate.getTime() > maxAllowedToDate.getTime()) {
+        toDate = maxAllowedToDate;
+        changed = true;
+      }
+      if (toDate && today && toDate.getTime() > today.getTime()) {
+        toDate = today;
+        changed = true;
+      }
+    } else if (preferredEdge === "to") {
+      if (minAllowedFromDate && fromDate.getTime() < minAllowedFromDate.getTime()) {
+        fromDate = minAllowedFromDate;
+        changed = true;
+      }
+    } else if (minAllowedFromDate && fromDate.getTime() < minAllowedFromDate.getTime()) {
+      fromDate = minAllowedFromDate;
+      changed = true;
+    }
+  }
+
+  const fromValue = formatArchiveDateInputValue(fromDate);
+  const toValue = formatArchiveDateInputValue(toDate);
+  if (archiveFromInput && archiveFromInput.value !== fromValue) {
+    archiveFromInput.value = fromValue;
+    changed = true;
+  }
+  if (archiveToInput && archiveToInput.value !== toValue) {
+    archiveToInput.value = toValue;
+    changed = true;
+  }
+
+  return {
+    from: fromValue,
+    to: toValue,
+    changed,
+  };
+}
+
+/**
+ * Updates date input bounds to reflect the three-month archive limit.
+ * @returns {void}
+ */
+function syncArchiveDateInputBounds() {
+  const defaultRange = getDefaultArchiveDateRange();
+  const todayValue = defaultRange.to;
+  const fromDate = parseArchiveDateInputValue(archiveFromInput?.value || "");
+  const toDate = parseArchiveDateInputValue(archiveToInput?.value || "");
+  let toMin = "";
+  let toMax = todayValue;
+  let fromMin = "";
+  let fromMax = todayValue;
+
+  if (fromDate) {
+    const maxFromDate = addArchiveMonths(fromDate, ARCHIVE_RANGE_MAX_MONTHS);
+    if (maxFromDate) {
+      toMax = formatArchiveDateInputValue(maxFromDate);
+      if (todayValue && toMax > todayValue) {
+        toMax = todayValue;
+      }
+    }
+    toMin = formatArchiveDateInputValue(fromDate);
+  }
+
+  if (toDate) {
+    const minFromDate = addArchiveMonths(toDate, -ARCHIVE_RANGE_MAX_MONTHS);
+    if (minFromDate) {
+      fromMin = formatArchiveDateInputValue(minFromDate);
+    }
+    fromMax = formatArchiveDateInputValue(toDate);
+  }
+
+  if (archiveFromInput) {
+    archiveFromInput.min = fromMin;
+    archiveFromInput.max = fromMax;
+  }
+  if (archiveToInput) {
+    archiveToInput.min = toMin;
+    archiveToInput.max = toMax;
+  }
+}
+
+/**
+ * Restores default archive dates when no valid range is currently set.
+ * @returns {void}
+ */
+function ensureArchiveDateRangeDefaults() {
+  const hasValidFromDate = Boolean(parseArchiveDateInputValue(archiveFromInput?.value || ""));
+  const hasValidToDate = Boolean(parseArchiveDateInputValue(archiveToInput?.value || ""));
+  if (hasValidFromDate && hasValidToDate) {
+    return;
+  }
+  const defaultRange = getDefaultArchiveDateRange();
+  if (archiveFromInput) {
+    archiveFromInput.value = defaultRange.from;
+  }
+  if (archiveToInput) {
+    archiveToInput.value = defaultRange.to;
+  }
+}
+
+/**
+ * Collects the current archive filters from the workspace controls.
+ * @returns {object} Normalized archive filter object for persistence and fetches.
+ */
 function getArchiveFilters() {
-  const hasExplicitRange = Boolean(archiveFromInput.value || archiveToInput.value);
+  ensureArchiveDateRangeDefaults();
+  const normalizedRange = enforceArchiveDateRangeLimit("auto");
+  syncArchiveDateInputBounds();
   const sourceActor = String(archiveSourceInput?.value || "").trim().replace(/^@+/, "");
   return {
     sourceActor,
     sourceDid: String(archiveSourceProfile?.did || "").trim(),
-    scope: hasExplicitRange ? "range" : archiveScopeSelect.value,
+    scope: "range",
     contentMode: archiveContentModeSelect.value || "posts",
     includeConversationContext: archiveConversationContextToggle?.checked === true,
-    year: archiveYearInput.value.trim(),
-    from: archiveFromInput.value || "",
-    to: archiveToInput.value || "",
+    year: "",
+    from: normalizedRange.from,
+    to: normalizedRange.to,
     hashtagTags: normalizeSelectedHashtagEntries(archiveSelectedHashtags, hashtags),
     hashtagScope: archiveHashtagScope === "startpost" ? "startpost" : "thread",
   };
@@ -8559,12 +13589,18 @@ function getArchivePreferences() {
     waveSize: getArchiveWaveSize(),
     pdfOptions: options,
     livePreview: archiveLivePreviewToggle ? archiveLivePreviewToggle.checked : true,
+    savedSearchId: archiveSavedSearchId,
     threadImportMode: archiveThreadImportModeSelect?.value === "tree"
       ? "tree"
       : (archiveThreadImportModeSelect?.value === "author" ? "author" : "path"),
   };
 }
 
+/**
+ * Applies stored archive preferences to the current workspace controls.
+ * @param {object} preferences Persisted archive settings.
+ * @returns {void}
+ */
 function applyArchivePreferences(preferences = {}) {
   const filters = preferences.filters || {};
   const source = preferences.source && typeof preferences.source === "object" ? preferences.source : {};
@@ -8579,14 +13615,14 @@ function applyArchivePreferences(preferences = {}) {
         avatar: String(source.avatar || "").trim(),
       }
     : null;
-  archiveScopeSelect.value = filters.scope === "year" || filters.scope === "range" ? filters.scope : "all";
+  archiveScopeSelect.value = "range";
   archiveContentModeSelect.value = ["posts", "thread_roots", "threads", "full"].includes(filters.contentMode)
     ? filters.contentMode
     : "posts";
   if (archiveConversationContextToggle) {
     archiveConversationContextToggle.checked = filters.includeConversationContext === true;
   }
-  archiveYearInput.value = String(filters.year || "");
+  archiveYearInput.value = "";
   archiveFromInput.value = String(filters.from || "");
   archiveToInput.value = String(filters.to || "");
   archiveSelectedHashtags = normalizeSelectedHashtagEntries(filters.hashtagTags, hashtags);
@@ -8597,9 +13633,10 @@ function applyArchivePreferences(preferences = {}) {
       ? "tree"
       : (preferences.threadImportMode === "author" ? "author" : "path");
   }
-  if (archiveFromInput.value || archiveToInput.value) {
-    archiveScopeSelect.value = "range";
-  }
+  archiveSavedSearchId = String(preferences.savedSearchId || "").trim();
+  ensureArchiveDateRangeDefaults();
+  enforceArchiveDateRangeLimit("auto");
+  syncArchiveDateInputBounds();
 
   const waveSize = String(preferences.waveSize || "");
   if ([...archiveWaveSizeSelect.options].some((option) => option.value === waveSize)) {
@@ -8628,6 +13665,7 @@ function applyArchivePreferences(preferences = {}) {
   }
   updateArchiveScopeFields();
   renderArchiveSourceState();
+  renderArchiveSavedSearchNote();
   renderHashtagCloud();
 }
 
@@ -8660,13 +13698,8 @@ function renderArchiveSourceState() {
 
   const avatar = document.createElement("img");
   avatar.className = "analysis-account-avatar";
-  avatar.src = archiveSourceProfile.avatar || "icons/threadline-icon.svg";
-  avatar.alt = archiveSourceProfile.displayName || archiveSourceProfile.handle || archiveSourceProfile.did;
   avatar.loading = "lazy";
-  avatar.onerror = () => {
-    avatar.onerror = null;
-    avatar.src = "icons/threadline-icon.svg";
-  };
+  setAvatarImage(avatar, archiveSourceProfile.avatar, archiveSourceProfile.displayName || archiveSourceProfile.handle || archiveSourceProfile.did);
 
   const identity = document.createElement("div");
   identity.className = "analysis-account-identity";
@@ -8819,11 +13852,20 @@ async function clearArchiveSession() {
   });
 }
 
+/**
+ * Updates archive scope controls and keeps the fixed range UI in sync.
+ * @returns {void}
+ */
 function updateArchiveScopeFields() {
-  const scope = archiveScopeSelect.value;
-  archiveYearWrap.hidden = scope !== "year";
-  archiveFromWrap.hidden = scope !== "range";
-  archiveToWrap.hidden = scope !== "range";
+  if (archiveScopeSelect.value !== "range") {
+    archiveScopeSelect.value = "range";
+  }
+  archiveYearWrap.hidden = true;
+  archiveFromWrap.hidden = false;
+  archiveToWrap.hidden = false;
+  ensureArchiveDateRangeDefaults();
+  enforceArchiveDateRangeLimit("auto");
+  syncArchiveDateInputBounds();
 }
 
 function setArchiveProgress({ title, step, percent = 0, detail = "" } = {}) {
@@ -9248,20 +14290,28 @@ function invalidateArchiveCatalog() {
 
 function updatePublishAvailability() {
   const baseText = sourceText.value.trim();
-  const segments = activeSegments.length > 0
-    ? activeSegments
-    : (currentComposedText.trim() ? [currentComposedText] : []);
-  const hasTooLongSegment = segments.some((entry) => entry.length > MAX_POST_LENGTH);
+  let segments = [];
+  if (activeSegments.length > 0) {
+    segments = activeSegments;
+  } else if (currentComposedText.trim()) {
+    segments = [currentComposedText];
+  }
+  const hasTooLongComposer = countGraphemes(sourceText.value) > MAX_COMPOSER_GRAPHEME_LENGTH;
+  const hasTooLongSegment = segments.some((entry) => {
+    const metrics = getPostTextMetrics(entry);
+    return metrics.graphemeCount > MAX_POST_LENGTH || metrics.utf8ByteCount > MAX_POST_UTF8_BYTES;
+  });
   const hasMissingAltText = altTextRequired && getSegmentPayloads().some((segment) =>
     (segment.images || []).some((image) => !String(image.alt || "").trim()));
   const hasOversizedImage = getSegmentPayloads().some((segment) =>
     (segment.images || []).some((image) => image.validation?.tooBig));
   const shouldBlockOversizedImages = !isImageAutoResizeEnabled();
-  const canPublish = Boolean(baseText) && !hasTooLongSegment && !hasMissingAltText;
+  const canPublish = Boolean(baseText) && !hasTooLongComposer && !hasTooLongSegment && !hasMissingAltText;
   const canPublishWithImages = canPublish && (!shouldBlockOversizedImages || !hasOversizedImage);
 
   publishButton.disabled = !canPublishWithImages;
-  publishButton.classList.toggle("is-danger", hasTooLongSegment || hasMissingAltText || (shouldBlockOversizedImages && hasOversizedImage));
+  publishButton.classList.toggle("is-danger", hasTooLongComposer || hasTooLongSegment || hasMissingAltText || (shouldBlockOversizedImages && hasOversizedImage));
+  updateComposerInputWarning(false);
   const publishWarnings = [];
   if (hasMissingAltText) {
     publishWarnings.push(t("publishAltTextWarning"));
@@ -9297,6 +14347,28 @@ function updateComposerLockState() {
 function setComposerLocked(locked) {
   composerLocked = locked;
   updateComposerLockState();
+}
+
+/**
+ * Updates the visible note that the current composer contents were already published.
+ * @returns {void}
+ */
+function updateComposerPostedState() {
+  if (!composerPostedNote) {
+    return;
+  }
+
+  composerPostedNote.hidden = !composerPosted;
+}
+
+/**
+ * Sets whether the composer currently shows an already published thread.
+ * @param {boolean} posted - True when the current composer content was just posted.
+ * @returns {void}
+ */
+function setComposerPosted(posted) {
+  composerPosted = posted;
+  updateComposerPostedState();
 }
 
 function detectBrowserLocale() {
@@ -9632,6 +14704,22 @@ function renderPostLanguageDialog() {
   });
 }
 
+/**
+ * Applies a translated tooltip and accessible label to one element.
+ * @param {Element|null} element - Element that should receive title and aria-label.
+ * @param {string} key - Translation key to read.
+ * @returns {void}
+ */
+function applyTranslatedTitle(element, key) {
+  if (!element || !key) {
+    return;
+  }
+
+  const label = t(key);
+  element.setAttribute("title", label);
+  element.setAttribute("aria-label", label);
+}
+
 function applyTranslations() {
   document.documentElement.lang = currentLocale;
   syncArchiveTransientNoticeFromCatalog();
@@ -9640,6 +14728,10 @@ function applyTranslations() {
   document.querySelectorAll("[data-i18n]").forEach((element) => {
     const key = element.dataset.i18n;
     element.textContent = t(key);
+  });
+
+  document.querySelectorAll("[data-i18n-title]").forEach((element) => {
+    applyTranslatedTitle(element, element.dataset.i18nTitle);
   });
 
   identifierField.placeholder = "z. B. name.bsky.social";
@@ -9668,6 +14760,12 @@ function applyTranslations() {
   }
   if (replyTargetUrlInput) {
     replyTargetUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
+  }
+  if (threadExplorerUrlInput) {
+    threadExplorerUrlInput.placeholder = t("threadExplorerUrlPlaceholder");
+  }
+  if (savedSearchUrlInput) {
+    savedSearchUrlInput.placeholder = t("savedSearchUrlPlaceholder");
   }
   if (archiveMediaActorInput) {
     archiveMediaActorInput.placeholder = t("archiveMediaActorPlaceholder");
@@ -9708,6 +14806,10 @@ function applyTranslations() {
   if (archiveCheckPostEditButton) {
     archiveCheckPostEditButton.textContent = t("postEditCheckOpenButton");
   }
+  if (archiveSavedSearchesButton) {
+    archiveSavedSearchesButton.textContent = t("savedSearchesButton");
+  }
+  renderArchiveSavedSearchNote();
   if (postEditCheckSubmitButton) {
     postEditCheckSubmitButton.textContent = t("postEditCheckButton");
   }
@@ -9790,6 +14892,9 @@ function applyTranslations() {
   publishResultLink.textContent = t("openPostLink");
   historyButton.textContent = t("historyButton");
   composerUnlockButton.textContent = t("composerUnlockButton");
+  if (composerPostedDismissButton) {
+    composerPostedDismissButton.textContent = t("composerPostedDismissButton");
+  }
   sidebarToggleButton.setAttribute("aria-label", sidebarCollapsedDesktop ? t("sidebarExpandButton") : t("sidebarCollapseButton"));
   sidebarToggleButton.title = sidebarCollapsedDesktop ? t("sidebarExpandButton") : t("sidebarCollapseButton");
   sidebarResizeHandle.setAttribute("aria-label", t("sidebarResizeHandleLabel"));
@@ -10029,6 +15134,149 @@ function setBackupStatus(message, tone = "neutral") {
       backupStatus.textContent = "";
       delete backupStatus.dataset.tone;
     }, 5000);
+  }
+}
+
+/**
+ * Reads a timestamp from localStorage for backup reminder decisions.
+ * @param {string} key - Storage key containing a millisecond timestamp.
+ * @returns {number} Stored timestamp in milliseconds, or 0 when unavailable.
+ */
+function readBackupReminderTimestamp(key) {
+  try {
+    const rawValue = window.localStorage.getItem(key);
+    const timestamp = Number(rawValue);
+    if (Number.isFinite(timestamp) && timestamp > 0) {
+      return timestamp;
+    }
+  } catch (error) {
+    console.warn("Backup reminder storage read failed.", error);
+  }
+
+  return 0;
+}
+
+/**
+ * Writes a timestamp to localStorage for backup reminder decisions.
+ * @param {string} key - Storage key to update.
+ * @param {number} timestamp - Timestamp in milliseconds.
+ * @returns {void}
+ */
+function writeBackupReminderTimestamp(key, timestamp) {
+  try {
+    window.localStorage.setItem(key, String(timestamp));
+  } catch (error) {
+    console.warn("Backup reminder storage write failed.", error);
+  }
+}
+
+/**
+ * Stores the current time as the last successful settings backup export.
+ * @returns {void}
+ */
+function markSettingsBackupExported() {
+  const now = Date.now();
+  writeBackupReminderTimestamp(SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY, now);
+  writeBackupReminderTimestamp(SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY, 0);
+}
+
+/**
+ * Checks whether the backup reminder should be shown now.
+ * @returns {boolean} True when the reminder is due and not recently snoozed.
+ */
+function shouldShowSettingsBackupReminder() {
+  if (!backupReminderDialog) {
+    return false;
+  }
+
+  if (backupReminderDialog.open) {
+    return false;
+  }
+
+  if (document.querySelector("dialog[open]")) {
+    return false;
+  }
+
+  const now = Date.now();
+  const dismissedAt = readBackupReminderTimestamp(SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY);
+  if (dismissedAt > 0 && now - dismissedAt < SETTINGS_BACKUP_REMINDER_SNOOZE_MS) {
+    return false;
+  }
+
+  const exportedAt = readBackupReminderTimestamp(SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY);
+  if (exportedAt <= 0) {
+    return true;
+  }
+
+  if (now - exportedAt >= SETTINGS_BACKUP_REMINDER_INTERVAL_MS) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Returns the localized backup reminder message for the current export state.
+ * @returns {string} Message shown inside the backup reminder dialog.
+ */
+function getSettingsBackupReminderMessage() {
+  const exportedAt = readBackupReminderTimestamp(SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY);
+  if (exportedAt <= 0) {
+    return t("backupReminderUnknownMessage");
+  }
+
+  return t("backupReminderDueMessage");
+}
+
+/**
+ * Opens the backup reminder dialog when the stored backup age is due.
+ * @returns {void}
+ */
+function showSettingsBackupReminderIfNeeded() {
+  if (!shouldShowSettingsBackupReminder()) {
+    return;
+  }
+
+  if (backupReminderMessage) {
+    backupReminderMessage.textContent = getSettingsBackupReminderMessage();
+  }
+
+  try {
+    backupReminderDialog.showModal();
+  } catch (error) {
+    console.warn("Backup reminder dialog could not be opened.", error);
+  }
+}
+
+/**
+ * Closes the backup reminder and optionally snoozes it.
+ * @param {boolean} rememberDismissal - Whether to remember a temporary dismissal.
+ * @returns {void}
+ */
+function closeSettingsBackupReminder(rememberDismissal) {
+  if (rememberDismissal) {
+    writeBackupReminderTimestamp(SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY, Date.now());
+  }
+
+  if (backupReminderDialog?.open) {
+    backupReminderDialog.close();
+  }
+}
+
+/**
+ * Saves a settings backup from the reminder dialog.
+ * @returns {Promise<void>} Resolves after the backup export attempt finished.
+ */
+async function handleBackupReminderSaveClick() {
+  try {
+    await exportSettingsBackup();
+    closeSettingsBackupReminder(false);
+  } catch (error) {
+    console.error(error);
+    if (backupReminderMessage) {
+      backupReminderMessage.textContent = t("backupExportFailed");
+    }
+    setBackupStatus(t("backupExportFailed"), "error");
   }
 }
 
@@ -10336,6 +15584,12 @@ function dataUrlToFile(dataUrl, fileName = "link-card.jpg") {
   return new File([bytes], fileName, { type: mimeType });
 }
 
+/**
+ * Renders the stored link-card preview for one composer segment.
+ * @param {HTMLElement} container - Preview container belonging to the segment.
+ * @param {number} segmentIndex - Index of the segment whose link card should be rendered.
+ * @returns {void}
+ */
 function renderSegmentLinkCard(container, segmentIndex) {
   container.innerHTML = "";
   const card = normalizeLinkCard(segmentLinkCards[segmentIndex]);
@@ -10344,6 +15598,10 @@ function renderSegmentLinkCard(container, segmentIndex) {
   }
   const wrap = document.createElement("div");
   wrap.className = "segment-link-card-preview";
+  const standardSite = normalizeStandardSiteMetadata(card.standardSite);
+  if (standardSite) {
+    wrap.classList.add("is-publication");
+  }
   if (card.imageDataUrl) {
     const image = document.createElement("img");
     image.src = card.imageDataUrl;
@@ -10358,7 +15616,12 @@ function renderSegmentLinkCard(container, segmentIndex) {
   const description = document.createElement("span");
   description.textContent = card.description || card.url;
   const url = document.createElement("small");
-  url.textContent = card.url;
+  const publicationFooterLabel = getPublicationCardFooterLabel(standardSite);
+  if (publicationFooterLabel) {
+    url.textContent = `${card.url} - ${publicationFooterLabel}`;
+  } else {
+    url.textContent = card.url;
+  }
   body.append(title, description, url);
   const removeButton = document.createElement("button");
   removeButton.type = "button";
@@ -10434,6 +15697,52 @@ async function createLinkCardForPendingSegment() {
   }
 }
 
+/**
+ * Normalizes Standard.site publication metadata attached to a link card.
+ * @param {object|null} value - Raw metadata from the proxy, archive, or Bluesky view.
+ * @returns {object|null} Compact Standard.site metadata, or null when absent.
+ */
+function normalizeStandardSiteMetadata(value = null) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const documentUri = String(value.documentUri || value.document || "").trim();
+  const publicationUri = String(value.publicationUri || value.publication || "").trim();
+  const publicationUrl = String(value.publicationUrl || value.url || "").trim();
+  const publicationName = String(value.publicationName || value.name || "").trim().slice(0, 160);
+  if (!documentUri && !publicationUri && !publicationUrl && !publicationName) {
+    return null;
+  }
+
+  return {
+    documentUri,
+    publicationUri,
+    publicationUrl,
+    publicationName,
+    publicationVerified: value.publicationVerified === true,
+    ctaLabel: String(value.ctaLabel || t("publicationCardCta")).trim().slice(0, 80),
+  };
+}
+
+/**
+ * Returns the footer label for a card that carries Standard.site publication metadata.
+ * @param {object|null} standardSite - Normalized Standard.site metadata.
+ * @returns {string} Localized footer suffix, or an empty string for normal link cards.
+ */
+function getPublicationCardFooterLabel(standardSite) {
+  if (!standardSite) {
+    return "";
+  }
+
+  return t("publicationMetadataDetected");
+}
+
+/**
+ * Normalizes one composer link card for storage, rendering, and publishing.
+ * @param {object|null} card - Raw link-card data from settings, import, or proxy response.
+ * @returns {object|null} Normalized link-card data, or null when invalid.
+ */
 function normalizeLinkCard(card = null) {
   if (!card || typeof card !== "object") {
     return null;
@@ -10449,6 +15758,7 @@ function normalizeLinkCard(card = null) {
     imageUrl: String(card.imageUrl || "").trim(),
     imageDataUrl: String(card.imageDataUrl || "").trim(),
     imageMimeType: String(card.imageMimeType || "").trim(),
+    standardSite: normalizeStandardSiteMetadata(card.standardSite),
     createdAt: String(card.createdAt || new Date().toISOString()),
   };
 }
@@ -10592,6 +15902,12 @@ function linkCardImageToDataUrl(image = {}) {
   return `data:${mimeType};base64,${bytesBase64}`;
 }
 
+/**
+ * Builds the user-facing error text for a failed link-card proxy response.
+ * @param {Response} response - Fetch response returned by the proxy.
+ * @param {object} payload - Parsed JSON error payload when available.
+ * @returns {string} Localized error message.
+ */
 function getLinkCardProxyErrorMessage(response, payload = {}) {
   const code = String(payload?.code || "").trim().toLowerCase();
   const message = String(payload?.message || "").trim().toLowerCase();
@@ -10607,6 +15923,11 @@ function getLinkCardProxyErrorMessage(response, payload = {}) {
   return payload?.message || payload?.code || t("linkCardProxyFailed");
 }
 
+/**
+ * Requests link-card metadata for a URL from the configured WordPress proxy.
+ * @param {string} url - HTTP(S) URL that should be previewed.
+ * @returns {Promise<object|null>} Normalized link-card data, or null when the proxy returned invalid data.
+ */
 async function requestLinkCardFromProxy(url) {
   const { endpoint, secret } = getLinkCardSettings();
   if (!endpoint && !secret) {
@@ -10640,6 +15961,7 @@ async function requestLinkCardFromProxy(url) {
     imageUrl: payload.imageUrl || "",
     imageDataUrl: linkCardImageToDataUrl(payload.image),
     imageMimeType: payload.image?.mimeType || "",
+    standardSite: payload.standardSite,
   });
 }
 
@@ -10788,8 +16110,7 @@ function renderReplyTargetCard() {
     ? t("replyTargetThreadCardEyebrow")
     : t("replyTargetPostCardEyebrow");
   const actor = target.mode === "thread" ? target.rootAccount : target.targetAccount;
-  replyTargetAvatar.src = actor.avatar || "icons/threadline-icon.svg";
-  replyTargetAvatar.alt = getReplyTargetDisplayName(target);
+  setAvatarImage(replyTargetAvatar, actor.avatar, getReplyTargetDisplayName(target));
   replyTargetName.textContent = getReplyTargetDisplayName(target);
   replyTargetHandle.textContent = actor.handle ? `@${actor.handle}` : "";
   const baseMeta = target.mode === "thread"
@@ -11862,8 +17183,7 @@ async function openConfirmDialog({ title, message, confirmLabel, cancelLabel, pr
       const hasPreview = preview && typeof preview === "object" && (preview.name || preview.handle || preview.avatar);
       confirmDialogPreview.hidden = !hasPreview;
       if (hasPreview) {
-        confirmDialogAvatar.src = preview.avatar || "icons/threadline-icon.svg";
-        confirmDialogAvatar.alt = preview.name || preview.handle || "";
+        setAvatarImage(confirmDialogAvatar, preview.avatar, preview.name || preview.handle || "");
         confirmDialogPreviewName.textContent = preview.name || preview.handle || "";
         confirmDialogPreviewHandle.textContent = preview.handle ? `@${preview.handle}` : "";
       }
@@ -11992,6 +17312,7 @@ async function importThreadFile(file) {
   const importedSegments = Array.isArray(thread.segments) ? thread.segments : [];
   segmentOverrides = normalizeSegmentOverrides(importedSegments.map((segment) => segment?.text || ""));
   setComposerLocked(Boolean(segmentOverrides));
+  setComposerPosted(false);
   segmentImages = importedSegments.length > 0
     ? normalizeSegmentImages(importedSegments.map((segment) => segment?.images || []))
     : normalizeSegmentImages(thread.segmentImages);
@@ -12744,9 +18065,16 @@ function getArchiveZipHtmlScriptCommand() {
 
 function renderArchiveZipHtmlScriptHelp() {
   const readmeUrl = "https://github.com/marsrakete/threadline/tree/main/scripts";
-  const noteHtml = `${escapeHtml(t("archiveZipHtmlScriptNoteLead"))} <a href="${readmeUrl}" target="_blank" rel="noreferrer noopener">${escapeHtml(t("archiveZipHtmlScriptReadmeLink"))}</a>. ${escapeHtml(t("archiveZipHtmlScriptNoteTail"))}`;
   document.querySelectorAll('[data-i18n="archiveZipHtmlScriptNote"]').forEach((node) => {
-    node.innerHTML = noteHtml;
+    node.textContent = t("archiveZipHtmlScriptNoteLead");
+    const link = document.createElement("a");
+    setAttrs(link, {
+      href: readmeUrl,
+      target: "_blank",
+      rel: "noreferrer noopener",
+    });
+    setSafeText(link, t("archiveZipHtmlScriptReadmeLink"));
+    node.append(" ", link, ". ", t("archiveZipHtmlScriptNoteTail"));
   });
   if (archiveZipHtmlScriptCommand) {
     archiveZipHtmlScriptCommand.hidden = true;
@@ -13233,6 +18561,12 @@ function buildArchiveHtmlI18n() {
     "archiveHtmlLoadImage",
     "archiveHtmlOpenImage",
     "archiveHtmlOpenPost",
+    "archiveHtmlEditedBadge",
+    "archiveHtmlEditDetailsButton",
+    "archiveHtmlEditDialogTitle",
+    "archiveHtmlEditDialogNote",
+    "archiveHtmlEditOriginal",
+    "archiveHtmlEditCurrent",
     "archiveHtmlLinksSummary",
     "archiveHtmlLinksEmpty",
     "archiveHtmlLinksPostLabel",
@@ -13340,8 +18674,37 @@ function collectArchiveHtmlLinks(posts = []) {
   });
 }
 
+/**
+ * Reads the external card stored on an archive post.
+ * @param {object} post - Archive post object.
+ * @returns {object|null} External card data, or null when no card exists.
+ */
 function getArchiveExternalCard(post = {}) {
-  return post?.externalCard?.url ? post.externalCard : null;
+  if (post?.externalCard?.url) {
+    return post.externalCard;
+  }
+  return null;
+}
+
+/**
+ * Builds display data for an archive link card.
+ * @param {object} externalCard - External card data from an archive post.
+ * @returns {object} CSS class and footer text for the rendered card.
+ */
+function getArchiveExternalCardDisplay(externalCard) {
+  const standardSite = normalizeStandardSiteMetadata(externalCard?.standardSite);
+  if (standardSite) {
+    const publicationFooterLabel = getPublicationCardFooterLabel(standardSite);
+    return {
+      className: "archive-html-link-card is-publication",
+      footer: `${shortenArchiveUrlForDisplay(externalCard.url)} - ${publicationFooterLabel}`,
+    };
+  }
+
+  return {
+    className: "archive-html-link-card",
+    footer: shortenArchiveUrlForDisplay(externalCard.url),
+  };
 }
 
 function buildArchiveThreadDepthMap(posts = []) {
@@ -13418,6 +18781,31 @@ function buildArchiveHtmlImageMarkup(post, assetUris, options = {}) {
   }).join("");
 }
 
+/**
+ * Builds the archive HTML edit marker for a Mu-edited post.
+ * @param {object} post - Archive post object.
+ * @returns {string} Edit marker button markup, or an empty string.
+ */
+function buildArchiveHtmlEditMarkup(post) {
+  const editInfo = post?.editInfo || null;
+  if (!editInfo?.isEdited) {
+    return "";
+  }
+
+  return `
+            <button
+              type="button"
+              class="archive-html-edit-button"
+              data-archive-edit-button
+              data-edit-created="${escapeHtmlAttribute(editInfo.createdAt || post.createdAt || "")}"
+              data-edit-updated="${escapeHtmlAttribute(editInfo.updatedAt || "")}"
+              data-edit-original="${escapeHtmlAttribute(editInfo.originalText || "")}"
+              data-edit-current="${escapeHtmlAttribute(editInfo.text || post.text || "")}"
+              title="${escapeHtmlAttribute(t("archiveHtmlEditDetailsButton"))}"
+            >${escapeHtml(t("archiveHtmlEditedBadge"))}</button>
+          `;
+}
+
 function buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap, handle, assetUris, options = {}) {
   const createdTimestamp = Date.parse(post.createdAt || 0) || 0;
   const hasImages = (post.images || []).length > 0;
@@ -13439,6 +18827,11 @@ function buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap
   const externalCard = getArchiveExternalCard(post);
   const externalThumbUri = (externalCard?.thumbPath ? (assetUris.get(externalCard.thumbPath) || "") : "") || String(externalCard?.thumb || "").trim();
   const externalThumbFailed = externalCard?.thumbLoadFailed === true && !externalThumbUri;
+  let externalCardDisplay = null;
+  if (externalCard) {
+    externalCardDisplay = getArchiveExternalCardDisplay(externalCard);
+  }
+  const editMarkup = buildArchiveHtmlEditMarkup(post);
   return `
         <article
           class="archive-html-post"
@@ -13458,7 +18851,10 @@ function buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap
               <p class="archive-html-author-handle" data-archive-searchable="true">@${escapeHtml(post.authorHandle || handle)}</p>
               </div>
             </div>
-            <time datetime="${escapeHtmlAttribute(post.createdAt || "")}">${escapeHtml(formatHistoryTimestamp(post.createdAt))}</time>
+            <div class="archive-html-post-head-actions">
+              ${editMarkup}
+              <time datetime="${escapeHtmlAttribute(post.createdAt || "")}">${escapeHtml(formatHistoryTimestamp(post.createdAt))}</time>
+            </div>
           </div>
           <div class="archive-html-metrics">
             <span>Likes ${metrics.likeCount || 0}</span>
@@ -13468,7 +18864,7 @@ function buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap
           </div>
           <div class="archive-html-text" data-archive-richtext="true">${post.text ? renderArchiveHtmlRichText(post.text, post.facets || []) : (!externalCard ? `<span class="archive-html-empty">${escapeHtml(t("archiveHtmlNoText"))}</span>` : "")}</div>
           ${externalCard ? `
-            <a class="archive-html-link-card" href="${escapeHtmlAttribute(externalCard.url)}" target="_blank" rel="noreferrer noopener">
+            <a class="${escapeHtmlAttribute(externalCardDisplay.className)}" href="${escapeHtmlAttribute(externalCard.url)}" target="_blank" rel="noreferrer noopener">
               ${externalThumbUri
                 ? `<img class="archive-html-link-card-thumb" src="${escapeHtmlAttribute(externalThumbUri)}" alt="">`
                 : (externalThumbFailed
@@ -13477,7 +18873,7 @@ function buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap
               <span class="archive-html-link-card-copy">
                 <strong>${escapeHtml(externalCard.title || externalCard.url)}</strong>
                 ${externalCard.description ? `<span>${escapeHtml(externalCard.description)}</span>` : ""}
-                <small>${escapeHtml(shortenArchiveUrlForDisplay(externalCard.url))}</small>
+                <small>${escapeHtml(externalCardDisplay.footer)}</small>
               </span>
             </a>
           ` : ""}
@@ -13932,6 +19328,10 @@ function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
         border: 1px solid rgba(102, 133, 178, 0.16);
         box-shadow: 0 10px 24px rgba(24, 40, 70, 0.08);
       }
+      .archive-html-link-card.is-publication {
+        border-color: rgba(18, 184, 166, 0.34);
+        background: linear-gradient(180deg, rgba(232, 252, 248, 0.92), rgba(226, 244, 255, 0.86));
+      }
       .archive-html-link-card-thumb {
         width: 100%;
         height: 100%;
@@ -13970,6 +19370,10 @@ function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
         color: #587192;
         font-size: 0.84rem;
         word-break: break-word;
+      }
+      .archive-html-link-card.is-publication .archive-html-link-card-copy small {
+        color: #057f73;
+        font-weight: 800;
       }
       .archive-html-gallery {
         display: grid;
@@ -14860,6 +20264,10 @@ async function buildArchiveHtmlDocumentFromTemplate(catalog, assetUris, options 
     groupsMarkup,
     lightboxTitle: escapeHtml(title),
     lightboxCloseLabel: escapeHtml(t("closeButton")),
+    editDialogTitle: escapeHtml(t("archiveHtmlEditDialogTitle")),
+    editDialogNote: escapeHtml(t("archiveHtmlEditDialogNote")),
+    editOriginalLabel: escapeHtml(t("archiveHtmlEditOriginal")),
+    editCurrentLabel: escapeHtml(t("archiveHtmlEditCurrent")),
     bootstrapJson,
     clientScript: serializeArchiveHtmlInlineScript(clientScript),
   });
@@ -15347,11 +20755,15 @@ function estimateArchivePostCardHeight(context, post, options, scale, cardWidth,
   const contentWidth = cardWidth - (innerPadding * 2) - depthIndent - avatarOffset;
   const headerHeight = 42 * scale;
   const metricsHeight = options.includeMetrics ? (28 * scale) : 0;
+  let editMarkerHeight = 0;
+  if (post?.editInfo?.isEdited === true) {
+    editMarkerHeight = 20 * scale;
+  }
   const textLineHeight = 15 * scale;
 
   context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
   const textLines = buildWrappedPdfLines(context, post.text || "", contentWidth, post.facets || []);
-  let totalHeight = innerPadding + headerHeight + metricsHeight + (textLines.length * textLineHeight) + (12 * scale);
+  let totalHeight = innerPadding + headerHeight + metricsHeight + editMarkerHeight + (textLines.length * textLineHeight) + (12 * scale);
 
   const externalCardLayout = getArchivePdfExternalCardLayout(context, post, contentWidth, scale);
   if (externalCardLayout) {
@@ -15595,6 +21007,13 @@ async function drawArchivePdfPostCard(
       pillX += drawArchivePdfMetricPill(context, label, pillX, pillY, scale) + (6 * scale);
     }
     cursorY += 28 * scale;
+  }
+
+  if (post?.editInfo?.isEdited === true) {
+    context.fillStyle = "#92560d";
+    context.font = `700 ${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
+    context.fillText(t("archiveHtmlEditedBadge"), cardContentX, cursorY);
+    cursorY += 20 * scale;
   }
 
   context.fillStyle = "#17233a";
@@ -16287,6 +21706,21 @@ function renderPostEditCurrentText(originalText, currentText) {
   });
 }
 
+/**
+ * Fills the post edit dialog with a detected edit result.
+ * @param {object} result - Mu-compatible edit metadata result.
+ * @returns {void}
+ */
+function renderPostEditCheckResult(result) {
+  postEditCheckStatus.textContent = t("postEditCheckDetected");
+  postEditCheckStatus.classList.add("is-edited");
+  postEditCheckCreated.textContent = formatHistoryTimestamp(result.createdAt);
+  postEditCheckUpdated.textContent = formatHistoryTimestamp(result.updatedAt);
+  postEditCheckOriginal.textContent = result.originalText;
+  renderPostEditCurrentText(result.originalText, result.text);
+  postEditCheckResult.hidden = false;
+}
+
 function resetPostEditCheckResult() {
   postEditCheckStatus.textContent = "";
   postEditCheckStatus.className = "post-edit-check-status settings-note";
@@ -16331,13 +21765,7 @@ async function checkPostEditMetadata() {
     return;
   }
 
-  postEditCheckStatus.textContent = t("postEditCheckDetected");
-  postEditCheckStatus.classList.add("is-edited");
-  postEditCheckCreated.textContent = formatHistoryTimestamp(result.createdAt);
-  postEditCheckUpdated.textContent = formatHistoryTimestamp(result.updatedAt);
-  postEditCheckOriginal.textContent = result.originalText;
-  renderPostEditCurrentText(result.originalText, result.text);
-  postEditCheckResult.hidden = false;
+  renderPostEditCheckResult(result);
 }
 
 async function importArchiveThreadFromUrl() {
@@ -16451,17 +21879,26 @@ function renderHashtagCloud() {
   const composerHashtagLocked = composerLocked && !isArchiveContext;
 
   hashtags.forEach((tag) => {
-    const item = document.createElement("div");
-    item.className = "hashtag-item";
+    const fragment = cloneTemplate("hashtag-item-template");
+    if (!fragment) {
+      return;
+    }
 
-    const button = document.createElement("button");
-    button.type = "button";
+    const button = fragment.querySelector(".hashtag-chip");
+    const editButton = fragment.querySelector(".hashtag-tool:not(.danger)");
+    const deleteButton = fragment.querySelector(".hashtag-tool.danger");
+
+    if (!button || !editButton || !deleteButton) {
+      return;
+    }
+
     button.className = `hashtag-chip ${getHashtagFontClass(tag)}`;
     if (activeSelectedHashtags.includes(tag.normalized)) {
       button.classList.add("is-selected");
     }
-    button.textContent = formatHashtag(tag.value);
+    setSafeText(button, formatHashtag(tag.value));
     button.disabled = composerHashtagLocked;
+
     button.addEventListener("click", () => {
       if (composerHashtagLocked) {
         return;
@@ -16488,16 +21925,10 @@ function renderHashtagCloud() {
       }
     });
 
-    const editButton = document.createElement("button");
-    editButton.type = "button";
-    editButton.className = "hashtag-tool";
-    editButton.setAttribute("aria-label", t("editHashtagAria", { tag: formatHashtag(tag.value) }));
+    setAttrs(editButton, {
+      "aria-label": t("editHashtagAria", { tag: formatHashtag(tag.value) }),
+    });
     editButton.disabled = composerHashtagLocked;
-    editButton.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 16.75V20h3.25L18.4 8.84l-3.24-3.24L4 16.75zm14.71-9.04a1 1 0 0 0 0-1.42l-1-1a1 1 0 0 0-1.42 0l-.88.88 3.24 3.24.06-.06z"></path>
-      </svg>
-    `;
     editButton.addEventListener("click", async () => {
       if (composerHashtagLocked) {
         return;
@@ -16505,16 +21936,10 @@ function renderHashtagCloud() {
       openHashtagEditDialog(tag);
     });
 
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.className = "hashtag-tool danger";
-    deleteButton.setAttribute("aria-label", t("deleteHashtagAria", { tag: formatHashtag(tag.value) }));
+    setAttrs(deleteButton, {
+      "aria-label": t("deleteHashtagAria", { tag: formatHashtag(tag.value) }),
+    });
     deleteButton.disabled = composerHashtagLocked;
-    deleteButton.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path>
-      </svg>
-    `;
     deleteButton.addEventListener("click", async () => {
       if (composerHashtagLocked) {
         return;
@@ -16533,8 +21958,7 @@ function renderHashtagCloud() {
       setStatus(t("hashtagDeleted"));
     });
 
-    item.append(button, editButton, deleteButton);
-    hashtagCloud.appendChild(item);
+    hashtagCloud.appendChild(fragment);
   });
 
   hashtagSelectionNote.textContent = activeSelectedHashtags.length > 0
@@ -16566,6 +21990,8 @@ async function persistSettings() {
     segmentImages,
     segmentLinkCards,
     postingHistory,
+    threadExplorerFavorites,
+    savedSearches,
     archivePreferences: getArchivePreferences(),
     analysisState: getPersistableAnalysisState(),
   };
@@ -16636,6 +22062,10 @@ async function gunzipBytes(bytes) {
   return concatUint8Arrays(chunks);
 }
 
+/**
+ * Builds the serializable settings backup payload from the current local state.
+ * @returns {Promise<object>} Backup payload ready for JSON serialization.
+ */
 async function createSettingsBackupPayload() {
   const accountAssets = Array.isArray(accountAvatarAssets) ? accountAvatarAssets : [];
   const dmAssets = Array.isArray(dmRecentContactAssets) ? dmRecentContactAssets : [];
@@ -16684,17 +22114,28 @@ async function createSettingsBackupPayload() {
       hashtags,
       selectedHashtags,
       postingHistory,
+      threadExplorerFavorites,
+      savedSearches,
       archivePreferences: getArchivePreferences(),
       analysisState: getPersistableAnalysisState(),
     },
   };
 }
 
+/**
+ * Checks whether an imported object looks like a Threadline settings backup.
+ * @param {object} payload - Parsed backup payload.
+ * @returns {boolean} True when the payload contains importable backup data.
+ */
 function isValidSettingsBackup(payload) {
   const data = payload?.data || payload;
   return Boolean(data && typeof data === "object");
 }
 
+/**
+ * Exports the current settings backup and records the successful export time.
+ * @returns {Promise<void>} Resolves after the backup file handoff has completed.
+ */
 async function exportSettingsBackup() {
   const payload = await createSettingsBackupPayload();
   const jsonBytes = new TextEncoder().encode(JSON.stringify(payload, null, 2));
@@ -16706,9 +22147,15 @@ async function exportSettingsBackup() {
   );
 
   await shareOrDownloadFile(file, file.name);
+  markSettingsBackupExported();
   setBackupStatus(t("backupExported"));
 }
 
+/**
+ * Imports a Threadline settings backup file and merges it into local state.
+ * @param {File} file - JSON or GZIP-compressed settings backup file.
+ * @returns {Promise<void>} Resolves after local state and persistence are updated.
+ */
 async function importSettingsBackup(file) {
   const rawBytes = new Uint8Array(await file.arrayBuffer());
   const payloadBytes = /\.gz$/i.test(file.name)
@@ -16732,6 +22179,8 @@ async function importSettingsBackup(file) {
   hashtags = mergedHashtags;
   selectedHashtags = mergedSelectedHashtags;
   postingHistory = mergePostingHistoryEntries(postingHistory, imported.postingHistory);
+  threadExplorerFavorites = normalizeThreadExplorerFavorites(imported.threadExplorerFavorites);
+  savedSearches = normalizeSavedSearches(imported.savedSearches);
   hashtagPlacement = normalizeHashtagPlacement(imported.hashtagPlacement);
   hashtagPlacementSelect.value = hashtagPlacement;
   tipsVisible = imported.tipsVisible !== false;
@@ -16981,6 +22430,12 @@ function updateStatusForAuth() {
       void loadNetworkWave({ silentErrors: true });
     }
   }
+  if (currentWorkspace === "threadExplorer") {
+    renderThreadExplorerWorkspace();
+    if (authAccount && !threadExplorerItems.length && !threadExplorerLoadingFeed) {
+      void loadThreadExplorerFeed({ reset: true });
+    }
+  }
 
   if (authAccount) {
     if (!appOnline) {
@@ -17094,10 +22549,15 @@ function showPublishResult(result) {
   const resultWebApp = result.webApp || authAccountWebApp;
   const postTarget = getPostTargetName(resultWebApp);
   const postUrl = buildBlueskyPostUrl(handle, firstPost?.uri, resultWebApp);
+  const rateLimitMessage = buildPublishRateLimitMessage(result.rateLimit, true);
 
   publishResultText.textContent = postCount > 1
     ? t("publishResultMessageManyTarget", { target: postTarget })
     : t("publishResultMessageOneTarget", { target: postTarget });
+  if (publishResultRateLimitNote) {
+    publishResultRateLimitNote.hidden = !rateLimitMessage;
+    publishResultRateLimitNote.textContent = rateLimitMessage;
+  }
   publishResultLink.href = postUrl || "#";
   publishResultLink.hidden = !postUrl;
   publishResultDialog.showModal();
@@ -17672,6 +23132,43 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicNetworkWorkspaceBullet1"),
           t("helpTopicNetworkWorkspaceBullet2"),
           t("helpTopicNetworkWorkspaceBullet3"),
+          t("helpTopicNetworkWorkspaceBullet4"),
+        ],
+      };
+    case "thread_explorer_workspace":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicThreadExplorerWorkspaceTitle"),
+        text: t("helpTopicThreadExplorerWorkspaceText"),
+        bullets: [
+          t("helpTopicThreadExplorerWorkspaceBullet1"),
+          t("helpTopicThreadExplorerWorkspaceBullet2"),
+          t("helpTopicThreadExplorerWorkspaceBullet3"),
+          t("helpTopicThreadExplorerWorkspaceBullet4"),
+        ],
+      };
+    case "thread_explorer_entry":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicThreadExplorerEntryTitle"),
+        text: t("helpTopicThreadExplorerEntryText"),
+        bullets: [
+          t("helpTopicThreadExplorerEntryBullet1"),
+          t("helpTopicThreadExplorerEntryBullet2"),
+          t("helpTopicThreadExplorerEntryBullet3"),
+          t("helpTopicThreadExplorerEntryBullet4"),
+        ],
+      };
+    case "thread_explorer_thread":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicThreadExplorerThreadTitle"),
+        text: t("helpTopicThreadExplorerThreadText"),
+        bullets: [
+          t("helpTopicThreadExplorerThreadBullet1"),
+          t("helpTopicThreadExplorerThreadBullet2"),
+          t("helpTopicThreadExplorerThreadBullet3"),
+          t("helpTopicThreadExplorerThreadBullet4"),
         ],
       };
     case "network_stage":
@@ -17791,27 +23288,467 @@ function openInlineHelpTopic(topicId) {
   helpDialog.showModal();
 }
 
+/**
+ * Returns the shared grapheme segmenter used for Bluesky length checks.
+ * @param {void} - No parameters.
+ * @returns {Intl.Segmenter|null} Segmenter instance or null when unavailable.
+ */
+function getGraphemeSegmenter() {
+  if (typeof Intl === "undefined" || typeof Intl.Segmenter !== "function") {
+    return null;
+  }
+
+  if (!graphemeSegmenter) {
+    graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  }
+
+  return graphemeSegmenter;
+}
+
+/**
+ * Splits text into user-visible grapheme clusters for Bluesky-compatible counting.
+ * @param {string} text - Source text to segment.
+ * @returns {string[]} Array of grapheme clusters.
+ */
+function splitIntoGraphemes(text) {
+  const value = String(text || "");
+  const segmenter = getGraphemeSegmenter();
+
+  if (!segmenter) {
+    return Array.from(value);
+  }
+
+  return Array.from(segmenter.segment(value), (entry) => entry.segment);
+}
+
+/**
+ * Counts Bluesky-visible characters (Unicode grapheme clusters) for a string.
+ * @param {string} text - Source text to count.
+ * @returns {number} Grapheme cluster count.
+ */
+function countGraphemes(text) {
+  return splitIntoGraphemes(text).length;
+}
+
+/**
+ * Counts UTF-8 bytes for a string as used by AT Proto maxLength validation.
+ * @param {string} text - Source text to count.
+ * @returns {number} UTF-8 byte count.
+ */
+function countUtf8Bytes(text) {
+  return utf8Bytes(text).length;
+}
+
+/**
+ * Builds shared text metrics for Bluesky post validation.
+ * @param {string} text - Source text to measure.
+ * @returns {{ graphemeCount: number, utf8ByteCount: number }} Grapheme and byte counts.
+ */
+function getPostTextMetrics(text) {
+  return {
+    graphemeCount: countGraphemes(text),
+    utf8ByteCount: countUtf8Bytes(text),
+  };
+}
+
+/**
+ * Creates a post text limit object for graphemes and UTF-8 bytes.
+ * @param {number} graphemeLimit - Maximum grapheme count.
+ * @param {number} utf8ByteLimit - Maximum UTF-8 byte count.
+ * @returns {{ graphemeLimit: number, utf8ByteLimit: number }} Normalized limit object.
+ */
+function createPostTextLimit(graphemeLimit, utf8ByteLimit) {
+  return {
+    graphemeLimit,
+    utf8ByteLimit,
+  };
+}
+
+/**
+ * Returns whether a text fits inside the given Bluesky text limits.
+ * @param {string} text - Candidate text.
+ * @param {{ graphemeLimit: number, utf8ByteLimit: number }} limit - Allowed grapheme and byte limits.
+ * @returns {boolean} True when both limits are satisfied.
+ */
+function fitsPostTextLimit(text, limit) {
+  const metrics = getPostTextMetrics(text);
+  return metrics.graphemeCount <= limit.graphemeLimit && metrics.utf8ByteCount <= limit.utf8ByteLimit;
+}
+
+/**
+ * Limits composer text to the configured Bluesky-aware grapheme budget.
+ * @param {string} text - Candidate composer text.
+ * @returns {{ text: string, truncated: boolean }} Clamped text and truncation flag.
+ */
+function clampComposerTextLength(text) {
+  const graphemes = splitIntoGraphemes(text);
+  if (graphemes.length <= MAX_COMPOSER_GRAPHEME_LENGTH) {
+    return {
+      text: String(text || ""),
+      truncated: false,
+    };
+  }
+
+  return {
+    text: graphemes.slice(0, MAX_COMPOSER_GRAPHEME_LENGTH).join(""),
+    truncated: true,
+  };
+}
+
+/**
+ * Applies shared composer follow-up work after the source text changed.
+ * @param {boolean} showTruncationWarning - Whether a truncation message should be shown.
+ * @returns {void} No return value.
+ */
+function handleComposerTextInput(showTruncationWarning = false) {
+  const clamped = clampComposerTextLength(sourceText.value);
+  if (clamped.truncated) {
+    sourceText.value = clamped.text;
+  }
+  composerInputWasTruncated = showTruncationWarning && clamped.truncated;
+  updateComposerInputWarning(composerInputWasTruncated);
+
+  segmentOverrides = null;
+  setComposerLocked(false);
+  setComposerPosted(false);
+  scheduleComposerSegmentRender(COMPOSER_SEGMENT_RENDER_DEBOUNCE_MS);
+  queueDraftSave();
+}
+
+/**
+ * Shows an immediate one-off alert when a paste had to be truncated.
+ * @param {void} - No parameters.
+ * @returns {void} No return value.
+ */
+function showComposerTruncationAlert() {
+  const now = Date.now();
+  if ((now - lastComposerTruncationAlertAt) < 400) {
+    return;
+  }
+
+  lastComposerTruncationAlertAt = now;
+  const message = t("composerTextTruncated", { count: getComposerLimitLabel() });
+  if (composerTruncationDialogTimer) {
+    window.clearTimeout(composerTruncationDialogTimer);
+  }
+  composerTruncationDialogTimer = window.setTimeout(() => {
+    composerTruncationDialogTimer = 0;
+    showErrorDialog(message, t("composerTruncationTitle"));
+  }, 0);
+}
+
+/**
+ * Inserts text into the composer while respecting the Bluesky-aware composer limit.
+ * @param {string} insertedText - Text to insert at the current selection.
+ * @param {boolean} showTruncationWarning - Whether a truncation message should be shown if clamping was needed.
+ * @returns {void} No return value.
+ */
+function insertTextIntoComposer(insertedText, showTruncationWarning = false) {
+  const selectionStart = sourceText.selectionStart ?? sourceText.value.length;
+  const selectionEnd = sourceText.selectionEnd ?? sourceText.value.length;
+  const prefix = sourceText.value.slice(0, selectionStart);
+  const suffix = sourceText.value.slice(selectionEnd);
+  const fixedGraphemeCount = countGraphemes(prefix) + countGraphemes(suffix);
+  const remainingBudget = Math.max(0, MAX_COMPOSER_GRAPHEME_LENGTH - fixedGraphemeCount);
+  const normalizedInsertedText = String(insertedText || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const insertedGraphemes = splitIntoGraphemes(normalizedInsertedText);
+  let nextInsertedText = normalizedInsertedText;
+  let wasTruncated = false;
+  let wasShortenedAtLimit = false;
+
+  if (insertedGraphemes.length > remainingBudget) {
+    nextInsertedText = insertedGraphemes.slice(0, remainingBudget).join("");
+    wasTruncated = true;
+  } else if (normalizedInsertedText !== String(insertedText || "") && insertedGraphemes.length >= remainingBudget) {
+    wasShortenedAtLimit = true;
+  }
+
+  if (showTruncationWarning && (wasTruncated || wasShortenedAtLimit)) {
+    showComposerTruncationAlert();
+  }
+
+  composerInputWarningPendingTruncation = false;
+  if (showTruncationWarning && (wasTruncated || wasShortenedAtLimit)) {
+    composerInputWarningPendingTruncation = true;
+  }
+  composerInputEventSuppressed = true;
+  sourceText.setRangeText(nextInsertedText, selectionStart, selectionEnd, "end");
+  handleComposerTextInput(composerInputWarningPendingTruncation);
+  composerInputWarningPendingTruncation = false;
+}
+
+/**
+ * Detects whether text contains emoji-like or combined grapheme sequences.
+ * @param {string} text - Source text to inspect.
+ * @returns {boolean} True when emoji or joined graphemes are present.
+ */
+function hasEmojiLikeGraphemes(text) {
+  return /[\p{Extended_Pictographic}\u200d\uFE0F]/u.test(String(text || ""));
+}
+
+/**
+ * Detects Chinese or Japanese scripts that consume the limit one visible sign at a time.
+ * @param {string} text - Source text to inspect.
+ * @returns {boolean} True when Han, Hiragana, or Katakana characters are present.
+ */
+function hasCjkGraphemes(text) {
+  return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(String(text || ""));
+}
+
+/**
+ * Splits a single token into Bluesky-sized chunks based on grapheme and byte limits.
+ * @param {string} text - Token that may exceed the per-segment limits.
+ * @param {Function} limitFactory - Returns the limit object for the next chunk index.
+ * @param {number} initialChunkIndex - Current global chunk index before splitting.
+ * @returns {string[]} Post-safe token slices.
+ */
+function splitTokenByPostLimit(text, limitFactory, initialChunkIndex) {
+  const graphemes = splitIntoGraphemes(text);
+  const slices = [];
+  let start = 0;
+  let chunkIndex = initialChunkIndex;
+
+  while (start < graphemes.length) {
+    const rawLimit = limitFactory(chunkIndex);
+    const limit = createPostTextLimit(
+      Math.max(1, rawLimit.graphemeLimit),
+      Math.max(1, rawLimit.utf8ByteLimit),
+    );
+    let end = start;
+    let slice = "";
+
+    while (end < graphemes.length) {
+      const nextSlice = `${slice}${graphemes[end]}`;
+      if (!fitsPostTextLimit(nextSlice, limit)) {
+        break;
+      }
+      slice = nextSlice;
+      end += 1;
+    }
+
+    if (!slice) {
+      slice = graphemes[start];
+      end = start + 1;
+    }
+
+    slices.push(slice);
+    start = end;
+    chunkIndex += 1;
+  }
+
+  return slices;
+}
+
+/**
+ * Builds length diagnostics and advice for one segment in Bluesky terms.
+ * @param {string} text - Segment text to inspect.
+ * @returns {object} Grapheme counts, limit flags, and advisory hints.
+ */
+function getSegmentLengthDiagnostics(text) {
+  const normalizedText = String(text || "");
+  const metrics = getPostTextMetrics(normalizedText);
+  const graphemeCount = metrics.graphemeCount;
+  const utf8ByteCount = metrics.utf8ByteCount;
+  const codeUnitCount = normalizedText.length;
+  const codePointCount = Array.from(normalizedText).length;
+  const hasEmoji = hasEmojiLikeGraphemes(normalizedText);
+  const hasCjk = hasCjkGraphemes(normalizedText);
+  const hasComplexDifference = codeUnitCount !== graphemeCount || codePointCount !== graphemeCount;
+  const adviceKeys = [];
+
+  if (hasEmoji) {
+    adviceKeys.push("segmentLengthAdviceEmoji");
+  }
+  if (hasCjk) {
+    adviceKeys.push("segmentLengthAdviceCjk");
+  }
+  adviceKeys.push("segmentLengthAdviceSplit");
+
+  return {
+    graphemeCount,
+    utf8ByteCount,
+    codeUnitCount,
+    codePointCount,
+    hasEmoji,
+    hasCjk,
+    hasComplexDifference,
+    isNearLimit: graphemeCount >= (MAX_POST_LENGTH - 20),
+    isNearByteLimit: utf8ByteCount >= (MAX_POST_UTF8_BYTES - 200),
+    exceedsGraphemeLimit: graphemeCount > MAX_POST_LENGTH,
+    exceedsByteLimit: utf8ByteCount > MAX_POST_UTF8_BYTES,
+    exceedsLimit: graphemeCount > MAX_POST_LENGTH || utf8ByteCount > MAX_POST_UTF8_BYTES,
+    adviceKeys,
+  };
+}
+
+/**
+ * Formats the visible length badge for a segment.
+ * @param {object} diagnostics - Result from getSegmentLengthDiagnostics.
+ * @returns {string} Human-readable length label.
+ */
+function formatSegmentLengthLabel(diagnostics) {
+  const graphemeLabel = t("segmentLengthLabel", {
+    count: diagnostics.graphemeCount,
+    limit: MAX_POST_LENGTH,
+  });
+  const byteLabel = t("segmentByteLengthLabel", {
+    count: diagnostics.utf8ByteCount,
+    limit: MAX_POST_UTF8_BYTES,
+  });
+  return `${graphemeLabel} · ${byteLabel}`;
+}
+
+/**
+ * Builds a segment-specific warning message when Bluesky length deserves extra attention.
+ * @param {object} diagnostics - Result from getSegmentLengthDiagnostics.
+ * @returns {string} Warning text, or an empty string when no warning is needed.
+ */
+function buildSegmentLengthWarning(diagnostics) {
+  const parts = [];
+
+  if (diagnostics.exceedsGraphemeLimit && diagnostics.exceedsByteLimit) {
+    parts.push(t("segmentLengthWarningOverflowBoth", {
+      graphemeCount: diagnostics.graphemeCount,
+      graphemeLimit: MAX_POST_LENGTH,
+      byteCount: diagnostics.utf8ByteCount,
+      byteLimit: MAX_POST_UTF8_BYTES,
+    }));
+  } else if (diagnostics.exceedsGraphemeLimit) {
+    parts.push(t("segmentLengthWarningOverflow", {
+      count: diagnostics.graphemeCount,
+      limit: MAX_POST_LENGTH,
+    }));
+  } else if (diagnostics.exceedsByteLimit) {
+    parts.push(t("segmentLengthWarningOverflowBytes", {
+      count: diagnostics.utf8ByteCount,
+      limit: MAX_POST_UTF8_BYTES,
+    }));
+  } else if (diagnostics.isNearLimit && diagnostics.hasComplexDifference) {
+    parts.push(t("segmentLengthWarningComplexNearLimit", {
+      count: diagnostics.graphemeCount,
+      limit: MAX_POST_LENGTH,
+    }));
+  } else if (diagnostics.isNearByteLimit) {
+    parts.push(t("segmentLengthWarningByteNearLimit", {
+      count: diagnostics.utf8ByteCount,
+      limit: MAX_POST_UTF8_BYTES,
+    }));
+  } else if (diagnostics.hasComplexDifference && diagnostics.graphemeCount >= (MAX_POST_LENGTH - 5)) {
+    parts.push(t("segmentLengthWarningComplex", {
+      count: diagnostics.graphemeCount,
+      limit: MAX_POST_LENGTH,
+    }));
+  }
+
+  if (parts.length === 0) {
+    return "";
+  }
+
+  if (diagnostics.isNearByteLimit && !diagnostics.exceedsLimit) {
+    return parts.join(" ");
+  }
+
+  const advice = diagnostics.adviceKeys.map((key) => t(key)).join(" ");
+  parts.push(advice);
+  return parts.join(" ");
+}
+
+/**
+ * Updates one segment card with Bluesky-aware length labels and warnings.
+ * @param {HTMLElement|null} lengthLabel - Badge element that shows the segment length.
+ * @param {HTMLElement|null} warningLabel - Note element for extra guidance.
+ * @param {string} text - Current segment text.
+ * @returns {object} Segment diagnostics used for additional aggregate warnings.
+ */
+function updateSegmentLengthPresentation(lengthLabel, warningLabel, text) {
+  const diagnostics = getSegmentLengthDiagnostics(text);
+  const warningText = buildSegmentLengthWarning(diagnostics);
+
+  if (lengthLabel) {
+    lengthLabel.textContent = formatSegmentLengthLabel(diagnostics);
+    lengthLabel.dataset.tone = diagnostics.exceedsLimit ? "error" : "neutral";
+  }
+
+  if (warningLabel) {
+    warningLabel.hidden = warningText.length === 0;
+    warningLabel.textContent = warningText;
+    warningLabel.dataset.tone = diagnostics.exceedsLimit ? "error" : "neutral";
+  }
+
+  return diagnostics;
+}
+
+/**
+ * Updates the composer-wide note when one or more segments are risky in Bluesky counting.
+ * @param {string[]} segments - Current thread segments.
+ * @returns {void} No return value.
+ */
+function updateComposerLengthWarning(segments) {
+  if (!composerLengthWarning) {
+    return;
+  }
+
+  const diagnosticsList = segments.map((segment) => getSegmentLengthDiagnostics(segment));
+  const overflowCount = diagnosticsList.filter((entry) => entry.exceedsLimit).length;
+  const nearComplexCount = diagnosticsList.filter((entry) => !entry.exceedsLimit && entry.isNearLimit && entry.hasComplexDifference).length;
+  const nearByteCount = diagnosticsList.filter((entry) => !entry.exceedsLimit && entry.isNearByteLimit).length;
+  const notes = [];
+
+  if (overflowCount > 0) {
+    notes.push(t("composerLengthWarningOverflow", { count: overflowCount }));
+  }
+
+  if (nearComplexCount > 0) {
+    notes.push(t("composerLengthWarningNearLimit", { count: nearComplexCount }));
+  }
+
+  if (nearByteCount > 0) {
+    notes.push(t("composerLengthWarningNearByteLimit", { count: nearByteCount }));
+  }
+
+  if (overflowCount > 0 || nearComplexCount > 0 || nearByteCount > 0) {
+    notes.push(t("composerLengthWarningAdvice"));
+  }
+
+  composerLengthWarning.hidden = notes.length === 0;
+  composerLengthWarning.dataset.tone = overflowCount > 0 ? "error" : "neutral";
+  composerLengthWarning.textContent = notes.join(" ");
+}
+
+/**
+ * Formats the composer counter using the Bluesky grapheme count.
+ * @param {string} text - Current composer text.
+ * @returns {string} Localized counter label for the composer header.
+ */
+function formatComposerCharacterCount(text) {
+  const normalizedText = String(text || "");
+  const graphemeCount = countGraphemes(normalizedText);
+  return t("charCount", { count: graphemeCount });
+}
+
 function reserveForCounters(segmentCount) {
-  const digits = String(Math.max(segmentCount, 1)).length;
-  return 2 * digits + 3;
+  const normalizedCount = Math.max(segmentCount, 1);
+  return getPostTextMetrics(`\n${normalizedCount}/${normalizedCount}`);
 }
 
 function reserveForThreadEmoji() {
-  return "\n⤵️".length;
+  return getPostTextMetrics("\n⤵️");
 }
 
 function reserveForThreadIntro() {
-  return `\n${getThreadIntroText()}`.length;
+  return getPostTextMetrics(`\n${getThreadIntroText()}`);
 }
 
 function reserveForRepeatedHashtags(selectedText, placementMode) {
   if (!selectedText) {
-    return 0;
+    return getPostTextMetrics("");
   }
 
-  return placementMode === "all-bottom"
-    ? `\n\n${selectedText}`.length
-    : `\n${selectedText}`.length;
+  if (placementMode === "all-bottom") {
+    return getPostTextMetrics(`\n\n${selectedText}`);
+  }
+
+  return getPostTextMetrics(`\n${selectedText}`);
 }
 
 function splitByManualMarkers(text) {
@@ -17820,6 +23757,19 @@ function splitByManualMarkers(text) {
     .split(MANUAL_SPLIT_MARKER)
     .map((part) => normalizeInput(part))
     .filter(Boolean);
+}
+
+/**
+ * Subtracts already-reserved suffix costs from the full post limits.
+ * @param {{ graphemeLimit: number, utf8ByteLimit: number }} limit - Full post limits.
+ * @param {{ graphemeCount: number, utf8ByteCount: number }} reserved - Reserved suffix costs.
+ * @returns {{ graphemeLimit: number, utf8ByteLimit: number }} Remaining limit budget.
+ */
+function subtractPostTextLimit(limit, reserved) {
+  return {
+    graphemeLimit: limit.graphemeLimit - reserved.graphemeCount,
+    utf8ByteLimit: limit.utf8ByteLimit - reserved.utf8ByteCount,
+  };
 }
 
 function splitChunksGreedy(chunks, limitFactory) {
@@ -17869,31 +23819,76 @@ function decorateSegments(segments, withCounters, withThreadIntro, withThreadEmo
 
 function splitIntoSegments(text, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText) {
   const manualChunks = splitByManualMarkers(text);
+  const fullPostLimit = createPostTextLimit(MAX_POST_LENGTH, MAX_POST_UTF8_BYTES);
 
   if (manualChunks.length === 0) {
     return [];
   }
 
-  const reserveForSuffix = (segmentIndex, segmentCount) => (
-    ((selectedHashtagText && (repeatedHashtagMode === "all-top" || repeatedHashtagMode === "all-bottom"))
-      ? reserveForRepeatedHashtags(selectedHashtagText, repeatedHashtagMode)
-      : 0)
-    + (segmentCount > 1 && withThreadIntro && segmentIndex === 0 ? reserveForThreadIntro() : 0)
-    + (segmentCount > 1 && withThreadEmoji && segmentIndex < segmentCount - 1 ? reserveForThreadEmoji() : 0)
-    + (segmentCount > 1 && withCounters ? reserveForCounters(segmentCount) : 0)
-    + ((segmentCount > 1) && (((withThreadIntro && segmentIndex === 0) || (withThreadEmoji && segmentIndex < segmentCount - 1) || withCounters)) && withMarkerSpacing ? 1 : 0)
-  );
+  const reserveForSuffix = (segmentIndex, segmentCount) => {
+    const reserved = {
+      graphemeCount: 0,
+      utf8ByteCount: 0,
+    };
+    const repeatsHashtag = selectedHashtagText && (repeatedHashtagMode === "all-top" || repeatedHashtagMode === "all-bottom");
+    const hasIntro = segmentCount > 1 && withThreadIntro && segmentIndex === 0;
+    const hasThreadEmoji = segmentCount > 1 && withThreadEmoji && segmentIndex < segmentCount - 1;
+    const hasCounters = segmentCount > 1 && withCounters;
+    const needsMarkerSpacing = segmentCount > 1 && (hasIntro || hasThreadEmoji || hasCounters) && withMarkerSpacing;
+
+    if (repeatsHashtag) {
+      const hashtagReserve = reserveForRepeatedHashtags(selectedHashtagText, repeatedHashtagMode);
+      reserved.graphemeCount += hashtagReserve.graphemeCount;
+      reserved.utf8ByteCount += hashtagReserve.utf8ByteCount;
+    }
+    if (hasIntro) {
+      const introReserve = reserveForThreadIntro();
+      reserved.graphemeCount += introReserve.graphemeCount;
+      reserved.utf8ByteCount += introReserve.utf8ByteCount;
+    }
+    if (hasThreadEmoji) {
+      const emojiReserve = reserveForThreadEmoji();
+      reserved.graphemeCount += emojiReserve.graphemeCount;
+      reserved.utf8ByteCount += emojiReserve.utf8ByteCount;
+    }
+    if (hasCounters) {
+      const counterReserve = reserveForCounters(segmentCount);
+      reserved.graphemeCount += counterReserve.graphemeCount;
+      reserved.utf8ByteCount += counterReserve.utf8ByteCount;
+    }
+    if (needsMarkerSpacing) {
+      const spacingReserve = getPostTextMetrics("\n");
+      reserved.graphemeCount += spacingReserve.graphemeCount;
+      reserved.utf8ByteCount += spacingReserve.utf8ByteCount;
+    }
+
+    return reserved;
+  };
 
   if (!withCounters && !withThreadIntro && !withThreadEmoji
     && !(selectedHashtagText && (repeatedHashtagMode === "all-top" || repeatedHashtagMode === "all-bottom"))) {
-    return splitChunksGreedy(manualChunks, () => MAX_POST_LENGTH);
+    return splitChunksGreedy(manualChunks, () => fullPostLimit);
   }
 
-  const estimatedLength = manualChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  let guess = Math.max(1, Math.ceil(estimatedLength / MAX_POST_LENGTH), manualChunks.length);
+  const estimatedMetrics = manualChunks.reduce((sum, chunk) => {
+    const metrics = getPostTextMetrics(chunk);
+    return {
+      graphemeCount: sum.graphemeCount + metrics.graphemeCount,
+      utf8ByteCount: sum.utf8ByteCount + metrics.utf8ByteCount,
+    };
+  }, {
+    graphemeCount: 0,
+    utf8ByteCount: 0,
+  });
+  const estimatedByGraphemes = Math.ceil(estimatedMetrics.graphemeCount / MAX_POST_LENGTH);
+  const estimatedByBytes = Math.ceil(estimatedMetrics.utf8ByteCount / MAX_POST_UTF8_BYTES);
+  let guess = Math.max(1, estimatedByGraphemes, estimatedByBytes, manualChunks.length);
 
   for (let index = 0; index < 12; index += 1) {
-    const segments = splitChunksGreedy(manualChunks, (segmentIndex) => MAX_POST_LENGTH - reserveForSuffix(segmentIndex, guess));
+    const segments = splitChunksGreedy(manualChunks, (segmentIndex) => {
+      const reserved = reserveForSuffix(segmentIndex, guess);
+      return subtractPostTextLimit(fullPostLimit, reserved);
+    });
 
     if (segments.length === guess) {
       return decorateSegments(segments, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText);
@@ -17902,7 +23897,10 @@ function splitIntoSegments(text, withCounters, withThreadIntro, withThreadEmoji,
     guess = segments.length;
   }
 
-  const fallbackSegments = splitChunksGreedy(manualChunks, (segmentIndex) => MAX_POST_LENGTH - reserveForSuffix(segmentIndex, guess));
+  const fallbackSegments = splitChunksGreedy(manualChunks, (segmentIndex) => {
+    const reserved = reserveForSuffix(segmentIndex, guess);
+    return subtractPostTextLimit(fullPostLimit, reserved);
+  });
   return decorateSegments(fallbackSegments, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText);
 }
 
@@ -17925,11 +23923,15 @@ function greedySplit(text, limitFactory) {
 
   for (const token of tokens) {
     const chunkIndex = segments.length;
-    const limit = Math.max(1, limitFactory(chunkIndex));
+    const rawLimit = limitFactory(chunkIndex);
+    const limit = createPostTextLimit(
+      Math.max(1, rawLimit.graphemeLimit),
+      Math.max(1, rawLimit.utf8ByteLimit),
+    );
     const nextValue = current + token;
 
     if (token === "\n") {
-      if (nextValue.length <= limit) {
+      if (fitsPostTextLimit(nextValue, limit)) {
         current = nextValue;
       } else if (current) {
         segments.push(trimSegment(current));
@@ -17939,28 +23941,26 @@ function greedySplit(text, limitFactory) {
     }
 
     if (/^[ \t]+$/.test(token)) {
-      if (current && nextValue.length <= limit) {
+      if (current && fitsPostTextLimit(nextValue, limit)) {
         current = nextValue;
       }
       continue;
     }
 
-    if (token.length > limit) {
+    if (!fitsPostTextLimit(token, limit)) {
       if (current) {
         segments.push(trimSegment(current));
         current = "";
       }
 
-      let start = 0;
-      while (start < token.length) {
-        const sliceLimit = Math.max(1, limitFactory(segments.length));
-        segments.push(token.slice(start, start + sliceLimit));
-        start += sliceLimit;
+      const slices = splitTokenByPostLimit(token, limitFactory, segments.length);
+      for (const slice of slices) {
+        segments.push(slice);
       }
       continue;
     }
 
-    if (nextValue.length <= limit) {
+    if (fitsPostTextLimit(nextValue, limit)) {
       current = nextValue;
       continue;
     }
@@ -18252,7 +24252,7 @@ function renderSegments(options = {}) {
   syncSegmentImages(activeSegments.length);
   syncSegmentLinkCards(activeSegments.length);
 
-  characterCount.textContent = t("charCount", { count: text.length });
+  characterCount.textContent = formatComposerCharacterCount(text);
 
   if (!text.trim()) {
     segmentSummary.textContent = t("summarySingle");
@@ -18263,6 +24263,7 @@ function renderSegments(options = {}) {
   }
 
   segmentsPane.hidden = activeSegments.length === 0;
+  updateComposerLengthWarning(activeSegments);
   segmentsList.innerHTML = "";
 
   activeSegments.forEach((segment, index) => {
@@ -18270,6 +24271,7 @@ function renderSegments(options = {}) {
     const card = fragment.querySelector(".segment-card");
     const indexLabel = fragment.querySelector(".segment-index");
     const lengthLabel = fragment.querySelector(".segment-length");
+    const warningLabel = fragment.querySelector(".segment-warning");
     const textarea = fragment.querySelector(".segment-text");
     const addImagesButton = fragment.querySelector(".segment-add-image-button");
     const linkCardButton = fragment.querySelector(".segment-link-card-button");
@@ -18291,18 +24293,15 @@ function renderSegments(options = {}) {
       card.style.animationDelay = "0ms";
     }
     indexLabel.textContent = t("segmentPart", { index: index + 1 });
-    lengthLabel.textContent = `${segment.length}/${MAX_POST_LENGTH}`;
     textarea.value = segment;
+    updateSegmentLengthPresentation(lengthLabel, warningLabel, segment);
     textarea.addEventListener("input", () => {
       activeSegments[index] = textarea.value;
       segmentOverrides = normalizeSegmentOverrides(activeSegments);
       setComposerLocked(true);
-      lengthLabel.textContent = `${textarea.value.length}/${MAX_POST_LENGTH}`;
-      if (textarea.value.length > MAX_POST_LENGTH) {
-        lengthLabel.style.color = "var(--danger)";
-      } else {
-        lengthLabel.style.color = "var(--muted)";
-      }
+      setComposerPosted(false);
+      updateSegmentLengthPresentation(lengthLabel, warningLabel, textarea.value);
+      updateComposerLengthWarning(activeSegments);
       autoSizeTextarea(textarea);
       updatePublishAvailability();
       queueDraftSave();
@@ -18465,6 +24464,8 @@ async function hydrateAppState() {
     }
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
+    threadExplorerFavorites = normalizeThreadExplorerFavorites(state.threadExplorerFavorites);
+    savedSearches = normalizeSavedSearches(state.savedSearches);
     archiveSession = savedArchiveSession || null;
     archiveCatalog = savedArchiveCatalog ? normalizeImportedArchiveCatalog(savedArchiveCatalog) : null;
     currentLocale = localePreference === "auto"
@@ -18499,6 +24500,7 @@ async function hydrateAppState() {
     }
     appStateHydrated = true;
     restorePreferredWorkspaceIfPossible();
+    window.setTimeout(showSettingsBackupReminderIfNeeded, 0);
   } catch (error) {
     console.error(error);
     setStatus(error.message, "error");
@@ -18617,6 +24619,12 @@ publishButton.addEventListener("click", async () => {
     return;
   }
 
+  if (countGraphemes(sourceText.value) > MAX_COMPOSER_GRAPHEME_LENGTH) {
+    updateComposerInputWarning(false);
+    setStatus(t("composerTextTooLong", { count: getComposerLimitLabel() }), "error");
+    return;
+  }
+
   const segments = getSegmentPayloads();
 
   if (segments.some((entry) => !entry.text)) {
@@ -18624,7 +24632,10 @@ publishButton.addEventListener("click", async () => {
     return;
   }
 
-  if (segments.some((entry) => entry.text.length > MAX_POST_LENGTH)) {
+  if (segments.some((entry) => {
+    const metrics = getPostTextMetrics(entry.text);
+    return metrics.graphemeCount > MAX_POST_LENGTH || metrics.utf8ByteCount > MAX_POST_UTF8_BYTES;
+  })) {
     setStatus(t("statusSegmentTooLong"), "error");
     return;
   }
@@ -18775,13 +24786,20 @@ publishButton.addEventListener("click", async () => {
       },
     });
     hideProgressDialog();
+    lastPublishRateLimit = normalizePublishRateLimit(result.rateLimit);
+    // UI output disabled for now; keep collecting the last observed headers for later reuse.
+    // renderPublishRateLimitNote(lastPublishRateLimit);
     await recordPublishedThread(result, preparedSegments);
     clearComposerReplyTarget();
+    setComposerPosted(true);
     queueDraftSave();
     setStatus(result.posts.length === 1 ? t("statusPublishedOne") : t("statusPublishedMany", { count: result.posts.length }));
     showPublishResult(result);
   } catch (error) {
     console.error(error);
+    lastPublishRateLimit = normalizePublishRateLimit(error?.details?.rateLimit);
+    // UI output disabled for now; keep collecting the last observed headers for later reuse.
+    // renderPublishRateLimitNote(lastPublishRateLimit);
     const message = buildPublishErrorMessage(error);
     setStatus(message, "error");
     hideProgressDialog();
@@ -18793,14 +24811,40 @@ publishButton.addEventListener("click", async () => {
 });
 
 sourceText.addEventListener("input", () => {
-  segmentOverrides = null;
-  setComposerLocked(false);
-  scheduleComposerSegmentRender(COMPOSER_SEGMENT_RENDER_DEBOUNCE_MS);
-  queueDraftSave();
+  if (composerInputEventSuppressed) {
+    composerInputEventSuppressed = false;
+    return;
+  }
+  const showTruncationWarning = composerInputWarningPendingTruncation;
+  composerInputWarningPendingTruncation = false;
+  handleComposerTextInput(showTruncationWarning);
+});
+sourceText.addEventListener("beforeinput", (event) => {
+  if (event.inputType !== "insertFromPaste" && event.inputType !== "insertFromDrop") {
+    return;
+  }
+
+  const insertedText = event.dataTransfer?.getData("text/plain") || event.data || "";
+  if (typeof insertedText !== "string") {
+    return;
+  }
+
+  event.preventDefault();
+  insertTextIntoComposer(insertedText, true);
+});
+sourceText.addEventListener("paste", (event) => {
+  const pastedText = event.clipboardData?.getData("text/plain");
+  if (typeof pastedText !== "string") {
+    return;
+  }
+
+  event.preventDefault();
+  insertTextIntoComposer(pastedText, true);
 });
 counterToggle.addEventListener("change", () => {
   segmentOverrides = null;
   setComposerLocked(false);
+  setComposerPosted(false);
   renderSegments({ preserveOverrides: false });
   renderReplyTargetCard();
   renderPostLanguageSummary();
@@ -18811,6 +24855,7 @@ threadIntroToggle.addEventListener("change", () => {
   appendThreadIntro = threadIntroToggle.checked;
   segmentOverrides = null;
   setComposerLocked(false);
+  setComposerPosted(false);
   renderSegments({ preserveOverrides: false });
   renderPostLanguageSummary();
   void persistSettings();
@@ -18820,6 +24865,7 @@ threadEmojiToggle.addEventListener("change", () => {
   appendThreadEmoji = threadEmojiToggle.checked;
   segmentOverrides = null;
   setComposerLocked(false);
+  setComposerPosted(false);
   renderSegments({ preserveOverrides: false });
   renderPostLanguageSummary();
   void persistSettings();
@@ -18829,6 +24875,7 @@ markerSpacingToggle.addEventListener("change", () => {
   addMarkerSpacing = markerSpacingToggle.checked;
   segmentOverrides = null;
   setComposerLocked(false);
+  setComposerPosted(false);
   renderSegments({ preserveOverrides: false });
   renderPostLanguageSummary();
   void persistSettings();
@@ -18909,6 +24956,7 @@ clearButton.addEventListener("click", async () => {
   segmentOverrides = null;
   clearComposerReplyTarget({ render: false });
   setComposerLocked(false);
+  setComposerPosted(false);
   renderSegments({ preserveOverrides: false });
   renderReplyTargetCard();
   publishButton.textContent = getPublishButtonLabel();
@@ -18947,6 +24995,77 @@ archiveButton.addEventListener("click", () => {
 networkButton.addEventListener("click", () => {
   showNetworkWorkspace();
 });
+
+threadExplorerButton.addEventListener("click", handleThreadExplorerLaunchClick);
+threadExplorerUrlButton.addEventListener("click", handleThreadExplorerUrlClick);
+threadExplorerSearchesButton.addEventListener("click", handleThreadExplorerSearchesClick);
+threadExplorerRefreshButton.addEventListener("click", handleThreadExplorerRefreshClick);
+threadExplorerFollowsButton.addEventListener("click", handleThreadExplorerFollowsClick);
+threadExplorerMutualsButton.addEventListener("click", handleThreadExplorerMutualsClick);
+threadExplorerFeedSelect.addEventListener("change", handleThreadExplorerFeedSelectChange);
+threadExplorerFeedList.addEventListener("scroll", handleThreadExplorerFeedScroll);
+threadExplorerRootButton.addEventListener("click", handleThreadExplorerRootClick);
+threadExplorerReloadThreadButton.addEventListener("click", handleThreadExplorerReloadThreadClick);
+threadExplorerSnapshotPngButton.addEventListener("click", handleThreadExplorerSnapshotPngClick);
+threadExplorerSaveButton.addEventListener("click", handleThreadExplorerSaveClick);
+threadExplorerFavoritesButton.addEventListener("click", handleThreadExplorerFavoritesClick);
+threadExplorerZoomOutButton.addEventListener("click", handleThreadExplorerZoomOutClick);
+threadExplorerZoomResetButton.addEventListener("click", handleThreadExplorerZoomResetClick);
+threadExplorerZoomInButton.addEventListener("click", handleThreadExplorerZoomInClick);
+threadExplorerOrientationButton.addEventListener("click", handleThreadExplorerOrientationClick);
+threadExplorerCollapseButton.addEventListener("click", handleThreadExplorerCollapseClick);
+threadExplorerExpandButton.addEventListener("click", handleThreadExplorerExpandClick);
+threadExplorerThreadTree.addEventListener("pointerdown", handleThreadExplorerPointerDown);
+threadExplorerThreadTree.addEventListener("pointermove", handleThreadExplorerPointerMove);
+threadExplorerThreadTree.addEventListener("pointerup", handleThreadExplorerPointerUp);
+threadExplorerThreadTree.addEventListener("pointercancel", handleThreadExplorerPointerUp);
+threadExplorerThreadTree.addEventListener("wheel", handleThreadExplorerWheel, { passive: false });
+threadExplorerUrlCloseTopButton.addEventListener("click", closeThreadExplorerUrlDialog);
+threadExplorerUrlCloseButton.addEventListener("click", closeThreadExplorerUrlDialog);
+threadExplorerUrlLoadButton.addEventListener("click", () => {
+  void loadThreadExplorerPostFromUrl();
+});
+threadExplorerUrlInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void loadThreadExplorerPostFromUrl();
+  }
+});
+threadExplorerFavoritesCloseButton.addEventListener("click", () => {
+  threadExplorerFavoritesDialog.close();
+});
+savedSearchesCloseButton.addEventListener("click", () => {
+  savedSearchesDialog.close();
+});
+savedSearchAddButton.addEventListener("click", handleSavedSearchAddClick);
+savedSearchUrlInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    handleSavedSearchAddClick();
+  }
+});
+threadExplorerReactionsCloseButton.addEventListener("click", () => {
+  threadExplorerReactionsDialog.close();
+});
+threadExplorerRepliesCloseButton.addEventListener("click", () => {
+  threadExplorerRepliesDialog.close();
+});
+threadExplorerGalleryCloseButton.addEventListener("click", () => {
+  threadExplorerGalleryDialog.close();
+});
+threadExplorerGalleryCloseBottomButton.addEventListener("click", () => {
+  threadExplorerGalleryDialog.close();
+});
+threadExplorerGalleryImage.addEventListener("error", handleThreadExplorerGalleryImageError);
+threadExplorerGalleryFullscreenButton.addEventListener("click", async () => {
+  try {
+    await openThreadExplorerGalleryFullscreen();
+  } catch (error) {
+    console.warn("Thread Explorer fullscreen failed.", error);
+  }
+});
+window.addEventListener("resize", handleThreadExplorerResize);
+window.visualViewport?.addEventListener("resize", handleThreadExplorerResize);
 
 analysisButton.addEventListener("click", () => {
   showAnalysisWorkspace();
@@ -19353,16 +25472,12 @@ archiveWaveSizeSelect.addEventListener("change", () => {
   void persistArchivePreferences();
 });
 
-archiveYearInput.addEventListener("input", () => {
-  if (archiveYearInput.value.trim()) {
-    archiveScopeSelect.value = "year";
-    updateArchiveScopeFields();
-  }
-  invalidateArchiveCatalog();
-  void persistArchivePreferences();
-});
-
 archiveFromInput.addEventListener("change", () => {
+  const normalizedRange = enforceArchiveDateRangeLimit("from");
+  syncArchiveDateInputBounds();
+  if (normalizedRange.changed) {
+    showErrorDialog(t("archiveRangeLimitWarning"), t("archiveRangeLimitTitle"));
+  }
   archiveScopeSelect.value = "range";
   updateArchiveScopeFields();
   invalidateArchiveCatalog();
@@ -19370,6 +25485,11 @@ archiveFromInput.addEventListener("change", () => {
 });
 
 archiveToInput.addEventListener("change", () => {
+  const normalizedRange = enforceArchiveDateRangeLimit("to");
+  syncArchiveDateInputBounds();
+  if (normalizedRange.changed) {
+    showErrorDialog(t("archiveRangeLimitWarning"), t("archiveRangeLimitTitle"));
+  }
   archiveScopeSelect.value = "range";
   updateArchiveScopeFields();
   invalidateArchiveCatalog();
@@ -19521,6 +25641,10 @@ if (archiveCheckPostEditButton) {
   archiveCheckPostEditButton.addEventListener("click", () => {
     openPostEditCheckDialog();
   });
+}
+
+if (archiveSavedSearchesButton) {
+  archiveSavedSearchesButton.addEventListener("click", handleArchiveSavedSearchesClick);
 }
 
 if (postEditCheckUrlInput) {
@@ -19833,6 +25957,11 @@ composerUnlockButton.addEventListener("click", () => {
   sourceText.focus();
 });
 
+composerPostedDismissButton?.addEventListener("click", () => {
+  setComposerPosted(false);
+  sourceText.focus();
+});
+
 postSettingsButton.addEventListener("click", () => {
   renderPostLanguageDialog();
   postLanguagesDialog.showModal();
@@ -20038,6 +26167,24 @@ exportSettingsButton.addEventListener("click", async () => {
     setBackupStatus(t("backupExportFailed"), "error");
   }
 });
+
+if (backupReminderSaveButton) {
+  backupReminderSaveButton.addEventListener("click", async () => {
+    await handleBackupReminderSaveClick();
+  });
+}
+
+if (backupReminderLaterButton) {
+  backupReminderLaterButton.addEventListener("click", () => {
+    closeSettingsBackupReminder(true);
+  });
+}
+
+if (backupReminderCloseTop) {
+  backupReminderCloseTop.addEventListener("click", () => {
+    closeSettingsBackupReminder(true);
+  });
+}
 
 if (shareAppButton) {
   shareAppButton.addEventListener("click", async () => {
