@@ -1,5 +1,5 @@
 {
-  "appVersion": "0.4.179",
-  "cacheVersion": "v198",
-  "label": "Improve archive export guidance and fallback"
+  "appVersion": "0.4.223",
+  "cacheVersion": "v242",
+  "label": "Refactor innerHTML to DOM templates"
 }
