@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">Threadline Workspaces</title>
-  <desc id="desc">Sachliche Open-Graph-Grafik mit Threadline-Logo und fünf Workspaces: Composer, Archiv-Funktion, Netzwerk, Analyse und DM-Archiv.</desc>
+  <desc id="desc">Sachliche Open-Graph-Grafik mit Threadline-Logo und sechs Workspaces: Composer, Archiv-Funktion, Thread Explorer, Netzwerk, Analyse und DM-Archiv.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
       <stop offset="0%" stop-color="#f9fcff"/>
@@ -47,8 +47,8 @@
 
   <g transform="translate(286 86)">
     <text class="eyebrow" x="0" y="0">THREADLINE</text>
-    <text class="title" x="0" y="68">Fünf Arbeitsbereiche für Bluesky</text>
-    <text class="subtitle" x="0" y="118">Schreiben, sichern, erkunden, vergleichen und Direct Messages lokal verwalten.</text>
+    <text class="title" x="0" y="68">Sechs Arbeitsbereiche für Bluesky</text>
+    <text class="subtitle" x="0" y="118">Schreiben, sichern, Threads lesen, erkunden, vergleichen und DMs verwalten.</text>
   </g>
 
   <g transform="translate(76 264)">
@@ -85,6 +85,17 @@
     </g>
 
     <g transform="translate(0 130)" filter="url(#soft)">
+      <rect width="320" height="110" rx="28" fill="url(#panel)"/>
+      <circle cx="46" cy="42" r="26" fill="#f5f9ff" stroke="#bfd8f6" stroke-width="2.2"/>
+      <path d="M31 32h14c3 0 5.5 2.5 5.5 5.5v14c0 3-2.5 5.5-5.5 5.5H42l-8 8v-8h4c3 0 5.5-2.5 5.5-5.5V38c0-3-2.5-5.5-5.5-5.5z" fill="none" stroke="#2d84df" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="39" cy="43.5" r="2.2" fill="#2d84df"/>
+      <circle cx="45" cy="43.5" r="2.2" fill="#2d84df"/>
+      <circle cx="51" cy="43.5" r="2.2" fill="#2d84df"/>
+      <text class="card-title" x="76" y="45">Thread Explorer</text>
+      <text class="card-text" x="76" y="78">Aktuelle Threads als Mindmap lesen</text>
+    </g>
+
+    <g transform="translate(344 130)" filter="url(#soft)">
       <rect width="492" height="110" rx="28" fill="url(#panel)"/>
       <circle cx="52" cy="42" r="28" fill="#f2fcfa" stroke="#9ce5da" stroke-width="2.2"/>
       <circle cx="47" cy="39" r="11.5" fill="none" stroke="#16a795" stroke-width="3.6"/>
@@ -94,9 +105,9 @@
       <text class="card-text" x="92" y="78">Zeitmuster und Stil von zwei Accounts vergleichen</text>
     </g>
 
-    <g transform="translate(556 130)" filter="url(#soft)">
-      <rect width="492" height="110" rx="28" fill="url(#panel)"/>
-      <circle cx="52" cy="42" r="28" fill="#f2fcfa" stroke="#9ce5da" stroke-width="2.2"/>
+    <g transform="translate(856 130)" filter="url(#soft)">
+      <rect width="360" height="110" rx="28" fill="url(#panel)"/>
+      <circle cx="46" cy="42" r="26" fill="#f2fcfa" stroke="#9ce5da" stroke-width="2.2"/>
       <path d="M42 29h20c5 0 9 4 9 9v10c0 5-4 9-9 9H54l-8 8v-8h-4c-5 0-9-4-9-9V38c0-5 4-9 9-9Z" fill="none" stroke="#16a795" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
       <circle cx="46" cy="43.5" r="2.2" fill="#16a795"/>
       <circle cx="52" cy="43.5" r="2.2" fill="#16a795"/>
