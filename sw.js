@@ -1795,11 +1795,20 @@ function extractThreadExplorerPinnedFeedSources(preferences = []) {
 
   preferences.forEach((preference) => {
     const type = String(preference?.$type || "");
-    if (!type.endsWith("#savedFeedsPref") && !Array.isArray(preference?.saved)) {
+    // Support both legacy "#savedFeedsPref" and current "#bskyAppStatePref" formats
+    if (!(
+      type.endsWith("#savedFeedsPref") ||
+      type.endsWith("#bskyAppStatePref") ||
+      Array.isArray(preference?.saved) ||
+      Array.isArray(preference?.items)
+    )) {
       return;
     }
 
-    const saved = Array.isArray(preference.saved) ? preference.saved : [];
+    // Use saved array (legacy) or items array (current)
+    const saved = Array.isArray(preference.saved) ? preference.saved :
+                 Array.isArray(preference.items) ? preference.items :
+                 [];
     saved.forEach((entry) => {
       const feed = normalizeThreadExplorerSavedFeed(entry);
       if (!feed || !feed.pinned || seen.has(feed.uri)) {
@@ -1857,7 +1866,8 @@ async function loadThreadExplorerFeedSources() {
     base: authXrpcBase(activeAuth),
   });
 
-  const feeds = extractThreadExplorerPinnedFeedSources(response?.preferences || []);
+ console.log("getPreferences response:", JSON.stringify(response, null, 2));
+ const feeds = extractThreadExplorerPinnedFeedSources(response?.preferences || []);
   const enrichedFeeds = await enrichThreadExplorerFeedSources(activeAuth, feeds);
   return {
     feeds: enrichedFeeds,
