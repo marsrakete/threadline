@@ -1866,8 +1866,7 @@ async function loadThreadExplorerFeedSources() {
     base: authXrpcBase(activeAuth),
   });
 
- console.log("getPreferences response:", JSON.stringify(response, null, 2));
- const feeds = extractThreadExplorerPinnedFeedSources(response?.preferences || []);
+  const feeds = extractThreadExplorerPinnedFeedSources(response?.preferences || []);
   const enrichedFeeds = await enrichThreadExplorerFeedSources(activeAuth, feeds);
   return {
     feeds: enrichedFeeds,

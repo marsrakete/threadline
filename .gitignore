@@ -3,3 +3,8 @@ node_modules/
 tmp-og-render/
 .tmp-og-render/
 .tmp-viewer-archive/
+.tmp-viewer-archive/
+.agents/
+.codex/
+
+
