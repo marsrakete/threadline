@@ -988,6 +988,7 @@ let savedSearchDialogContext = "threadExplorer";
 let threadExplorerReactionsLoading = false;
 let threadExplorerGalleryImages = [];
 let threadExplorerGalleryIndex = 0;
+let threadExplorerGalleryPseudoFullscreen = false;
 let threadExplorerSnapshotMediaDataUris = new Map();
 let threadExplorerRenderedMediaCache = new Map();
 let threadExplorerMediaCacheGeneration = 0;
@@ -6708,6 +6709,12 @@ function handleThreadExplorerGalleryKeydown(event) {
     return;
   }
 
+  if (event.key === "Escape" && threadExplorerGalleryPseudoFullscreen) {
+    event.preventDefault();
+    setThreadExplorerGalleryPseudoFullscreen(false);
+    return;
+  }
+
   if (event.key === "ArrowLeft") {
     event.preventDefault();
     stepThreadExplorerGallery(-1);
@@ -6726,11 +6733,21 @@ function handleThreadExplorerGalleryKeydown(event) {
  */
 async function openThreadExplorerGalleryFullscreen() {
   const fullscreenTarget = threadExplorerGalleryMain || threadExplorerGalleryImage;
-  if (!fullscreenTarget || !fullscreenTarget.requestFullscreen) {
+  if (!fullscreenTarget) {
     return;
   }
 
-  await fullscreenTarget.requestFullscreen();
+  if (fullscreenTarget.requestFullscreen) {
+    try {
+      await fullscreenTarget.requestFullscreen();
+      setThreadExplorerGalleryPseudoFullscreen(false);
+      return;
+    } catch {
+      // Fall back to the in-app fullscreen mode below.
+    }
+  }
+
+  setThreadExplorerGalleryPseudoFullscreen(true);
 }
 
 /**
@@ -6747,7 +6764,25 @@ async function closeThreadExplorerGalleryOverlay() {
     }
   }
 
+  if (threadExplorerGalleryPseudoFullscreen) {
+    setThreadExplorerGalleryPseudoFullscreen(false);
+    return;
+  }
+
   threadExplorerGalleryDialog?.close();
+}
+
+/**
+ * Toggles the Thread Explorer in-app fullscreen fallback for browsers without element fullscreen.
+ * @param {boolean} enabled - True when the gallery image should cover the full viewport.
+ * @returns {void}
+ */
+function setThreadExplorerGalleryPseudoFullscreen(enabled) {
+  threadExplorerGalleryPseudoFullscreen = enabled === true;
+  if (threadExplorerGalleryMain) {
+    threadExplorerGalleryMain.classList.toggle("is-inline-fullscreen", threadExplorerGalleryPseudoFullscreen);
+  }
+  document.body.classList.toggle("thread-explorer-gallery-fullscreen", threadExplorerGalleryPseudoFullscreen);
 }
 
 /**
@@ -30304,9 +30339,11 @@ threadExplorerRepliesCloseButton.addEventListener("click", () => {
   threadExplorerRepliesDialog.close();
 });
 threadExplorerGalleryCloseButton.addEventListener("click", () => {
+  setThreadExplorerGalleryPseudoFullscreen(false);
   threadExplorerGalleryDialog.close();
 });
 threadExplorerGalleryCloseBottomButton.addEventListener("click", () => {
+  setThreadExplorerGalleryPseudoFullscreen(false);
   threadExplorerGalleryDialog.close();
 });
 threadExplorerGalleryPrevButton?.addEventListener("click", () => {
@@ -30333,6 +30370,9 @@ threadExplorerGalleryImage.addEventListener("click", async () => {
   }
 });
 threadExplorerGalleryDialog?.addEventListener("keydown", handleThreadExplorerGalleryKeydown);
+threadExplorerGalleryDialog?.addEventListener("close", () => {
+  setThreadExplorerGalleryPseudoFullscreen(false);
+});
 threadExplorerGalleryFullscreenButton.addEventListener("click", async () => {
   try {
     await openThreadExplorerGalleryFullscreen();

@@ -63,6 +63,10 @@ body.desktop-resizing * {
   cursor: col-resize !important;
 }
 
+body.thread-explorer-gallery-fullscreen {
+  overflow: hidden;
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -1669,7 +1673,24 @@ body.theme-dark .support-actions img {
   background: #000000;
 }
 
+.thread-explorer-gallery-main.is-inline-fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: #000000;
+  z-index: 1000;
+}
+
 .thread-explorer-gallery-main:fullscreen figcaption {
+  display: none;
+}
+
+.thread-explorer-gallery-main.is-inline-fullscreen figcaption {
   display: none;
 }
 
@@ -1683,6 +1704,14 @@ body.theme-dark .support-actions img {
 }
 
 .thread-explorer-gallery-main:fullscreen img {
+  width: auto;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+  background: transparent;
+}
+
+.thread-explorer-gallery-main.is-inline-fullscreen img {
   width: auto;
   max-width: 100vw;
   max-height: 100vh;
