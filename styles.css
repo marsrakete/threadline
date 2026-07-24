@@ -1657,8 +1657,7 @@ body.theme-dark .support-actions img {
 }
 
 .thread-explorer-gallery-main {
-  display: grid;
-  gap: 8px;
+  display: block;
   margin: 0;
   position: relative;
 }
@@ -1668,8 +1667,9 @@ body.theme-dark .support-actions img {
   height: 100vh;
   margin: 0;
   padding: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #000000;
 }
 
@@ -1680,8 +1680,9 @@ body.theme-dark .support-actions img {
   height: 100vh;
   margin: 0;
   padding: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #000000;
   z-index: 1000;
 }
@@ -1695,7 +1696,9 @@ body.theme-dark .support-actions img {
 }
 
 .thread-explorer-gallery-main img {
+  display: block;
   width: 100%;
+  margin: 0 auto;
   max-height: min(82vh, 860px);
   object-fit: contain;
   border-radius: 8px;
@@ -1721,8 +1724,6 @@ body.theme-dark .support-actions img {
 
 .thread-explorer-gallery-overlay-button {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
   width: 52px;
   height: 52px;
   border: 0;
@@ -1746,17 +1747,18 @@ body.theme-dark .support-actions img {
 }
 
 .thread-explorer-gallery-overlay-button-prev {
+  top: calc(50% - 26px);
   left: 14px;
 }
 
 .thread-explorer-gallery-overlay-button-next {
+  top: calc(50% - 26px);
   right: 14px;
 }
 
 .thread-explorer-gallery-overlay-button-close {
   top: calc(env(safe-area-inset-top, 0px) + 14px);
   right: calc(env(safe-area-inset-right, 0px) + 14px);
-  transform: none;
   width: 44px;
   height: 44px;
   font-size: 1.8rem;
