@@ -1029,6 +1029,7 @@
 
               <div class="settings-actions search-primary-actions">
                 <button type="button" id="search-run-button" data-i18n="searchRunButton">Suche starten</button>
+                <button type="button" id="search-more-button" class="ghost-button" data-i18n="searchMoreButton" hidden>Mehr laden</button>
                 <button type="button" id="search-cancel-button" class="ghost-button" data-i18n="cancelButton" hidden>Abbrechen</button>
                 <button type="button" id="search-saved-button" class="ghost-button" data-i18n="searchSavedParamsButton">Gespeicherte Suchen</button>
                 <button type="button" id="search-save-button" class="ghost-button" data-i18n="searchSaveParamsButton">Suche speichern</button>
@@ -1036,7 +1037,6 @@
               <div class="settings-actions search-secondary-actions">
                 <button type="button" id="search-clear-button" class="ghost-button" data-i18n="searchClearFormButton">Suchmaske leeren</button>
                 <button type="button" id="search-copy-url-button" class="ghost-button" data-i18n="searchCopyUrlButton">Bsky-URL kopieren</button>
-                <button type="button" id="search-more-button" class="ghost-button" data-i18n="searchMoreButton" hidden>Mehr laden</button>
               </div>
             </section>
             </div>
@@ -2276,10 +2276,17 @@
           <button type="button" id="thread-explorer-gallery-close-button" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
         <figure class="thread-explorer-gallery-main">
+          <button type="button" id="thread-explorer-gallery-overlay-close-button" class="thread-explorer-gallery-overlay-button thread-explorer-gallery-overlay-button-close" data-i18n-title="closeButton" title="Schließen" aria-label="Schließen">×</button>
+          <button type="button" id="thread-explorer-gallery-overlay-prev-button" class="thread-explorer-gallery-overlay-button thread-explorer-gallery-overlay-button-prev" data-i18n-title="threadExplorerGalleryPrevButton" title="Zurueck" aria-label="Zurueck">‹</button>
           <img id="thread-explorer-gallery-image" alt="">
+          <button type="button" id="thread-explorer-gallery-overlay-next-button" class="thread-explorer-gallery-overlay-button thread-explorer-gallery-overlay-button-next" data-i18n-title="threadExplorerGalleryNextButton" title="Weiter" aria-label="Weiter">›</button>
           <figcaption id="thread-explorer-gallery-caption"></figcaption>
         </figure>
         <div id="thread-explorer-gallery-thumbs" class="thread-explorer-gallery-thumbs"></div>
+        <div class="settings-actions thread-explorer-gallery-nav">
+          <button type="button" id="thread-explorer-gallery-prev-button" class="ghost-button" data-i18n="threadExplorerGalleryPrevButton">Zurueck</button>
+          <button type="button" id="thread-explorer-gallery-next-button" class="ghost-button" data-i18n="threadExplorerGalleryNextButton">Weiter</button>
+        </div>
         <div class="settings-actions">
           <button type="button" id="thread-explorer-gallery-fullscreen-button" data-i18n="threadExplorerGalleryFullscreenButton">Fullscreen</button>
           <button type="button" id="thread-explorer-gallery-close-bottom-button" class="ghost-button" data-i18n="closeButton">Schließen</button>

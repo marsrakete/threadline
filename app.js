@@ -621,9 +621,15 @@ const threadExplorerGalleryDialog = document.querySelector("#thread-explorer-gal
 const threadExplorerGalleryCloseButton = document.querySelector("#thread-explorer-gallery-close-button");
 const threadExplorerGalleryCloseBottomButton = document.querySelector("#thread-explorer-gallery-close-bottom-button");
 const threadExplorerGalleryTitle = document.querySelector("#thread-explorer-gallery-title");
+const threadExplorerGalleryMain = document.querySelector(".thread-explorer-gallery-main");
 const threadExplorerGalleryImage = document.querySelector("#thread-explorer-gallery-image");
 const threadExplorerGalleryCaption = document.querySelector("#thread-explorer-gallery-caption");
 const threadExplorerGalleryThumbs = document.querySelector("#thread-explorer-gallery-thumbs");
+const threadExplorerGalleryOverlayCloseButton = document.querySelector("#thread-explorer-gallery-overlay-close-button");
+const threadExplorerGalleryPrevButton = document.querySelector("#thread-explorer-gallery-prev-button");
+const threadExplorerGalleryNextButton = document.querySelector("#thread-explorer-gallery-next-button");
+const threadExplorerGalleryOverlayPrevButton = document.querySelector("#thread-explorer-gallery-overlay-prev-button");
+const threadExplorerGalleryOverlayNextButton = document.querySelector("#thread-explorer-gallery-overlay-next-button");
 const threadExplorerGalleryFullscreenButton = document.querySelector("#thread-explorer-gallery-fullscreen-button");
 const threadExplorerSnapshotProgressDialog = document.querySelector("#thread-explorer-snapshot-progress-dialog");
 const threadExplorerSnapshotProgressTitle = document.querySelector("#thread-explorer-snapshot-progress-title");
@@ -875,6 +881,7 @@ let imageValidationToken = 0;
 let currentWorkspace = "composer";
 let searchResults = [];
 let searchCursor = "";
+let searchResultPreferences = null;
 let activeSearchRunId = "";
 let searchCancelPending = false;
 let searchLoading = false;
@@ -1000,6 +1007,7 @@ let analysisValidationTokens = {
 };
 let workspaceRestorePending = true;
 let appStateHydrated = false;
+const MAX_PERSISTED_SEARCH_RESULTS = 50;
 const NETWORK_STAGE_MIN_ZOOM = 0.42;
 const NETWORK_STAGE_MAX_ZOOM = 5.6;
 const ANALYSIS_METRIC_DEFINITIONS = [
@@ -4178,7 +4186,7 @@ function renderSearchWorkspace() {
     searchRunButton.disabled = searchLoading;
   }
   if (searchMoreButton) {
-    searchMoreButton.hidden = searchLoading || !searchCursor;
+    searchMoreButton.hidden = searchLoading || !searchCursor || !doesCurrentSearchMatchResultState();
     searchMoreButton.disabled = searchLoading;
   }
   if (searchCancelButton) {
@@ -4297,6 +4305,29 @@ function renderSearchResultCounts(post, counts) {
 }
 
 /**
+ * Applies a narrower single-image gallery layout to search result cards.
+ * @param {HTMLElement} card - Search result card based on the Thread Explorer template.
+ * @param {object} post - Normalized Thread Explorer post for the card.
+ * @returns {void}
+ */
+function applySearchResultImageLayout(card, post) {
+  if (!card) {
+    return;
+  }
+
+  let imageCount = 0;
+  if (Array.isArray(post?.images)) {
+    imageCount = post.images.length;
+  }
+
+  if (imageCount === 1) {
+    card.classList.add("has-single-search-image");
+  } else {
+    card.classList.remove("has-single-search-image");
+  }
+}
+
+/**
  * Creates one search result card with the same template as the Thread Explorer.
  * @param {object} item - Normalized search result item.
  * @param {string} highlightQuery - Active query highlight string.
@@ -4363,6 +4394,7 @@ function createSearchResultElement(item = {}, highlightQuery = "") {
 
   card._threadExplorerPost = post;
   hydrateThreadExplorerCardContent(card);
+  applySearchResultImageLayout(card, post);
   highlightSearchQueryInElement(card.querySelector(".thread-explorer-quote-card-text"), highlightQuery);
 
   return element;
@@ -4403,7 +4435,7 @@ async function loadSearchResults(options = {}) {
     return;
   }
 
-  const append = options?.append === true;
+  const append = options?.append === true && doesCurrentSearchMatchResultState();
   enforceSearchSortConstraints(false);
   const payload = collectSearchRequestPayload();
   const runId = crypto.randomUUID();
@@ -4454,6 +4486,7 @@ async function loadSearchResults(options = {}) {
       searchResults = items;
     }
     searchCursor = String(result?.cursor || "").trim();
+    searchResultPreferences = normalizeSearchPreferencesForStorage(payload);
     renderSearchResults();
     if (searchStatus) {
       if (result?.cancelled === true) {
@@ -4466,6 +4499,7 @@ async function loadSearchResults(options = {}) {
         searchStatus.textContent = t("searchStatusEmpty");
       }
     }
+    await persistSettings();
   } catch (error) {
     console.error(error);
     if (searchStatus) {
@@ -4762,6 +4796,93 @@ function normalizeSearchPreferencesForStorage(preferences = {}) {
  */
 function areSearchPreferencesEqual(left = {}, right = {}) {
   return JSON.stringify(normalizeSearchPreferencesForStorage(left)) === JSON.stringify(normalizeSearchPreferencesForStorage(right));
+}
+
+/**
+ * Normalizes persisted search result items for local reload restore.
+ * @param {Array<object>} items - Raw persisted search result items.
+ * @returns {Array<object>} Clamped array of persisted search result items.
+ */
+function normalizePersistedSearchResultItems(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => item && typeof item === "object" && item.post && typeof item.post === "object")
+    .slice(0, MAX_PERSISTED_SEARCH_RESULTS);
+}
+
+/**
+ * Builds a persistable snapshot of the current search result list.
+ * @returns {object|null} Persistable search result state or null when nothing should be kept.
+ */
+function getPersistableSearchResultState() {
+  if (!searchResultPreferences) {
+    return null;
+  }
+
+  const items = normalizePersistedSearchResultItems(searchResults);
+  const cursor = String(searchCursor || "").trim();
+  if (items.length === 0 && !cursor) {
+    return null;
+  }
+
+  return {
+    preferences: normalizeSearchPreferencesForStorage(searchResultPreferences),
+    items,
+    cursor,
+  };
+}
+
+/**
+ * Returns whether the current search form still matches the displayed result list.
+ * @returns {boolean} True when `Mehr laden` can safely continue the current result set.
+ */
+function doesCurrentSearchMatchResultState() {
+  if (!searchResultPreferences) {
+    return false;
+  }
+
+  return areSearchPreferencesEqual(getSearchPreferences(), searchResultPreferences);
+}
+
+/**
+ * Restores persisted search results when they still match the persisted search form.
+ * @param {object|null} state - Persisted search result state from local settings.
+ * @param {object} currentPreferences - Persisted live search preferences.
+ * @returns {void}
+ */
+function restorePersistedSearchResultState(state = null, currentPreferences = {}) {
+  searchResults = [];
+  searchCursor = "";
+  searchResultPreferences = null;
+
+  if (!state || typeof state !== "object") {
+    return;
+  }
+
+  const storedPreferences = normalizeSearchPreferencesForStorage(state.preferences || {});
+  searchResultPreferences = storedPreferences;
+  if (!areSearchPreferencesEqual(currentPreferences, storedPreferences)) {
+    return;
+  }
+
+  searchResults = normalizePersistedSearchResultItems(state.items);
+  searchCursor = String(state.cursor || "").trim();
+}
+
+/**
+ * Restores the visible search status line from the current in-memory result state.
+ * @returns {void}
+ */
+function restoreSearchStatusFromResultState() {
+  if (!searchStatus || searchLoading) {
+    return;
+  }
+
+  if (searchResults.length > 0) {
+    searchStatus.textContent = buildSearchLoadedStatus(searchResults.length, Boolean(searchCursor));
+    return;
+  }
+
+  searchStatus.textContent = t("searchStatusIdle");
 }
 
 /**
@@ -6202,6 +6323,7 @@ async function loadSavedSearchInSearchWorkspace(id) {
   applySearchPreferences(search.searchPreferences || search.params || {});
   searchResults = [];
   searchCursor = "";
+  searchResultPreferences = null;
   renderHashtagCloud();
   renderSearchResults();
   renderSearchWorkspace();
@@ -6425,13 +6547,34 @@ function renderThreadExplorerGalleryImage() {
     return;
   }
 
+  applyTranslatedTitle(threadExplorerGalleryOverlayCloseButton, "closeButton");
+  applyTranslatedTitle(threadExplorerGalleryOverlayPrevButton, "threadExplorerGalleryPrevButton");
+  applyTranslatedTitle(threadExplorerGalleryOverlayNextButton, "threadExplorerGalleryNextButton");
+  applyTranslatedTitle(threadExplorerGalleryPrevButton, "threadExplorerGalleryPrevButton");
+  applyTranslatedTitle(threadExplorerGalleryNextButton, "threadExplorerGalleryNextButton");
+
   threadExplorerGalleryImage.hidden = false;
   threadExplorerGalleryImage.dataset.fallbackAttempted = "false";
   threadExplorerGalleryImage.src = image.src;
   threadExplorerGalleryImage.alt = image.alt;
+  threadExplorerGalleryImage.title = t("threadExplorerGalleryFullscreenHint");
   threadExplorerGalleryCaption.textContent = image.alt;
   threadExplorerGalleryCaption.hidden = !image.alt;
   threadExplorerGalleryTitle.textContent = t("threadExplorerGalleryTitle");
+  threadExplorerGalleryThumbs.hidden = threadExplorerGalleryImages.length <= 1;
+
+  if (threadExplorerGalleryPrevButton) {
+    threadExplorerGalleryPrevButton.hidden = threadExplorerGalleryImages.length <= 1;
+  }
+  if (threadExplorerGalleryNextButton) {
+    threadExplorerGalleryNextButton.hidden = threadExplorerGalleryImages.length <= 1;
+  }
+  if (threadExplorerGalleryOverlayPrevButton) {
+    threadExplorerGalleryOverlayPrevButton.hidden = threadExplorerGalleryImages.length <= 1;
+  }
+  if (threadExplorerGalleryOverlayNextButton) {
+    threadExplorerGalleryOverlayNextButton.hidden = threadExplorerGalleryImages.length <= 1;
+  }
 
   const thumbs = threadExplorerGalleryThumbs.querySelectorAll(".thread-explorer-gallery-thumb");
   thumbs.forEach((thumb, index) => {
@@ -6556,15 +6699,55 @@ function openThreadExplorerGallery(images, startIndex) {
 }
 
 /**
+ * Handles left and right keyboard navigation while the Thread Explorer gallery is open.
+ * @param {KeyboardEvent} event - Keyboard event emitted for the gallery dialog.
+ * @returns {void}
+ */
+function handleThreadExplorerGalleryKeydown(event) {
+  if (!threadExplorerGalleryDialog?.open) {
+    return;
+  }
+
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    stepThreadExplorerGallery(-1);
+    return;
+  }
+
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    stepThreadExplorerGallery(1);
+  }
+}
+
+/**
  * Opens the current Thread Explorer gallery image through the Fullscreen API.
  * @returns {Promise<void>} Resolves after the fullscreen request is attempted.
  */
 async function openThreadExplorerGalleryFullscreen() {
-  if (!threadExplorerGalleryImage || !threadExplorerGalleryImage.requestFullscreen) {
+  const fullscreenTarget = threadExplorerGalleryMain || threadExplorerGalleryImage;
+  if (!fullscreenTarget || !fullscreenTarget.requestFullscreen) {
     return;
   }
 
-  await threadExplorerGalleryImage.requestFullscreen();
+  await fullscreenTarget.requestFullscreen();
+}
+
+/**
+ * Closes Thread Explorer gallery fullscreen first, then falls back to closing the dialog.
+ * @returns {Promise<void>} Resolves after fullscreen or dialog close was attempted.
+ */
+async function closeThreadExplorerGalleryOverlay() {
+  if (document.fullscreenElement) {
+    try {
+      await document.exitFullscreen();
+      return;
+    } catch {
+      // Fall through to closing the dialog when fullscreen exit fails.
+    }
+  }
+
+  threadExplorerGalleryDialog?.close();
 }
 
 /**
@@ -7541,6 +7724,26 @@ function renderThreadExplorerFeed() {
   threadExplorerItems.forEach((item) => {
     threadExplorerFeedList.appendChild(createThreadExplorerFeedItemFragment(item));
   });
+}
+
+/**
+ * Moves the Thread Explorer gallery selection by one or more images with loop-around.
+ * @param {number} step - Relative movement, negative for previous and positive for next.
+ * @returns {void}
+ */
+function stepThreadExplorerGallery(step) {
+  const imageCount = threadExplorerGalleryImages.length;
+  if (imageCount <= 1) {
+    return;
+  }
+
+  const normalizedStep = Number(step) || 0;
+  if (!normalizedStep) {
+    return;
+  }
+
+  threadExplorerGalleryIndex = (threadExplorerGalleryIndex + normalizedStep + imageCount) % imageCount;
+  renderThreadExplorerGalleryImage();
 }
 
 /**
@@ -10945,6 +11148,7 @@ async function clearSearchForm() {
   searchSelectedHashtags = [];
   searchResults = [];
   searchCursor = "";
+  searchResultPreferences = null;
   if (searchUrlStatus) {
     searchUrlStatus.textContent = "";
   }
@@ -26897,6 +27101,7 @@ async function persistSettings() {
     threadExplorerFavorites,
     savedSearches,
     searchPreferences: getSearchPreferences(),
+    searchResultState: getPersistableSearchResultState(),
     archivePreferences: getArchivePreferences(),
     analysisState: getPersistableAnalysisState(),
   };
@@ -29385,7 +29590,11 @@ async function hydrateAppState() {
     hashtags = normalizeHashtagEntries(state.hashtags);
     selectedHashtags = normalizeSelectedHashtagEntries(state.selectedHashtags, hashtags);
     searchSelectedHashtags = normalizeSelectedHashtagEntries(state.searchSelectedHashtags, hashtags);
-    applySearchPreferences(state.searchPreferences || {});
+    const persistedSearchPreferences = normalizeSearchPreferencesForStorage(state.searchPreferences || {});
+    applySearchPreferences(persistedSearchPreferences);
+    restorePersistedSearchResultState(state.searchResultState, persistedSearchPreferences);
+    renderSearchResults();
+    restoreSearchStatusFromResultState();
     hashtagPlacement = normalizeHashtagPlacement(state.hashtagPlacement);
     segmentImages = normalizeSegmentImages(state.segmentImages);
     segmentLinkCards = normalizeSegmentLinkCards(state.segmentLinkCards);
@@ -30100,7 +30309,30 @@ threadExplorerGalleryCloseButton.addEventListener("click", () => {
 threadExplorerGalleryCloseBottomButton.addEventListener("click", () => {
   threadExplorerGalleryDialog.close();
 });
+threadExplorerGalleryPrevButton?.addEventListener("click", () => {
+  stepThreadExplorerGallery(-1);
+});
+threadExplorerGalleryNextButton?.addEventListener("click", () => {
+  stepThreadExplorerGallery(1);
+});
+threadExplorerGalleryOverlayPrevButton?.addEventListener("click", () => {
+  stepThreadExplorerGallery(-1);
+});
+threadExplorerGalleryOverlayNextButton?.addEventListener("click", () => {
+  stepThreadExplorerGallery(1);
+});
+threadExplorerGalleryOverlayCloseButton?.addEventListener("click", async () => {
+  await closeThreadExplorerGalleryOverlay();
+});
 threadExplorerGalleryImage.addEventListener("error", handleThreadExplorerGalleryImageError);
+threadExplorerGalleryImage.addEventListener("click", async () => {
+  try {
+    await openThreadExplorerGalleryFullscreen();
+  } catch (error) {
+    console.warn("Thread Explorer fullscreen failed.", error);
+  }
+});
+threadExplorerGalleryDialog?.addEventListener("keydown", handleThreadExplorerGalleryKeydown);
 threadExplorerGalleryFullscreenButton.addEventListener("click", async () => {
   try {
     await openThreadExplorerGalleryFullscreen();

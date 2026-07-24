@@ -370,6 +370,35 @@ function normalizeLinkCardMicrolinkUsage(usage = null) {
   };
 }
 
+/**
+ * Normalizes the persisted search result state for reload-safe restore.
+ * @param {object|null} value - Raw stored search result state.
+ * @returns {object|null} Normalized search result state, or null when absent.
+ */
+function normalizeStoredSearchResultState(value = null) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const preferences = value.preferences && typeof value.preferences === "object"
+    ? value.preferences
+    : null;
+  const items = (Array.isArray(value.items) ? value.items : [])
+    .filter((item) => item && typeof item === "object" && item.post && typeof item.post === "object")
+    .slice(0, 50);
+  const cursor = String(value.cursor || "").trim();
+
+  if (!preferences || (items.length === 0 && !cursor)) {
+    return null;
+  }
+
+  return {
+    preferences,
+    items,
+    cursor,
+  };
+}
+
 function normalizeSegmentOverrides(segments) {
   const normalized = (Array.isArray(segments) ? segments : [])
     .map((entry) => String(entry || ""))
@@ -2588,11 +2617,52 @@ function buildSearchWorkspaceSearchPostsParams(payload = {}, forcedLang = "") {
     params.until = until;
   }
 
-  if (!params.q && !params.author && !params.mentions && !params.domain && !params.url) {
-    throw new Error("Bitte gib einen Suchtext, Hashtag oder weiteren Suchfilter ein.");
+  if (!params.q) {
+    throw new Error("Die Bluesky-Netzwerk-Suche braucht einen Suchtext oder Hashtag.");
   }
 
   return params;
+}
+
+/**
+ * Checks whether a search workspace payload already contains a valid server-side search query.
+ * @param {object} payload - Search workspace payload from the page.
+ * @returns {boolean} True when `searchPosts` can be called with a valid `q` parameter.
+ */
+function hasSearchWorkspaceServerQuery(payload = {}) {
+  const query = String(payload?.query || "").trim();
+  const excludeText = String(payload?.excludeText || "").trim();
+  const tags = normalizeSearchWorkspaceTags(payload?.tags);
+  const combinedQuery = buildSharedSearchQuery(query, excludeText);
+
+  if (combinedQuery) {
+    return true;
+  }
+  if (tags.length > 0) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks whether a network search without server query should fall back to one account feed.
+ * @param {object} payload - Search workspace payload from the page.
+ * @returns {boolean} True when a local account-feed search is the safer fallback.
+ */
+function shouldFallbackNetworkSearchToAuthorFeed(payload = {}) {
+  const mode = normalizeSearchWorkspaceMode(payload?.mode);
+  const actor = String(payload?.actor || "").trim();
+
+  if (mode !== "network") {
+    return false;
+  }
+  if (!actor) {
+    return false;
+  }
+  if (hasSearchWorkspaceServerQuery(payload)) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -3407,6 +3477,12 @@ async function loadSearchResults(payload = {}, notifyProgress = () => {}) {
   }
   if (mode === "reposts") {
     return loadSearchWorkspaceAuthorFeed(activeAuth, payload, true, notifyProgress);
+  }
+  if (shouldFallbackNetworkSearchToAuthorFeed(payload)) {
+    return loadSearchWorkspaceAuthorFeed(activeAuth, payload, false, notifyProgress);
+  }
+  if (!hasSearchWorkspaceServerQuery(payload)) {
+    throw new Error("Die Netzwerk-Suche auf Bluesky braucht einen Suchtext oder Hashtag. Ohne Suchtext kann Threadline nur einen einzelnen Account lokal durchsuchen.");
   }
   return loadSearchWorkspaceSearchPosts(activeAuth, payload, notifyProgress);
 }
@@ -5141,6 +5217,7 @@ async function getAppState({ browserLocale } = {}) {
   const searchPreferences = storedSettings?.searchPreferences && typeof storedSettings.searchPreferences === "object"
     ? storedSettings.searchPreferences
     : null;
+  const searchResultState = normalizeStoredSearchResultState(storedSettings?.searchResultState);
   const localePreference = storedSettings?.localePreference || legacyLocalePreference;
   const locale = localePreference && localePreference !== "auto" ? localePreference : (browserLocale || "en");
 
@@ -5183,6 +5260,7 @@ async function getAppState({ browserLocale } = {}) {
     selectedHashtags,
     searchSelectedHashtags,
     searchPreferences,
+    searchResultState,
     hashtagPlacement: ["first", "last", "all-top", "all-bottom"].includes(storedSettings?.hashtagPlacement)
       ? storedSettings.hashtagPlacement
       : "first",
@@ -5312,6 +5390,7 @@ async function saveSettings(settings = {}) {
   const searchPreferences = settings.searchPreferences && typeof settings.searchPreferences === "object"
     ? settings.searchPreferences
     : (existing.searchPreferences && typeof existing.searchPreferences === "object" ? existing.searchPreferences : null);
+  const searchResultState = normalizeStoredSearchResultState(settings.searchResultState ?? existing.searchResultState);
   const normalizedImages = Array.isArray(settings.segmentImages)
     ? await storeComposerImageBlobs(settings.segmentImages)
     : normalizeSegmentImages(existing.segmentImages);
@@ -5350,6 +5429,7 @@ async function saveSettings(settings = {}) {
     selectedHashtags,
     searchSelectedHashtags,
     searchPreferences,
+    searchResultState,
     hashtagPlacement: ["first", "last", "all-top", "all-bottom"].includes(settings.hashtagPlacement)
       ? settings.hashtagPlacement
       : (["first", "last", "all-top", "all-bottom"].includes(existing.hashtagPlacement) ? existing.hashtagPlacement : "first"),

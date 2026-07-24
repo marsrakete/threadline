@@ -1656,14 +1656,81 @@ body.theme-dark .support-actions img {
   display: grid;
   gap: 8px;
   margin: 0;
+  position: relative;
+}
+
+.thread-explorer-gallery-main:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: #000000;
+}
+
+.thread-explorer-gallery-main:fullscreen figcaption {
+  display: none;
 }
 
 .thread-explorer-gallery-main img {
   width: 100%;
-  max-height: min(70vh, 760px);
+  max-height: min(82vh, 860px);
   object-fit: contain;
   border-radius: 8px;
   background: rgba(9, 22, 43, 0.08);
+  cursor: zoom-in;
+}
+
+.thread-explorer-gallery-main:fullscreen img {
+  width: auto;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+  background: transparent;
+}
+
+.thread-explorer-gallery-overlay-button {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(9, 22, 43, 0.68);
+  color: #ffffff;
+  font-size: 2rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  backdrop-filter: blur(4px);
+}
+
+.thread-explorer-gallery-overlay-button:hover,
+.thread-explorer-gallery-overlay-button:focus-visible {
+  background: rgba(9, 22, 43, 0.82);
+  outline: none;
+}
+
+.thread-explorer-gallery-overlay-button-prev {
+  left: 14px;
+}
+
+.thread-explorer-gallery-overlay-button-next {
+  right: 14px;
+}
+
+.thread-explorer-gallery-overlay-button-close {
+  top: 14px;
+  right: 14px;
+  transform: none;
+  width: 44px;
+  height: 44px;
+  font-size: 1.8rem;
 }
 
 .thread-explorer-gallery-main figcaption {
@@ -1677,6 +1744,10 @@ body.theme-dark .support-actions img {
   gap: 8px;
   overflow-x: auto;
   padding-bottom: 2px;
+}
+
+.thread-explorer-gallery-nav {
+  justify-content: space-between;
 }
 
 .thread-explorer-gallery-thumb {
@@ -3051,6 +3122,11 @@ body.theme-dark .support-actions img {
 
 .search-result-item {
   list-style: none;
+}
+
+.search-result-item .thread-explorer-post-card.has-single-search-image .thread-explorer-post-gallery {
+  grid-template-columns: minmax(0, 320px);
+  justify-content: start;
 }
 
 .search-result-text mark[data-search-highlight="true"],
