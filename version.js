@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.264",
-  cacheVersion: "v283",
+  appVersion: "0.4.266",
+  cacheVersion: "v285",
   label: "Add search workspace phase 1",
 });

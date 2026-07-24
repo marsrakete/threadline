@@ -1754,12 +1754,13 @@ body.theme-dark .support-actions img {
 }
 
 .thread-explorer-gallery-overlay-button-close {
-  top: 14px;
-  right: 14px;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  right: calc(env(safe-area-inset-right, 0px) + 14px);
   transform: none;
   width: 44px;
   height: 44px;
   font-size: 1.8rem;
+  z-index: 3;
 }
 
 .thread-explorer-gallery-main figcaption {
