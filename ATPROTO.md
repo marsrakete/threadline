@@ -32,6 +32,7 @@ Most AT Protocol traffic in Threadline is plain XRPC:
   - `com.atproto.sync.getBlob`
 - Bluesky app views
   - `app.bsky.actor.getProfile`
+  - `app.bsky.feed.searchPosts`
   - `app.bsky.feed.getAuthorFeed`
   - `app.bsky.feed.getPosts`
   - `app.bsky.feed.getPostThread`
@@ -149,6 +150,8 @@ The workspaces use the same AT Protocol layer differently:
 
 - Composer
   - write-heavy, uses handle resolution, blob upload, `createRecord`, and targeted post/thread lookup
+- Search
+  - mixes `searchPosts` for global search and `getAuthorFeed` for local account-post / repost scans
 - Archive
   - page-heavy, uses `listRecords`, `getPostThread`, `getPosts`, and blob downloads
 - Analysis
@@ -313,6 +316,15 @@ This section groups three things:
 | What is inside | A page of profile-like actor entries representing followed accounts |
 | Why it matters | Used by network and analysis workspaces |
 
+### `app.bsky.feed.searchPosts`
+
+| Field | Description |
+| --- | --- |
+| Parameters | query text plus optional `author`, `tag`, `lang`, `domain`, `url`, `mentions`, `sort`, `since`, `until`, optional `limit`, optional `cursor` |
+| Return value | Search result page |
+| What is inside | `posts[]` as resolved post views plus an optional next cursor |
+| Why it matters | This is the global live-search backbone for the Search workspace |
+
 ### `app.bsky.feed.getAuthorFeed`
 
 | Field | Description |
@@ -320,7 +332,7 @@ This section groups three things:
 | Parameters | actor, optional `limit`, optional `cursor` |
 | Return value | Author feed page |
 | What is inside | Feed entries with post view, author data, counts, embeds, and pagination cursor |
-| Why it matters | Central source for analysis, archive scans, and recent-post lookups |
+| Why it matters | Central source for analysis, archive scans, recent-post lookups, and Threadline's local search modes for account posts and reposts |
 
 ### `app.bsky.feed.getPosts`
 

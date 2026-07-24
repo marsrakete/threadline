@@ -1,8 +1,9 @@
 {
   "name": "threadline",
-  "version": "0.4.220",
+  "version": "0.4.262",
   "private": true,
   "scripts": {
+    "check": "npm run check:encoding && node --check app.js && node --check translations.js && node --check sw.js && node --check sw-atproto.js",
     "build:og-image": "node scripts/build-og-images.js",
     "check:encoding": "node scripts/check-encoding.js",
     "fix:encoding": "node scripts/convert-windows1252-to-utf8.js",

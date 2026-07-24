@@ -37,12 +37,20 @@ const LOCALE_KEY = "locale";
 const SETTINGS_KEY = "ui-settings";
 const ARCHIVE_SESSION_KEY = "archive-session";
 const ARCHIVE_CATALOG_KEY = "archive-catalog";
+const MEDIA_EXPORT_SESSION_KEY = "media-export-session";
 const DM_PARTNER_CACHE_KEY = "dm-partner-cache";
 const ACCOUNT_AVATAR_CACHE_KEY = "account-avatar-cache";
 const ACCOUNT_AVATAR_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const ARCHIVE_THREAD_REQUEST_TIMEOUT_MS = 15000;
 const ARCHIVE_THREAD_REQUEST_RETRIES = 1;
 const ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY = 4;
+const MEDIA_EXPORT_HEARTBEAT_MS = 10000;
+const MEDIA_EXPORT_ITEM_DOWNLOAD_TIMEOUT_MS = 30000;
+const THREAD_EXPLORER_MEDIA_HYDRATION_ITEM_TIMEOUT_MS = 30000;
+const THREAD_EXPLORER_MEDIA_HYDRATION_DIRECT_TIMEOUT_MS = 12000;
+const THREAD_EXPLORER_MEDIA_CACHE_READ_TIMEOUT_MS = 1500;
+const THREAD_EXPLORER_MEDIA_HYDRATION_CONCURRENCY = 16;
+const THREAD_EXPLORER_MEDIA_HYDRATION_HEARTBEAT_MS = 5000;
 const ANALYSIS_AUTHOR_FEED_PAGE_SIZE = 100;
 const ANALYSIS_AUTHOR_FEED_MAX_PAGES = 200;
 const ANALYSIS_GRAPH_PAGE_LIMIT = 100;
@@ -60,6 +68,7 @@ const POST_WEB_FRONTENDS = {
   "mu.social": "https://mu.social",
 };
 const archiveRunControls = new Map();
+const searchRunControls = new Map();
 
 importScripts("./sw-atproto.js");
 
@@ -329,6 +338,35 @@ function normalizeLinkCardProxySettings(settings = null) {
   return {
     endpoint: /^https?:\/\//i.test(endpoint) ? endpoint : "",
     secret,
+  };
+}
+
+/**
+ * Normalizes the persisted link-card provider setting.
+ * @param {string} value - Raw provider value.
+ * @returns {string} `none`, `proxy`, or `microlink`.
+ */
+function normalizeLinkCardProviderSetting(value) {
+  if (value === "proxy") {
+    return "proxy";
+  }
+  if (value === "microlink") {
+    return "microlink";
+  }
+  return "none";
+}
+
+/**
+ * Normalizes the locally tracked Microlink usage payload.
+ * @param {object|null} usage - Raw usage payload from stored settings.
+ * @returns {object} Normalized usage object.
+ */
+function normalizeLinkCardMicrolinkUsage(usage = null) {
+  const date = String(usage?.date || "").trim();
+  const count = Math.max(0, Number(usage?.count) || 0);
+  return {
+    date,
+    count,
   };
 }
 
@@ -681,6 +719,8 @@ async function handleMessage(message, port) {
       return getArchiveSession();
     case "GET_ARCHIVE_CATALOG":
       return getArchiveCatalog();
+    case "GET_MEDIA_EXPORT_SESSION":
+      return getMediaExportSession();
     case "GET_DM_PARTNER_CACHE":
       return getDmPartnerCache();
     case "GET_ACCOUNT_AVATAR_CACHE":
@@ -689,6 +729,8 @@ async function handleMessage(message, port) {
       return saveArchiveSession(message.payload);
     case "SAVE_ARCHIVE_CATALOG":
       return saveArchiveCatalog(message.payload);
+    case "SAVE_MEDIA_EXPORT_SESSION":
+      return saveMediaExportSession(message.payload);
     case "SAVE_DM_PARTNER_CACHE":
       return saveDmPartnerCache(message.payload);
     case "SAVE_ACCOUNT_AVATAR_CACHE":
@@ -697,10 +739,14 @@ async function handleMessage(message, port) {
       return clearArchiveSession();
     case "CLEAR_ARCHIVE_CATALOG":
       return clearArchiveCatalog();
+    case "CLEAR_MEDIA_EXPORT_SESSION":
+      return clearMediaExportSession();
     case "CLEAR_DM_PARTNER_CACHE":
       return clearDmPartnerCache();
     case "SET_ARCHIVE_RUN_CONTROL":
       return setArchiveRunControl(message.payload);
+    case "SET_SEARCH_RUN_CONTROL":
+      return setSearchRunControl(message.payload);
     case "SWITCH_ACCOUNT":
       return switchAccount(message.payload);
     case "IMPORT_ACCOUNT_METADATA":
@@ -729,14 +775,20 @@ async function handleMessage(message, port) {
       return loadNetworkCommonMutuals(message.payload, (progress) => port.postMessage({ progress }));
     case "LOAD_THREAD_EXPLORER_FEED":
       return loadThreadExplorerFeed(message.payload);
+    case "LOAD_SEARCH_RESULTS":
+      return loadSearchResults(message.payload, (progress) => port.postMessage({ progress }));
     case "LOAD_THREAD_EXPLORER_FEED_SOURCES":
       return loadThreadExplorerFeedSources();
+    case "LOAD_THREAD_EXPLORER_ACTOR_FEED":
+      return loadThreadExplorerActorFeed(message.payload);
     case "RESOLVE_THREAD_EXPLORER_POST_URL":
       return resolveThreadExplorerPostUrl(message.payload);
     case "LOAD_THREAD_EXPLORER_THREAD":
       return loadThreadExplorerThread(message.payload);
     case "HYDRATE_THREAD_EXPLORER_AVATARS":
-      return hydrateThreadExplorerAvatars(message.payload);
+      return hydrateThreadExplorerAvatars(message.payload, (progress) => port.postMessage({ progress }));
+    case "HYDRATE_THREAD_EXPLORER_MEDIA":
+      return hydrateThreadExplorerMedia(message.payload, (progress) => port.postMessage({ progress }));
     case "LOAD_THREAD_EXPLORER_REACTIONS":
       return loadThreadExplorerReactions(message.payload);
     case "CHECK_ANALYSIS_ACCOUNT":
@@ -1306,6 +1358,24 @@ function extractThreadExplorerImages(embed = {}) {
 }
 
 /**
+ * Detects whether a post embed contains a video.
+ * @param {object} embed - Post embed view or nested media embed view.
+ * @returns {boolean} True when a video embed is present.
+ */
+function extractThreadExplorerHasVideo(embed = {}) {
+  if (!embed || typeof embed !== "object") {
+    return false;
+  }
+  if (embed.video && typeof embed.video === "object") {
+    return true;
+  }
+  if (embed.media && typeof embed.media === "object") {
+    return extractThreadExplorerHasVideo(embed.media);
+  }
+  return false;
+}
+
+/**
  * Extracts an external link-card from a Bluesky embed view.
  * @param {object} embed - Post embed view or nested media embed view.
  * @returns {object|null} A compact link-card object, or null when no external card exists.
@@ -1441,9 +1511,12 @@ function normalizeThreadExplorerPost(postView = {}) {
     uri: String(postView.uri || "").trim(),
     cid: String(postView.cid || "").trim(),
     rootUri: String(record.reply?.root?.uri || postView.uri || "").trim(),
+    reply: record?.reply || null,
     text: String(record.text || "").trim(),
     createdAt: String(record.createdAt || postView.indexedAt || "").trim(),
     indexedAt: String(postView.indexedAt || "").trim(),
+    langs: Array.isArray(record.langs) ? record.langs : [],
+    facets: Array.isArray(record.facets) ? record.facets : [],
     author: normalizeThreadExplorerActor(postView.author || {}),
     likeCount: Number(postView.likeCount) || 0,
     replyCount: Number(postView.replyCount) || 0,
@@ -1451,6 +1524,7 @@ function normalizeThreadExplorerPost(postView = {}) {
     quoteCount: Number(postView.quoteCount) || 0,
     viewer: postView.viewer || {},
     images: extractThreadExplorerImages(postView.embed || {}),
+    hasVideo: extractThreadExplorerHasVideo(postView.embed || {}),
     externalCard: extractThreadExplorerExternalCard(postView.embed || {}),
     quoteCard: extractThreadExplorerQuoteCard(postView.embed || {}),
     editInfo: normalizePostEditInfoFromRecord(record),
@@ -1874,6 +1948,315 @@ async function loadThreadExplorerFeedSources() {
 }
 
 /**
+ * Checks whether a Thread Explorer source is a relationship source.
+ * @param {string} source - Normalized Thread Explorer source.
+ * @returns {boolean} True when the source is follows, followers, or mutuals.
+ */
+function isThreadExplorerRelationshipSource(source) {
+  return source === "follows" || source === "followers" || source === "mutuals";
+}
+
+/**
+ * Returns the graph endpoint for a relationship source.
+ * @param {string} source - Relationship source name.
+ * @returns {string} XRPC endpoint name for the relationship graph page.
+ */
+function getThreadExplorerRelationshipEndpoint(source) {
+  if (source === "followers") {
+    return "app.bsky.graph.getFollowers";
+  }
+  return "app.bsky.graph.getFollows";
+}
+
+/**
+ * Returns the graph profile source flag for a relationship source.
+ * @param {string} source - Relationship source name.
+ * @returns {string} Graph profile source flag.
+ */
+function getThreadExplorerRelationshipProfileSource(source) {
+  if (source === "followers") {
+    return "followers";
+  }
+  return "following";
+}
+
+/**
+ * Checks whether a graph profile belongs to the requested Thread Explorer group.
+ * @param {object} profile - Normalized graph profile.
+ * @param {string} source - Relationship source name.
+ * @returns {boolean} True when the profile should be included.
+ */
+function isThreadExplorerRelationshipProfileMatch(profile = {}, source = "") {
+  if (source === "mutuals") {
+    return profile.followingViewer === true && profile.followedByViewer === true;
+  }
+  if (source === "followers") {
+    return profile.followedByViewer === true;
+  }
+  return profile.followingViewer === true;
+}
+
+/**
+ * Loads the latest visible author post for a Thread Explorer relationship profile.
+ * @param {object} auth - Active account auth reference.
+ * @param {object} profile - Normalized graph profile.
+ * @returns {Promise<object|null>} Normalized Thread Explorer feed item or null.
+ */
+async function loadThreadExplorerLatestProfilePost(auth, profile = {}) {
+  const actorDid = String(profile?.did || "").trim();
+  if (!actorDid) {
+    return null;
+  }
+
+  const response = await bskyGet("app.bsky.feed.getAuthorFeed", {
+    actor: actorDid,
+    limit: 12,
+  }, {
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+    base: authXrpcBase(auth),
+  });
+
+  let feed = [];
+  if (Array.isArray(response?.feed)) {
+    feed = response.feed;
+  }
+  for (const entry of feed) {
+    const rawPost = entry?.post || null;
+    if (!rawPost?.uri) {
+      continue;
+    }
+    if (String(rawPost?.author?.did || "").trim() !== actorDid) {
+      continue;
+    }
+    const post = normalizeThreadExplorerPost(rawPost);
+    if (!post) {
+      continue;
+    }
+    post.author.followingViewer = profile.followingViewer === true || post.author.followingViewer === true;
+    post.author.followedByViewer = profile.followedByViewer === true || post.author.followedByViewer === true;
+    return {
+      post,
+      reason: {
+        source: "relationship",
+      },
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Loads latest posts from graph relationship profiles with limited concurrency.
+ * @param {object} auth - Active account auth reference.
+ * @param {object[]} profiles - Normalized graph profiles.
+ * @returns {Promise<object[]>} Feed items with latest author posts.
+ */
+async function loadThreadExplorerRelationshipPosts(auth, profiles = []) {
+  const items = [];
+  const batchSize = 8;
+  for (let index = 0; index < profiles.length; index += batchSize) {
+    const batch = profiles.slice(index, index + batchSize);
+    const results = await Promise.all(batch.map((profile) => {
+      return loadThreadExplorerLatestProfilePost(auth, profile).catch(() => {
+        return null;
+      });
+    }));
+    results.forEach((item) => {
+      if (item?.post?.uri) {
+        items.push(item);
+      }
+    });
+  }
+  return items;
+}
+
+/**
+ * Returns the timestamp used to sort Thread Explorer feed items.
+ * @param {object} item - Thread Explorer feed item.
+ * @returns {number} Epoch milliseconds or zero.
+ */
+function getThreadExplorerFeedItemTimestamp(item = {}) {
+  const createdAt = Date.parse(String(item?.post?.createdAt || "").trim());
+  if (Number.isFinite(createdAt)) {
+    return createdAt;
+  }
+
+  const indexedAt = Date.parse(String(item?.post?.indexedAt || "").trim());
+  if (Number.isFinite(indexedAt)) {
+    return indexedAt;
+  }
+
+  return 0;
+}
+
+/**
+ * Sorts Thread Explorer feed items by latest post timestamp.
+ * @param {object[]} items - Thread Explorer feed items.
+ * @returns {object[]} Sorted copy with newest posts first.
+ */
+function sortThreadExplorerFeedItemsChronologically(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .map((item, index) => {
+      return {
+        item,
+        index,
+      };
+    })
+    .sort((left, right) => {
+      const leftTime = getThreadExplorerFeedItemTimestamp(left.item);
+      const rightTime = getThreadExplorerFeedItemTimestamp(right.item);
+      if (leftTime !== rightTime) {
+        return rightTime - leftTime;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => {
+      return entry.item;
+    });
+}
+
+/**
+ * Loads latest posts for one Thread Explorer relationship group.
+ * @param {object} auth - Active account auth reference.
+ * @param {string} source - Relationship source name.
+ * @param {string} cursor - Graph cursor for pagination.
+ * @param {number} limit - Desired number of profiles to inspect.
+ * @returns {Promise<object>} Relationship feed items and next graph cursor.
+ */
+async function loadThreadExplorerRelationshipFeed(auth, source, cursor, limit) {
+  const endpoint = getThreadExplorerRelationshipEndpoint(source);
+  const profileSource = getThreadExplorerRelationshipProfileSource(source);
+  const actorDid = String(auth?.session?.did || "").trim();
+  if (!actorDid) {
+    throw new Error("Der aktive Account konnte fuer die Beziehungsgruppe nicht bestimmt werden.");
+  }
+  const response = await collectGraphPage(auth, endpoint, actorDid, cursor, limit, profileSource);
+  const profiles = response.profiles.filter((profile) => {
+    return isThreadExplorerRelationshipProfileMatch(profile, source);
+  });
+  const items = await loadThreadExplorerRelationshipPosts(auth, profiles);
+  return {
+    items: sortThreadExplorerFeedItemsChronologically(items),
+    cursor: response.cursor,
+  };
+}
+
+/**
+ * Returns a normalized Thread Explorer actor feed mode.
+ * @param {string} mode - Raw mode from the UI.
+ * @returns {string} One of posts, replies, or all.
+ */
+function normalizeThreadExplorerActorFeedMode(mode) {
+  const normalizedMode = String(mode || "").trim();
+  if (normalizedMode === "replies") {
+    return "replies";
+  }
+  if (normalizedMode === "all") {
+    return "all";
+  }
+  return "posts";
+}
+
+/**
+ * Checks whether a normalized post matches the Actor-Fokus feed mode.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {string} mode - Actor feed mode.
+ * @returns {boolean} True when the post belongs in the mode.
+ */
+function isThreadExplorerActorFeedPostMatch(post = {}, mode = "posts") {
+  const isReply = Boolean(post.rootUri && post.uri && post.rootUri !== post.uri);
+  if (mode === "all") {
+    return true;
+  }
+  if (mode === "replies") {
+    return isReply;
+  }
+  return !isReply;
+}
+
+/**
+ * Loads posts and replies from one account for the Thread Explorer Actor-Fokus.
+ * @param {object} payload - Actor, mode, cursor and limit from the UI.
+ * @returns {Promise<object>} Actor feed items and next cursor.
+ */
+async function loadThreadExplorerActorFeed(payload = {}) {
+  const auth = await ensureSession();
+  const activeAuth = await refreshAuthReference(auth);
+  const actor = String(payload?.actor || "").trim();
+  if (!actor) {
+    throw new Error("Der Account konnte nicht geladen werden.");
+  }
+
+  const mode = normalizeThreadExplorerActorFeedMode(payload?.mode);
+  const limit = Math.min(100, Math.max(10, Number(payload?.limit) || 30));
+  const targetCount = Math.min(50, Math.max(10, limit));
+  const items = [];
+  const seenUris = new Set();
+  let cursor = String(payload?.cursor || "").trim();
+  let nextCursor = "";
+  let pageCount = 0;
+
+  while (items.length < targetCount && pageCount < 5) {
+    const response = await bskyGet("app.bsky.feed.getAuthorFeed", {
+      actor,
+      limit,
+      cursor: cursor || undefined,
+    }, {
+      headers: {
+        authorization: `Bearer ${activeAuth.session.accessJwt}`,
+      },
+      base: authXrpcBase(activeAuth),
+    });
+
+    let feed = [];
+    if (Array.isArray(response?.feed)) {
+      feed = response.feed;
+    }
+
+    for (const entry of feed) {
+      const post = normalizeThreadExplorerPost(entry?.post || {});
+      if (!post) {
+        continue;
+      }
+      if (!isThreadExplorerActorFeedPostMatch(post, mode)) {
+        continue;
+      }
+      if (seenUris.has(post.uri)) {
+        continue;
+      }
+      seenUris.add(post.uri);
+      items.push({
+        post,
+        reason: entry?.reason || null,
+      });
+      if (items.length >= targetCount) {
+        break;
+      }
+    }
+
+    nextCursor = String(response?.cursor || "").trim();
+    cursor = nextCursor;
+    pageCount += 1;
+    if (!nextCursor || feed.length === 0) {
+      break;
+    }
+  }
+
+  const existingItems = await filterExistingThreadExplorerFeedItems(activeAuth, items);
+  return {
+    items: sortThreadExplorerFeedItemsChronologically(existingItems).slice(0, targetCount),
+    cursor: nextCursor,
+    mode,
+  };
+}
+
+/**
  * Loads a live timeline slice for the Thread Explorer.
  * @param {object} payload - Source, limit, and cursor values from the app.
  * @returns {Promise<object>} Feed items, next cursor, and source metadata.
@@ -1891,6 +2274,16 @@ async function loadThreadExplorerFeed(payload = {}) {
   let nextCursor = "";
   let pageCount = 0;
   const seenThreadRoots = new Set();
+
+  if (isThreadExplorerRelationshipSource(source)) {
+    const relationshipResult = await loadThreadExplorerRelationshipFeed(activeAuth, source, cursor, limit);
+    const existingRelationshipItems = await filterExistingThreadExplorerFeedItems(activeAuth, relationshipResult.items);
+    return {
+      source,
+      items: sortThreadExplorerFeedItemsChronologically(existingRelationshipItems).slice(0, targetCount),
+      cursor: relationshipResult.cursor,
+    };
+  }
 
   while (items.length < targetCount && pageCount < 4) {
     let endpoint = "app.bsky.feed.getTimeline";
@@ -1955,7 +2348,7 @@ async function loadThreadExplorerFeed(payload = {}) {
   const existingItems = await filterExistingThreadExplorerFeedItems(activeAuth, items);
   return {
     source,
-    items: existingItems.slice(0, targetCount),
+    items: sortThreadExplorerFeedItemsChronologically(existingItems).slice(0, targetCount),
     cursor: nextCursor,
   };
 }
@@ -1999,6 +2392,1023 @@ function buildThreadExplorerSearchPostsParams(search = {}) {
   }
 
   return params;
+}
+
+/**
+ * Returns a normalized search workspace mode.
+ * @param {string} mode - Raw mode value from the page.
+ * @returns {string} One of `network`, `posts`, `reposts`, or `hashtags`.
+ */
+function normalizeSearchWorkspaceMode(mode = "") {
+  const normalizedMode = String(mode || "").trim();
+  if (normalizedMode === "posts") {
+    return "posts";
+  }
+  if (normalizedMode === "reposts") {
+    return "reposts";
+  }
+  if (normalizedMode === "hashtags") {
+    return "hashtags";
+  }
+  return "network";
+}
+
+/**
+ * Returns a normalized search sort value for searchPosts.
+ * @param {string} sort - Raw sort value from the page.
+ * @returns {string} `latest` or `top`.
+ */
+function normalizeSearchWorkspaceSort(sort = "") {
+  if (String(sort || "").trim() === "top") {
+    return "top";
+  }
+  return "latest";
+}
+
+/**
+ * Normalizes hashtag filters from the page payload.
+ * @param {Array<string>} tags - Raw tag entries from the page.
+ * @returns {string[]} Clean hashtag names without leading hash signs.
+ */
+function normalizeSearchWorkspaceTags(tags = []) {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+  return tags
+    .map((tag) => {
+      return String(tag || "").trim().replace(/^#+/, "");
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+/**
+ * Normalizes the hashtag match mode from the page payload.
+ * @param {string} value - Raw match mode from the page.
+ * @returns {string} `all` or `any`.
+ */
+function normalizeSearchWorkspaceTagMatchMode(value = "") {
+  if (String(value || "").trim() === "any") {
+    return "any";
+  }
+  return "all";
+}
+
+/**
+ * Normalizes search language filters from the page payload.
+ * @param {Array<string>|string} langs - Raw language tags from the page.
+ * @returns {string[]} Clean language tags.
+ */
+function normalizeSearchWorkspaceLanguages(langs = []) {
+  let values = [];
+  if (Array.isArray(langs)) {
+    values = langs;
+  } else {
+    const singleValue = String(langs || "").trim();
+    if (singleValue) {
+      values = [singleValue];
+    }
+  }
+
+  return [...new Set(values
+    .map((entry) => {
+      return String(entry || "").trim().toLowerCase();
+    })
+    .filter(Boolean))]
+    .slice(0, 3);
+}
+
+/**
+ * Converts positive query text and excluded terms into one searchPosts query string.
+ * @param {string} query - Positive query text.
+ * @param {string} excludeText - Comma-separated excluded terms.
+ * @returns {string} Combined query string.
+ */
+function buildSharedSearchQuery(query = "", excludeText = "") {
+  const includeValue = String(query || "").trim();
+  const excludeParts = parseExcludedSearchTerms(excludeText);
+
+  const tokens = [];
+  if (includeValue) {
+    tokens.push(includeValue);
+  }
+  excludeParts.forEach((entry) => {
+    if (/\s/.test(entry)) {
+      tokens.push(`-"${entry}"`);
+    } else {
+      tokens.push(`-${entry}`);
+    }
+  });
+  return tokens.join(" ").trim();
+}
+
+/**
+ * Splits excluded search terms from free text, commas, semicolons, or quoted phrases.
+ * @param {string} value - Raw excluded-term input.
+ * @returns {string[]} Clean excluded terms.
+ */
+function parseExcludedSearchTerms(value = "") {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) {
+    return [];
+  }
+
+  const terms = [];
+  const matcher = /"([^"]+)"|[^,\n;]+/g;
+  let match = matcher.exec(rawValue);
+  while (match) {
+    const nextValue = String(match[1] || match[0] || "").trim();
+    if (nextValue) {
+      terms.push(nextValue);
+    }
+    match = matcher.exec(rawValue);
+  }
+  return terms;
+}
+
+/**
+ * Builds searchPosts params for the search workspace.
+ * @param {object} payload - Search workspace payload from the page.
+ * @param {string} forcedLang - Optional single language override for multi-language requests.
+ * @returns {object} Query params for `app.bsky.feed.searchPosts`.
+ */
+function buildSearchWorkspaceSearchPostsParams(payload = {}, forcedLang = "") {
+  const params = {};
+  const query = String(payload?.query || "").trim();
+  const excludeText = String(payload?.excludeText || "").trim();
+  const tags = normalizeSearchWorkspaceTags(payload?.tags);
+  const actor = String(payload?.actor || "").trim();
+  const sort = normalizeSearchWorkspaceSort(payload?.sort);
+  const mentions = String(payload?.mentions || "").trim();
+  const normalizedLanguages = normalizeSearchWorkspaceLanguages(
+    Array.isArray(payload?.langs) && payload.langs.length > 0 ? payload.langs : payload?.lang || "",
+  );
+  let lang = String(forcedLang || "").trim();
+  if (!lang && normalizedLanguages.length > 0) {
+    lang = normalizedLanguages[0];
+  }
+  const domain = String(payload?.domain || "").trim();
+  const targetUrl = String(payload?.url || "").trim();
+  const since = String(payload?.since || "").trim();
+  const until = String(payload?.until || "").trim();
+
+  const combinedQuery = buildSharedSearchQuery(query, excludeText);
+
+  if (combinedQuery) {
+    params.q = combinedQuery;
+  } else if (tags.length > 0) {
+    params.q = `#${tags[0]}`;
+  }
+
+  if (tags.length > 0) {
+    params.tag = tags;
+  }
+  if (actor) {
+    params.author = actor;
+  }
+  if (mentions) {
+    params.mentions = mentions;
+  }
+  if (lang) {
+    params.lang = lang;
+  }
+  if (domain) {
+    params.domain = domain;
+  }
+  if (targetUrl) {
+    params.url = targetUrl;
+  }
+  if (sort) {
+    params.sort = sort;
+  }
+  if (since) {
+    params.since = since;
+  }
+  if (until) {
+    params.until = until;
+  }
+
+  if (!params.q && !params.author && !params.mentions && !params.domain && !params.url) {
+    throw new Error("Bitte gib einen Suchtext, Hashtag oder weiteren Suchfilter ein.");
+  }
+
+  return params;
+}
+
+/**
+ * Parses stored cursor state for multi-variant searchPosts pagination.
+ * @param {string} rawCursor - Cursor from the page state.
+ * @param {string[]} variantKeys - Active variant keys.
+ * @returns {{cursors: Object<string, string>, exhausted: Set<string>}} Cursor state by variant key.
+ */
+function parseSearchWorkspaceSearchCursorState(rawCursor = "", variantKeys = []) {
+  const normalizedVariantKeys = Array.isArray(variantKeys)
+    ? variantKeys
+      .map((entry) => {
+        return String(entry || "").trim();
+      })
+      .filter(Boolean)
+    : [];
+  const state = {
+    cursors: {},
+    exhausted: new Set(),
+  };
+
+  if (normalizedVariantKeys.length <= 1) {
+    const onlyVariantKey = normalizedVariantKeys[0] || "";
+    if (onlyVariantKey && String(rawCursor || "").trim()) {
+      state.cursors[onlyVariantKey] = String(rawCursor || "").trim();
+    }
+    return state;
+  }
+
+  const trimmedCursor = String(rawCursor || "").trim();
+  if (!trimmedCursor) {
+    return state;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmedCursor);
+    const rawCursors = parsed?.cursors && typeof parsed.cursors === "object" ? parsed.cursors : {};
+    normalizedVariantKeys.forEach((variantKey) => {
+      const nextCursor = String(rawCursors[variantKey] || "").trim();
+      if (nextCursor) {
+        state.cursors[variantKey] = nextCursor;
+      }
+    });
+    const exhaustedValues = Array.isArray(parsed?.exhausted) ? parsed.exhausted : [];
+    exhaustedValues.forEach((variantKey) => {
+      const normalizedVariantKey = String(variantKey || "").trim();
+      if (normalizedVariantKeys.includes(normalizedVariantKey)) {
+        state.exhausted.add(normalizedVariantKey);
+      }
+    });
+    return state;
+  } catch {
+    return state;
+  }
+}
+
+/**
+ * Builds the persisted cursor string for multi-variant searchPosts pagination.
+ * @param {Object<string, string>} cursors - Next cursor values by variant key.
+ * @param {Set<string>} exhausted - Variant keys that have no more pages.
+ * @param {string[]} variantKeys - Active variant keys.
+ * @returns {string} Encoded cursor payload, or an empty string when no more pages remain.
+ */
+function buildSearchWorkspaceSearchCursorState(cursors = {}, exhausted = new Set(), variantKeys = []) {
+  const normalizedVariantKeys = Array.isArray(variantKeys)
+    ? variantKeys
+      .map((entry) => {
+        return String(entry || "").trim();
+      })
+      .filter(Boolean)
+    : [];
+  if (normalizedVariantKeys.length <= 1) {
+    const onlyVariantKey = normalizedVariantKeys[0] || "";
+    return String(cursors[onlyVariantKey] || "").trim();
+  }
+
+  let hasRemainingPages = false;
+  normalizedVariantKeys.forEach((variantKey) => {
+    if (!exhausted.has(variantKey)) {
+      hasRemainingPages = true;
+    }
+  });
+  if (!hasRemainingPages) {
+    return "";
+  }
+
+  return JSON.stringify({
+    cursors,
+    exhausted: [...exhausted],
+  });
+}
+
+/**
+ * Builds the effective searchPosts request variants for language and hashtag matching.
+ * @param {object} payload - Search workspace payload from the page.
+ * @returns {Array<object>} Search variants with dedicated language and hashtag subsets.
+ */
+function buildSearchWorkspaceSearchVariants(payload = {}) {
+  const languages = normalizeSearchWorkspaceLanguages(
+    Array.isArray(payload?.langs) && payload.langs.length > 0 ? payload.langs : payload?.lang || "",
+  );
+  const tags = normalizeSearchWorkspaceTags(payload?.tags);
+  const tagMatchMode = normalizeSearchWorkspaceTagMatchMode(payload?.tagMatchMode || "all");
+  const languageVariants = languages.length > 0 ? languages : [""];
+  const tagVariants = [];
+
+  if (tagMatchMode === "any" && tags.length > 1) {
+    tags.forEach((tag) => {
+      tagVariants.push([tag]);
+    });
+  } else {
+    tagVariants.push(tags);
+  }
+
+  const variants = [];
+  languageVariants.forEach((language) => {
+    tagVariants.forEach((tagSubset) => {
+      const tagKey = tagSubset.length > 0 ? tagSubset.join(",") : "*";
+      const languageKey = language || "*";
+      variants.push({
+        key: `${languageKey}|${tagKey}`,
+        forcedLang: language,
+        payload: {
+          ...payload,
+          tags: tagSubset,
+        },
+      });
+    });
+  });
+
+  return variants;
+}
+
+/**
+ * Builds a normalized URI set that should be skipped while loading more search pages.
+ * @param {Array<string>} uris - Raw post URIs from the page state.
+ * @returns {Set<string>} Normalized URI set.
+ */
+function createSearchWorkspaceExcludeUriSet(uris = []) {
+  const excludeUris = new Set();
+  if (!Array.isArray(uris)) {
+    return excludeUris;
+  }
+  uris.forEach((uri) => {
+    const normalizedUri = String(uri || "").trim();
+    if (normalizedUri) {
+      excludeUris.add(normalizedUri);
+    }
+  });
+  return excludeUris;
+}
+
+/**
+ * Returns a lowercase text haystack for local post filtering.
+ * @param {object} post - Normalized post data.
+ * @returns {string} Lowercase searchable text.
+ */
+function getSearchWorkspacePostHaystack(post = {}) {
+  const text = String(post?.text || "").trim().toLowerCase();
+  const handle = String(post?.author?.handle || "").trim().toLowerCase();
+  return `${text}\n${handle}`;
+}
+
+/**
+ * Splits one positive local search query into quoted phrases or single terms.
+ * @param {string} value - Raw query text from the search form.
+ * @returns {string[]} Normalized query terms.
+ */
+function parseSearchWorkspaceQueryTerms(value = "") {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) {
+    return [];
+  }
+
+  const terms = [];
+  const matcher = /"([^"]+)"|(\S+)/g;
+  let match = matcher.exec(rawValue);
+  while (match) {
+    const nextValue = String(match[1] || match[2] || "").trim().toLowerCase();
+    if (nextValue) {
+      terms.push(nextValue);
+    }
+    match = matcher.exec(rawValue);
+  }
+  return terms;
+}
+
+/**
+ * Checks whether a post matches the requested text snippet locally.
+ * @param {object} post - Normalized post data.
+ * @param {string} query - Raw query text.
+ * @returns {boolean} True when the query is empty or included in the post text.
+ */
+function matchesSearchWorkspaceQuery(post = {}, query = "") {
+  const queryTerms = parseSearchWorkspaceQueryTerms(query);
+  if (!queryTerms.length) {
+    return true;
+  }
+
+  const haystack = getSearchWorkspacePostHaystack(post);
+  return queryTerms.every((term) => {
+    return haystack.includes(term);
+  });
+}
+
+/**
+ * Checks whether a post avoids all locally excluded text fragments.
+ * @param {object} post - Normalized post data.
+ * @param {string} excludeText - Comma-separated excluded terms from the search form.
+ * @returns {boolean} True when none of the excluded fragments occur in the post text.
+ */
+function matchesSearchWorkspaceExcludedText(post = {}, excludeText = "") {
+  const blockedTerms = parseExcludedSearchTerms(excludeText).map((entry) => {
+    return String(entry || "").trim().toLowerCase();
+  }).filter(Boolean);
+  if (!blockedTerms.length) {
+    return true;
+  }
+  const haystack = getSearchWorkspacePostHaystack(post);
+  return blockedTerms.every((entry) => {
+    return !haystack.includes(entry);
+  });
+}
+
+/**
+ * Checks whether a post contains the requested hashtags in its text.
+ * @param {object} post - Normalized post data.
+ * @param {Array<string>} tags - Normalized hashtag names.
+ * @param {string} tagMatchMode - Match mode from the search form.
+ * @returns {boolean} True when the hashtag rule matches the post.
+ */
+function matchesSearchWorkspaceTags(post = {}, tags = [], tagMatchMode = "all") {
+  const normalizedTags = normalizeSearchWorkspaceTags(tags);
+  if (!normalizedTags.length) {
+    return true;
+  }
+  const haystack = getSearchWorkspacePostHaystack(post);
+  const normalizedTagMatchMode = normalizeSearchWorkspaceTagMatchMode(tagMatchMode);
+  const hasTag = (tag) => {
+    return haystack.includes(`#${String(tag || "").toLowerCase()}`);
+  };
+
+  if (normalizedTagMatchMode === "any") {
+    return normalizedTags.some((tag) => {
+      return hasTag(tag);
+    });
+  }
+
+  return normalizedTags.every((tag) => {
+    return hasTag(tag);
+  });
+}
+
+/**
+ * Parses one date filter input into an epoch timestamp boundary.
+ * @param {string} value - Raw date string in `YYYY-MM-DD` format.
+ * @param {boolean} endOfDay - True when the boundary should include the whole day.
+ * @returns {number|null} Epoch milliseconds or null when empty/invalid.
+ */
+function parseSearchWorkspaceDateBoundary(value = "", endOfDay = false) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return null;
+  }
+  let isoValue = `${raw}T00:00:00.000Z`;
+  if (endOfDay) {
+    isoValue = `${raw}T23:59:59.999Z`;
+  }
+  const timestamp = Date.parse(isoValue);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return timestamp;
+}
+
+/**
+ * Checks whether a post falls inside the requested date window.
+ * @param {object} post - Normalized post data.
+ * @param {string} since - Inclusive start date.
+ * @param {string} until - Inclusive end date.
+ * @returns {boolean} True when the post is inside the window or no window was supplied.
+ */
+function matchesSearchWorkspaceDateRange(post = {}, since = "", until = "") {
+  const createdAt = Date.parse(String(post?.createdAt || post?.indexedAt || "").trim());
+  if (!Number.isFinite(createdAt)) {
+    return true;
+  }
+  const sinceBoundary = parseSearchWorkspaceDateBoundary(since, false);
+  const untilBoundary = parseSearchWorkspaceDateBoundary(until, true);
+  if (Number.isFinite(sinceBoundary) && createdAt < sinceBoundary) {
+    return false;
+  }
+  if (Number.isFinite(untilBoundary) && createdAt > untilBoundary) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Checks whether a post matches one requested mention DID.
+ * @param {object} post - Normalized post data.
+ * @param {string} mentions - Mention DID from the search form.
+ * @returns {boolean} True when no mention filter exists or the DID is present.
+ */
+function matchesSearchWorkspaceMention(post = {}, mentions = "") {
+  const normalizedMention = String(mentions || "").trim();
+  if (!normalizedMention) {
+    return true;
+  }
+  const facets = extractAnalysisRecordFacets({
+    facets: Array.isArray(post?.facets) ? post.facets : [],
+  });
+  return facets.mentions.includes(normalizedMention);
+}
+
+/**
+ * Checks whether a post matches one requested language tag.
+ * @param {object} post - Normalized post data.
+ * @param {Array<string>|string} langs - Language code filter from the search form.
+ * @returns {boolean} True when no language filter exists or one code is present.
+ */
+function matchesSearchWorkspaceLanguage(post = {}, langs = []) {
+  const normalizedLanguages = normalizeSearchWorkspaceLanguages(langs);
+  if (!normalizedLanguages.length) {
+    return true;
+  }
+  const postLanguages = normalizeSearchWorkspaceLanguages(post?.langs || []);
+  return postLanguages.some((entry) => {
+    return normalizedLanguages.includes(entry);
+  });
+}
+
+/**
+ * Checks whether a post contains the requested domain in link facets or external cards.
+ * @param {object} post - Normalized post data.
+ * @param {string} domain - Domain filter from the search form.
+ * @returns {boolean} True when no domain filter exists or the domain matches.
+ */
+function matchesSearchWorkspaceDomain(post = {}, domain = "") {
+  const normalizedDomain = String(domain || "").trim().toLowerCase();
+  if (!normalizedDomain) {
+    return true;
+  }
+  const facets = extractAnalysisRecordFacets({
+    facets: Array.isArray(post?.facets) ? post.facets : [],
+  });
+  const candidates = [...facets.domains];
+  const externalUrl = String(post?.externalCard?.url || "").trim();
+  if (externalUrl) {
+    try {
+      candidates.push(new URL(externalUrl).hostname.toLowerCase());
+    } catch {
+      // ignore invalid URLs
+    }
+  }
+  return candidates.some((entry) => {
+    return String(entry || "").trim().toLowerCase() === normalizedDomain;
+  });
+}
+
+/**
+ * Checks whether a post links to the requested URL.
+ * @param {object} post - Normalized post data.
+ * @param {string} url - Exact target URL from the search form.
+ * @returns {boolean} True when no URL filter exists or the URL appears in the post.
+ */
+function matchesSearchWorkspaceTargetUrl(post = {}, url = "") {
+  const normalizedUrl = String(url || "").trim();
+  if (!normalizedUrl) {
+    return true;
+  }
+  const facets = Array.isArray(post?.facets) ? post.facets : [];
+  for (const facet of facets) {
+    const features = Array.isArray(facet?.features) ? facet.features : [];
+    for (const feature of features) {
+      if (String(feature?.$type || "").trim() === "app.bsky.richtext.facet#link") {
+        if (String(feature?.uri || "").trim() === normalizedUrl) {
+          return true;
+        }
+      }
+    }
+  }
+  return String(post?.externalCard?.url || "").trim() === normalizedUrl;
+}
+
+/**
+ * Checks whether a post matches the requested media filter.
+ * @param {object} post - Normalized post data.
+ * @param {string} mediaFilter - One of `all`, `images`, `videos`, or `none`.
+ * @returns {boolean} True when the post matches the selected media mode.
+ */
+function matchesSearchWorkspaceMediaFilter(post = {}, mediaFilter = "") {
+  const normalizedFilter = String(mediaFilter || "").trim();
+  const hasImages = Array.isArray(post?.images) && post.images.length > 0;
+  const hasVideo = post?.hasVideo === true;
+  if (normalizedFilter === "images") {
+    return hasImages;
+  }
+  if (normalizedFilter === "videos") {
+    return hasVideo;
+  }
+  if (normalizedFilter === "none") {
+    return !hasImages && !hasVideo;
+  }
+  return true;
+}
+
+/**
+ * Checks whether a post matches the requested post-type filter.
+ * @param {object} post - Normalized post data.
+ * @param {string} postTypeFilter - Selected post-type filter from the search form.
+ * @param {object} item - Normalized search result item with repost metadata.
+ * @returns {boolean} True when the post matches the selected type.
+ */
+function matchesSearchWorkspacePostTypeFilter(post = {}, postTypeFilter = "", item = {}) {
+  const normalizedFilter = String(postTypeFilter || "").trim();
+  const isReply = Boolean(post?.reply?.root?.uri && post?.reply?.parent?.uri);
+  const isQuote = Boolean(post?.quoteCard?.uri);
+  const isRepost = item?.reasonType === "repost";
+  if (normalizedFilter === "posts" || normalizedFilter === "originals") {
+    return !isReply && !isQuote && !isRepost;
+  }
+  if (normalizedFilter === "replies") {
+    return isReply;
+  }
+  if (normalizedFilter === "quotes") {
+    return isQuote;
+  }
+  if (normalizedFilter === "reposts") {
+    return isRepost;
+  }
+  if (normalizedFilter === "non-reposts") {
+    return !isRepost;
+  }
+  return true;
+}
+
+/**
+ * Checks whether a normalized post matches all local search workspace filters.
+ * @param {object} post - Normalized post data.
+ * @param {object} payload - Search workspace payload from the page.
+ * @param {object} item - Normalized search result item with repost metadata.
+ * @returns {boolean} True when the post matches every local filter.
+ */
+function matchesSearchWorkspacePost(post = {}, payload = {}, item = {}) {
+  if (!matchesSearchWorkspaceQuery(post, payload?.query || "")) {
+    return false;
+  }
+  if (!matchesSearchWorkspaceExcludedText(post, payload?.excludeText || "")) {
+    return false;
+  }
+  if (!matchesSearchWorkspaceTags(post, payload?.tags || [], payload?.tagMatchMode || "all")) {
+    return false;
+  }
+  if (!matchesSearchWorkspaceDateRange(post, payload?.since || "", payload?.until || "")) {
+    return false;
+  }
+  if (!matchesSearchWorkspaceMention(post, payload?.mentions || "")) {
+    return false;
+  }
+  if (!matchesSearchWorkspaceLanguage(post, payload?.langs || payload?.lang || "")) {
+    return false;
+  }
+  if (!matchesSearchWorkspaceDomain(post, payload?.domain || "")) {
+    return false;
+  }
+  if (!matchesSearchWorkspaceTargetUrl(post, payload?.url || "")) {
+    return false;
+  }
+  if (!matchesSearchWorkspaceMediaFilter(post, payload?.mediaFilter || "")) {
+    return false;
+  }
+  if (!matchesSearchWorkspacePostTypeFilter(post, payload?.postTypeFilter || "", item)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Maps one feed entry to the compact result shape used by the search workspace.
+ * @param {object} entry - Feed or search result entry.
+ * @returns {object|null} Search result item or null when no post exists.
+ */
+function normalizeSearchWorkspaceResultItem(entry = {}) {
+  const post = normalizeThreadExplorerPost(entry?.post || entry);
+  if (!post) {
+    return null;
+  }
+  const reasonType = String(entry?.reason?.$type || "").trim();
+  const repostBy = String(entry?.reason?.by?.handle || entry?.reason?.by?.did || "").trim();
+  const repostAt = String(entry?.reason?.indexedAt || "").trim();
+  let normalizedReasonType = "";
+  if (reasonType.endsWith("#reasonRepost")) {
+    normalizedReasonType = "repost";
+  }
+  return {
+    post,
+    reasonType: normalizedReasonType,
+    repostBy,
+    repostAt,
+  };
+}
+
+/**
+ * Returns the best available timestamp for sorting merged multi-language search results.
+ * @param {object} item - Normalized search result item.
+ * @returns {number} Millisecond timestamp, or `0` when no valid date exists.
+ */
+function getSearchWorkspaceResultTimestamp(item = {}) {
+  const post = item?.post || null;
+  const rawValue = String(post?.indexedAt || post?.createdAt || item?.repostAt || "").trim();
+  if (!rawValue) {
+    return 0;
+  }
+  const parsedValue = Date.parse(rawValue);
+  if (Number.isNaN(parsedValue)) {
+    return 0;
+  }
+  return parsedValue;
+}
+
+/**
+ * Loads network or hashtag search results through `searchPosts`.
+ * @param {object} auth - Active authenticated account entry.
+ * @param {object} payload - Search workspace payload from the page.
+ * @param {(progress: object) => void} notifyProgress - Progress callback for the current run.
+ * @returns {Promise<object>} Search items and next cursor.
+ */
+async function loadSearchWorkspaceSearchPosts(auth, payload = {}, notifyProgress = () => {}) {
+  const limit = Math.min(100, Math.max(10, Number(payload?.limit) || 25));
+  const targetCount = Math.min(50, Math.max(10, limit));
+  const excludeUris = createSearchWorkspaceExcludeUriSet(payload?.excludeUris);
+  const variants = buildSearchWorkspaceSearchVariants(payload);
+  const variantKeys = variants.map((variant) => {
+    return variant.key;
+  });
+  const runId = String(payload?.runId || "").trim();
+  const items = [];
+  let scannedCount = 0;
+  let pageCount = 0;
+
+  if (variants.length > 1) {
+    const cursorState = parseSearchWorkspaceSearchCursorState(payload?.cursor || "", variantKeys);
+    const cursors = { ...cursorState.cursors };
+    const exhausted = new Set(cursorState.exhausted);
+
+    while (items.length < targetCount && pageCount < 12) {
+      let loadedAnyVariant = false;
+
+      for (const variant of variants) {
+        if (items.length >= targetCount) {
+          break;
+        }
+        if (exhausted.has(variant.key)) {
+          continue;
+        }
+        if (runId && searchRunControls.get(runId)?.state === "cancelled") {
+          searchRunControls.delete(runId);
+          items.sort((left, right) => {
+            return getSearchWorkspaceResultTimestamp(right) - getSearchWorkspaceResultTimestamp(left);
+          });
+          return {
+            items: items.slice(0, targetCount),
+            cursor: buildSearchWorkspaceSearchCursorState(cursors, exhausted, variantKeys),
+            cancelled: true,
+          };
+        }
+
+        loadedAnyVariant = true;
+        const params = buildSearchWorkspaceSearchPostsParams(variant.payload, variant.forcedLang);
+        params.limit = limit;
+        if (String(cursors[variant.key] || "").trim()) {
+          params.cursor = cursors[variant.key];
+        }
+
+        const response = await bskyGet("app.bsky.feed.searchPosts", params, {
+          headers: {
+            authorization: `Bearer ${auth.session.accessJwt}`,
+          },
+          base: authXrpcBase(auth),
+        });
+
+        const posts = Array.isArray(response?.posts) ? response.posts : [];
+        scannedCount += posts.length;
+        posts.forEach((postView) => {
+          const item = normalizeSearchWorkspaceResultItem({ post: postView });
+          const uri = String(item?.post?.uri || "").trim();
+          if (!item || !uri || excludeUris.has(uri)) {
+            return;
+          }
+          if (!matchesSearchWorkspacePost(item.post, payload, item)) {
+            return;
+          }
+          excludeUris.add(uri);
+          items.push(item);
+        });
+
+        const nextCursor = String(response?.cursor || "").trim();
+        if (nextCursor) {
+          cursors[variant.key] = nextCursor;
+        } else {
+          delete cursors[variant.key];
+          exhausted.add(variant.key);
+        }
+        pageCount += 1;
+        notifyProgress({
+          mode: "network",
+          pageCount,
+          scannedCount,
+          matchCount: items.length,
+        });
+        if (!nextCursor || posts.length === 0) {
+          exhausted.add(variant.key);
+        }
+      }
+
+      if (!loadedAnyVariant) {
+        break;
+      }
+    }
+
+    items.sort((left, right) => {
+      return getSearchWorkspaceResultTimestamp(right) - getSearchWorkspaceResultTimestamp(left);
+    });
+
+    return {
+      items: items.slice(0, targetCount),
+      cursor: buildSearchWorkspaceSearchCursorState(cursors, exhausted, variantKeys),
+    };
+  }
+
+  const singleVariant = variants[0] || {
+    forcedLang: "",
+    payload,
+  };
+  let cursor = String(payload?.cursor || "").trim();
+  let nextCursor = "";
+
+  while (items.length < targetCount && pageCount < 12) {
+    if (runId && searchRunControls.get(runId)?.state === "cancelled") {
+      searchRunControls.delete(runId);
+      return {
+        items: items.slice(0, targetCount),
+        cursor,
+        cancelled: true,
+      };
+    }
+
+    const params = buildSearchWorkspaceSearchPostsParams(singleVariant.payload, singleVariant.forcedLang);
+    params.limit = limit;
+    if (cursor) {
+      params.cursor = cursor;
+    }
+
+    const response = await bskyGet("app.bsky.feed.searchPosts", params, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+      base: authXrpcBase(auth),
+    });
+
+    const posts = Array.isArray(response?.posts) ? response.posts : [];
+    scannedCount += posts.length;
+    posts.forEach((postView) => {
+      const item = normalizeSearchWorkspaceResultItem({ post: postView });
+      const uri = String(item?.post?.uri || "").trim();
+      if (!item || !uri || excludeUris.has(uri)) {
+        return;
+      }
+      if (!matchesSearchWorkspacePost(item.post, payload, item)) {
+        return;
+      }
+      excludeUris.add(uri);
+      items.push(item);
+    });
+
+    nextCursor = String(response?.cursor || "").trim();
+    cursor = nextCursor;
+    pageCount += 1;
+    notifyProgress({
+      mode: "network",
+      pageCount,
+      scannedCount,
+      matchCount: items.length,
+    });
+    if (!nextCursor || posts.length === 0) {
+      break;
+    }
+  }
+
+  if (runId) {
+    searchRunControls.delete(runId);
+  }
+  return {
+    items: items.slice(0, targetCount),
+    cursor: nextCursor,
+  };
+}
+
+/**
+ * Loads recent posts or reposts from one account via `getAuthorFeed`.
+ * @param {object} auth - Active authenticated account entry.
+ * @param {object} payload - Search workspace payload from the page.
+ * @param {boolean} repostsOnly - True when only repost entries should be returned.
+ * @param {(progress: object) => void} notifyProgress - Progress callback for the current run.
+ * @returns {Promise<object>} Search items and next cursor.
+ */
+async function loadSearchWorkspaceAuthorFeed(auth, payload = {}, repostsOnly = false, notifyProgress = () => {}) {
+  const actor = String(payload?.actor || auth?.session?.handle || auth?.session?.did || "").trim();
+  if (!actor) {
+    throw new Error("Bitte gib einen Account fuer diese Suche an.");
+  }
+
+  const maxPages = 120;
+  const limit = Math.min(100, Math.max(10, Number(payload?.limit) || 25));
+  const targetCount = Math.min(50, Math.max(10, limit));
+  const excludeUris = createSearchWorkspaceExcludeUriSet(payload?.excludeUris);
+  const runId = String(payload?.runId || "").trim();
+  const items = [];
+  let cursor = String(payload?.cursor || "").trim();
+  let nextCursor = "";
+  let scannedCount = 0;
+  let pageCount = 0;
+
+  while (items.length < targetCount && pageCount < maxPages) {
+    if (runId && searchRunControls.get(runId)?.state === "cancelled") {
+      searchRunControls.delete(runId);
+      return {
+        items: items.slice(0, targetCount),
+        cursor,
+        cancelled: true,
+      };
+    }
+
+    const response = await bskyGet("app.bsky.feed.getAuthorFeed", {
+      actor,
+      limit,
+      cursor: cursor || undefined,
+    }, {
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+      base: authXrpcBase(auth),
+    });
+
+    const feed = Array.isArray(response?.feed) ? response.feed : [];
+    scannedCount += feed.length;
+    feed.forEach((entry) => {
+      const item = normalizeSearchWorkspaceResultItem(entry);
+      const uri = String(item?.post?.uri || "").trim();
+      if (!item) {
+        return;
+      }
+      if (!uri || excludeUris.has(uri)) {
+        return;
+      }
+      const isRepost = item.reasonType === "repost";
+      if (repostsOnly && !isRepost) {
+        return;
+      }
+      if (!repostsOnly && isRepost) {
+        return;
+      }
+      if (!matchesSearchWorkspacePost(item.post, payload, item)) {
+        return;
+      }
+      excludeUris.add(uri);
+      items.push(item);
+    });
+
+    nextCursor = String(response?.cursor || "").trim();
+    cursor = nextCursor;
+    pageCount += 1;
+    notifyProgress({
+      mode: repostsOnly ? "reposts" : "posts",
+      actor,
+      pageCount,
+      scannedCount,
+      matchCount: items.length,
+    });
+    if (!nextCursor || feed.length === 0) {
+      break;
+    }
+  }
+
+  if (runId) {
+    searchRunControls.delete(runId);
+  }
+  return {
+    items: items.slice(0, targetCount),
+    cursor: nextCursor,
+  };
+}
+
+/**
+ * Loads one search workspace page for the requested mode.
+ * @param {object} payload - Search workspace payload from the page.
+ * @param {(progress: object) => void} notifyProgress - Progress callback for the current run.
+ * @returns {Promise<object>} Search result items and next cursor.
+ */
+async function loadSearchResults(payload = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const activeAuth = await refreshAuthReference(auth);
+  const mode = normalizeSearchWorkspaceMode(payload?.mode);
+  const runId = String(payload?.runId || "").trim();
+  if (runId) {
+    searchRunControls.set(runId, { state: "running" });
+  }
+
+  if (mode === "posts") {
+    return loadSearchWorkspaceAuthorFeed(activeAuth, payload, false, notifyProgress);
+  }
+  if (mode === "reposts") {
+    return loadSearchWorkspaceAuthorFeed(activeAuth, payload, true, notifyProgress);
+  }
+  return loadSearchWorkspaceSearchPosts(activeAuth, payload, notifyProgress);
 }
 
 /**
@@ -2087,11 +3497,109 @@ function accountAvatarAssetToDataUri(asset = {}) {
 }
 
 /**
+ * Resolves a promise with null when a Thread Explorer cache read takes too long.
+ * @param {Promise<any>} promise - Cache read promise.
+ * @returns {Promise<any|null>} Original value or null on timeout/error.
+ */
+function withThreadExplorerMediaCacheReadTimeout(promise) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(null);
+    }, THREAD_EXPLORER_MEDIA_CACHE_READ_TIMEOUT_MS);
+
+    promise.then((value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(value);
+    }).catch(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(null);
+    });
+  });
+}
+
+/**
+ * Reads a readable Thread Explorer media asset from the remote media cache.
+ * @param {string} url - Original remote media URL used as cache key.
+ * @param {Cache|null} cache - Already opened remote media cache.
+ * @returns {Promise<{type: string, bytes: Uint8Array}|null>} Cached media blob or null.
+ */
+async function readThreadExplorerRemoteMediaCacheBlob(url = "", cache = null) {
+  const normalizedUrl = String(url || "").trim();
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  let mediaCache = cache;
+  if (!mediaCache) {
+    mediaCache = await caches.open(REMOTE_MEDIA_CACHE_NAME);
+  }
+  const response = await withThreadExplorerMediaCacheReadTimeout(mediaCache.match(normalizedUrl));
+  if (!response || response.type === "opaque") {
+    return null;
+  }
+
+  try {
+    const bytes = await withThreadExplorerMediaCacheReadTimeout(response.arrayBuffer());
+    if (!bytes) {
+      return null;
+    }
+    return {
+      type: response.headers.get("content-type") || "application/octet-stream",
+      bytes: new Uint8Array(bytes),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stores one readable Thread Explorer media asset in the remote media cache.
+ * @param {string} url - Original remote media URL used as cache key.
+ * @param {{type?: string, bytes?: Uint8Array}} blob - Media bytes and MIME type.
+ * @param {Cache|null} cache - Already opened remote media cache.
+ * @returns {Promise<void>} Resolves after the cache write was attempted.
+ */
+async function writeThreadExplorerRemoteMediaCacheBlob(url = "", blob = {}, cache = null) {
+  const normalizedUrl = String(url || "").trim();
+  const bytes = blob?.bytes instanceof Uint8Array ? blob.bytes : new Uint8Array(blob?.bytes || []);
+  if (!normalizedUrl || bytes.length === 0) {
+    return;
+  }
+
+  const type = String(blob.type || "application/octet-stream").trim() || "application/octet-stream";
+  let mediaCache = cache;
+  if (!mediaCache) {
+    mediaCache = await caches.open(REMOTE_MEDIA_CACHE_NAME);
+  }
+  const response = new Response(bytes, {
+    headers: {
+      "content-type": type,
+      "cache-control": "max-age=86400",
+    },
+  });
+  await mediaCache.put(normalizedUrl, response).catch(() => {});
+}
+
+/**
  * Downloads missing Thread Explorer avatars into the shared avatar cache.
  * @param {object} payload - Contains the currently loaded Thread Explorer tree.
+ * @param {(progress: object) => void} notifyProgress - Sends progress updates to the page.
  * @returns {Promise<object>} Hydration summary with cache TTL and hydrated avatar count.
  */
-async function hydrateThreadExplorerAvatars(payload = {}) {
+async function hydrateThreadExplorerAvatars(payload = {}, notifyProgress = () => {}) {
   const auth = await ensureSession();
   const activeAuth = await refreshAuthReference(auth);
   const serviceCache = new Map();
@@ -2100,40 +3608,66 @@ async function hydrateThreadExplorerAvatars(payload = {}) {
   const assets = normalizeAccountAvatarAssets(cache?.assets);
   const authors = Array.from(collectThreadExplorerAvatarAuthors(payload?.root).values());
   let hydratedCount = 0;
+  let processedCount = 0;
+  let skippedCount = 0;
+  const totalCount = authors.length;
 
-  await mapWithConcurrency(authors, ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY, async (author) => {
-    let asset = assets.find((entry) => entry.did === author.did && entry.url === author.avatar);
-    if (!asset) {
-      try {
-        const blob = await downloadRemoteAssetViaBlob(activeAuth, author.avatar, author.did, serviceCache);
-        const extension = getAssetExtensionFromMimeType(blob.type);
-        const slug = String(author.handle || author.did || "account")
-          .replace(/[^\w.-]+/g, "-")
-          .slice(0, 60) || "account";
-        asset = {
-          did: author.did,
-          url: author.avatar,
-          path: `account-avatars/${slug}.${extension}`,
-          type: blob.type,
-          sizeBytes: blob.bytes.length,
-          cachedAt: now,
-          bytes: blob.bytes,
-        };
-        for (let index = assets.length - 1; index >= 0; index -= 1) {
-          if (assets[index].did === author.did) {
-            assets.splice(index, 1);
-          }
-        }
-        assets.push(asset);
-      } catch {
-        asset = null;
-      }
-    }
-
-    if (asset) {
-      hydratedCount += 1;
-    }
+  const buildProgress = () => ({
+    phase: "thread_explorer_avatars",
+    current: processedCount,
+    total: totalCount,
+    remaining: Math.max(0, totalCount - processedCount),
+    hydrated: hydratedCount,
+    skipped: skippedCount,
   });
+
+  notifyProgress(buildProgress());
+  const stopHeartbeat = startThreadExplorerMediaHydrationHeartbeat(buildProgress, notifyProgress);
+
+  try {
+    await mapWithConcurrency(authors, ARCHIVE_ASSET_DOWNLOAD_CONCURRENCY, async (author) => {
+      let asset = assets.find((entry) => entry.did === author.did && entry.url === author.avatar);
+      if (!asset) {
+        try {
+          const blob = await withThreadExplorerMediaHydrationTimeout(
+            downloadRemoteAssetViaBlob(activeAuth, author.avatar, author.did, serviceCache),
+            THREAD_EXPLORER_MEDIA_HYDRATION_ITEM_TIMEOUT_MS,
+          );
+          const extension = getAssetExtensionFromMimeType(blob.type);
+          const slug = String(author.handle || author.did || "account")
+            .replace(/[^\w.-]+/g, "-")
+            .slice(0, 60) || "account";
+          asset = {
+            did: author.did,
+            url: author.avatar,
+            path: `account-avatars/${slug}.${extension}`,
+            type: blob.type,
+            sizeBytes: blob.bytes.length,
+            cachedAt: now,
+            bytes: blob.bytes,
+          };
+          for (let index = assets.length - 1; index >= 0; index -= 1) {
+            if (assets[index].did === author.did) {
+              assets.splice(index, 1);
+            }
+          }
+          assets.push(asset);
+        } catch {
+          asset = null;
+        }
+      }
+
+      if (asset) {
+        hydratedCount += 1;
+      } else {
+        skippedCount += 1;
+      }
+      processedCount += 1;
+      notifyProgress(buildProgress());
+    });
+  } finally {
+    stopHeartbeat();
+  }
 
   await writeStoredValue(ACCOUNT_AVATAR_CACHE_KEY, {
     ...cache,
@@ -2144,6 +3678,247 @@ async function hydrateThreadExplorerAvatars(payload = {}) {
   return {
     ttlMs: ACCOUNT_AVATAR_CACHE_TTL_MS,
     avatarCount: hydratedCount,
+  };
+}
+
+/**
+ * Adds one Thread Explorer media URL to a collection if it can be loaded.
+ * @param {Map<string, object>} media - Mutable media map keyed by URL.
+ * @param {string} url - Remote media URL.
+ * @param {string} did - Fallback actor DID for blob resolution.
+ * @returns {void}
+ */
+function addThreadExplorerMediaHydrationUrl(media, url, did) {
+  const source = String(url || "").trim();
+  if (!source || source.startsWith("data:")) {
+    return;
+  }
+  if (media.has(source)) {
+    return;
+  }
+  media.set(source, {
+    url: source,
+    did: String(did || "").trim(),
+  });
+}
+
+/**
+ * Collects remote media URLs from a Thread Explorer tree node.
+ * @param {object|null} node - Thread Explorer tree node.
+ * @param {Map<string, object>} media - Mutable media map keyed by URL.
+ * @returns {Map<string, object>} Media map.
+ */
+function collectThreadExplorerMediaHydrationUrls(node = null, media = new Map()) {
+  if (!node || typeof node !== "object") {
+    return media;
+  }
+
+  const post = node.post || {};
+  const authorDid = String(post.author?.did || "").trim();
+  if (Array.isArray(post.images)) {
+    post.images.forEach((image) => {
+      addThreadExplorerMediaHydrationUrl(media, image?.fullsize || image?.thumb || "", authorDid);
+      addThreadExplorerMediaHydrationUrl(media, image?.thumb || image?.fullsize || "", authorDid);
+    });
+  }
+  addThreadExplorerMediaHydrationUrl(media, post.externalCard?.thumb || "", authorDid);
+
+  const quote = post.quoteCard || null;
+  if (quote && typeof quote === "object") {
+    const quoteAuthorDid = String(quote.author?.did || authorDid || "").trim();
+    if (Array.isArray(quote.images)) {
+      quote.images.forEach((image) => {
+        addThreadExplorerMediaHydrationUrl(media, image?.fullsize || image?.thumb || "", quoteAuthorDid);
+        addThreadExplorerMediaHydrationUrl(media, image?.thumb || image?.fullsize || "", quoteAuthorDid);
+      });
+    }
+    addThreadExplorerMediaHydrationUrl(media, quote.externalCard?.thumb || "", quoteAuthorDid);
+  }
+
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => {
+      collectThreadExplorerMediaHydrationUrls(reply, media);
+    });
+  }
+
+  return media;
+}
+
+/**
+ * Builds Thread Explorer media hydration entries from an explicit payload list or a tree root.
+ * @param {object} payload - Hydration payload with root or mediaEntries.
+ * @returns {object[]} Unique media entries with url and fallback DID.
+ */
+function collectThreadExplorerMediaHydrationEntries(payload = {}) {
+  let explicitEntries = [];
+  if (Array.isArray(payload?.mediaEntries)) {
+    explicitEntries = payload.mediaEntries;
+  }
+  const media = new Map();
+  if (explicitEntries.length > 0) {
+    explicitEntries.forEach((entry) => {
+      addThreadExplorerMediaHydrationUrl(media, entry?.url || "", entry?.did || "");
+    });
+    return Array.from(media.values());
+  }
+
+  return Array.from(collectThreadExplorerMediaHydrationUrls(payload?.root).values());
+}
+
+/**
+ * Rejects a promise when one Thread Explorer media item takes too long.
+ * @param {Promise<any>} promise - Original media download promise.
+ * @param {number} timeoutMs - Timeout in milliseconds.
+ * @returns {Promise<any>} Original result or timeout rejection.
+ */
+function withThreadExplorerMediaHydrationTimeout(promise, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error("Thread Explorer media item timed out."));
+    }, timeoutMs);
+    promise.then((value) => {
+      clearTimeout(timeoutId);
+      resolve(value);
+    }).catch((error) => {
+      clearTimeout(timeoutId);
+      reject(error);
+    });
+  });
+}
+
+/**
+ * Checks whether a Thread Explorer media URL should skip direct CORS fetching.
+ * @param {string} url - Remote media URL.
+ * @returns {boolean} True when the blob/PDS path should be used first.
+ */
+function shouldSkipThreadExplorerDirectMediaFetch(url = "") {
+  const blobInfo = parseBlobUrlInfo(url);
+  if (blobInfo?.cid) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Downloads one Thread Explorer media asset through the fastest available path.
+ * @param {object} auth - Authenticated account entry.
+ * @param {object} entry - Media entry with url and fallback DID.
+ * @param {Map<string, string>} serviceCache - DID-to-PDS cache for blob fallback.
+ * @returns {Promise<{type: string, bytes: Uint8Array}>} Downloaded media payload.
+ */
+async function downloadThreadExplorerMediaAssetFast(auth, entry = {}, serviceCache = new Map()) {
+  if (shouldSkipThreadExplorerDirectMediaFetch(entry.url)) {
+    return withThreadExplorerMediaHydrationTimeout(
+      downloadRemoteAssetViaBlob(auth, entry.url, entry.did || auth.session?.did || "", serviceCache),
+      THREAD_EXPLORER_MEDIA_HYDRATION_ITEM_TIMEOUT_MS,
+    );
+  }
+
+  try {
+    return await withThreadExplorerMediaHydrationTimeout(
+      downloadRemoteAsset(entry.url),
+      THREAD_EXPLORER_MEDIA_HYDRATION_DIRECT_TIMEOUT_MS,
+    );
+  } catch {
+    return withThreadExplorerMediaHydrationTimeout(
+      downloadRemoteAssetViaBlob(auth, entry.url, entry.did || auth.session?.did || "", serviceCache),
+      THREAD_EXPLORER_MEDIA_HYDRATION_ITEM_TIMEOUT_MS,
+    );
+  }
+}
+
+/**
+ * Starts periodic Thread Explorer media progress updates.
+ * @param {() => object} getProgress - Returns the latest progress payload.
+ * @param {(progress: object) => void} notifyProgress - Sends progress updates to the page.
+ * @returns {() => void} Stops the heartbeat.
+ */
+function startThreadExplorerMediaHydrationHeartbeat(getProgress, notifyProgress) {
+  const heartbeatId = setInterval(() => {
+    notifyProgress({
+      ...getProgress(),
+      heartbeat: true,
+    });
+  }, THREAD_EXPLORER_MEDIA_HYDRATION_HEARTBEAT_MS);
+  return () => {
+    clearInterval(heartbeatId);
+  };
+}
+
+/**
+ * Downloads Thread Explorer media needed by the PNG snapshot and returns data URIs.
+ * @param {object} payload - Contains the currently loaded Thread Explorer tree.
+ * @param {(progress: object) => void} notifyProgress - Sends progress updates to the page.
+ * @returns {Promise<object>} Media data URI map and hydrated count.
+ */
+async function hydrateThreadExplorerMedia(payload = {}, notifyProgress = () => {}) {
+  const auth = await ensureSession();
+  const activeAuth = await refreshAuthReference(auth);
+  const serviceCache = new Map();
+  const remoteMediaCache = await caches.open(REMOTE_MEDIA_CACHE_NAME);
+  const mediaEntries = collectThreadExplorerMediaHydrationEntries(payload);
+  const media = {};
+  let hydratedCount = 0;
+  let processedCount = 0;
+  let skippedCount = 0;
+  let cacheHitCount = 0;
+  let downloadedCount = 0;
+  const totalCount = mediaEntries.length;
+
+  const buildProgress = () => ({
+    phase: "thread_explorer_media",
+    current: processedCount,
+    total: totalCount,
+    remaining: Math.max(0, totalCount - processedCount),
+    hydrated: hydratedCount,
+    skipped: skippedCount,
+    cacheHits: cacheHitCount,
+    downloaded: downloadedCount,
+    concurrency: THREAD_EXPLORER_MEDIA_HYDRATION_CONCURRENCY,
+  });
+
+  notifyProgress(buildProgress());
+  const stopHeartbeat = startThreadExplorerMediaHydrationHeartbeat(buildProgress, notifyProgress);
+  const cacheWritePromises = [];
+
+  try {
+    await mapWithConcurrency(mediaEntries, THREAD_EXPLORER_MEDIA_HYDRATION_CONCURRENCY, async (entry) => {
+      try {
+        let blob = await readThreadExplorerRemoteMediaCacheBlob(entry.url, remoteMediaCache);
+        let wasCacheHit = false;
+        if (blob) {
+          wasCacheHit = true;
+          cacheHitCount += 1;
+        } else {
+          blob = await downloadThreadExplorerMediaAssetFast(activeAuth, entry, serviceCache);
+          downloadedCount += 1;
+        }
+        const normalizedBlob = normalizeArchiveImageBlob(blob);
+        if (!normalizedBlob.bytes?.length) {
+          skippedCount += 1;
+          return;
+        }
+        media[entry.url] = bytesToDataUrl(normalizedBlob.bytes, normalizedBlob.type || "image/jpeg");
+        if (!wasCacheHit) {
+          cacheWritePromises.push(writeThreadExplorerRemoteMediaCacheBlob(entry.url, normalizedBlob, remoteMediaCache));
+        }
+        hydratedCount += 1;
+      } catch {
+        skippedCount += 1;
+        // Keep the snapshot export running even when individual remote images cannot be loaded.
+      } finally {
+        processedCount += 1;
+        notifyProgress(buildProgress());
+      }
+    });
+  } finally {
+    stopHeartbeat();
+  }
+  void Promise.allSettled(cacheWritePromises);
+
+  return {
+    media,
+    mediaCount: hydratedCount,
   };
 }
 
@@ -3362,6 +5137,10 @@ async function getAppState({ browserLocale } = {}) {
   const legacyLocalePreference = await readStoredValue(LOCALE_KEY);
   const hashtags = normalizeHashtagEntries(storedSettings?.hashtags);
   const selectedHashtags = normalizeSelectedHashtagEntries(storedSettings?.selectedHashtags, hashtags);
+  const searchSelectedHashtags = normalizeSelectedHashtagEntries(storedSettings?.searchSelectedHashtags, hashtags);
+  const searchPreferences = storedSettings?.searchPreferences && typeof storedSettings.searchPreferences === "object"
+    ? storedSettings.searchPreferences
+    : null;
   const localePreference = storedSettings?.localePreference || legacyLocalePreference;
   const locale = localePreference && localePreference !== "auto" ? localePreference : (browserLocale || "en");
 
@@ -3398,8 +5177,12 @@ async function getAppState({ browserLocale } = {}) {
     addMarkerSpacing: storedSettings?.addMarkerSpacing === true,
     postInteraction: normalizePostInteractionSettings(storedSettings?.postInteraction),
     linkCardProxy: normalizeLinkCardProxySettings(storedSettings?.linkCardProxy),
+    linkCardProvider: normalizeLinkCardProviderSetting(storedSettings?.linkCardProvider),
+    linkCardMicrolinkUsage: normalizeLinkCardMicrolinkUsage(storedSettings?.linkCardMicrolinkUsage),
     hashtags,
     selectedHashtags,
+    searchSelectedHashtags,
+    searchPreferences,
     hashtagPlacement: ["first", "last", "all-top", "all-bottom"].includes(storedSettings?.hashtagPlacement)
       ? storedSettings.hashtagPlacement
       : "first",
@@ -3523,6 +5306,12 @@ async function saveSettings(settings = {}) {
   const selectedHashtags = Array.isArray(settings.selectedHashtags)
     ? normalizeSelectedHashtagEntries(settings.selectedHashtags, hashtags)
     : normalizeSelectedHashtagEntries(existing.selectedHashtags, hashtags);
+  const searchSelectedHashtags = Array.isArray(settings.searchSelectedHashtags)
+    ? normalizeSelectedHashtagEntries(settings.searchSelectedHashtags, hashtags)
+    : normalizeSelectedHashtagEntries(existing.searchSelectedHashtags, hashtags);
+  const searchPreferences = settings.searchPreferences && typeof settings.searchPreferences === "object"
+    ? settings.searchPreferences
+    : (existing.searchPreferences && typeof existing.searchPreferences === "object" ? existing.searchPreferences : null);
   const normalizedImages = Array.isArray(settings.segmentImages)
     ? await storeComposerImageBlobs(settings.segmentImages)
     : normalizeSegmentImages(existing.segmentImages);
@@ -3555,8 +5344,12 @@ async function saveSettings(settings = {}) {
     addMarkerSpacing: settings.addMarkerSpacing === true,
     postInteraction: normalizePostInteractionSettings(settings.postInteraction || existing.postInteraction),
     linkCardProxy: normalizeLinkCardProxySettings(settings.linkCardProxy || existing.linkCardProxy),
+    linkCardProvider: normalizeLinkCardProviderSetting(settings.linkCardProvider || existing.linkCardProvider),
+    linkCardMicrolinkUsage: normalizeLinkCardMicrolinkUsage(settings.linkCardMicrolinkUsage || existing.linkCardMicrolinkUsage),
     hashtags,
     selectedHashtags,
+    searchSelectedHashtags,
+    searchPreferences,
     hashtagPlacement: ["first", "last", "all-top", "all-bottom"].includes(settings.hashtagPlacement)
       ? settings.hashtagPlacement
       : (["first", "last", "all-top", "all-bottom"].includes(existing.hashtagPlacement) ? existing.hashtagPlacement : "first"),
@@ -3594,6 +5387,14 @@ async function getArchiveCatalog() {
   return await readStoredValue(ARCHIVE_CATALOG_KEY) || null;
 }
 
+/**
+ * Reads the persisted media-export resume session.
+ * @returns {Promise<object|null>} Saved media-export session or null.
+ */
+async function getMediaExportSession() {
+  return await readStoredValue(MEDIA_EXPORT_SESSION_KEY) || null;
+}
+
 async function getDmPartnerCache() {
   return await readStoredValue(DM_PARTNER_CACHE_KEY) || null;
 }
@@ -3617,6 +5418,17 @@ async function saveArchiveCatalog({ catalog } = {}) {
   return { ok: true };
 }
 
+/**
+ * Persists the media-export resume session.
+ * @param {object} payload - Wrapper object containing the media-export session.
+ * @param {object|null} payload.session - Session state to persist.
+ * @returns {Promise<object>} Result object for the caller.
+ */
+async function saveMediaExportSession({ session } = {}) {
+  await writeStoredValue(MEDIA_EXPORT_SESSION_KEY, session || null);
+  return { ok: true };
+}
+
 async function saveDmPartnerCache({ cache } = {}) {
   await writeStoredValue(DM_PARTNER_CACHE_KEY, cache || null);
   return { ok: true };
@@ -3634,6 +5446,15 @@ async function clearArchiveSession() {
 
 async function clearArchiveCatalog() {
   await writeStoredValue(ARCHIVE_CATALOG_KEY, null);
+  return { ok: true };
+}
+
+/**
+ * Clears the persisted media-export resume session.
+ * @returns {Promise<object>} Result object for the caller.
+ */
+async function clearMediaExportSession() {
+  await writeStoredValue(MEDIA_EXPORT_SESSION_KEY, null);
   return { ok: true };
 }
 
@@ -3736,6 +5557,21 @@ function setArchiveRunControl({ runId, action } = {}) {
     current.state = "cancelled";
   }
   archiveRunControls.set(runId, current);
+  return { ok: true, state: current.state };
+}
+
+function setSearchRunControl({ runId, action } = {}) {
+  if (!runId) {
+    return { ok: false };
+  }
+
+  const current = searchRunControls.get(runId) || { state: "running" };
+  if (action === "cancel") {
+    current.state = "cancelled";
+  } else {
+    current.state = "running";
+  }
+  searchRunControls.set(runId, current);
   return { ok: true, state: current.state };
 }
 
@@ -4335,6 +6171,14 @@ async function scanAccountMediaExport({ actor = "", filters = {}, includeImages 
   };
 }
 
+/**
+ * Downloads one media asset for the archive export and emits keepalive progress
+ * while the network request is still running.
+ * @param {object} payload - Worker payload for the media download.
+ * @param {object} payload.item - Media descriptor returned by the scan step.
+ * @param {Function} notifyProgress - Callback used to notify the app about progress.
+ * @returns {Promise<object>} Normalized media file descriptor with bytes.
+ */
 async function downloadAccountMediaAsset({ item } = {}, notifyProgress = () => {}) {
   const auth = await ensureSession();
   if (!item || typeof item !== "object") {
@@ -4349,16 +6193,65 @@ async function downloadAccountMediaAsset({ item } = {}, notifyProgress = () => {
     throw new Error("Medienquelle ist unvollstaendig.");
   }
 
-  notifyProgress({
-    step: `${item.kind === "video" ? "Video" : (item.kind === "other" ? "Asset" : "Bild")} wird geladen`,
-    detail: String(item.postUri || "").trim(),
-  });
+  /**
+   * Builds progress payloads for long-running media downloads.
+   * @param {boolean} isHeartbeat - True when the payload is only a keepalive tick.
+   * @returns {object} Progress payload for the app.
+   */
+  function buildMediaDownloadProgress(isHeartbeat = false) {
+    let mediaLabel = "Bild";
+    if (item.kind === "video") {
+      mediaLabel = "Video";
+    } else if (item.kind === "other") {
+      mediaLabel = "Asset";
+    }
 
+    let detail = String(item.postUri || "").trim();
+    if (isHeartbeat) {
+      if (detail) {
+        detail = `${detail} · Verbindung aktiv`;
+      } else {
+        detail = "Verbindung aktiv";
+      }
+    }
+
+    return {
+      step: `${mediaLabel} wird geladen`,
+      detail,
+    };
+  }
+
+  /**
+   * Emits regular keepalive progress updates until the current asset finished loading.
+   * @returns {Function} Cleanup function that stops the heartbeat timer.
+   */
+  function startMediaDownloadHeartbeat() {
+    const timerId = setInterval(() => {
+      notifyProgress(buildMediaDownloadProgress(true));
+    }, MEDIA_EXPORT_HEARTBEAT_MS);
+    return () => {
+      clearInterval(timerId);
+    };
+  }
+
+  notifyProgress(buildMediaDownloadProgress(false));
+
+  const stopHeartbeat = startMediaDownloadHeartbeat();
   let blob = null;
-  if (cid) {
-    blob = await downloadBlobForDid(auth, authorDid, cid, new Map());
-  } else if (remoteUrl) {
-    blob = await downloadRemoteAssetViaBlob(auth, remoteUrl, authorDid, new Map());
+  try {
+    if (cid) {
+      blob = await withThreadExplorerMediaHydrationTimeout(
+        downloadBlobForDid(auth, authorDid, cid, new Map()),
+        MEDIA_EXPORT_ITEM_DOWNLOAD_TIMEOUT_MS,
+      );
+    } else if (remoteUrl) {
+      blob = await withThreadExplorerMediaHydrationTimeout(
+        downloadRemoteAssetViaBlob(auth, remoteUrl, authorDid, new Map()),
+        MEDIA_EXPORT_ITEM_DOWNLOAD_TIMEOUT_MS,
+      );
+    }
+  } finally {
+    stopHeartbeat();
   }
 
   if (!blob?.bytes?.length) {

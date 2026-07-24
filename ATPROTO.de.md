@@ -32,6 +32,7 @@ Der groesste Teil des AT-Protocol-Verkehrs in Threadline ist normales XRPC:
   - `com.atproto.sync.getBlob`
 - Bluesky-App-Views
   - `app.bsky.actor.getProfile`
+  - `app.bsky.feed.searchPosts`
   - `app.bsky.feed.getAuthorFeed`
   - `app.bsky.feed.getPosts`
   - `app.bsky.feed.getPostThread`
@@ -149,6 +150,8 @@ Die Workspaces greifen unterschiedlich auf dieselbe AT-Protocol-Schicht zu:
 
 - Composer
   - schreiblastig, nutzt Handle-Aufloesung, Blob-Upload, `createRecord` und gezielte Post-/Thread-Lookups
+- Suche
+  - kombiniert `searchPosts` fuer globale Suche und `getAuthorFeed` fuer lokale Durchlaeufe ueber Account-Posts oder Reposts
 - Archiv
   - seitenlastig, nutzt `listRecords`, `getPostThread`, `getPosts` und Blob-Downloads
 - Analyse
@@ -313,6 +316,15 @@ Dieser Abschnitt buendelt drei Dinge:
 | Was steckt drin | Eine Seite actor-aehnlicher Profileintraege, die gefolgte Konten darstellen |
 | Warum wichtig | Wird von Netzwerk- und Analyse-Workspace genutzt |
 
+### `app.bsky.feed.searchPosts`
+
+| Feld | Beschreibung |
+| --- | --- |
+| Parameter | Suchtext plus optional `author`, `tag`, `lang`, `domain`, `url`, `mentions`, `sort`, `since`, `until`, optional `limit`, optional `cursor` |
+| Rueckgabe | Suchergebnis-Seite |
+| Was steckt drin | `posts[]` als bereits aufgeloeste Post-Views plus optionaler naechster Cursor |
+| Warum wichtig | Rueckgrat der globalen Live-Suche im Suche-Workspace |
+
 ### `app.bsky.feed.getAuthorFeed`
 
 | Feld | Beschreibung |
@@ -320,7 +332,7 @@ Dieser Abschnitt buendelt drei Dinge:
 | Parameter | Actor, optional `limit`, optional `cursor` |
 | Rueckgabe | Author-Feed-Seite |
 | Was steckt drin | Feed-Eintraege mit Post-View, Autorendaten, Counts, Embeds und Cursor |
-| Warum wichtig | Zentrale Quelle fuer Analyse, Archivscans und letzte Posts |
+| Warum wichtig | Zentrale Quelle fuer Analyse, Archivscans, letzte Posts und Threadlines lokale Suchmodi fuer Account-Posts und Reposts |
 
 ### `app.bsky.feed.getPosts`
 

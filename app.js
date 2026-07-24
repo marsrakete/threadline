@@ -59,20 +59,25 @@ const THREAD_EXPLORER_ORIENTATION_HORIZONTAL = "horizontal";
 const THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION = 8192;
 const THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS = 24000000;
 const THREAD_EXPLORER_SNAPSHOT_TILE_SIZE = 2048;
+const THREAD_EXPLORER_SNAPSHOT_MEDIA_WARNING_THRESHOLD = 100;
 const NETWORK_STAGE_SHAPE_STORAGE_KEY = "threadline:network-stage-shape";
 const NETWORK_STAGE_SHAPE_ROUND = "round";
 const NETWORK_STAGE_SHAPE_SQUIRCLE = "squircle";
 const APP_SHARE_TITLE = "Threadline";
 const APP_SHARE_URL = "https://marsrakete.github.io/threadline/";
+const LINK_CARD_PROVIDER_NONE = "none";
+const LINK_CARD_PROVIDER_MICROLINK = "microlink";
+const LINK_CARD_PROVIDER_PROXY = "proxy";
+const MICROLINK_DAILY_LIMIT = 25;
 const DEFAULT_AVATAR_SVG = '<svg width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="none" xmlns="http://www.w3.org/2000/svg" data-testid="userAvatarFallback"><circle cx="12" cy="12" r="12" fill="#0070ff"></circle><circle cx="12" cy="9.5" r="3.5" fill="#fff"></circle><path stroke-linecap="round" stroke-linejoin="round" fill="#fff" d="M 12.058 22.784 C 9.422 22.784 7.007 21.836 5.137 20.262 C 5.667 17.988 8.534 16.25 11.99 16.25 C 15.494 16.25 18.391 18.036 18.864 20.357 C 17.01 21.874 14.64 22.784 12.058 22.784 Z"></path></svg>';
 const DEFAULT_AVATAR_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(DEFAULT_AVATAR_SVG)}`;
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.223",
-  cacheVersion: "v242",
-  label: "Refactor innerHTML to DOM templates",
+  appVersion: "0.4.262",
+  cacheVersion: "v281",
+  label: "Add search workspace phase 1",
 });
 
 /**
@@ -289,6 +294,8 @@ const networkButton = document.querySelector("#network-button");
 const networkLaunchNote = document.querySelector("#network-launch-note");
 const threadExplorerButton = document.querySelector("#thread-explorer-button");
 const threadExplorerLaunchNote = document.querySelector("#thread-explorer-launch-note");
+const searchButton = document.querySelector("#search-button");
+const searchLaunchNote = document.querySelector("#search-launch-note");
 const analysisButton = document.querySelector("#analysis-button");
 const analysisLaunchNote = document.querySelector("#analysis-launch-note");
 const dmLaunchPanel = document.querySelector(".dm-launch-panel");
@@ -315,11 +322,19 @@ const postEditCheckCurrent = document.querySelector("#post-edit-check-current");
 const linkCardEndpointInput = document.querySelector("#link-card-endpoint-input");
 const linkCardSecretInput = document.querySelector("#link-card-secret-input");
 const linkCardSettingsStatus = document.querySelector("#link-card-settings-status");
+const linkCardProviderNoneInput = document.querySelector("#link-card-provider-none");
+const linkCardProviderMicrolinkInput = document.querySelector("#link-card-provider-microlink");
+const linkCardProviderProxyInput = document.querySelector("#link-card-provider-proxy");
+const linkCardProviderNoneWrap = document.querySelector("#link-card-provider-none-wrap");
+const linkCardProviderMicrolinkWrap = document.querySelector("#link-card-provider-microlink-wrap");
+const linkCardProviderProxyWrap = document.querySelector("#link-card-provider-proxy-wrap");
+const linkCardProviderNote = document.querySelector("#link-card-provider-note");
 const linkCardDialog = document.querySelector("#link-card-dialog");
 const linkCardCloseTop = document.querySelector("#link-card-close-top");
 const linkCardCancelButton = document.querySelector("#link-card-cancel-button");
 const linkCardCreateButton = document.querySelector("#link-card-create-button");
 const linkCardUrlNode = document.querySelector("#link-card-url");
+const linkCardProviderState = document.querySelector("#link-card-provider-state");
 const linkCardWarning = document.querySelector("#link-card-warning");
 const linkCardStatus = document.querySelector("#link-card-status");
 const helpDialog = document.querySelector("#help-dialog");
@@ -346,6 +361,8 @@ const progressTitle = document.querySelector("#progress-title");
 const progressMessage = document.querySelector("#progress-message");
 const errorTitle = document.querySelector("#error-title");
 const errorMessage = document.querySelector("#error-message");
+const errorLinkWrap = document.querySelector("#error-link-wrap");
+const errorLink = document.querySelector("#error-link");
 const helpStatus = document.querySelector("#help-status");
 const helpContent = document.querySelector("#help-content");
 const tipText = document.querySelector("#tip-text");
@@ -458,15 +475,20 @@ const threadIntroToggle = document.querySelector("#thread-intro-toggle");
 const postSettingsButton = document.querySelector("#post-settings-button");
 const postLanguagesSummary = document.querySelector("#post-languages-summary");
 const postLanguagesDialog = document.querySelector("#post-languages-dialog");
+const postLanguagesDialogEyebrow = document.querySelector("#post-languages-dialog-eyebrow");
+const postLanguagesDialogTitle = document.querySelector("#post-languages-dialog-title");
+const postLanguagesDialogDescription = document.querySelector("#post-languages-dialog-description");
 const postLanguagesCloseTop = document.querySelector("#post-languages-close-top");
 const postLanguagesCloseButton = document.querySelector("#post-languages-close-button");
 const postLanguagesSearch = document.querySelector("#post-languages-search");
+const postLanguagesSettingsList = document.querySelector("#post-languages-settings-list");
 const postLanguagesSelectionNote = document.querySelector("#post-languages-selection-note");
 const postLanguagesList = document.querySelector("#post-languages-list");
 const postLanguagesDisclosure = document.querySelector("#post-languages-disclosure");
 const postLanguagesDisclosureMeta = document.querySelector("#post-languages-disclosure-meta");
 const postInteractionDisclosure = document.querySelector("#post-interaction-disclosure");
 const postInteractionDisclosureMeta = document.querySelector("#post-interaction-disclosure-meta");
+const searchLanguageDialogNote = document.querySelector("#search-language-dialog-note");
 const replyModeEveryoneInput = document.querySelector("#reply-mode-everyone");
 const replyModeNobodyInput = document.querySelector("#reply-mode-nobody");
 const replyModeCustomInput = document.querySelector("#reply-mode-custom");
@@ -481,14 +503,61 @@ const composerWorkspace = document.querySelector("#composer-workspace");
 const archiveWorkspace = document.querySelector("#archive-workspace");
 const networkWorkspace = document.querySelector("#network-workspace");
 const threadExplorerWorkspace = document.querySelector("#thread-explorer-workspace");
+const searchWorkspace = document.querySelector("#search-workspace");
 const analysisWorkspace = document.querySelector("#analysis-workspace");
 const dmWorkspace = document.querySelector("#dm-workspace");
+const searchModeSelect = document.querySelector("#search-mode-select");
+const searchModeNote = document.querySelector("#search-mode-note");
+const searchUrlInput = document.querySelector("#search-url-input");
+const searchUrlStatus = document.querySelector("#search-url-status");
+const searchQueryField = document.querySelector("#search-query-field");
+const searchQueryLabel = document.querySelector("#search-query-label");
+const searchQueryInput = document.querySelector("#search-query-input");
+const searchActorField = document.querySelector("#search-actor-field");
+const searchActorLabel = document.querySelector("#search-actor-label");
+const searchActorInput = document.querySelector("#search-actor-input");
+const searchUseOwnAccountButton = document.querySelector("#search-use-own-account-button");
+const searchSummary = document.querySelector("#search-summary");
+const searchTagsField = document.querySelector("#search-tags-field");
+const searchTagsLabel = document.querySelector("#search-tags-label");
+const searchHashtagButton = document.querySelector("#search-hashtag-button");
+const searchTagMatchSelect = document.querySelector("#search-tag-match-select");
+const searchHashtagSummary = document.querySelector("#search-hashtag-summary");
+const searchMediaSelect = document.querySelector("#search-media-select");
+const searchPostTypeSelect = document.querySelector("#search-post-type-select");
+const searchSortField = document.querySelector("#search-sort-field");
+const searchSortSelect = document.querySelector("#search-sort-select");
+const searchExcludeTextInput = document.querySelector("#search-exclude-text-input");
+const searchMentionsInput = document.querySelector("#search-mentions-input");
+const searchLanguageButton = document.querySelector("#search-language-button");
+const searchLanguageSummary = document.querySelector("#search-language-summary");
+const searchDomainInput = document.querySelector("#search-domain-input");
+const searchTargetUrlInput = document.querySelector("#search-target-url-input");
+const searchSinceInput = document.querySelector("#search-since-input");
+const searchUntilInput = document.querySelector("#search-until-input");
+const searchStatus = document.querySelector("#search-status");
+const searchRunButton = document.querySelector("#search-run-button");
+const searchMoreButton = document.querySelector("#search-more-button");
+const searchCancelButton = document.querySelector("#search-cancel-button");
+const searchSaveButton = document.querySelector("#search-save-button");
+const searchSavedButton = document.querySelector("#search-saved-button");
+const searchClearButton = document.querySelector("#search-clear-button");
+const searchCopyUrlButton = document.querySelector("#search-copy-url-button");
+const searchResultsList = document.querySelector("#search-results-list");
 const threadExplorerUrlButton = document.querySelector("#thread-explorer-url-button");
 const threadExplorerSearchesButton = document.querySelector("#thread-explorer-searches-button");
 const threadExplorerRefreshButton = document.querySelector("#thread-explorer-refresh-button");
-const threadExplorerFollowsButton = document.querySelector("#thread-explorer-follows-button");
-const threadExplorerMutualsButton = document.querySelector("#thread-explorer-mutuals-button");
+const threadExplorerSourceSelect = document.querySelector("#thread-explorer-source-select");
 const threadExplorerFeedSelect = document.querySelector("#thread-explorer-feed-select");
+const threadExplorerActorFocus = document.querySelector("#thread-explorer-actor-focus");
+const threadExplorerActorFocusAvatar = document.querySelector("#thread-explorer-actor-focus-avatar");
+const threadExplorerActorFocusTitle = document.querySelector("#thread-explorer-actor-focus-title");
+const threadExplorerActorFocusHandle = document.querySelector("#thread-explorer-actor-focus-handle");
+const threadExplorerActorFocusCloseButton = document.querySelector("#thread-explorer-actor-focus-close");
+const threadExplorerActorModeSelect = document.querySelector("#thread-explorer-actor-mode-select");
+const threadExplorerActorFocusStatus = document.querySelector("#thread-explorer-actor-focus-status");
+const threadExplorerActorFeedList = document.querySelector("#thread-explorer-actor-feed-list");
+const threadExplorerActorMoreButton = document.querySelector("#thread-explorer-actor-more-button");
 const threadExplorerFeedStatus = document.querySelector("#thread-explorer-feed-status");
 const threadExplorerFeedList = document.querySelector("#thread-explorer-feed-list");
 const threadExplorerThreadTitle = document.querySelector("#thread-explorer-thread-title");
@@ -525,11 +594,19 @@ const threadExplorerFavoritesCloseButton = document.querySelector("#thread-explo
 const threadExplorerFavoritesStatus = document.querySelector("#thread-explorer-favorites-status");
 const threadExplorerFavoritesList = document.querySelector("#thread-explorer-favorites-list");
 const savedSearchesDialog = document.querySelector("#saved-searches-dialog");
+const savedSearchesTitle = document.querySelector("#saved-searches-title");
 const savedSearchesCloseButton = document.querySelector("#saved-searches-close-button");
+const savedSearchesNote = document.querySelector("#saved-searches-note");
+const savedSearchUrlField = document.querySelector("#saved-search-url-field");
 const savedSearchUrlInput = document.querySelector("#saved-search-url-input");
+const savedSearchesActions = document.querySelector("#saved-searches-actions");
 const savedSearchAddButton = document.querySelector("#saved-search-add-button");
 const savedSearchesStatus = document.querySelector("#saved-searches-status");
 const savedSearchesList = document.querySelector("#saved-searches-list");
+const searchHashtagDialog = document.querySelector("#search-hashtag-dialog");
+const searchHashtagCloseTop = document.querySelector("#search-hashtag-close-top");
+const searchHashtagCloseButton = document.querySelector("#search-hashtag-close-button");
+const searchHashtagDialogSlot = document.querySelector("#search-hashtag-dialog-slot");
 const threadExplorerReactionsDialog = document.querySelector("#thread-explorer-reactions-dialog");
 const threadExplorerReactionsCloseButton = document.querySelector("#thread-explorer-reactions-close-button");
 const threadExplorerReactionsTitle = document.querySelector("#thread-explorer-reactions-title");
@@ -548,6 +625,13 @@ const threadExplorerGalleryImage = document.querySelector("#thread-explorer-gall
 const threadExplorerGalleryCaption = document.querySelector("#thread-explorer-gallery-caption");
 const threadExplorerGalleryThumbs = document.querySelector("#thread-explorer-gallery-thumbs");
 const threadExplorerGalleryFullscreenButton = document.querySelector("#thread-explorer-gallery-fullscreen-button");
+const threadExplorerSnapshotProgressDialog = document.querySelector("#thread-explorer-snapshot-progress-dialog");
+const threadExplorerSnapshotProgressTitle = document.querySelector("#thread-explorer-snapshot-progress-title");
+const threadExplorerSnapshotProgressStep = document.querySelector("#thread-explorer-snapshot-progress-step");
+const threadExplorerSnapshotProgressBar = document.querySelector("#thread-explorer-snapshot-progress-bar");
+const threadExplorerSnapshotProgressFill = document.querySelector("#thread-explorer-snapshot-progress-fill");
+const threadExplorerSnapshotProgressDetail = document.querySelector("#thread-explorer-snapshot-progress-detail");
+const threadExplorerSnapshotCancelButton = document.querySelector("#thread-explorer-snapshot-cancel-button");
 const archiveScopeSelect = document.querySelector("#archive-scope-select");
 const archiveSourceInput = document.querySelector("#archive-source-input");
 const archiveSourceStatus = document.querySelector("#archive-source-status");
@@ -732,6 +816,7 @@ let sidebarWidthDesktop = DEFAULT_SIDEBAR_WIDTH_DESKTOP;
 let composerWidthDesktop = DEFAULT_COMPOSER_WIDTH_DESKTOP;
 let hashtags = [];
 let selectedHashtags = [];
+let searchSelectedHashtags = [];
 let hashtagPlacement = "first";
 let archiveSelectedHashtags = [];
 let archiveHashtagScope = "thread";
@@ -742,6 +827,9 @@ let archiveSourceValidationTimer = null;
 let postingHistory = [];
 let currentComposedText = "";
 let selectedPostLanguages = [];
+let searchSelectedLanguages = [];
+const MAX_SEARCH_LANGUAGES = 3;
+let activeLanguageDialogContext = "composer";
 let appendThreadIntro = false;
 let appendThreadEmoji = false;
 let addMarkerSpacing = false;
@@ -768,6 +856,11 @@ let segmentLinkCards = [];
 let segmentImageDragState = null;
 let pendingLinkCardSegmentIndex = -1;
 let pendingLinkCardUrl = "";
+let linkCardProvider = "none";
+let linkCardMicrolinkUsage = {
+  date: "",
+  count: 0,
+};
 let editingAltTarget = null;
 let editingImageTarget = null;
 let imageEditorSourceBitmap = null;
@@ -780,6 +873,13 @@ let confirmResolver = null;
 let ignoreNextConfirmClose = false;
 let imageValidationToken = 0;
 let currentWorkspace = "composer";
+let searchResults = [];
+let searchCursor = "";
+let activeSearchRunId = "";
+let searchCancelPending = false;
+let searchLoading = false;
+let searchUrlImportTimer = 0;
+let searchPreferencesPersistTimer = 0;
 let archiveCatalog = null;
 let archiveJobState = null;
 let dmCatalog = null;
@@ -800,6 +900,8 @@ let dmAccessUnlocked = false;
 let archiveSession = null;
 let activeArchiveRunId = null;
 let activeArchiveRunState = "idle";
+let activeMediaExportAbortController = null;
+let activeMediaExportState = "idle";
 let archivePreviewState = null;
 let archiveLastCheckpoint = "";
 let archiveLastProgressAt = "";
@@ -852,6 +954,13 @@ let threadExplorerFeedSources = [];
 let threadExplorerFeedSourcesLoaded = false;
 let threadExplorerFeedSourcesLoading = false;
 let threadExplorerFeedSourcesAccountDid = "";
+let threadExplorerActorFocusActor = null;
+let threadExplorerActorFocusMode = "posts";
+let threadExplorerActorFocusItems = [];
+let threadExplorerActorFocusCursor = "";
+let threadExplorerActorFocusHasMore = false;
+let threadExplorerActorFocusLoading = false;
+let threadExplorerActorFocusError = "";
 let threadExplorerItems = [];
 let threadExplorerCursor = "";
 let threadExplorerHasMore = true;
@@ -872,6 +981,13 @@ let savedSearchDialogContext = "threadExplorer";
 let threadExplorerReactionsLoading = false;
 let threadExplorerGalleryImages = [];
 let threadExplorerGalleryIndex = 0;
+let threadExplorerSnapshotMediaDataUris = new Map();
+let threadExplorerRenderedMediaCache = new Map();
+let threadExplorerMediaCacheGeneration = 0;
+let threadExplorerMediaCachePrewarmController = null;
+let threadExplorerCardObserver = null;
+let threadExplorerForceHydrateCards = false;
+let threadExplorerSnapshotAbortController = null;
 let analysisLoading = false;
 let analysisStatusLine = "";
 let analysisAccountDataA = null;
@@ -977,16 +1093,63 @@ async function sendToServiceWorker(type, payload = {}, options = {}) {
     const channel = new MessageChannel();
     const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 15000);
     let timeoutId = null;
+    let settled = false;
+    const abortSignal = options.signal || null;
+    let handleAbort = null;
+    const cleanup = () => {
+      settled = true;
+      window.clearTimeout(timeoutId);
+      channel.port1.onmessage = null;
+      channel.port1.close();
+      if (abortSignal && handleAbort) {
+        abortSignal.removeEventListener("abort", handleAbort);
+      }
+    };
+    const rejectOnce = (error) => {
+      if (settled) {
+        return;
+      }
+      cleanup();
+      reject(error);
+    };
+    const resolveOnce = (value) => {
+      if (settled) {
+        return;
+      }
+      cleanup();
+      resolve(value);
+    };
+    const createAbortError = () => {
+      if (typeof options.createAbortError === "function") {
+        return options.createAbortError();
+      }
+      return createThreadExplorerSnapshotAbortError();
+    };
     const scheduleTimeout = () => {
       window.clearTimeout(timeoutId);
       timeoutId = window.setTimeout(() => {
-        reject(new Error(t("statusSwTimeout")));
+        rejectOnce(new Error(t("statusSwTimeout")));
       }, timeoutMs);
     };
+
+    if (abortSignal?.aborted) {
+      rejectOnce(createAbortError());
+      return;
+    }
+
+    handleAbort = () => {
+      rejectOnce(createAbortError());
+    };
+    if (abortSignal) {
+      abortSignal.addEventListener("abort", handleAbort, { once: true });
+    }
 
     scheduleTimeout();
 
     channel.port1.onmessage = (event) => {
+      if (settled) {
+        return;
+      }
       if (event.data?.progress) {
         scheduleTimeout();
         options.onProgress?.(event.data.progress);
@@ -996,7 +1159,7 @@ async function sendToServiceWorker(type, payload = {}, options = {}) {
       window.clearTimeout(timeoutId);
 
       if (event.data?.ok) {
-        resolve(event.data.result);
+        resolveOnce(event.data.result);
         return;
       }
 
@@ -1019,7 +1182,7 @@ async function sendToServiceWorker(type, payload = {}, options = {}) {
         : event.data?.error || t("statusSwUnknownError");
       const error = new Error(errorMessage);
       error.details = event.data?.details || null;
-      reject(error);
+      rejectOnce(error);
     };
 
     worker.postMessage({ type, payload }, [channel.port2]);
@@ -2391,6 +2554,10 @@ function updateAuthButtons() {
   publishButton.textContent = getPublishButtonLabel();
   composerButton.disabled = false;
   archiveButton.disabled = !isAuthenticated;
+  searchButton.disabled = !isAuthenticated;
+  if (searchUseOwnAccountButton) {
+    searchUseOwnAccountButton.disabled = !isAuthenticated;
+  }
   networkButton.disabled = !isAuthenticated;
   threadExplorerButton.disabled = !isAuthenticated;
   analysisButton.disabled = !isAuthenticated;
@@ -2398,6 +2565,7 @@ function updateAuthButtons() {
   [
     [composerButton, currentWorkspace === "composer"],
     [archiveButton, currentWorkspace === "archive"],
+    [searchButton, currentWorkspace === "search"],
     [networkButton, currentWorkspace === "network"],
     [threadExplorerButton, currentWorkspace === "threadExplorer"],
     [analysisButton, currentWorkspace === "analysis"],
@@ -2412,6 +2580,7 @@ function updateAuthButtons() {
   });
   composerLaunchNote.textContent = t("composerLaunchNote");
   archiveLaunchNote.textContent = isAuthenticated ? t("archiveLaunchEnabledNote") : t("archiveLaunchDisabledNote");
+  searchLaunchNote.textContent = isAuthenticated ? t("searchLaunchEnabledNote") : t("searchLaunchDisabledNote");
   networkLaunchNote.textContent = isAuthenticated ? t("networkLaunchEnabledNote") : t("networkLaunchDisabledNote");
   if (isAuthenticated) {
     threadExplorerLaunchNote.textContent = t("threadExplorerLaunchEnabledNote");
@@ -2430,7 +2599,7 @@ function applyDisconnectedState(showStatus = true) {
   authAccountDid = "";
   resetNetworkState();
   updateAuthButtons();
-  if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network" || currentWorkspace === "threadExplorer" || currentWorkspace === "analysis") {
+  if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network" || currentWorkspace === "threadExplorer" || currentWorkspace === "analysis" || currentWorkspace === "search") {
     showComposerWorkspace({ persist: false });
   }
 
@@ -2441,6 +2610,14 @@ function applyDisconnectedState(showStatus = true) {
 
 function isArchiveHashtagContext() {
   return currentWorkspace === "archive";
+}
+
+/**
+ * Returns whether the shared hashtag manager currently belongs to the search workspace.
+ * @returns {boolean} True when the active workspace is the search workspace.
+ */
+function isSearchHashtagContext() {
+  return currentWorkspace === "search";
 }
 
 function setElementVisibility(element, isVisible) {
@@ -2500,6 +2677,9 @@ function normalizeThreadExplorerSource(source) {
   if (normalizedSource === "mutuals") {
     return "mutuals";
   }
+  if (normalizedSource === "followers") {
+    return "followers";
+  }
   if (normalizedSource.startsWith("feed:")) {
     const feedUri = normalizedSource.slice(5).trim();
     if (isThreadExplorerFeedUri(feedUri)) {
@@ -2513,6 +2693,36 @@ function normalizeThreadExplorerSource(source) {
     }
   }
   return "follows";
+}
+
+/**
+ * Returns a normalized Actor-Fokus mode for the Thread Explorer.
+ * @param {string} mode - Raw mode name.
+ * @returns {string} One of posts, replies, or all.
+ */
+function normalizeThreadExplorerActorFocusMode(mode) {
+  const normalizedMode = String(mode || "").trim();
+  if (normalizedMode === "replies") {
+    return "replies";
+  }
+  if (normalizedMode === "all") {
+    return "all";
+  }
+  return "posts";
+}
+
+/**
+ * Returns the stable actor id used for Thread Explorer actor focus requests.
+ * @param {object} actor - Normalized Thread Explorer actor.
+ * @returns {string} Actor DID, handle, or an empty string.
+ */
+function getThreadExplorerActorFocusId(actor = {}) {
+  const did = String(actor?.did || "").trim();
+  if (did) {
+    return did;
+  }
+
+  return String(actor?.handle || "").trim();
 }
 
 /**
@@ -2771,6 +2981,10 @@ function restorePreferredWorkspaceIfPossible() {
     showArchiveWorkspace();
     return;
   }
+  if (preferred === "search") {
+    showSearchWorkspace();
+    return;
+  }
   if (preferred === "network") {
     showNetworkWorkspace();
     return;
@@ -2901,6 +3115,18 @@ function applyHashtagPaneContext() {
     if (hashtagsTitle) {
       hashtagsTitle.textContent = t("archiveHashtagTitle");
     }
+  } else if (isSearchHashtagContext()) {
+    searchHashtagDialogSlot?.replaceChildren(hashtagsPane);
+    hashtagsPane.classList.remove("is-archive-context");
+    setElementVisibility(hashtagPlacementLabel, false);
+    setElementVisibility(archiveHashtagScopeWrap, false);
+    setElementVisibility(archiveHashtagNote, false);
+    if (hashtagsEyebrow) {
+      hashtagsEyebrow.textContent = t("searchHashtagEyebrow");
+    }
+    if (hashtagsTitle) {
+      hashtagsTitle.textContent = t("searchHashtagTitle");
+    }
   } else {
     composerColumn?.appendChild(hashtagsPane);
     hashtagsPane.classList.remove("is-archive-context");
@@ -2915,7 +3141,42 @@ function applyHashtagPaneContext() {
     }
   }
 
-  renderHashtagCloud();
+  updateComposerLockState();
+}
+
+/**
+ * Builds the compact hashtag summary for the search workspace.
+ * @returns {string} Localized one-line summary for the selected search hashtags.
+ */
+function buildSearchHashtagSummary() {
+  const selectedTags = normalizeSelectedHashtagEntries(searchSelectedHashtags, hashtags).map((tag) => {
+    return formatHashtag(getDisplayHashtag(tag));
+  });
+  if (selectedTags.length === 0) {
+    return t("searchHashtagSummaryEmpty");
+  }
+  let matchModeLabel = t("searchTagMatchAll");
+  if (String(searchTagMatchSelect?.value || "").trim() === "any") {
+    matchModeLabel = t("searchTagMatchAny");
+  }
+  return t("searchHashtagSummarySome", {
+    count: formatCount(selectedTags.length),
+    tags: selectedTags.join(", "),
+    mode: matchModeLabel,
+  });
+}
+
+/**
+ * Renders the compact hashtag summary and button state in the search workspace.
+ * @returns {void}
+ */
+function renderSearchHashtagSummary() {
+  if (searchHashtagSummary) {
+    searchHashtagSummary.textContent = buildSearchHashtagSummary();
+  }
+  if (searchHashtagButton) {
+    searchHashtagButton.classList.toggle("is-active", searchSelectedHashtags.length > 0);
+  }
 }
 
 function createArchiveCardHeading({ eyebrowKey, eyebrowText, titleKey, titleText, helpTopic = "" } = {}) {
@@ -3140,6 +3401,1516 @@ function ensureArchiveWorkspaceLayout() {
   archiveGrid.append(progressCard, scopeCard, loadCard, pdfCard, exportCard, toolsHeading, threadCard, mediaCard, specCard);
 }
 
+/**
+ * Returns the normalized active search mode from the workspace controls.
+ * @returns {string} One of `network`, `posts`, `reposts`, or `hashtags`.
+ */
+function getSearchMode() {
+  const mode = String(searchModeSelect?.value || "network").trim();
+  if (mode === "posts") {
+    return "posts";
+  }
+  if (mode === "reposts") {
+    return "reposts";
+  }
+  if (mode === "hashtags") {
+    return "hashtags";
+  }
+  return "network";
+}
+
+/**
+ * Splits raw hashtag input into normalized tag names without leading hash signs.
+ * @param {string} value - Raw input from the hashtag field.
+ * @returns {string[]} Normalized hashtag names.
+ */
+function parseSearchTags(value) {
+  return String(value || "")
+    .split(/[\s,;]+/)
+    .map((entry) => {
+      return String(entry || "").trim().replace(/^#+/, "");
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Updates labels, field visibility, and helper text for the active search mode.
+ * @returns {void}
+ */
+function updateSearchModeUi() {
+  const mode = getSearchMode();
+  if (searchActorField) {
+    searchActorField.hidden = false;
+  }
+  if (searchTagsField) {
+    searchTagsField.hidden = false;
+  }
+  if (searchSortField) {
+    searchSortField.hidden = false;
+  }
+  if (searchModeNote) {
+    searchModeNote.textContent = t("searchModeNoteNetwork");
+  }
+
+  if (mode === "posts") {
+    if (searchSortField) {
+      searchSortField.hidden = true;
+    }
+    if (searchModeNote) {
+      searchModeNote.textContent = t("searchModeNotePosts");
+    }
+    return;
+  }
+
+  if (mode === "reposts") {
+    if (searchSortField) {
+      searchSortField.hidden = true;
+    }
+    if (searchModeNote) {
+      searchModeNote.textContent = t("searchModeNoteReposts");
+    }
+    return;
+  }
+
+  if (mode === "hashtags") {
+    if (searchModeNote) {
+      searchModeNote.textContent = t("searchModeNoteHashtags");
+    }
+  }
+}
+
+/**
+ * Collects the current search controls into one request payload for the service worker.
+ * @returns {object} Search request payload.
+ */
+function collectSearchRequestPayload() {
+  const mode = getSearchMode();
+  let actor = String(searchActorInput?.value || "").trim();
+  if (!actor && (mode === "posts" || mode === "reposts")) {
+    actor = String(authAccount || "").trim();
+  }
+  searchSelectedLanguages = normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
+  const selectedSearchTags = normalizeSelectedHashtagEntries(searchSelectedHashtags, hashtags).map((tag) => {
+    return getDisplayHashtag(tag);
+  });
+  return {
+    mode,
+    query: String(searchQueryInput?.value || "").trim(),
+    actor,
+    tags: selectedSearchTags,
+    tagMatchMode: String(searchTagMatchSelect?.value || "all").trim(),
+    mediaFilter: String(searchMediaSelect?.value || "all").trim(),
+    postTypeFilter: String(searchPostTypeSelect?.value || "all").trim(),
+    sort: String(searchSortSelect?.value || "latest").trim(),
+    excludeText: String(searchExcludeTextInput?.value || "").trim(),
+    mentions: String(searchMentionsInput?.value || "").trim(),
+    langs: [...searchSelectedLanguages],
+    lang: String(searchSelectedLanguages[0] || "").trim(),
+    domain: String(searchDomainInput?.value || "").trim(),
+    url: String(searchTargetUrlInput?.value || "").trim(),
+    since: String(searchSinceInput?.value || "").trim(),
+    until: String(searchUntilInput?.value || "").trim(),
+  };
+}
+
+/**
+ * Reads the current search form into a persistable preferences object.
+ * @returns {object} Search form state for reload-safe persistence.
+ */
+function getSearchPreferences() {
+  searchSelectedLanguages = normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
+  const selectedSearchTags = normalizeSelectedHashtagEntries(searchSelectedHashtags, hashtags).map((tag) => {
+    return getDisplayHashtag(tag);
+  });
+  return {
+    sourceUrl: String(searchUrlInput?.value || "").trim(),
+    mode: getSearchMode(),
+    query: String(searchQueryInput?.value || "").trim(),
+    actor: String(searchActorInput?.value || "").trim(),
+    tags: selectedSearchTags,
+    tagMatchMode: String(searchTagMatchSelect?.value || "all").trim(),
+    mediaFilter: String(searchMediaSelect?.value || "all").trim(),
+    postTypeFilter: String(searchPostTypeSelect?.value || "all").trim(),
+    sort: String(searchSortSelect?.value || "latest").trim(),
+    excludeText: String(searchExcludeTextInput?.value || "").trim(),
+    mentions: String(searchMentionsInput?.value || "").trim(),
+    langs: [...searchSelectedLanguages],
+    lang: String(searchSelectedLanguages[0] || "").trim(),
+    domain: String(searchDomainInput?.value || "").trim(),
+    url: String(searchTargetUrlInput?.value || "").trim(),
+    since: String(searchSinceInput?.value || "").trim(),
+    until: String(searchUntilInput?.value || "").trim(),
+  };
+}
+
+/**
+ * Applies stored search preferences back into the search form controls.
+ * @param {object} preferences - Persisted search form state.
+ * @returns {void}
+ */
+function applySearchPreferences(preferences = {}) {
+  if (searchUrlInput) {
+    searchUrlInput.value = String(preferences.sourceUrl || "").trim();
+  }
+  if (searchModeSelect) {
+    const mode = String(preferences.mode || "").trim();
+    if (mode === "posts" || mode === "reposts" || mode === "hashtags") {
+      searchModeSelect.value = mode;
+    } else {
+      searchModeSelect.value = "network";
+    }
+  }
+  if (searchQueryInput) {
+    searchQueryInput.value = String(preferences.query || "").trim();
+  }
+  if (searchActorInput) {
+    searchActorInput.value = String(preferences.actor || "").trim();
+  }
+  const importedTags = normalizeHashtagEntries(preferences.tags || []);
+  if (importedTags.length > 0) {
+    hashtags = normalizeHashtagEntries([...(hashtags || []), ...importedTags]);
+  }
+  searchSelectedHashtags = normalizeSelectedHashtagEntries(preferences.tags || [], hashtags);
+  if (searchTagMatchSelect) {
+    const tagMatchMode = String(preferences.tagMatchMode || "").trim();
+    if (tagMatchMode === "any") {
+      searchTagMatchSelect.value = "any";
+    } else {
+      searchTagMatchSelect.value = "all";
+    }
+  }
+  if (searchMediaSelect) {
+    searchMediaSelect.value = ["images", "videos", "none"].includes(String(preferences.mediaFilter || "").trim())
+      ? String(preferences.mediaFilter || "").trim()
+      : "all";
+  }
+  if (searchPostTypeSelect) {
+    const rawPostTypeFilter = String(preferences.postTypeFilter || "").trim();
+    if (rawPostTypeFilter === "posts") {
+      searchPostTypeSelect.value = "originals";
+    } else if (["originals", "replies", "quotes", "reposts", "non-reposts"].includes(rawPostTypeFilter)) {
+      searchPostTypeSelect.value = rawPostTypeFilter;
+    } else {
+      searchPostTypeSelect.value = "all";
+    }
+  }
+  if (searchSortSelect) {
+    if (String(preferences.sort || "").trim() === "top") {
+      searchSortSelect.value = "top";
+    } else {
+      searchSortSelect.value = "latest";
+    }
+  }
+  if (searchExcludeTextInput) {
+    searchExcludeTextInput.value = String(preferences.excludeText || "").trim();
+  }
+  if (searchMentionsInput) {
+    searchMentionsInput.value = String(preferences.mentions || "").trim();
+  }
+  const storedSearchLanguages = Array.isArray(preferences.langs) ? preferences.langs : [];
+  if (storedSearchLanguages.length > 0) {
+    searchSelectedLanguages = normalizePostLanguageTags(storedSearchLanguages, MAX_SEARCH_LANGUAGES);
+  } else {
+    searchSelectedLanguages = normalizePostLanguageTags(preferences.lang ? [preferences.lang] : [], MAX_SEARCH_LANGUAGES);
+  }
+  enforceSearchSortConstraints(false);
+  if (searchDomainInput) {
+    searchDomainInput.value = String(preferences.domain || "").trim();
+  }
+  if (searchTargetUrlInput) {
+    searchTargetUrlInput.value = String(preferences.url || "").trim();
+  }
+  if (searchSinceInput) {
+    searchSinceInput.value = String(preferences.since || "").trim();
+  }
+  if (searchUntilInput) {
+    searchUntilInput.value = String(preferences.until || "").trim();
+  }
+}
+
+/**
+ * Splits one shared Bluesky query string into positive text and excluded terms.
+ * @param {string} value - Raw `q` value from a shared search URL.
+ * @returns {{query: string, excludeText: string}} Positive query and excluded terms.
+ */
+function splitSharedSearchQuery(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return {
+      query: "",
+      excludeText: "",
+    };
+  }
+
+  const excludeValues = [];
+  const query = raw.replace(/(?:^|\s)-(?:"([^"]+)"|(\S+))/g, (match, quotedValue, plainValue) => {
+    const nextValue = String(quotedValue || plainValue || "").trim();
+    if (nextValue) {
+      excludeValues.push(nextValue);
+    }
+    return " ";
+  }).replace(/\s{2,}/g, " ").trim();
+
+  return {
+    query,
+    excludeText: excludeValues.join(", "),
+  };
+}
+
+/**
+ * Persists the current search form with a short debounce to avoid excessive writes.
+ * @returns {void}
+ */
+function scheduleSearchPreferencesPersist() {
+  if (!appStateHydrated) {
+    return;
+  }
+  if (searchPreferencesPersistTimer) {
+    window.clearTimeout(searchPreferencesPersistTimer);
+  }
+  searchPreferencesPersistTimer = window.setTimeout(() => {
+    searchPreferencesPersistTimer = 0;
+    void persistSettings();
+  }, 280);
+}
+
+/**
+ * Applies a shared Bluesky search URL to the search workspace controls.
+ * @param {string} sourceUrl - Shared `bsky.app/search` URL.
+ * @returns {boolean} True when the URL was parsed successfully.
+ */
+function applySearchUrlToForm(sourceUrl) {
+  const parsed = parseSavedSearchUrl(sourceUrl);
+  const params = parsed.params || {};
+  const importedTags = normalizeHashtagEntries(params.tag || []);
+  const splitQuery = splitSharedSearchQuery(params.q || "");
+
+  if (importedTags.length > 0) {
+    hashtags = normalizeHashtagEntries([...(hashtags || []), ...importedTags]);
+  }
+
+  if (searchUrlInput) {
+    searchUrlInput.value = parsed.sourceUrl;
+  }
+  if (searchModeSelect) {
+    if (Array.isArray(params.tag) && params.tag.length > 0) {
+      searchModeSelect.value = "hashtags";
+    } else {
+      searchModeSelect.value = "network";
+    }
+  }
+  if (searchQueryInput) {
+    searchQueryInput.value = splitQuery.query;
+  }
+  if (searchActorInput) {
+    searchActorInput.value = String(params.author || "").trim();
+  }
+  if (searchSortSelect) {
+    if (String(params.sort || "").trim() === "top") {
+      searchSortSelect.value = "top";
+    } else {
+      searchSortSelect.value = "latest";
+    }
+  }
+  if (searchExcludeTextInput) {
+    searchExcludeTextInput.value = splitQuery.excludeText;
+  }
+  if (searchMentionsInput) {
+    searchMentionsInput.value = String(params.mentions || "").trim();
+  }
+  searchSelectedLanguages = normalizePostLanguageTags(params.lang ? [params.lang] : [], MAX_SEARCH_LANGUAGES);
+  enforceSearchSortConstraints(false);
+  if (searchDomainInput) {
+    searchDomainInput.value = String(params.domain || "").trim();
+  }
+  if (searchTargetUrlInput) {
+    searchTargetUrlInput.value = String(params.url || "").trim();
+  }
+  if (searchSinceInput) {
+    searchSinceInput.value = String(params.since || "").trim();
+  }
+  if (searchUntilInput) {
+    searchUntilInput.value = String(params.until || "").trim();
+  }
+
+  searchSelectedHashtags = normalizeSelectedHashtagEntries(params.tag || [], hashtags);
+  updateSearchModeUi();
+  renderHashtagCloud();
+  renderSearchWorkspace();
+  if (searchUrlStatus) {
+    searchUrlStatus.textContent = t("searchUrlImported");
+  }
+  scheduleSearchPreferencesPersist();
+  return true;
+}
+
+/**
+ * Attempts to import a shared search URL from the dedicated input field.
+ * @returns {void}
+ */
+function importSearchUrlFromField() {
+  const rawValue = String(searchUrlInput?.value || "").trim();
+  if (!rawValue) {
+    if (searchUrlStatus) {
+      searchUrlStatus.textContent = "";
+    }
+    scheduleSearchPreferencesPersist();
+    return;
+  }
+
+  try {
+    applySearchUrlToForm(rawValue);
+  } catch (error) {
+    if (searchUrlStatus) {
+      searchUrlStatus.textContent = error?.message || t("searchUrlInvalid");
+    }
+  }
+}
+
+/**
+ * Schedules automatic import after a paste or manual edit in the search URL field.
+ * @returns {void}
+ */
+function scheduleSearchUrlImport() {
+  if (searchUrlImportTimer) {
+    window.clearTimeout(searchUrlImportTimer);
+  }
+  searchUrlImportTimer = window.setTimeout(() => {
+    searchUrlImportTimer = 0;
+    importSearchUrlFromField();
+  }, 30);
+}
+
+/**
+ * Wraps one search summary value in double quotes for clearer UI text.
+ * @param {string} value - Plain text value from the search form.
+ * @returns {string} Quoted display value.
+ */
+function quoteSearchSummaryValue(value = "") {
+  return `"${String(value || "").trim()}"`;
+}
+
+/**
+ * Splits one positive search query into quoted phrases or single terms.
+ * @param {string} value - Raw query text from the search form.
+ * @returns {string[]} Normalized search terms.
+ */
+function parseSearchQueryTerms(value = "") {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) {
+    return [];
+  }
+
+  const terms = [];
+  const matcher = /"([^"]+)"|(\S+)/g;
+  let match = matcher.exec(rawValue);
+  while (match) {
+    const nextValue = String(match[1] || match[2] || "").trim();
+    if (nextValue) {
+      terms.push(nextValue);
+    }
+    match = matcher.exec(rawValue);
+  }
+  return [...new Set(terms)];
+}
+
+/**
+ * Escapes one search token for safe regex usage.
+ * @param {string} value - Raw token text.
+ * @returns {string} Regex-safe token text.
+ */
+function escapeSearchHighlightRegex(value = "") {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Removes previously rendered search highlights from one element.
+ * @param {Element|null} element - Target element containing highlighted text.
+ * @returns {void}
+ */
+function clearSearchHighlights(element) {
+  if (!element) {
+    return;
+  }
+
+  element.querySelectorAll("mark[data-search-highlight='true']").forEach((mark) => {
+    const parent = mark.parentNode;
+    if (!parent) {
+      return;
+    }
+    parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
+    parent.normalize();
+  });
+}
+
+/**
+ * Highlights current search terms inside one rendered search result element.
+ * @param {Element|null} element - Element that should receive inline highlights.
+ * @param {string} query - Raw search query from the workspace.
+ * @returns {void}
+ */
+function highlightSearchQueryInElement(element, query = "") {
+  clearSearchHighlights(element);
+  if (!element) {
+    return;
+  }
+
+  const terms = parseSearchQueryTerms(query);
+  if (!terms.length) {
+    return;
+  }
+
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      const parentTag = node.parentElement?.tagName || "";
+      if (parentTag === "MARK" || parentTag === "SCRIPT" || parentTag === "STYLE") {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const textNodes = [];
+  while (walker.nextNode()) {
+    textNodes.push(walker.currentNode);
+  }
+
+  textNodes.forEach((node) => {
+    const source = node.nodeValue || "";
+    const matches = [];
+
+    terms.forEach((term) => {
+      const escapedTerm = escapeSearchHighlightRegex(term);
+      if (!escapedTerm) {
+        return;
+      }
+
+      const matcher = new RegExp(escapedTerm, "giu");
+
+      let match = matcher.exec(source);
+      while (match) {
+        const directMatch = String(match[0] || "");
+        const start = match.index;
+        const end = start + directMatch.length;
+        if (end > start) {
+          matches.push({
+            start,
+            end,
+            length: end - start,
+          });
+        }
+        match = matcher.exec(source);
+      }
+    });
+
+    if (!matches.length) {
+      return;
+    }
+
+    matches.sort((left, right) => {
+      if (left.start !== right.start) {
+        return left.start - right.start;
+      }
+      return right.length - left.length;
+    });
+
+    const filteredMatches = [];
+    let lastEnd = -1;
+    matches.forEach((entry) => {
+      if (entry.start < lastEnd) {
+        return;
+      }
+      filteredMatches.push(entry);
+      lastEnd = entry.end;
+    });
+
+    if (!filteredMatches.length) {
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    filteredMatches.forEach((entry) => {
+      if (entry.start > cursor) {
+        fragment.appendChild(document.createTextNode(source.slice(cursor, entry.start)));
+      }
+      const mark = document.createElement("mark");
+      mark.dataset.searchHighlight = "true";
+      mark.textContent = source.slice(entry.start, entry.end);
+      fragment.appendChild(mark);
+      cursor = entry.end;
+    });
+    if (cursor < source.length) {
+      fragment.appendChild(document.createTextNode(source.slice(cursor)));
+    }
+
+    node.parentNode?.replaceChild(fragment, node);
+  });
+}
+
+/**
+ * Builds the readable topic fragment for the live search summary.
+ * @param {object} payload - Normalized search request payload.
+ * @returns {string} Localized topic fragment, or an empty string.
+ */
+function buildSearchTopicText(payload = {}) {
+  const query = String(payload?.query || "").trim();
+  const tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
+  const tagMatchMode = String(payload?.tagMatchMode || "all").trim();
+  const formattedTags = tags.map((tag) => {
+    return formatHashtag(tag);
+  }).join(", ");
+
+  if (query && formattedTags) {
+    return t("searchSummaryTopicTextAndTags", {
+      query: quoteSearchSummaryValue(query),
+      tags: formattedTags,
+    });
+  }
+  if (query) {
+    return t("searchSummaryTopicText", {
+      query: quoteSearchSummaryValue(query),
+    });
+  }
+  if (formattedTags) {
+    let topicKey = "searchSummaryTopicTags";
+    if (tagMatchMode === "any" && tags.length > 1) {
+      topicKey = "searchSummaryTopicTagsAny";
+    }
+    return t(topicKey, {
+      tags: formattedTags,
+    });
+  }
+  return "";
+}
+
+/**
+ * Builds localized detail clauses for non-text search filters.
+ * @param {object} payload - Normalized search request payload.
+ * @returns {string[]} Localized filter clauses.
+ */
+function buildSearchDetailTexts(payload = {}) {
+  const parts = [];
+  const mode = String(payload?.mode || "network").trim();
+  const excludeText = String(payload?.excludeText || "").trim();
+  const mediaFilter = String(payload?.mediaFilter || "").trim();
+  const postTypeFilter = String(payload?.postTypeFilter || "").trim();
+  const mentions = String(payload?.mentions || "").trim();
+  const tagMatchMode = String(payload?.tagMatchMode || "all").trim();
+  const tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
+  const langs = normalizePostLanguageTags(
+    Array.isArray(payload?.langs) && payload.langs.length > 0 ? payload.langs : (payload?.lang ? [payload.lang] : []),
+    MAX_SEARCH_LANGUAGES,
+  );
+  const domain = String(payload?.domain || "").trim();
+  const targetUrl = String(payload?.url || "").trim();
+  const since = String(payload?.since || "").trim();
+  const until = String(payload?.until || "").trim();
+  let modeLabelKey = "searchModeNetwork";
+  if (mode === "posts") {
+    modeLabelKey = "searchModePosts";
+  } else if (mode === "reposts") {
+    modeLabelKey = "searchModeReposts";
+  } else if (mode === "hashtags") {
+    modeLabelKey = "searchModeHashtags";
+  }
+
+  parts.push(t("searchSummaryDetailMode", { value: t(modeLabelKey) }));
+
+  if (excludeText) {
+    parts.push(t("searchSummaryDetailExclude", { value: quoteSearchSummaryValue(excludeText) }));
+  }
+  if (mediaFilter && mediaFilter !== "all") {
+    parts.push(t("searchSummaryDetailMedia", { value: t(`searchMedia${mediaFilter === "none" ? "NoMedia" : (mediaFilter === "images" ? "Images" : "Videos")}`) }));
+  }
+  if (postTypeFilter && postTypeFilter !== "all") {
+    let typeLabelKey = "searchPostTypeAll";
+    if (postTypeFilter === "posts" || postTypeFilter === "originals") {
+      typeLabelKey = "searchPostTypeOriginals";
+    } else if (postTypeFilter === "replies") {
+      typeLabelKey = "searchPostTypeReplies";
+    } else if (postTypeFilter === "quotes") {
+      typeLabelKey = "searchPostTypeQuotes";
+    } else if (postTypeFilter === "reposts") {
+      typeLabelKey = "searchPostTypeReposts";
+    } else if (postTypeFilter === "non-reposts") {
+      typeLabelKey = "searchPostTypeNonReposts";
+    }
+    parts.push(t("searchSummaryDetailPostType", { value: t(typeLabelKey) }));
+  }
+  if (mentions) {
+    parts.push(t("searchSummaryDetailMentions", { value: quoteSearchSummaryValue(mentions) }));
+  }
+  if (tags.length > 1) {
+    if (tagMatchMode === "any") {
+      parts.push(t("searchSummaryDetailTagMatch", { value: t("searchTagMatchAny") }));
+    } else {
+      parts.push(t("searchSummaryDetailTagMatch", { value: t("searchTagMatchAll") }));
+    }
+  }
+  if (langs.length === 1) {
+    parts.push(t("searchSummaryDetailLanguage", { value: getPostLanguageDisplayName(langs[0], currentLocale) }));
+  }
+  if (langs.length > 1) {
+    const languageLabels = langs.map((entry) => {
+      return getPostLanguageDisplayName(entry, currentLocale);
+    });
+    parts.push(t("searchSummaryDetailLanguages", { value: languageLabels.join(", ") }));
+  }
+  if (domain) {
+    parts.push(t("searchSummaryDetailDomain", { value: quoteSearchSummaryValue(domain) }));
+  }
+  if (targetUrl) {
+    parts.push(t("searchSummaryDetailUrl", { value: quoteSearchSummaryValue(targetUrl) }));
+  }
+  if (since) {
+    parts.push(t("searchSummaryDetailSince", { value: since }));
+  }
+  if (until) {
+    parts.push(t("searchSummaryDetailUntil", { value: until }));
+  }
+  return parts;
+}
+
+/**
+ * Builds a natural-language sentence that describes the active search.
+ * @param {object} payload - Normalized search request payload.
+ * @returns {string} Localized search description.
+ */
+function buildSearchSummaryText(payload = {}) {
+  const mode = String(payload?.mode || "network").trim();
+  const actor = String(payload?.actor || "").trim();
+  const topic = buildSearchTopicText(payload);
+  const ownAccount = String(authAccount || "").trim();
+  const actorLabel = actor ? quoteSearchSummaryValue(`@${actor.replace(/^@+/, "")}`) : "";
+  const isOwnAccount = Boolean(actor)
+    && Boolean(ownAccount)
+    && actor.replace(/^@+/, "").toLowerCase() === ownAccount.replace(/^@+/, "").toLowerCase();
+
+  let summary = "";
+  if (mode === "posts") {
+    if (isOwnAccount || (!actor && ownAccount)) {
+      summary = t("searchSummaryPostsOwn", { topic });
+    } else {
+      summary = t("searchSummaryPostsActor", {
+        account: actorLabel,
+        topic,
+      });
+    }
+  } else if (mode === "reposts") {
+    if (isOwnAccount || (!actor && ownAccount)) {
+      summary = t("searchSummaryRepostsOwn", { topic });
+    } else {
+      summary = t("searchSummaryRepostsActor", {
+        account: actorLabel,
+        topic,
+      });
+    }
+  } else if (mode === "hashtags") {
+    if (actorLabel) {
+      summary = t("searchSummaryHashtagsActor", {
+        account: actorLabel,
+        topic,
+      });
+    } else {
+      summary = t("searchSummaryHashtagsGlobal", { topic });
+    }
+  } else if (actorLabel) {
+    summary = t("searchSummaryNetworkActor", {
+      account: actorLabel,
+      topic,
+    });
+  } else {
+    summary = t("searchSummaryNetworkGlobal", { topic });
+  }
+
+  const details = buildSearchDetailTexts(payload);
+  if (!details.length) {
+    return summary;
+  }
+  return `${summary} ${details.join(" · ")}`;
+}
+
+/**
+ * Updates the human-readable summary below the search mode note.
+ * @returns {void}
+ */
+function renderSearchSummary() {
+  if (!searchSummary) {
+    return;
+  }
+
+  const payload = collectSearchRequestPayload();
+  searchSummary.textContent = buildSearchSummaryText(payload)
+    .replace(/\s+\?/g, "?")
+    .replace(/\s{2,}/g, " ");
+}
+
+/**
+ * Builds the visible search status after a successful request.
+ * @param {number} count - Number of currently rendered results.
+ * @param {boolean} hasMore - True when another cursor page is available.
+ * @returns {string} Localized status line.
+ */
+function buildSearchLoadedStatus(count, hasMore) {
+  if (hasMore) {
+    return t("searchStatusLoadedMore", {
+      count: formatCount(count),
+    });
+  }
+  return t("searchStatusLoaded", {
+    count: formatCount(count),
+  });
+}
+
+/**
+ * Refreshes button states and helper text in the search workspace.
+ * @returns {void}
+ */
+function renderSearchWorkspace() {
+  updateSearchModeUi();
+  updateSearchSortOptionState();
+  renderSearchHashtagSummary();
+  renderSearchSummary();
+  if (searchRunButton) {
+    searchRunButton.disabled = searchLoading;
+  }
+  if (searchMoreButton) {
+    searchMoreButton.hidden = searchLoading || !searchCursor;
+    searchMoreButton.disabled = searchLoading;
+  }
+  if (searchCancelButton) {
+    searchCancelButton.hidden = !searchLoading;
+    searchCancelButton.disabled = !searchLoading || searchCancelPending;
+  }
+}
+
+/**
+ * Builds the metadata line for one search result card.
+ * @param {object} item - Normalized search result item.
+ * @returns {string} Rendered metadata line.
+ */
+function buildSearchResultMetaText(item = {}) {
+  const post = item?.post || null;
+  if (!post) {
+    return "";
+  }
+
+  const metaParts = [];
+  const createdAtText = formatThreadExplorerDate(post.createdAt || post.indexedAt || "");
+  if (createdAtText) {
+    metaParts.push(createdAtText);
+  }
+
+  if (item.reasonType === "repost") {
+    const repostBy = String(item.repostBy || "").trim();
+    const repostAt = formatThreadExplorerDate(item.repostAt || "");
+    if (repostBy && repostAt) {
+      metaParts.push(t("searchResultRepostMeta", { account: repostBy, date: repostAt }));
+    } else if (repostBy) {
+      metaParts.push(t("searchResultRepostBy", { account: repostBy }));
+    }
+  }
+
+  return metaParts.join(" · ");
+}
+
+/**
+ * Creates the save button shown in one search result card header.
+ * @param {object} item - Normalized search result item.
+ * @returns {HTMLButtonElement} Ready-to-use favorite button.
+ */
+function createSearchResultFavoriteButton(item = {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-button thread-explorer-icon-action search-result-favorite";
+  const star = document.createElement("span");
+  const bookmark = document.createElement("span");
+  star.setAttribute("aria-hidden", "true");
+  bookmark.setAttribute("aria-hidden", "true");
+  star.textContent = "★";
+  bookmark.textContent = "▣";
+  button.append(star, bookmark);
+  applyTranslatedTitle(button, "threadExplorerSaveButton");
+
+  const post = item?.post || null;
+  const isSaved = threadExplorerFavorites.some((favorite) => {
+    return favorite.rootUri === post?.uri;
+  });
+  button.classList.toggle("is-active", isSaved);
+  if (isSaved) {
+    button.title = t("searchFavoriteSavedButton");
+    button.setAttribute("aria-label", t("searchFavoriteSavedButton"));
+  } else {
+    button.title = t("searchFavoriteSaveButton");
+    button.setAttribute("aria-label", t("searchFavoriteSaveButton"));
+  }
+
+  button.addEventListener("click", () => {
+    void saveSearchResultAsFavorite(item);
+  });
+  return button;
+}
+
+/**
+ * Opens one search result directly in the Thread Explorer.
+ * @param {object} item - Normalized search result item.
+ * @returns {Promise<void>} Resolves after the Thread Explorer load was started.
+ */
+async function openSearchResultInThreadExplorer(item = {}) {
+  const post = item?.post || null;
+  const uri = String(post?.uri || "").trim();
+  if (!uri) {
+    return;
+  }
+
+  showThreadExplorerWorkspace();
+  await selectThreadExplorerPost(uri);
+}
+
+/**
+ * Renders interaction counts for one search result card.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {HTMLElement} counts - Count container.
+ * @returns {void}
+ */
+function renderSearchResultCounts(post, counts) {
+  counts.replaceChildren();
+
+  const likeButton = createThreadExplorerCountElement("Likes", post.likeCount, Number(post.likeCount) > 0);
+  const replyLabel = createThreadExplorerCountElement("Replies", post.replyCount, false);
+  const repostButton = createThreadExplorerCountElement("Reposts", post.repostCount, Number(post.repostCount) > 0);
+  const quoteButton = createThreadExplorerCountElement("Quotes", post.quoteCount, Number(post.quoteCount) > 0);
+
+  [likeButton, repostButton, quoteButton].forEach((button) => {
+    if (!button.classList.contains("thread-explorer-count-button")) {
+      return;
+    }
+    button.dataset.uri = post.uri;
+    button.dataset.cid = post.cid || "";
+    button.addEventListener("click", handleThreadExplorerCountClick);
+  });
+
+  counts.append(likeButton, replyLabel, repostButton, quoteButton);
+}
+
+/**
+ * Creates one search result card with the same template as the Thread Explorer.
+ * @param {object} item - Normalized search result item.
+ * @param {string} highlightQuery - Active query highlight string.
+ * @returns {HTMLElement|null} Rendered search result list item.
+ */
+function createSearchResultElement(item = {}, highlightQuery = "") {
+  const post = item?.post || null;
+  if (!post || !threadExplorerNodeTemplate) {
+    return null;
+  }
+
+  const fragment = threadExplorerNodeTemplate.content.cloneNode(true);
+  const element = fragment.querySelector(".thread-explorer-node-item");
+  const node = fragment.querySelector(".thread-explorer-node");
+  const card = fragment.querySelector(".thread-explorer-post-card");
+  const toggle = fragment.querySelector(".thread-explorer-node-toggle");
+  const actorTriggers = Array.from(fragment.querySelectorAll(".thread-explorer-actor-trigger"));
+  const avatar = fragment.querySelector(".thread-explorer-avatar");
+  const author = fragment.querySelector(".thread-explorer-post-author");
+  const handle = fragment.querySelector(".thread-explorer-post-handle");
+  const meta = fragment.querySelector(".thread-explorer-post-meta");
+  const viewLink = fragment.querySelector(".thread-explorer-view-link");
+  const headButtons = fragment.querySelector(".thread-explorer-post-head-buttons");
+  const editButton = fragment.querySelector(".thread-explorer-edit-button");
+  const actions = fragment.querySelector(".thread-explorer-post-actions");
+  const text = fragment.querySelector(".thread-explorer-post-text");
+  const counts = fragment.querySelector(".thread-explorer-post-counts");
+  const children = fragment.querySelector(".thread-explorer-children");
+  if (!element || !node || !card || !toggle || !avatar || !author || !handle || !meta || !viewLink || !headButtons || !editButton || !actions || !text || !counts || !children) {
+    return null;
+  }
+
+  element.classList.add("search-result-item");
+  element.dataset.uri = post.uri || "";
+  node.classList.add("search-result-node");
+  toggle.classList.add("is-hidden");
+  toggle.disabled = true;
+  children.hidden = true;
+  children.replaceChildren();
+
+  setAvatarImage(avatar, "", getThreadExplorerActorLabel(post.author));
+  author.textContent = getThreadExplorerActorLabel(post.author);
+  if (post.author?.handle) {
+    handle.textContent = `@${post.author.handle}`;
+  } else if (post.author?.did) {
+    handle.textContent = post.author.did;
+  } else {
+    handle.textContent = "";
+  }
+  meta.textContent = buildSearchResultMetaText(item);
+  renderThreadExplorerViewLink(post, viewLink);
+  actions.hidden = !renderThreadExplorerEditButton(post, editButton);
+  text.textContent = getThreadExplorerPostDisplayText(post) || t("threadExplorerNoText");
+  highlightSearchQueryInElement(text, highlightQuery);
+  renderSearchResultCounts(post, counts);
+  headButtons.prepend(createSearchResultFavoriteButton(item));
+
+  actorTriggers.forEach((trigger) => {
+    applyTranslatedTitle(trigger, "searchResultOpenInThreadExplorerButton");
+    trigger.addEventListener("click", () => {
+      void openSearchResultInThreadExplorer(item);
+    });
+  });
+
+  card._threadExplorerPost = post;
+  hydrateThreadExplorerCardContent(card);
+  highlightSearchQueryInElement(card.querySelector(".thread-explorer-quote-card-text"), highlightQuery);
+
+  return element;
+}
+
+/**
+ * Renders the current search result list from the Thread Explorer template.
+ * @returns {void}
+ */
+function renderSearchResults() {
+  if (!searchResultsList) {
+    return;
+  }
+  searchResultsList.replaceChildren();
+  if (!searchResults.length) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  const highlightQuery = String(searchQueryInput?.value || "").trim();
+  searchResults.forEach((item) => {
+    const element = createSearchResultElement(item, highlightQuery);
+    if (element) {
+      fragment.appendChild(element);
+    }
+  });
+  searchResultsList.appendChild(fragment);
+}
+
+/**
+ * Loads search results through the service worker and updates the workspace state.
+ * @param {object} options - Search load options.
+ * @param {boolean} options.append - True when the next result page should be appended.
+ * @returns {Promise<void>} Resolves after the request finished.
+ */
+async function loadSearchResults(options = {}) {
+  if (!authAccount || searchLoading) {
+    return;
+  }
+
+  const append = options?.append === true;
+  enforceSearchSortConstraints(false);
+  const payload = collectSearchRequestPayload();
+  const runId = crypto.randomUUID();
+  if (!append) {
+    searchCursor = "";
+  }
+
+  activeSearchRunId = runId;
+  searchCancelPending = false;
+  searchLoading = true;
+  if (searchStatus) {
+    if (append) {
+      searchStatus.textContent = t("searchStatusLoadingMore");
+    } else {
+      searchStatus.textContent = t("searchStatusLoading");
+    }
+  }
+  renderSearchWorkspace();
+
+  try {
+    const result = await sendToServiceWorker("LOAD_SEARCH_RESULTS", {
+      ...payload,
+      runId,
+      cursor: append ? searchCursor : "",
+      excludeUris: append
+        ? searchResults.map((item) => {
+            return String(item?.post?.uri || "").trim();
+          }).filter(Boolean)
+        : [],
+      limit: 25,
+    }, {
+      timeoutMs: 420000,
+      onProgress(progress) {
+        if (activeSearchRunId !== runId || !searchStatus) {
+          return;
+        }
+        if (!shouldShowDetailedSearchProgress(payload)) {
+          return;
+        }
+        searchStatus.textContent = buildSearchProgressStatus(progress);
+      },
+    });
+
+    const items = Array.isArray(result?.items) ? result.items : [];
+    if (append) {
+      searchResults = [...searchResults, ...items];
+    } else {
+      searchResults = items;
+    }
+    searchCursor = String(result?.cursor || "").trim();
+    renderSearchResults();
+    if (searchStatus) {
+      if (result?.cancelled === true) {
+        searchStatus.textContent = t("searchStatusCancelledPartial", {
+          count: formatCount(searchResults.length),
+        });
+      } else if (searchResults.length > 0) {
+        searchStatus.textContent = buildSearchLoadedStatus(searchResults.length, Boolean(searchCursor));
+      } else {
+        searchStatus.textContent = t("searchStatusEmpty");
+      }
+    }
+  } catch (error) {
+    console.error(error);
+    if (searchStatus) {
+      searchStatus.textContent = error?.message || t("searchStatusFailed");
+    }
+  } finally {
+    searchLoading = false;
+    if (activeSearchRunId === runId) {
+      activeSearchRunId = "";
+    }
+    searchCancelPending = false;
+    renderSearchWorkspace();
+  }
+}
+
+/**
+ * Shows the live search workspace.
+ * @returns {void}
+ */
+function showSearchWorkspace() {
+  if (!authAccount) {
+    return;
+  }
+
+  currentWorkspace = "search";
+  persistWorkspacePreference(currentWorkspace);
+  composerWorkspace.hidden = true;
+  archiveWorkspace.hidden = true;
+  networkWorkspace.hidden = true;
+  threadExplorerWorkspace.hidden = true;
+  analysisWorkspace.hidden = true;
+  dmWorkspace.hidden = true;
+  searchWorkspace.hidden = false;
+  applyHashtagPaneContext();
+  updateAuthButtons();
+  renderSearchWorkspace();
+}
+
+/**
+ * Opens the search hashtag dialog.
+ * @returns {void}
+ */
+function openSearchHashtagDialog() {
+  if (!searchHashtagDialog) {
+    return;
+  }
+  applyHashtagPaneContext();
+  renderSearchHashtagSummary();
+  searchHashtagDialog.showModal();
+}
+
+/**
+ * Closes the search hashtag dialog if it is open.
+ * @returns {void}
+ */
+function closeSearchHashtagDialog() {
+  if (searchHashtagDialog?.open) {
+    searchHashtagDialog.close();
+  }
+}
+
+/**
+ * Copies the authenticated account handle into the search account field.
+ * @returns {void}
+ */
+function handleSearchUseOwnAccountClick() {
+  if (!searchActorInput) {
+    return;
+  }
+
+  const ownAccount = String(authAccount || "").trim();
+  if (!ownAccount) {
+    return;
+  }
+
+  searchActorInput.value = ownAccount;
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+}
+
+/**
+ * Builds a localized live progress line for the current search run.
+ * @param {object} progress - Progress payload from the service worker.
+ * @returns {string} Human-readable progress text.
+ */
+function buildSearchProgressStatus(progress = {}) {
+  const page = Math.max(0, Number(progress?.pageCount) || 0);
+  const scanned = Math.max(0, Number(progress?.scannedCount) || 0);
+  const matches = Math.max(0, Number(progress?.matchCount) || 0);
+  const account = String(progress?.actor || "").trim();
+  const isReposts = progress?.mode === "reposts";
+
+  if (account) {
+    return t("searchStatusProgressAuthor", {
+      account: account.startsWith("@") ? account : `@${account}`,
+      page: formatCount(page),
+      scanned: formatCount(scanned),
+      matches: formatCount(matches),
+      mode: isReposts ? t("searchModeReposts") : t("searchModePosts"),
+    });
+  }
+
+  return t("searchStatusProgressGeneric", {
+    page: formatCount(page),
+    scanned: formatCount(scanned),
+    matches: formatCount(matches),
+  });
+}
+
+/**
+ * Returns true when the active search needs client-side post-filtering details.
+ * @param {object} payload - Normalized search payload from the current form.
+ * @returns {boolean} True when detailed counters help explain local filtering.
+ */
+function shouldShowDetailedSearchProgress(payload = {}) {
+  const mode = String(payload?.mode || "network").trim();
+  if (mode === "posts" || mode === "reposts") {
+    return true;
+  }
+
+  const mediaFilter = String(payload?.mediaFilter || "all").trim();
+  const postTypeFilter = String(payload?.postTypeFilter || "all").trim();
+  const languages = normalizePostLanguageTags(
+    Array.isArray(payload?.langs) && payload.langs.length > 0 ? payload.langs : (payload?.lang ? [payload.lang] : []),
+    MAX_SEARCH_LANGUAGES,
+  );
+
+  if (mediaFilter !== "all") {
+    return true;
+  }
+  if (postTypeFilter !== "all") {
+    return true;
+  }
+  if (languages.length > 1) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Builds a bsky-compatible search URL from the current search payload.
+ * @param {object} payload - Normalized search payload from the current form.
+ * @returns {{url: string, limitations: string[]}} URL plus unsupported Threadline filters.
+ */
+function buildBskySearchUrlFromPayload(payload = {}) {
+  const params = new URLSearchParams();
+  const mode = String(payload?.mode || "network").trim();
+  const query = String(payload?.query || "").trim();
+  const excludeText = String(payload?.excludeText || "").trim();
+  const tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
+  const actor = String(payload?.actor || "").trim().replace(/^@+/, "");
+  const sort = String(payload?.sort || "latest").trim();
+  const mentions = String(payload?.mentions || "").trim();
+  const domain = String(payload?.domain || "").trim();
+  const targetUrl = String(payload?.url || "").trim();
+  const since = String(payload?.since || "").trim();
+  const until = String(payload?.until || "").trim();
+  const languages = normalizePostLanguageTags(
+    Array.isArray(payload?.langs) && payload.langs.length > 0 ? payload.langs : (payload?.lang ? [payload.lang] : []),
+    MAX_SEARCH_LANGUAGES,
+  );
+  const limitations = [];
+
+  const combinedQuery = buildSharedSearchQuery(query, excludeText);
+  if (combinedQuery) {
+    params.set("q", combinedQuery);
+  }
+  tags.forEach((tag) => {
+    params.append("tag", String(tag || "").trim().replace(/^#+/, ""));
+  });
+  if (sort === "top") {
+    params.set("sort", "top");
+  } else {
+    params.set("sort", "latest");
+  }
+  if (since) {
+    params.set("since", since);
+  }
+  if (until) {
+    params.set("until", until);
+  }
+  if (mentions) {
+    params.set("mentions", mentions);
+  }
+  if (domain) {
+    params.set("domain", domain);
+  }
+  if (targetUrl) {
+    params.set("url", targetUrl);
+  }
+  if (languages.length > 0) {
+    params.set("lang", languages[0]);
+  }
+
+  if (mode === "reposts") {
+    limitations.push(t("searchCopyUrlLimitationModeReposts"));
+  } else if (actor) {
+    params.set("author", actor);
+  }
+
+  if (String(payload?.mediaFilter || "all").trim() !== "all") {
+    limitations.push(t("searchCopyUrlLimitationMedia"));
+  }
+  if (String(payload?.postTypeFilter || "all").trim() !== "all") {
+    limitations.push(t("searchCopyUrlLimitationPostType"));
+  }
+  if (languages.length > 1) {
+    limitations.push(t("searchCopyUrlLimitationMultiLang"));
+  }
+
+  return {
+    url: `https://bsky.app/search?${params.toString()}`,
+    limitations,
+  };
+}
+
+/**
+ * Creates one normalized search-preferences snapshot for comparison and storage.
+ * @param {object} preferences - Raw search preferences.
+ * @returns {object} Normalized search preferences.
+ */
+function normalizeSearchPreferencesForStorage(preferences = {}) {
+  const normalizedTags = normalizeHashtagEntries(preferences.tags || []).map((tag) => {
+    return getDisplayHashtag(tag);
+  });
+
+  let languageSource = [];
+  if (Array.isArray(preferences.langs)) {
+    languageSource = preferences.langs;
+  } else if (preferences.lang) {
+    languageSource = [preferences.lang];
+  }
+  const normalizedLanguages = normalizePostLanguageTags(languageSource, MAX_SEARCH_LANGUAGES);
+
+  let mode = String(preferences.mode || "").trim();
+  if (mode !== "posts" && mode !== "reposts" && mode !== "hashtags") {
+    mode = "network";
+  }
+
+  let mediaFilter = String(preferences.mediaFilter || "").trim();
+  if (mediaFilter !== "images" && mediaFilter !== "videos" && mediaFilter !== "none") {
+    mediaFilter = "all";
+  }
+
+  let postTypeFilter = String(preferences.postTypeFilter || "").trim();
+  if (postTypeFilter === "posts") {
+    postTypeFilter = "originals";
+  }
+  if (
+    postTypeFilter !== "originals"
+    && postTypeFilter !== "replies"
+    && postTypeFilter !== "quotes"
+    && postTypeFilter !== "reposts"
+    && postTypeFilter !== "non-reposts"
+  ) {
+    postTypeFilter = "all";
+  }
+
+  let sort = String(preferences.sort || "").trim();
+  if (sort !== "top") {
+    sort = "latest";
+  }
+  let tagMatchMode = String(preferences.tagMatchMode || "").trim();
+  if (tagMatchMode !== "any") {
+    tagMatchMode = "all";
+  }
+
+  return {
+    sourceUrl: String(preferences.sourceUrl || "").trim(),
+    mode,
+    query: String(preferences.query || "").trim(),
+    actor: String(preferences.actor || "").trim(),
+    tags: normalizedTags,
+    tagMatchMode,
+    mediaFilter,
+    postTypeFilter,
+    sort,
+    excludeText: String(preferences.excludeText || "").trim(),
+    mentions: String(preferences.mentions || "").trim(),
+    langs: normalizedLanguages,
+    lang: String(normalizedLanguages[0] || "").trim(),
+    domain: String(preferences.domain || "").trim(),
+    url: String(preferences.url || "").trim(),
+    since: String(preferences.since || "").trim(),
+    until: String(preferences.until || "").trim(),
+  };
+}
+
+/**
+ * Compares two search-preference snapshots after normalization.
+ * @param {object} left - First search-preference snapshot.
+ * @param {object} right - Second search-preference snapshot.
+ * @returns {boolean} True when both snapshots describe the same search.
+ */
+function areSearchPreferencesEqual(left = {}, right = {}) {
+  return JSON.stringify(normalizeSearchPreferencesForStorage(left)) === JSON.stringify(normalizeSearchPreferencesForStorage(right));
+}
+
+/**
+ * Builds the display label for one locally saved search based on search preferences.
+ * @param {object} preferences - Search preferences that should be named.
+ * @returns {string} Human-readable search label.
+ */
+function buildSavedSearchLabelFromPreferences(preferences = {}) {
+  const normalizedPreferences = normalizeSearchPreferencesForStorage(preferences);
+  if (normalizedPreferences.query) {
+    return normalizedPreferences.query;
+  }
+  if (normalizedPreferences.tags.length > 0) {
+    const displayTags = normalizedPreferences.tags.map((tag) => {
+      return getDisplayHashtag(tag);
+    }).filter(Boolean);
+    if (displayTags.length === 1) {
+      return `#${displayTags[0]}`;
+    }
+    if (displayTags.length > 1) {
+      return displayTags.slice(0, 2).map((tag) => `#${tag}`).join(" + ");
+    }
+  }
+  if (normalizedPreferences.actor) {
+    return `@${normalizedPreferences.actor.replace(/^@+/, "")}`;
+  }
+  if (normalizedPreferences.domain) {
+    return normalizedPreferences.domain;
+  }
+  if (normalizedPreferences.url) {
+    return normalizedPreferences.url;
+  }
+  if (normalizedPreferences.mode === "hashtags") {
+    return t("searchModeHashtags");
+  }
+  if (normalizedPreferences.mode === "reposts") {
+    return normalizedPreferences.actor
+      ? `@${normalizedPreferences.actor.replace(/^@+/, "")} · ${t("searchModeReposts")}`
+      : t("searchModeReposts");
+  }
+  if (normalizedPreferences.mode === "posts") {
+    return normalizedPreferences.actor
+      ? `@${normalizedPreferences.actor.replace(/^@+/, "")} · ${t("searchModePosts")}`
+      : t("searchModePosts");
+  }
+  return t("savedSearchFallbackTitle");
+}
+
+/**
+ * Copies the current search as a bsky-compatible search URL and shows a popup note.
+ * @returns {Promise<void>} Resolves after the copy attempt finished.
+ */
+async function copyCurrentSearchAsBskyUrl() {
+  const payload = collectSearchRequestPayload();
+  const result = buildBskySearchUrlFromPayload(payload);
+
+  try {
+    await copyTextToClipboard(result.url);
+  } catch (error) {
+    showErrorDialog(error?.message || t("statusNoSupport"));
+    return;
+  }
+
+  let message = t("searchCopyUrlMessage");
+  if (result.limitations.length > 0) {
+    message = `${message}\n\n${t("searchCopyUrlLimitationsPrefix")}\n- ${result.limitations.join("\n- ")}`;
+  }
+  showErrorDialog(message, t("searchCopyUrlTitle"), {
+    linkUrl: result.url,
+    linkLabel: t("searchCopyUrlOpenLink"),
+  });
+}
+
+/**
+ * Requests cancellation for the active search run.
+ * @returns {Promise<void>} Resolves after the cancel signal was sent.
+ */
+async function cancelActiveSearchRun() {
+  if (!activeSearchRunId || searchCancelPending) {
+    return;
+  }
+
+  searchCancelPending = true;
+  if (searchStatus) {
+    searchStatus.textContent = t("searchStatusCancelling");
+  }
+  renderSearchWorkspace();
+
+  try {
+    await sendToServiceWorker("SET_SEARCH_RUN_CONTROL", {
+      runId: activeSearchRunId,
+      action: "cancel",
+    }, {
+      timeoutMs: 30000,
+    });
+  } catch (error) {
+    console.error(error);
+    if (searchStatus) {
+      searchStatus.textContent = error?.message || t("searchStatusFailed");
+    }
+  } finally {
+    searchCancelPending = false;
+    renderSearchWorkspace();
+  }
+}
+
+/**
+ * Converts one search result into a Thread Explorer favorite entry.
+ * @param {object} item - Search result entry with normalized post data.
+ * @returns {object|null} Favorite entry, or null when no post URI is available.
+ */
+function createThreadExplorerFavoriteFromSearchResult(item = {}) {
+  const post = item?.post || null;
+  const uri = String(post?.uri || "").trim();
+  if (!uri) {
+    return null;
+  }
+
+  return {
+    rootUri: uri,
+    selectedUri: uri,
+    authorHandle: String(post.author?.handle || "").trim(),
+    authorName: getThreadExplorerActorLabel(post.author),
+    text: getThreadExplorerPreviewText(post),
+    createdAt: String(post.createdAt || post.indexedAt || "").trim(),
+    savedAt: new Date().toISOString(),
+    webApp: getThreadExplorerPostWebApp(post),
+  };
+}
+
+/**
+ * Saves one search result as reusable Thread Explorer favorite.
+ * @param {object} item - Search result entry with normalized post data.
+ * @returns {Promise<void>} Resolves after settings were persisted.
+ */
+async function saveSearchResultAsFavorite(item = {}) {
+  const favorite = createThreadExplorerFavoriteFromSearchResult(item);
+  if (!favorite) {
+    return;
+  }
+
+  const remaining = threadExplorerFavorites.filter((entry) => entry.rootUri !== favorite.rootUri);
+  threadExplorerFavorites = normalizeThreadExplorerFavorites([favorite, ...remaining]);
+  await persistSettings();
+  renderSearchResults();
+  updateThreadExplorerControls();
+  setStatus(t("searchFavoriteSavedStatus"));
+}
+
 function showArchiveWorkspace() {
   if (!authAccount) {
     return;
@@ -3148,6 +4919,7 @@ function showArchiveWorkspace() {
   currentWorkspace = "archive";
   persistWorkspacePreference(currentWorkspace);
   composerWorkspace.hidden = true;
+  searchWorkspace.hidden = true;
   networkWorkspace.hidden = true;
   threadExplorerWorkspace.hidden = true;
   analysisWorkspace.hidden = true;
@@ -3169,6 +4941,7 @@ function showNetworkWorkspace() {
   persistWorkspacePreference(currentWorkspace);
   composerWorkspace.hidden = true;
   archiveWorkspace.hidden = true;
+  searchWorkspace.hidden = true;
   threadExplorerWorkspace.hidden = true;
   analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
@@ -3197,6 +4970,7 @@ function showThreadExplorerWorkspace() {
   composerWorkspace.hidden = true;
   archiveWorkspace.hidden = true;
   networkWorkspace.hidden = true;
+  searchWorkspace.hidden = true;
   analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   threadExplorerWorkspace.hidden = false;
@@ -3220,6 +4994,7 @@ function showAnalysisWorkspace() {
   archiveWorkspace.hidden = true;
   networkWorkspace.hidden = true;
   threadExplorerWorkspace.hidden = true;
+  searchWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   analysisWorkspace.hidden = false;
   applyHashtagPaneContext();
@@ -3239,6 +5014,7 @@ function showDmWorkspace() {
   networkWorkspace.hidden = true;
   threadExplorerWorkspace.hidden = true;
   analysisWorkspace.hidden = true;
+  searchWorkspace.hidden = true;
   dmWorkspace.hidden = false;
   applyHashtagPaneContext();
   updateAuthButtons();
@@ -3260,6 +5036,7 @@ function showComposerWorkspace(options = {}) {
   archiveWorkspace.hidden = true;
   networkWorkspace.hidden = true;
   threadExplorerWorkspace.hidden = true;
+  searchWorkspace.hidden = true;
   analysisWorkspace.hidden = true;
   dmWorkspace.hidden = true;
   composerWorkspace.hidden = false;
@@ -3468,11 +5245,62 @@ function parseSavedSearchUrl(sourceUrl) {
 }
 
 /**
+ * Converts the positive query and excluded terms into one shared Bluesky query string.
+ * @param {string} query - Positive search query.
+ * @param {string} excludeText - Comma-separated or quoted excluded terms.
+ * @returns {string} Combined query string for `searchPosts`.
+ */
+function buildSharedSearchQuery(query = "", excludeText = "") {
+  const includeValue = String(query || "").trim();
+  const excludeParts = parseExcludedSearchTerms(excludeText);
+
+  const tokens = [];
+  if (includeValue) {
+    tokens.push(includeValue);
+  }
+  excludeParts.forEach((entry) => {
+    if (/\s/.test(entry)) {
+      tokens.push(`-"${entry}"`);
+    } else {
+      tokens.push(`-${entry}`);
+    }
+  });
+  return tokens.join(" ").trim();
+}
+
+/**
+ * Splits excluded search terms from free text, commas, semicolons, or quoted phrases.
+ * @param {string} value - Raw excluded-term input.
+ * @returns {string[]} Clean excluded terms.
+ */
+function parseExcludedSearchTerms(value = "") {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) {
+    return [];
+  }
+
+  const terms = [];
+  const matcher = /"([^"]+)"|[^,\n;]+/g;
+  let match = matcher.exec(rawValue);
+  while (match) {
+    const nextValue = String(match[1] || match[0] || "").trim();
+    if (nextValue) {
+      terms.push(nextValue);
+    }
+    match = matcher.exec(rawValue);
+  }
+  return terms;
+}
+
+/**
  * Builds a stable label for a saved search.
  * @param {object} search - Normalized saved search entry.
  * @returns {string} Human-readable search label.
  */
 function buildSavedSearchLabel(search = {}) {
+  if (search.searchPreferences) {
+    return buildSavedSearchLabelFromPreferences(search.searchPreferences);
+  }
   const params = search.params || {};
   const q = String(params.q || "").trim();
   if (q) {
@@ -3506,6 +5334,51 @@ function buildSavedSearchLabel(search = {}) {
  * @returns {string} Metadata summary for list display.
  */
 function buildSavedSearchMeta(search = {}) {
+  if (search.searchPreferences) {
+    const preferences = normalizeSearchPreferencesForStorage(search.searchPreferences);
+    const parts = [];
+    if (preferences.mode === "posts") {
+      parts.push(t("searchModePosts"));
+    } else if (preferences.mode === "reposts") {
+      parts.push(t("searchModeReposts"));
+    } else if (preferences.mode === "hashtags") {
+      parts.push(t("searchModeHashtags"));
+    } else {
+      parts.push(t("searchModeNetwork"));
+    }
+    if (preferences.actor) {
+      parts.push(`@${preferences.actor.replace(/^@+/, "")}`);
+    }
+    preferences.tags.forEach((tag) => {
+      parts.push(`#${tag}`);
+    });
+    if (preferences.tags.length > 1) {
+      if (preferences.tagMatchMode === "any") {
+        parts.push(t("searchTagMatchAny"));
+      } else {
+        parts.push(t("searchTagMatchAll"));
+      }
+    }
+    if (preferences.postTypeFilter !== "all") {
+      parts.push(preferences.postTypeFilter);
+    }
+    if (preferences.mediaFilter !== "all") {
+      parts.push(preferences.mediaFilter);
+    }
+    if (preferences.langs.length > 0) {
+      parts.push(preferences.langs.join(", "));
+    }
+    if (preferences.domain) {
+      parts.push(`domain: ${preferences.domain}`);
+    }
+    if (preferences.url) {
+      parts.push(`url: ${preferences.url}`);
+    }
+    if (parts.length > 0) {
+      return parts.join(" · ");
+    }
+  }
+
   const params = search.params || {};
   const parts = [];
   let tags = [];
@@ -3549,7 +5422,8 @@ function normalizeSavedSearches(searches) {
     } catch {
       return;
     }
-    const sourceKey = parsed.sourceUrl.toLowerCase();
+    const normalizedSearchPreferences = normalizeSearchPreferencesForStorage(search?.searchPreferences || parsed.params || {});
+    const sourceKey = `${parsed.sourceUrl.toLowerCase()}::${JSON.stringify(normalizedSearchPreferences)}`;
     if (seen.has(sourceKey)) {
       return;
     }
@@ -3562,6 +5436,7 @@ function normalizeSavedSearches(searches) {
       id,
       sourceUrl: parsed.sourceUrl,
       params: parsed.params,
+      searchPreferences: normalizedSearchPreferences,
       label: String(search?.label || "").trim(),
       createdAt: String(search?.createdAt || new Date().toISOString()).trim(),
       updatedAt: String(search?.updatedAt || search?.createdAt || new Date().toISOString()).trim(),
@@ -3954,24 +5829,25 @@ function renderThreadExplorerViewLink(post, link) {
  * Renders the Thread Explorer edit marker button for a Mu-edited post.
  * @param {object} post - Normalized Thread Explorer post.
  * @param {HTMLButtonElement|null} button - Edit marker button from the node template.
- * @returns {void}
+ * @returns {boolean} True when the edit marker should be visible.
  */
 function renderThreadExplorerEditButton(post, button) {
   if (!button) {
-    return;
+    return false;
   }
 
   const editInfo = post?.editInfo || null;
   if (!editInfo?.isEdited) {
     button.hidden = true;
     button.removeAttribute("data-uri");
-    return;
+    return false;
   }
 
   button.hidden = false;
   button.dataset.uri = post.uri || "";
   applyTranslatedTitle(button, "threadExplorerEditDetailsButton");
   button.addEventListener("click", handleThreadExplorerEditButtonClick);
+  return true;
 }
 
 /**
@@ -4007,7 +5883,29 @@ function handleThreadExplorerEditButtonClick(event) {
   event.stopPropagation();
   const uri = String(event.currentTarget?.dataset?.uri || "").trim();
   const node = findThreadExplorerTreeNode(threadExplorerTree, uri);
-  openThreadExplorerPostEditDialog(node?.post || null);
+  if (node?.post) {
+    openThreadExplorerPostEditDialog(node.post);
+    return;
+  }
+
+  const searchResult = findSearchResultByUri(uri);
+  openThreadExplorerPostEditDialog(searchResult?.post || null);
+}
+
+/**
+ * Finds a rendered search result entry by post URI.
+ * @param {string} uri - AT URI of the post.
+ * @returns {object|null} Matching search result item or null.
+ */
+function findSearchResultByUri(uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri) {
+    return null;
+  }
+
+  return searchResults.find((item) => {
+    return item?.post?.uri === normalizedUri;
+  }) || null;
 }
 
 /**
@@ -4082,6 +5980,7 @@ function renderSavedSearchesDialog() {
     loadButton.dataset.id = search.id;
     removeButton.dataset.id = search.id;
     applyTranslatedTitle(removeButton, "savedSearchRemoveButton");
+    removeButton.innerHTML = createIconSvg("M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z");
     title.textContent = search.label || buildSavedSearchLabel(search);
     meta.textContent = buildSavedSearchMeta(search);
     url.textContent = search.sourceUrl;
@@ -4093,18 +5992,103 @@ function renderSavedSearchesDialog() {
 
 /**
  * Opens the shared saved-searches dialog for a workspace context.
- * @param {string} context - Either "threadExplorer" or "archive".
+ * @param {string} context - Either "threadExplorer", "archive", or "search".
  * @returns {void}
  */
 function openSavedSearchesDialog(context = "threadExplorer") {
   if (context === "archive") {
     savedSearchDialogContext = "archive";
+  } else if (context === "search") {
+    savedSearchDialogContext = "search";
   } else {
     savedSearchDialogContext = "threadExplorer";
+  }
+  if (savedSearchesNote) {
+    if (savedSearchDialogContext === "search") {
+      savedSearchesNote.textContent = t("savedSearchesSearchNote");
+    } else {
+      savedSearchesNote.textContent = t("savedSearchesNote");
+    }
+  }
+  if (savedSearchUrlField) {
+    savedSearchUrlField.hidden = savedSearchDialogContext === "search";
+  }
+  if (savedSearchesActions) {
+    savedSearchesActions.hidden = savedSearchDialogContext === "search";
   }
   savedSearchUrlInput.value = "";
   renderSavedSearchesDialog();
   savedSearchesDialog.showModal();
+}
+
+/**
+ * Creates a saved search entry from full Threadline search preferences.
+ * @param {object} preferences - Search preferences to store.
+ * @returns {object} Saved-search entry with Threadline-specific parameters.
+ */
+function createSavedSearchFromPreferences(preferences = {}) {
+  const normalizedPreferences = normalizeSearchPreferencesForStorage(preferences);
+  const urlResult = buildBskySearchUrlFromPayload(normalizedPreferences);
+  const parsed = parseSavedSearchUrl(urlResult.url);
+  const now = new Date().toISOString();
+  return {
+    id: `search-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    sourceUrl: parsed.sourceUrl,
+    params: parsed.params,
+    searchPreferences: normalizedPreferences,
+    label: buildSavedSearchLabelFromPreferences(normalizedPreferences),
+    createdAt: now,
+    updatedAt: now,
+    lastLoadedAt: "",
+  };
+}
+
+/**
+ * Saves the current live search form for later reuse.
+ * @returns {Promise<void>} Resolves after settings were persisted.
+ */
+async function saveCurrentSearchPreferences() {
+  const preferences = normalizeSearchPreferencesForStorage(getSearchPreferences());
+  const hasAnyValue = (
+    Boolean(preferences.query)
+    || Boolean(preferences.actor)
+    || preferences.tags.length > 0
+    || Boolean(preferences.excludeText)
+    || Boolean(preferences.mentions)
+    || preferences.langs.length > 0
+    || Boolean(preferences.domain)
+    || Boolean(preferences.url)
+    || Boolean(preferences.since)
+    || Boolean(preferences.until)
+    || preferences.mode !== "network"
+    || preferences.mediaFilter !== "all"
+    || preferences.postTypeFilter !== "all"
+  );
+  if (!hasAnyValue) {
+    if (searchStatus) {
+      searchStatus.textContent = t("searchSaveEmptyWarning");
+    }
+    return;
+  }
+
+  const existing = savedSearches.find((search) => {
+    return areSearchPreferencesEqual(search.searchPreferences || search.params || {}, preferences);
+  });
+  if (existing) {
+    if (searchStatus) {
+      searchStatus.textContent = t("searchSaveAlreadyExists");
+    }
+    return;
+  }
+
+  const entry = createSavedSearchFromPreferences(preferences);
+  savedSearches = normalizeSavedSearches([entry, ...savedSearches]);
+  await persistSettings();
+  if (searchStatus) {
+    searchStatus.textContent = t("searchSaveSuccess", {
+      title: entry.label,
+    });
+  }
 }
 
 /**
@@ -4144,6 +6128,7 @@ async function removeSavedSearch(id) {
     threadExplorerItems = [];
     threadExplorerSelectedUri = "";
     threadExplorerTree = null;
+    clearThreadExplorerRenderedMediaCache();
     clearThreadExplorerSelectionPreference();
   }
   if (archiveSavedSearchId === normalizedId) {
@@ -4196,6 +6181,36 @@ async function loadSavedSearchInArchive(id) {
     label: search.label || buildSavedSearchLabel(search),
     url: search.sourceUrl,
   });
+}
+
+/**
+ * Loads a saved search back into the live search workspace.
+ * @param {string} id - Saved search id.
+ * @returns {Promise<void>} Resolves after the search form was updated.
+ */
+async function loadSavedSearchInSearchWorkspace(id) {
+  const search = getSavedSearchById(id);
+  if (!search) {
+    return;
+  }
+  search.lastLoadedAt = new Date().toISOString();
+  search.updatedAt = search.lastLoadedAt;
+  await persistSettings();
+  if (savedSearchesDialog.open) {
+    savedSearchesDialog.close();
+  }
+  applySearchPreferences(search.searchPreferences || search.params || {});
+  searchResults = [];
+  searchCursor = "";
+  renderHashtagCloud();
+  renderSearchResults();
+  renderSearchWorkspace();
+  await persistSettings();
+  if (searchStatus) {
+    searchStatus.textContent = t("searchLoadSavedStatus", {
+      title: search.label || buildSavedSearchLabel(search),
+    });
+  }
 }
 
 /**
@@ -4770,6 +6785,7 @@ function setThreadExplorerSource(source) {
   threadExplorerItems = [];
   threadExplorerSelectedUri = "";
   threadExplorerTree = null;
+  clearThreadExplorerRenderedMediaCache();
   threadExplorerFeedError = "";
   threadExplorerThreadError = "";
   clearThreadExplorerSelectionPreference();
@@ -4968,18 +6984,49 @@ function applyThreadExplorerAvatarCacheToTree(node = null) {
 /**
  * Hydrates avatars for the currently loaded Thread Explorer tree through the service worker cache.
  * @param {object|null} root - Thread Explorer root node.
+ * @param {(progress: {percent?: number, step?: string, detail?: string}) => Promise<void>} onProgress - Progress reporter.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
  * @returns {Promise<void>} Resolves after cached avatar data URIs were applied.
  */
-async function hydrateThreadExplorerTreeAvatars(root = null) {
+async function hydrateThreadExplorerTreeAvatars(root = null, onProgress = async () => {}, signal = null) {
   if (!root) {
     return;
   }
+  throwIfThreadExplorerSnapshotAborted(signal);
 
   const result = await sendToServiceWorker("HYDRATE_THREAD_EXPLORER_AVATARS", {
     root,
   }, {
     timeoutMs: 120000,
+    signal,
+    onProgress(progress) {
+      if (progress?.phase !== "thread_explorer_avatars") {
+        return;
+      }
+
+      const total = Math.max(0, Number(progress.total) || 0);
+      const current = Math.max(0, Number(progress.current) || 0);
+      const remaining = Math.max(0, Number(progress.remaining) || 0);
+      let percent = 5;
+      if (total > 0) {
+        percent = 5 + (current / total * 12);
+      }
+      void onProgress({
+        percent,
+        step: t("threadExplorerSnapshotProgressAvatars"),
+        detail: t("threadExplorerSnapshotProgressAvatarDetail", {
+          current,
+          total,
+          remaining,
+          hydrated: Number(progress.hydrated) || 0,
+          skipped: Number(progress.skipped) || 0,
+        }),
+      });
+    },
   }).catch((error) => {
+    if (error?.name === "AbortError") {
+      throw error;
+    }
     console.warn("Thread Explorer avatar hydration failed.", error);
     return null;
   });
@@ -4987,6 +7034,142 @@ async function hydrateThreadExplorerTreeAvatars(root = null) {
   if (result?.avatars && typeof result.avatars === "object") {
     applyThreadExplorerAvatarHydration(root, result.avatars);
   }
+}
+
+/**
+ * Hydrates remote media images for the current Thread Explorer snapshot.
+ * @param {object|null} root - Thread Explorer root node.
+ * @param {(progress: {percent?: number, step?: string, detail?: string}) => Promise<void>} onProgress - Progress reporter.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
+ * @returns {Promise<void>} Resolves after media data URIs were prepared.
+ */
+async function hydrateThreadExplorerSnapshotMedia(root = null, onProgress = async () => {}, signal = null) {
+  threadExplorerSnapshotMediaDataUris = new Map();
+  if (!root) {
+    return;
+  }
+  throwIfThreadExplorerSnapshotAborted(signal);
+
+  const result = await sendToServiceWorker("HYDRATE_THREAD_EXPLORER_MEDIA", {
+    root,
+  }, {
+    timeoutMs: 420000,
+    signal,
+    onProgress(progress) {
+      if (progress?.phase !== "thread_explorer_media") {
+        return;
+      }
+
+      const total = Math.max(0, Number(progress.total) || 0);
+      const current = Math.max(0, Number(progress.current) || 0);
+      const remaining = Math.max(0, Number(progress.remaining) || 0);
+      let percent = 18;
+      if (total > 0) {
+        percent = 18 + (current / total * 9);
+      }
+      void onProgress({
+        percent,
+        step: t("threadExplorerSnapshotProgressMedia"),
+        detail: t("threadExplorerSnapshotProgressMediaDownloadDetail", {
+          current,
+          total,
+          remaining,
+          hydrated: Number(progress.hydrated) || 0,
+          skipped: Number(progress.skipped) || 0,
+          cacheHits: Number(progress.cacheHits) || 0,
+          downloaded: Number(progress.downloaded) || 0,
+          concurrency: Number(progress.concurrency) || 0,
+        }),
+      });
+    },
+  }).catch((error) => {
+    if (error?.name === "AbortError") {
+      throw error;
+    }
+    console.warn("Thread Explorer media hydration failed.", error);
+    return null;
+  });
+
+  if (!result?.media || typeof result.media !== "object") {
+    return;
+  }
+
+  storeThreadExplorerHydratedMedia(result.media);
+}
+
+/**
+ * Stores media returned by the Service Worker in the shared Thread Explorer media cache.
+ * @param {object|null} media - Map-like object from original media URL to data URI.
+ * @returns {number} Number of cached media entries.
+ */
+function storeThreadExplorerHydratedMedia(media = null) {
+  if (!media || typeof media !== "object") {
+    return 0;
+  }
+
+  let storedCount = 0;
+  Object.entries(media).forEach(([source, dataUri]) => {
+    const key = String(source || "").trim();
+    const value = String(dataUri || "").trim();
+    if (!key || !value) {
+      return;
+    }
+
+    threadExplorerSnapshotMediaDataUris.set(key, value);
+    storeThreadExplorerRenderedMediaDataUri([key], value);
+    storedCount += 1;
+  });
+  return storedCount;
+}
+
+/**
+ * Preloads all media for the currently selected Thread Explorer thread without delaying rendering.
+ * @param {object|null} root - Current Thread Explorer root node.
+ * @param {number} generation - Cache generation that must still be current when the request finishes.
+ * @returns {Promise<void>} Resolves after the best-effort prewarm finished.
+ */
+async function prewarmThreadExplorerMediaCacheForCurrentThread(root = null, generation = 0) {
+  if (!root) {
+    return;
+  }
+
+  if (threadExplorerMediaCachePrewarmController) {
+    threadExplorerMediaCachePrewarmController.abort();
+  }
+  const controller = new AbortController();
+  threadExplorerMediaCachePrewarmController = controller;
+
+  const result = await sendToServiceWorker("HYDRATE_THREAD_EXPLORER_MEDIA", {
+    root,
+  }, {
+    timeoutMs: 420000,
+    signal: controller.signal,
+  }).catch((error) => {
+    if (error?.name === "AbortError") {
+      return null;
+    }
+    console.warn("Thread Explorer media cache prewarm failed.", error);
+    return null;
+  });
+
+  if (threadExplorerMediaCachePrewarmController === controller) {
+    threadExplorerMediaCachePrewarmController = null;
+  }
+  if (controller.signal.aborted) {
+    return;
+  }
+  if (generation !== threadExplorerMediaCacheGeneration) {
+    return;
+  }
+  if (root !== threadExplorerTree) {
+    return;
+  }
+  if (!result?.media || typeof result.media !== "object") {
+    return;
+  }
+
+  storeThreadExplorerHydratedMedia(result.media);
+  applyThreadExplorerRenderedMediaCacheToDom();
 }
 
 /**
@@ -5019,6 +7202,55 @@ function appendThreadExplorerFeedItems(currentItems, nextItems, options = {}) {
     combined.push(item);
   });
   return combined;
+}
+
+/**
+ * Returns the timestamp used to sort Thread Explorer feed items.
+ * @param {object} item - Thread Explorer feed item.
+ * @returns {number} Epoch milliseconds or zero.
+ */
+function getThreadExplorerFeedItemSortTimestamp(item = {}) {
+  const createdAt = Date.parse(String(item?.post?.createdAt || "").trim());
+  if (Number.isFinite(createdAt)) {
+    return createdAt;
+  }
+
+  const indexedAt = Date.parse(String(item?.post?.indexedAt || "").trim());
+  if (Number.isFinite(indexedAt)) {
+    return indexedAt;
+  }
+
+  return 0;
+}
+
+/**
+ * Sorts Thread Explorer feed items by post date, newest first.
+ * @param {Array<object>} items - Feed items to sort.
+ * @returns {Array<object>} Sorted feed items without mutating the input.
+ */
+function sortThreadExplorerFeedItemsByDate(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .map((item, index) => {
+      return {
+        item,
+        index,
+      };
+    })
+    .sort((left, right) => {
+      const leftTime = getThreadExplorerFeedItemSortTimestamp(left.item);
+      const rightTime = getThreadExplorerFeedItemSortTimestamp(right.item);
+      if (leftTime !== rightTime) {
+        return rightTime - leftTime;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => {
+      return entry.item;
+    });
 }
 
 /**
@@ -5062,17 +7294,14 @@ function updateThreadExplorerControls() {
     threadExplorerOrientationButton.setAttribute("aria-pressed", "false");
   }
 
-  [threadExplorerFollowsButton, threadExplorerMutualsButton].forEach((button) => {
-    const source = String(button?.dataset?.threadExplorerSource || "");
-    const isActive = source === threadExplorerSource;
-    let pressed = "false";
-    if (isActive) {
-      pressed = "true";
+  if (threadExplorerSourceSelect) {
+    if (["mutuals", "follows", "followers"].includes(threadExplorerSource)) {
+      threadExplorerSourceSelect.value = threadExplorerSource;
+    } else {
+      threadExplorerSourceSelect.value = "follows";
     }
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-pressed", pressed);
-    button.disabled = !hasAuth || threadExplorerLoadingFeed;
-  });
+    threadExplorerSourceSelect.disabled = !hasAuth || threadExplorerLoadingFeed;
+  }
   renderThreadExplorerFeedSourceSelect();
 }
 
@@ -5199,11 +7428,91 @@ function zoomThreadExplorerAtPoint(factor, clientX, clientY) {
 }
 
 /**
+ * Creates one feed-list button for a normalized Thread Explorer post.
+ * @param {object} item - Feed item with a normalized post.
+ * @returns {DocumentFragment} Rendered feed item fragment.
+ */
+function createThreadExplorerFeedItemFragment(item) {
+  const post = item.post;
+  const fragment = threadExplorerFeedItemTemplate.content.cloneNode(true);
+  const button = fragment.querySelector(".thread-explorer-feed-item");
+  const avatar = fragment.querySelector(".thread-explorer-avatar");
+  const author = fragment.querySelector(".thread-explorer-feed-author");
+  const meta = fragment.querySelector(".thread-explorer-feed-meta");
+  const text = fragment.querySelector(".thread-explorer-feed-text");
+
+  button.classList.toggle("is-active", post.uri === threadExplorerSelectedUri);
+  markThreadExplorerAvatarImage(avatar, post.author);
+  setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
+  author.textContent = getThreadExplorerActorLabel(post.author);
+  meta.textContent = formatThreadExplorerDate(post.createdAt || post.indexedAt);
+  text.textContent = getThreadExplorerPreviewText(post);
+  button.dataset.uri = post.uri;
+  button.addEventListener("click", handleThreadExplorerFeedItemClick);
+  return fragment;
+}
+
+/**
+ * Renders the Actor-Fokus card and its current result list.
+ * @returns {void}
+ */
+function renderThreadExplorerActorFocus() {
+  if (!threadExplorerActorFocus || !threadExplorerActorFeedList) {
+    return;
+  }
+
+  threadExplorerActorFeedList.replaceChildren();
+  if (!threadExplorerActorFocusActor) {
+    threadExplorerActorFocus.hidden = true;
+    return;
+  }
+
+  threadExplorerActorFocus.hidden = false;
+  const actor = threadExplorerActorFocusActor;
+  setAvatarImage(threadExplorerActorFocusAvatar, getThreadExplorerActorAvatarUri(actor), getThreadExplorerActorLabel(actor));
+  threadExplorerActorFocusTitle.textContent = t("threadExplorerActorFocusTitle", {
+    account: getThreadExplorerActorLabel(actor),
+  });
+  if (actor.handle) {
+    threadExplorerActorFocusHandle.textContent = `@${actor.handle}`;
+  } else {
+    threadExplorerActorFocusHandle.textContent = actor.did || "";
+  }
+
+  if (threadExplorerActorModeSelect) {
+    threadExplorerActorModeSelect.value = threadExplorerActorFocusMode;
+    threadExplorerActorModeSelect.disabled = threadExplorerActorFocusLoading;
+  }
+
+  if (threadExplorerActorFocusError) {
+    threadExplorerActorFocusStatus.textContent = threadExplorerActorFocusError;
+  } else if (threadExplorerActorFocusLoading) {
+    threadExplorerActorFocusStatus.textContent = t("threadExplorerActorFocusLoading");
+  } else if (!threadExplorerActorFocusItems.length) {
+    threadExplorerActorFocusStatus.textContent = t("threadExplorerActorFocusEmpty");
+  } else {
+    threadExplorerActorFocusStatus.textContent = t("threadExplorerActorFocusLoaded", {
+      count: formatCount(threadExplorerActorFocusItems.length),
+    });
+  }
+
+  threadExplorerActorFocusItems.forEach((item) => {
+    threadExplorerActorFeedList.appendChild(createThreadExplorerFeedItemFragment(item));
+  });
+
+  if (threadExplorerActorMoreButton) {
+    threadExplorerActorMoreButton.hidden = !threadExplorerActorFocusHasMore;
+    threadExplorerActorMoreButton.disabled = threadExplorerActorFocusLoading;
+  }
+}
+
+/**
  * Renders the left Thread Explorer feed list from templates.
  * @returns {void}
  */
 function renderThreadExplorerFeed() {
   threadExplorerFeedList.replaceChildren();
+  renderThreadExplorerActorFocus();
 
   if (threadExplorerFeedError) {
     threadExplorerFeedStatus.textContent = threadExplorerFeedError;
@@ -5230,24 +7539,7 @@ function renderThreadExplorerFeed() {
   }
 
   threadExplorerItems.forEach((item) => {
-    const post = item.post;
-    const fragment = threadExplorerFeedItemTemplate.content.cloneNode(true);
-    const button = fragment.querySelector(".thread-explorer-feed-item");
-    const avatar = fragment.querySelector(".thread-explorer-avatar");
-    const author = fragment.querySelector(".thread-explorer-feed-author");
-    const meta = fragment.querySelector(".thread-explorer-feed-meta");
-    const text = fragment.querySelector(".thread-explorer-feed-text");
-
-    button.classList.toggle("is-active", post.uri === threadExplorerSelectedUri);
-    markThreadExplorerAvatarImage(avatar, post.author);
-    setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
-    author.textContent = getThreadExplorerActorLabel(post.author);
-    meta.textContent = formatThreadExplorerDate(post.createdAt || post.indexedAt);
-    text.textContent = getThreadExplorerPreviewText(post);
-    button.dataset.uri = post.uri;
-    button.addEventListener("click", handleThreadExplorerFeedItemClick);
-
-    threadExplorerFeedList.appendChild(fragment);
+    threadExplorerFeedList.appendChild(createThreadExplorerFeedItemFragment(item));
   });
 }
 
@@ -5290,6 +7582,121 @@ function handleThreadExplorerFeedSelectChange() {
 }
 
 /**
+ * Switches the Thread Explorer to the selected relationship source.
+ * @param {Event} event - Change event from the relationship source select.
+ * @returns {void}
+ */
+function handleThreadExplorerSourceSelectChange(event) {
+  const source = normalizeThreadExplorerSource(event.currentTarget?.value || "");
+  setThreadExplorerSource(source);
+}
+
+/**
+ * Loads the Actor-Fokus feed for the current actor.
+ * @param {object} options - Loading behavior.
+ * @param {boolean} options.append - True when the next page should be appended.
+ * @returns {Promise<void>} Resolves after the Actor-Fokus list is rendered.
+ */
+async function loadThreadExplorerActorFocusFeed(options = {}) {
+  if (!authAccount || !threadExplorerActorFocusActor || threadExplorerActorFocusLoading) {
+    return;
+  }
+
+  const append = options.append === true;
+  if (append && !threadExplorerActorFocusHasMore) {
+    return;
+  }
+
+  if (!append) {
+    threadExplorerActorFocusItems = [];
+    threadExplorerActorFocusCursor = "";
+    threadExplorerActorFocusHasMore = false;
+  }
+
+  threadExplorerActorFocusLoading = true;
+  threadExplorerActorFocusError = "";
+  renderThreadExplorerActorFocus();
+  try {
+    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_ACTOR_FEED", {
+      actor: getThreadExplorerActorFocusId(threadExplorerActorFocusActor),
+      cursor: threadExplorerActorFocusCursor,
+      mode: threadExplorerActorFocusMode,
+      limit: 30,
+    }, {
+      timeoutMs: 120000,
+    });
+    threadExplorerActorFocusCursor = String(result?.cursor || "");
+    threadExplorerActorFocusHasMore = Boolean(threadExplorerActorFocusCursor);
+    if (Array.isArray(result?.items)) {
+      if (append) {
+        threadExplorerActorFocusItems = appendThreadExplorerFeedItems(threadExplorerActorFocusItems, result.items);
+      } else {
+        threadExplorerActorFocusItems = result.items;
+      }
+      threadExplorerActorFocusItems = sortThreadExplorerFeedItemsByDate(threadExplorerActorFocusItems);
+    }
+  } catch (error) {
+    threadExplorerActorFocusError = error.message || t("threadExplorerActorFocusFailed");
+  } finally {
+    threadExplorerActorFocusLoading = false;
+    renderThreadExplorerActorFocus();
+  }
+}
+
+/**
+ * Opens the Actor-Fokus card for a Thread Explorer actor.
+ * @param {object} actor - Normalized Thread Explorer actor.
+ * @returns {void}
+ */
+function openThreadExplorerActorFocus(actor = {}) {
+  const actorId = getThreadExplorerActorFocusId(actor);
+  if (!actorId) {
+    return;
+  }
+
+  threadExplorerActorFocusActor = { ...actor };
+  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(threadExplorerActorFocusMode);
+  threadExplorerActorFocusItems = [];
+  threadExplorerActorFocusCursor = "";
+  threadExplorerActorFocusHasMore = false;
+  threadExplorerActorFocusError = "";
+  renderThreadExplorerActorFocus();
+  void loadThreadExplorerActorFocusFeed({ append: false });
+}
+
+/**
+ * Clears the current Thread Explorer Actor-Fokus card.
+ * @returns {void}
+ */
+function closeThreadExplorerActorFocus() {
+  threadExplorerActorFocusActor = null;
+  threadExplorerActorFocusItems = [];
+  threadExplorerActorFocusCursor = "";
+  threadExplorerActorFocusHasMore = false;
+  threadExplorerActorFocusLoading = false;
+  threadExplorerActorFocusError = "";
+  renderThreadExplorerActorFocus();
+}
+
+/**
+ * Changes the current Actor-Fokus feed mode.
+ * @param {Event} event - Change event from the Actor-Fokus mode select.
+ * @returns {void}
+ */
+function handleThreadExplorerActorModeChange(event) {
+  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(event.currentTarget?.value || "");
+  void loadThreadExplorerActorFocusFeed({ append: false });
+}
+
+/**
+ * Loads the next Actor-Fokus page.
+ * @returns {void}
+ */
+function handleThreadExplorerActorMoreClick() {
+  void loadThreadExplorerActorFocusFeed({ append: true });
+}
+
+/**
  * Opens a reaction account popup from a Thread Explorer count button.
  * @param {Event} event - Click event from a count button.
  * @returns {void}
@@ -5318,6 +7725,7 @@ function handleThreadExplorerRepliesCountClick(event) {
  * @returns {void}
  */
 function renderThreadExplorerTree() {
+  resetThreadExplorerLazyCardObserver();
   threadExplorerThreadStage.replaceChildren();
   threadExplorerThreadStage.classList.remove("has-svg-edges");
   applyThreadExplorerZoom();
@@ -5355,7 +7763,166 @@ function renderThreadExplorerTree() {
   const rootList = document.createElement("ul");
   rootList.appendChild(createThreadExplorerNode(threadExplorerTree));
   threadExplorerThreadStage.appendChild(rootList);
+  hydrateVisibleThreadExplorerCards();
   scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Disconnects the current Thread Explorer lazy-card observer.
+ * @returns {void}
+ */
+function resetThreadExplorerLazyCardObserver() {
+  if (threadExplorerCardObserver) {
+    threadExplorerCardObserver.disconnect();
+  }
+  threadExplorerCardObserver = null;
+}
+
+/**
+ * Returns the lazy-card observer for Thread Explorer post cards.
+ * @returns {IntersectionObserver|null} Observer instance or null when unsupported.
+ */
+function getThreadExplorerLazyCardObserver() {
+  if (threadExplorerForceHydrateCards) {
+    return null;
+  }
+  if (typeof IntersectionObserver !== "function") {
+    return null;
+  }
+  if (threadExplorerCardObserver) {
+    return threadExplorerCardObserver;
+  }
+
+  threadExplorerCardObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) {
+        return;
+      }
+      const card = entry.target;
+      hydrateThreadExplorerCardContent(card);
+      threadExplorerCardObserver.unobserve(card);
+    });
+  }, {
+    root: threadExplorerThreadTree,
+    rootMargin: "900px",
+    threshold: 0,
+  });
+  return threadExplorerCardObserver;
+}
+
+/**
+ * Hydrates a Thread Explorer card when it becomes relevant for display.
+ * @param {HTMLElement|null} card - Rendered post card.
+ * @returns {void}
+ */
+function hydrateThreadExplorerCardContent(card = null) {
+  if (!card || card.dataset.hydrated === "true") {
+    return;
+  }
+
+  const post = card._threadExplorerPost || null;
+  if (!post || post.isDeletedThreadAnchor === true) {
+    card.dataset.hydrated = "true";
+    return;
+  }
+
+  const avatar = card.querySelector(".thread-explorer-avatar");
+  const gallery = card.querySelector(".thread-explorer-post-gallery");
+  markThreadExplorerAvatarImage(avatar, post.author);
+  setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
+  renderThreadExplorerImages(post, gallery);
+  renderThreadExplorerExternalCard(post, card);
+  renderThreadExplorerQuoteCard(post, card);
+  card.dataset.hydrated = "true";
+  card.classList.remove("is-awaiting-content");
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Observes or immediately hydrates a Thread Explorer card.
+ * @param {HTMLElement|null} card - Rendered post card.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @returns {void}
+ */
+function prepareThreadExplorerCardHydration(card = null, post = {}) {
+  if (!card || post?.isDeletedThreadAnchor === true) {
+    return;
+  }
+
+  card._threadExplorerPost = post;
+  card.classList.add("is-awaiting-content");
+  if (threadExplorerForceHydrateCards || post.uri === threadExplorerSelectedUri) {
+    hydrateThreadExplorerCardContent(card);
+    return;
+  }
+
+  const observer = getThreadExplorerLazyCardObserver();
+  if (!observer) {
+    hydrateThreadExplorerCardContent(card);
+    return;
+  }
+  observer.observe(card);
+}
+
+/**
+ * Hydrates cards that are already visible after a tree render.
+ * @returns {void}
+ */
+function hydrateVisibleThreadExplorerCards() {
+  if (threadExplorerForceHydrateCards) {
+    threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card").forEach((card) => {
+      hydrateThreadExplorerCardContent(card);
+    });
+  }
+}
+
+/**
+ * Returns the timestamp used to sort one Thread Explorer reply.
+ * @param {object|null} node - Normalized Thread Explorer reply node.
+ * @returns {number} Epoch milliseconds or a large fallback value.
+ */
+function getThreadExplorerReplySortTimestamp(node = null) {
+  const createdAt = Date.parse(String(node?.post?.createdAt || "").trim());
+  if (Number.isFinite(createdAt)) {
+    return createdAt;
+  }
+
+  const indexedAt = Date.parse(String(node?.post?.indexedAt || "").trim());
+  if (Number.isFinite(indexedAt)) {
+    return indexedAt;
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Returns Thread Explorer replies sorted chronologically without mutating the source array.
+ * @param {Array<object>} replies - Raw reply nodes for one parent post.
+ * @returns {Array<object>} Replies sorted oldest first within the sibling group.
+ */
+function getChronologicalThreadExplorerReplies(replies) {
+  if (!Array.isArray(replies)) {
+    return [];
+  }
+
+  return replies
+    .map((reply, index) => {
+      return {
+        reply,
+        index,
+      };
+    })
+    .sort((left, right) => {
+      const leftTime = getThreadExplorerReplySortTimestamp(left.reply);
+      const rightTime = getThreadExplorerReplySortTimestamp(right.reply);
+      if (leftTime !== rightTime) {
+        return leftTime - rightTime;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => {
+      return entry.reply;
+    });
 }
 
 /**
@@ -5368,21 +7935,20 @@ function createThreadExplorerNode(node) {
   const item = fragment.querySelector(".thread-explorer-node-item");
   const toggle = fragment.querySelector(".thread-explorer-node-toggle");
   const card = fragment.querySelector(".thread-explorer-post-card");
+  const actorTriggers = Array.from(fragment.querySelectorAll(".thread-explorer-actor-trigger"));
   const avatar = fragment.querySelector(".thread-explorer-avatar");
   const author = fragment.querySelector(".thread-explorer-post-author");
   const handle = fragment.querySelector(".thread-explorer-post-handle");
   const meta = fragment.querySelector(".thread-explorer-post-meta");
   const viewLink = fragment.querySelector(".thread-explorer-view-link");
   const editButton = fragment.querySelector(".thread-explorer-edit-button");
+  const actions = fragment.querySelector(".thread-explorer-post-actions");
   const text = fragment.querySelector(".thread-explorer-post-text");
   const gallery = fragment.querySelector(".thread-explorer-post-gallery");
   const counts = fragment.querySelector(".thread-explorer-post-counts");
   const children = fragment.querySelector(".thread-explorer-children");
   const post = node.post;
-  let replies = [];
-  if (Array.isArray(node.replies)) {
-    replies = node.replies;
-  }
+  const replies = getChronologicalThreadExplorerReplies(node.replies);
   const engagementScore = getThreadExplorerEngagementScore(post);
   const engagementTier = getThreadExplorerEngagementTier(engagementScore);
   const isDeletedThreadAnchor = post.isDeletedThreadAnchor === true;
@@ -5398,17 +7964,21 @@ function createThreadExplorerNode(node) {
   }
 
   if (isDeletedThreadAnchor) {
+    actorTriggers.forEach((trigger) => {
+      trigger.hidden = true;
+      trigger.disabled = true;
+    });
     avatar.hidden = true;
     author.textContent = t("threadExplorerDeletedThreadTitle");
     handle.textContent = post.uri.replace(/^at:\/\//, "");
     meta.textContent = "";
     viewLink.hidden = true;
     editButton.hidden = true;
+    actions.hidden = true;
     text.textContent = t("threadExplorerDeletedThreadText");
     counts.replaceChildren();
   } else {
-    markThreadExplorerAvatarImage(avatar, post.author);
-    setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
+    setAvatarImage(avatar, "", getThreadExplorerActorLabel(post.author));
     author.textContent = getThreadExplorerActorLabel(post.author);
     if (post.author?.handle) {
       handle.textContent = `@${post.author.handle}`;
@@ -5419,12 +7989,18 @@ function createThreadExplorerNode(node) {
     }
     meta.textContent = formatThreadExplorerDate(post.createdAt || post.indexedAt);
     renderThreadExplorerViewLink(post, viewLink);
-    renderThreadExplorerEditButton(post, editButton);
+    actions.hidden = !renderThreadExplorerEditButton(post, editButton);
     text.textContent = getThreadExplorerPostDisplayText(post) || t("threadExplorerNoText");
     renderThreadExplorerCounts(post, counts);
-    renderThreadExplorerImages(post, gallery);
-    renderThreadExplorerExternalCard(post, fragment);
-    renderThreadExplorerQuoteCard(post, fragment);
+    actorTriggers.forEach((trigger) => {
+      trigger.dataset.actorDid = post.author?.did || "";
+      trigger.dataset.actorHandle = post.author?.handle || "";
+      applyTranslatedTitle(trigger, "threadExplorerActorFocusTriggerTitle");
+      trigger.addEventListener("click", () => {
+        openThreadExplorerActorFocus(post.author || {});
+      });
+    });
+    prepareThreadExplorerCardHydration(card, post);
   }
 
   if (!replies.length) {
@@ -5476,10 +8052,11 @@ function renderThreadExplorerImages(post, gallery) {
     const button = fragment.querySelector(".thread-explorer-image-button");
     const img = fragment.querySelector("img");
     const caption = fragment.querySelector("figcaption");
-    img.src = image.fullsize || image.thumb || "";
+    const source = image.fullsize || image.thumb || "";
+    const thumb = image.thumb || source;
+    setThreadExplorerCachedImageSource(img, source, thumb);
     img.alt = image.alt || "";
-    img.addEventListener("load", scheduleThreadExplorerEdgeRender, { once: true });
-    img.addEventListener("error", handleThreadExplorerPostImageError);
+    attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerPostImageError);
     button.addEventListener("click", () => {
       openThreadExplorerGallery(images, imageIndex);
     });
@@ -5566,23 +8143,29 @@ function renderThreadExplorerExternalCard(post, fragment) {
   card.href = external.uri;
   image.removeEventListener("error", handleThreadExplorerLinkImageError);
   image.addEventListener("error", handleThreadExplorerLinkImageError);
-  image.addEventListener("load", scheduleThreadExplorerEdgeRender, { once: true });
+  image.addEventListener("load", () => {
+    cacheThreadExplorerRenderedMediaImage(image);
+    scheduleThreadExplorerEdgeRender();
+  }, { once: true });
   if (external.thumb) {
     card.classList.remove("has-no-thumb");
     card.classList.remove("has-favicon-thumb");
     image.hidden = false;
-    image.src = external.thumb;
+    setThreadExplorerCachedImageSource(image, external.thumb);
   } else {
     const faviconUrl = getThreadExplorerFaviconUrl(external.uri);
     if (faviconUrl) {
       card.classList.remove("has-no-thumb");
       card.classList.add("has-favicon-thumb");
       image.hidden = false;
-      image.src = faviconUrl;
+      setThreadExplorerCachedImageSource(image, faviconUrl);
     } else {
       card.classList.add("has-no-thumb");
       card.classList.remove("has-favicon-thumb");
       image.hidden = true;
+      delete image.dataset.snapshotSource;
+      delete image.dataset.snapshotThumb;
+      delete image.dataset.snapshotHydrated;
       image.removeAttribute("src");
     }
   }
@@ -5615,11 +8198,11 @@ function renderThreadExplorerQuoteImages(quote, gallery) {
 
   images.slice(0, 4).forEach((image, imageIndex) => {
     const img = document.createElement("img");
-    img.src = image.thumb || image.fullsize || "";
+    const source = image.thumb || image.fullsize || "";
+    setThreadExplorerCachedImageSource(img, source);
     img.alt = image.alt || "";
     img.loading = "lazy";
-    img.addEventListener("load", scheduleThreadExplorerEdgeRender, { once: true });
-    img.addEventListener("error", handleThreadExplorerQuoteImageError);
+    attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerQuoteImageError);
     img.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -5662,23 +8245,29 @@ function renderThreadExplorerQuoteExternalCard(quote, fragment) {
   }
   image.removeEventListener("error", handleThreadExplorerQuoteLinkImageError);
   image.addEventListener("error", handleThreadExplorerQuoteLinkImageError);
-  image.addEventListener("load", scheduleThreadExplorerEdgeRender, { once: true });
+  image.addEventListener("load", () => {
+    cacheThreadExplorerRenderedMediaImage(image);
+    scheduleThreadExplorerEdgeRender();
+  }, { once: true });
   if (external.thumb) {
     card.classList.remove("has-no-thumb");
     card.classList.remove("has-favicon-thumb");
     image.hidden = false;
-    image.src = external.thumb;
+    setThreadExplorerCachedImageSource(image, external.thumb);
   } else {
     const faviconUrl = getThreadExplorerFaviconUrl(external.uri);
     if (faviconUrl) {
       card.classList.remove("has-no-thumb");
       card.classList.add("has-favicon-thumb");
       image.hidden = false;
-      image.src = faviconUrl;
+      setThreadExplorerCachedImageSource(image, faviconUrl);
     } else {
       card.classList.add("has-no-thumb");
       card.classList.remove("has-favicon-thumb");
       image.hidden = true;
+      delete image.dataset.snapshotSource;
+      delete image.dataset.snapshotThumb;
+      delete image.dataset.snapshotHydrated;
       image.removeAttribute("src");
     }
   }
@@ -5761,6 +8350,7 @@ async function loadThreadExplorerFeed(options = {}) {
   if (options.clearSelection === true) {
     threadExplorerSelectedUri = "";
     threadExplorerTree = null;
+    clearThreadExplorerRenderedMediaCache();
     threadExplorerCollapsedUris.clear();
     clearThreadExplorerSelectionPreference();
   }
@@ -5787,8 +8377,9 @@ async function loadThreadExplorerFeed(options = {}) {
         threadExplorerItems = appendThreadExplorerFeedItems(threadExplorerItems, result.items, {
           groupByRoot: Boolean(getThreadExplorerSearchIdFromSource(threadExplorerSource)),
         });
+        threadExplorerItems = sortThreadExplorerFeedItemsByDate(threadExplorerItems);
       } else {
-        threadExplorerItems = result.items;
+        threadExplorerItems = sortThreadExplorerFeedItemsByDate(result.items);
       }
     } else {
       if (!append) {
@@ -5826,6 +8417,7 @@ async function selectThreadExplorerPost(uri) {
   persistThreadExplorerSelectionPreference(selectedUri);
   threadExplorerLoadingThread = true;
   threadExplorerTree = null;
+  clearThreadExplorerRenderedMediaCache();
   threadExplorerThreadError = "";
   renderThreadExplorerWorkspace();
   try {
@@ -6140,6 +8732,44 @@ function buildThreadExplorerSnapshotFileName(extension = "png") {
 }
 
 /**
+ * Counts media assets that make a Thread Explorer PNG snapshot expensive.
+ * @param {object|null} node - Thread Explorer tree node.
+ * @returns {number} Count of post images, quote images and external-card thumbnails.
+ */
+function countThreadExplorerSnapshotMediaAssets(node = null) {
+  if (!node || typeof node !== "object") {
+    return 0;
+  }
+
+  let count = 0;
+  const post = node.post || {};
+  if (Array.isArray(post.images)) {
+    count += post.images.length;
+  }
+  if (post.externalCard?.thumb) {
+    count += 1;
+  }
+
+  const quote = post.quoteCard || null;
+  if (quote && typeof quote === "object") {
+    if (Array.isArray(quote.images)) {
+      count += quote.images.length;
+    }
+    if (quote.externalCard?.thumb) {
+      count += 1;
+    }
+  }
+
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => {
+      count += countThreadExplorerSnapshotMediaAssets(reply);
+    });
+  }
+
+  return count;
+}
+
+/**
  * Encodes an already loaded image element as a data URL when the browser allows it.
  * @param {HTMLImageElement} image - Source image from the rendered Thread Explorer.
  * @returns {string} Data URL, original data URL, or an empty string when unavailable.
@@ -6231,6 +8861,29 @@ function loadThreadExplorerSnapshotAvatarImage(dataUri) {
 }
 
 /**
+ * Loads one rendered snapshot image source into a canvas-safe image object.
+ * @param {string} source - Data URI, blob URL or same-origin image URL.
+ * @returns {Promise<HTMLImageElement|null>} Loaded image or null when loading fails.
+ */
+function loadThreadExplorerSnapshotCanvasImage(source) {
+  const normalizedSource = String(source || "").trim();
+  if (!normalizedSource) {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.addEventListener("load", () => {
+      resolve(image);
+    }, { once: true });
+    image.addEventListener("error", () => {
+      resolve(null);
+    }, { once: true });
+    image.src = normalizedSource;
+  });
+}
+
+/**
  * Preloads all cached Thread Explorer avatars needed by the canvas snapshot renderers.
  * @param {HTMLElement[]} cards - Rendered Thread Explorer post cards.
  * @returns {Promise<Map<string, HTMLImageElement>>} Loaded avatar image map keyed by DID and URL.
@@ -6262,6 +8915,380 @@ async function preloadThreadExplorerSnapshotAvatarImages(cards) {
 }
 
 /**
+ * Returns whether a rendered image belongs to post media rather than account avatars.
+ * @param {HTMLImageElement|null} image - Rendered image element.
+ * @returns {boolean} True when the image should be painted as card media.
+ */
+function isThreadExplorerSnapshotMediaImage(image = null) {
+  if (!image || image.hidden) {
+    return false;
+  }
+  if (image.classList.contains("thread-explorer-avatar")) {
+    return false;
+  }
+  if (image.classList.contains("thread-explorer-quote-card-avatar")) {
+    return false;
+  }
+  return Boolean(image.closest(".thread-explorer-post-gallery, .thread-explorer-link-card, .thread-explorer-quote-card-gallery, .thread-explorer-quote-link-card"));
+}
+
+/**
+ * Builds stable lookup keys for one rendered media image in a snapshot card.
+ * @param {HTMLImageElement|null} image - Rendered media image.
+ * @returns {string[]} Stable media image keys ordered by preference.
+ */
+function getThreadExplorerSnapshotMediaImageKeys(image = null) {
+  const candidates = [
+    image?.dataset?.snapshotSource,
+    image?.dataset?.snapshotThumb,
+    image?.currentSrc,
+    image?.src,
+  ];
+  const keys = [];
+  candidates.forEach((candidate) => {
+    const source = String(candidate || "").trim();
+    if (!source || keys.includes(source)) {
+      return;
+    }
+    keys.push(source);
+  });
+  return keys;
+}
+
+/**
+ * Builds the preferred key for one rendered media image in a snapshot card.
+ * @param {HTMLImageElement|null} image - Rendered media image.
+ * @returns {string} Stable media image key or an empty string.
+ */
+function getThreadExplorerSnapshotMediaImageKey(image = null) {
+  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
+  if (keys.length === 0) {
+    return "";
+  }
+  return keys[0];
+}
+
+/**
+ * Finds a preloaded media image using all known keys for the rendered image element.
+ * @param {HTMLImageElement|null} image - Rendered media image.
+ * @param {Map<string, HTMLImageElement>} mediaImages - Preloaded media image map.
+ * @returns {HTMLImageElement|null} Loaded image or null when no key matches.
+ */
+function getThreadExplorerSnapshotDrawableMediaImage(image = null, mediaImages = new Map()) {
+  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
+  for (const key of keys) {
+    if (mediaImages.has(key)) {
+      return mediaImages.get(key);
+    }
+  }
+  return null;
+}
+
+/**
+ * Clears the short-lived cache for media currently shown in the Thread Explorer.
+ * @returns {void}
+ */
+function clearThreadExplorerRenderedMediaCache() {
+  threadExplorerMediaCacheGeneration += 1;
+  if (threadExplorerMediaCachePrewarmController) {
+    threadExplorerMediaCachePrewarmController.abort();
+    threadExplorerMediaCachePrewarmController = null;
+  }
+  threadExplorerRenderedMediaCache = new Map();
+  threadExplorerSnapshotMediaDataUris = new Map();
+}
+
+/**
+ * Finds a cached data URI for any of the provided Thread Explorer media keys.
+ * @param {string[]} keys - Media URL keys that may identify the same image.
+ * @returns {string} Cached data URI, or an empty string.
+ */
+function getThreadExplorerRenderedMediaCacheDataUri(keys = []) {
+  for (const key of keys) {
+    const normalizedKey = String(key || "").trim();
+    if (!normalizedKey) {
+      continue;
+    }
+    if (threadExplorerRenderedMediaCache.has(normalizedKey)) {
+      return threadExplorerRenderedMediaCache.get(normalizedKey);
+    }
+    if (threadExplorerSnapshotMediaDataUris.has(normalizedKey)) {
+      return threadExplorerSnapshotMediaDataUris.get(normalizedKey);
+    }
+  }
+  return "";
+}
+
+/**
+ * Assigns a Thread Explorer image source, preferring already cached data URIs.
+ * @param {HTMLImageElement|null} image - Target image element.
+ * @param {string} primarySource - Original full image or thumbnail URL.
+ * @param {string} secondarySource - Secondary URL for the same image.
+ * @returns {void}
+ */
+function setThreadExplorerCachedImageSource(image = null, primarySource = "", secondarySource = "") {
+  if (!image) {
+    return;
+  }
+
+  const normalizedPrimary = String(primarySource || "").trim();
+  const normalizedSecondary = String(secondarySource || "").trim();
+  if (normalizedPrimary) {
+    image.dataset.snapshotSource = normalizedPrimary;
+  } else {
+    delete image.dataset.snapshotSource;
+  }
+  if (normalizedSecondary && normalizedSecondary !== normalizedPrimary) {
+    image.dataset.snapshotThumb = normalizedSecondary;
+  } else {
+    delete image.dataset.snapshotThumb;
+  }
+
+  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
+  const dataUri = getThreadExplorerRenderedMediaCacheDataUri(keys);
+  if (dataUri) {
+    image.dataset.snapshotHydrated = "true";
+    image.src = dataUri;
+    return;
+  }
+
+  delete image.dataset.snapshotHydrated;
+  if (normalizedPrimary) {
+    image.src = normalizedPrimary;
+  } else if (normalizedSecondary) {
+    image.src = normalizedSecondary;
+  } else {
+    image.removeAttribute("src");
+  }
+}
+
+/**
+ * Replaces rendered Thread Explorer media URLs with cache data URIs when available.
+ * @returns {number} Number of image elements switched to cached sources.
+ */
+function applyThreadExplorerRenderedMediaCacheToDom() {
+  if (!threadExplorerThreadStage) {
+    return 0;
+  }
+
+  let appliedCount = 0;
+  const images = Array.from(threadExplorerThreadStage.querySelectorAll("img"));
+  images.forEach((image) => {
+    if (!isThreadExplorerSnapshotMediaImage(image)) {
+      return;
+    }
+    const dataUri = getThreadExplorerRenderedMediaCacheDataUri(getThreadExplorerSnapshotMediaImageKeys(image));
+    if (!dataUri || image.src === dataUri) {
+      return;
+    }
+    image.dataset.snapshotHydrated = "true";
+    image.src = dataUri;
+    appliedCount += 1;
+  });
+
+  if (appliedCount > 0) {
+    scheduleThreadExplorerEdgeRender();
+  }
+  return appliedCount;
+}
+
+/**
+ * Stores one Thread Explorer media data URI under every known cache key.
+ * @param {string[]} keys - Cache keys that identify the same media image.
+ * @param {string} dataUri - Canvas-safe data URI.
+ * @returns {void}
+ */
+function storeThreadExplorerRenderedMediaDataUri(keys = [], dataUri = "") {
+  const normalizedDataUri = String(dataUri || "").trim();
+  if (!normalizedDataUri) {
+    return;
+  }
+
+  keys.forEach((key) => {
+    const normalizedKey = String(key || "").trim();
+    if (normalizedKey) {
+      threadExplorerRenderedMediaCache.set(normalizedKey, normalizedDataUri);
+    }
+  });
+}
+
+/**
+ * Stores a rendered Thread Explorer media image as a data URI for the current thread.
+ * @param {HTMLImageElement|null} image - Loaded media image from the visible thread.
+ * @returns {void}
+ */
+function cacheThreadExplorerRenderedMediaImage(image = null) {
+  if (!image || !image.complete || !image.naturalWidth || !image.naturalHeight) {
+    return;
+  }
+
+  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
+  if (keys.length === 0) {
+    return;
+  }
+
+  const dataUri = encodeThreadExplorerImageElement(image);
+  if (!dataUri) {
+    return;
+  }
+
+  storeThreadExplorerRenderedMediaDataUri(keys, dataUri);
+}
+
+/**
+ * Registers load/error bookkeeping for a rendered Thread Explorer media image.
+ * @param {HTMLImageElement|null} image - Media image element.
+ * @param {(event: Event) => void} errorHandler - Existing error handler for this image.
+ * @returns {void}
+ */
+function attachThreadExplorerRenderedMediaCacheHandlers(image = null, errorHandler = null) {
+  if (!image) {
+    return;
+  }
+
+  image.addEventListener("load", () => {
+    cacheThreadExplorerRenderedMediaImage(image);
+    scheduleThreadExplorerEdgeRender();
+  }, { once: true });
+  if (typeof errorHandler === "function") {
+    image.addEventListener("error", errorHandler);
+  }
+}
+
+/**
+ * Caches every currently loaded and readable media image in the Thread Explorer DOM.
+ * @returns {number} Number of media elements inspected.
+ */
+function cacheLoadedThreadExplorerRenderedMediaImages() {
+  const images = Array.from(threadExplorerThreadStage.querySelectorAll("img"))
+    .filter((image) => isThreadExplorerSnapshotMediaImage(image));
+  images.forEach((image) => {
+    cacheThreadExplorerRenderedMediaImage(image);
+  });
+  return images.length;
+}
+
+/**
+ * Collects canvas-safe rendered media images from Thread Explorer cards.
+ * @param {HTMLElement[]} cards - Rendered Thread Explorer post cards.
+ * @returns {Promise<Map<string, HTMLImageElement>>} Loaded media image map keyed by image source.
+ */
+async function preloadThreadExplorerSnapshotMediaImages(cards) {
+  const sourceEntries = new Map();
+  cards.forEach((card) => {
+    const images = Array.from(card.querySelectorAll("img"));
+    images.forEach((image) => {
+      if (!isThreadExplorerSnapshotMediaImage(image)) {
+        return;
+      }
+
+      const keys = getThreadExplorerSnapshotMediaImageKeys(image);
+      if (keys.length === 0) {
+        return;
+      }
+
+      let source = "";
+      for (const key of keys) {
+        if (threadExplorerRenderedMediaCache.has(key)) {
+          source = threadExplorerRenderedMediaCache.get(key);
+          break;
+        }
+        if (threadExplorerSnapshotMediaDataUris.has(key)) {
+          source = threadExplorerSnapshotMediaDataUris.get(key);
+          break;
+        }
+      }
+      if (!source) {
+        source = encodeThreadExplorerImageElement(image);
+      }
+      if (!source && canDrawThreadExplorerSnapshotImage(image)) {
+        source = String(image.currentSrc || image.src || "").trim();
+      }
+      if (source) {
+        keys.forEach((key) => {
+          if (!sourceEntries.has(key)) {
+            sourceEntries.set(key, source);
+          }
+        });
+      }
+    });
+  });
+
+  const loaded = new Map();
+  for (const [key, source] of sourceEntries.entries()) {
+    const image = await loadThreadExplorerSnapshotCanvasImage(source);
+    if (image) {
+      loaded.set(key, image);
+    }
+  }
+  return loaded;
+}
+
+/**
+ * Returns a hydrated data URI for a rendered Thread Explorer media image.
+ * @param {HTMLImageElement|null} image - Rendered media image.
+ * @returns {string} Hydrated data URI or an empty string.
+ */
+function getThreadExplorerSnapshotHydratedMediaUri(image = null) {
+  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
+  for (const key of keys) {
+    if (threadExplorerRenderedMediaCache.has(key)) {
+      return threadExplorerRenderedMediaCache.get(key);
+    }
+    if (threadExplorerSnapshotMediaDataUris.has(key)) {
+      return threadExplorerSnapshotMediaDataUris.get(key);
+    }
+  }
+  return "";
+}
+
+/**
+ * Applies hydrated media data URIs directly to rendered Thread Explorer image elements.
+ * @param {(progress: {percent?: number, step?: string, detail?: string}) => Promise<void>} onProgress - Progress reporter.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
+ * @returns {Promise<object>} Counts for total, embedded and missing images.
+ */
+async function applyThreadExplorerSnapshotMediaDataUrisToRenderedTree(onProgress = async () => {}, signal = null) {
+  const images = Array.from(threadExplorerThreadStage.querySelectorAll("img"));
+  const mediaImages = images.filter((image) => isThreadExplorerSnapshotMediaImage(image));
+  const total = mediaImages.length;
+  let appliedCount = 0;
+  let skippedCount = 0;
+
+  for (let index = 0; index < mediaImages.length; index += 1) {
+    throwIfThreadExplorerSnapshotAborted(signal);
+    const image = mediaImages[index];
+
+    const dataUri = getThreadExplorerSnapshotHydratedMediaUri(image);
+    if (!dataUri) {
+      skippedCount += 1;
+    } else {
+      image.dataset.snapshotHydrated = "true";
+      image.src = dataUri;
+      storeThreadExplorerRenderedMediaDataUri(getThreadExplorerSnapshotMediaImageKeys(image), dataUri);
+      appliedCount += 1;
+    }
+
+    await onProgress({
+      percent: 38 + ((index + 1) / Math.max(1, total) * 2),
+      step: t("threadExplorerSnapshotProgressMedia"),
+      detail: t("threadExplorerSnapshotProgressMediaEmbedDetail", {
+        current: index + 1,
+        total,
+        remaining: Math.max(0, total - index - 1),
+        embedded: appliedCount,
+        skipped: skippedCount,
+      }),
+    });
+  }
+  return {
+    total,
+    embedded: appliedCount,
+    missing: skippedCount,
+  };
+}
+
+/**
  * Replaces cloned Thread Explorer images with data URLs read from rendered image elements.
  * @param {HTMLElement} source - Original rendered tree stage.
  * @param {HTMLElement} clone - Cloned tree stage.
@@ -6275,6 +9302,13 @@ function inlineThreadExplorerSnapshotImages(source, clone) {
       || getThreadExplorerSnapshotCachedAvatarUri(sourceImages[index]);
     if (cachedAvatarUri) {
       cloneImage.setAttribute("src", cachedAvatarUri);
+      return;
+    }
+
+    const hydratedMediaUri = getThreadExplorerSnapshotHydratedMediaUri(sourceImages[index])
+      || getThreadExplorerSnapshotHydratedMediaUri(cloneImage);
+    if (hydratedMediaUri) {
+      cloneImage.setAttribute("src", hydratedMediaUri);
       return;
     }
 
@@ -6346,6 +9380,27 @@ function drawThreadExplorerSnapshotRoundRect(context, x, y, width, height, radiu
   context.lineTo(x, y + safeRadius);
   context.quadraticCurveTo(x, y, x + safeRadius, y);
   context.closePath();
+}
+
+/**
+ * Draws a rounded rectangle outline for snapshot canvas rendering.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {number} x - Left coordinate.
+ * @param {number} y - Top coordinate.
+ * @param {number} width - Rectangle width.
+ * @param {number} height - Rectangle height.
+ * @param {number} radius - Corner radius.
+ * @param {string} color - Stroke color.
+ * @param {number} lineWidth - Stroke width.
+ * @returns {void}
+ */
+function strokeThreadExplorerSnapshotRoundRect(context, x, y, width, height, radius, color, lineWidth = 1) {
+  context.save();
+  drawThreadExplorerSnapshotRoundRect(context, x, y, width, height, radius);
+  context.strokeStyle = color;
+  context.lineWidth = lineWidth;
+  context.stroke();
+  context.restore();
 }
 
 /**
@@ -6471,6 +9526,9 @@ async function encodeThreadExplorerSnapshotCanvas(canvas, mimeType) {
   if (!blob) {
     throw new Error(t("threadExplorerSnapshotFailed"));
   }
+  if (mimeType === "image/png") {
+    return addThreadExplorerPngMetadata(blob);
+  }
   return blob;
 }
 
@@ -6545,6 +9603,128 @@ function createThreadExplorerPngChunk(type, data, crcTable) {
 }
 
 /**
+ * Creates one PNG text metadata chunk.
+ * @param {string} keyword - PNG text keyword.
+ * @param {string} value - Text value.
+ * @param {Uint32Array} crcTable - CRC lookup table.
+ * @returns {Uint8Array} Encoded PNG tEXt chunk.
+ */
+function createThreadExplorerPngTextChunk(keyword, value, crcTable) {
+  const encoder = new TextEncoder();
+  const safeKeyword = String(keyword || "").replace(/[^\x20-\x7e]+/g, "").slice(0, 79);
+  const safeValue = String(value || "").replace(/[^\x20-\x7e]+/g, "");
+  const keywordBytes = encoder.encode(safeKeyword);
+  const valueBytes = encoder.encode(safeValue);
+  const data = new Uint8Array(keywordBytes.length + 1 + valueBytes.length);
+  data.set(keywordBytes, 0);
+  data[keywordBytes.length] = 0;
+  data.set(valueBytes, keywordBytes.length + 1);
+  return createThreadExplorerPngChunk("tEXt", data, crcTable);
+}
+
+/**
+ * Escapes a text value for use inside PNG XMP metadata.
+ * @param {string} value - Raw text value.
+ * @returns {string} XML-safe text value.
+ */
+function escapeThreadExplorerPngXmpText(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
+ * Builds an XMP packet for PNG export metadata.
+ * @param {string} applicationLabel - Threadline application and version label.
+ * @returns {string} XMP metadata packet.
+ */
+function createThreadExplorerPngXmpPacket(applicationLabel) {
+  const safeLabel = escapeThreadExplorerPngXmpText(applicationLabel);
+  const metadataDate = escapeThreadExplorerPngXmpText(new Date().toISOString());
+  return [
+    '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
+    '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+    '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xmp="http://ns.adobe.com/xap/1.0/">',
+    '<dc:creator><rdf:Seq><rdf:li>Threadline</rdf:li></rdf:Seq></dc:creator>',
+    `<xmp:CreatorTool>${safeLabel}</xmp:CreatorTool>`,
+    `<xmp:MetadataDate>${metadataDate}</xmp:MetadataDate>`,
+    `<xmp:ModifyDate>${metadataDate}</xmp:ModifyDate>`,
+    '</rdf:Description>',
+    '</rdf:RDF>',
+    '</x:xmpmeta>',
+    '<?xpacket end="w"?>',
+  ].join("");
+}
+
+/**
+ * Creates one PNG international text chunk for XMP metadata.
+ * @param {string} value - XMP payload.
+ * @param {Uint32Array} crcTable - CRC lookup table.
+ * @returns {Uint8Array} Encoded PNG iTXt chunk.
+ */
+function createThreadExplorerPngXmpChunk(value, crcTable) {
+  const encoder = new TextEncoder();
+  const keywordBytes = encoder.encode("XML:com.adobe.xmp");
+  const textBytes = encoder.encode(value);
+  const data = new Uint8Array(keywordBytes.length + 5 + textBytes.length);
+  data.set(keywordBytes, 0);
+  data[keywordBytes.length] = 0;
+  data[keywordBytes.length + 1] = 0;
+  data[keywordBytes.length + 2] = 0;
+  data[keywordBytes.length + 3] = 0;
+  data[keywordBytes.length + 4] = 0;
+  data.set(textBytes, keywordBytes.length + 5);
+  return createThreadExplorerPngChunk("iTXt", data, crcTable);
+}
+
+/**
+ * Builds PNG metadata chunks for Threadline exports.
+ * @param {Uint32Array} crcTable - CRC lookup table.
+ * @returns {Uint8Array[]} PNG metadata chunks.
+ */
+function createThreadExplorerPngMetadataChunks(crcTable) {
+  const applicationLabel = getExportMetadataApplicationLabel();
+  return [
+    createThreadExplorerPngTextChunk("Software", applicationLabel, crcTable),
+    createThreadExplorerPngTextChunk("Author", applicationLabel, crcTable),
+    createThreadExplorerPngTextChunk("Creator", applicationLabel, crcTable),
+    createThreadExplorerPngXmpChunk(createThreadExplorerPngXmpPacket(applicationLabel), crcTable),
+  ];
+}
+
+/**
+ * Adds Threadline metadata chunks to an encoded PNG blob.
+ * @param {Blob} blob - PNG blob from browser canvas encoding.
+ * @returns {Promise<Blob>} PNG blob with metadata chunks when possible.
+ */
+async function addThreadExplorerPngMetadata(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let index = 0; index < signature.length; index += 1) {
+    if (bytes[index] !== signature[index]) {
+      return blob;
+    }
+  }
+
+  const crcTable = createThreadExplorerPngCrcTable();
+  const insertionOffset = 8 + 4 + 4 + 13 + 4;
+  if (bytes.length <= insertionOffset) {
+    return blob;
+  }
+
+  const parts = [
+    bytes.slice(0, insertionOffset),
+    ...createThreadExplorerPngMetadataChunks(crcTable),
+    bytes.slice(insertionOffset),
+  ];
+  return new Blob(parts, { type: "image/png" });
+}
+
+/**
  * Creates PNG IHDR data for an RGBA image.
  * @param {number} width - Image width in pixels.
  * @param {number} height - Image height in pixels.
@@ -6594,9 +9774,10 @@ function getThreadExplorerSnapshotBackgroundColor() {
  * @param {DOMRect} stageRect - Thread Explorer stage rectangle.
  * @param {HTMLElement[]} cards - Rendered post card elements.
  * @param {Map<string, HTMLImageElement>} avatarImages - Preloaded cached avatars for canvas drawing.
+ * @param {Map<string, HTMLImageElement>} mediaImages - Preloaded canvas-safe media images.
  * @returns {HTMLCanvasElement} Rendered tile canvas.
  */
-function renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, stageRect, cards, avatarImages = new Map()) {
+function renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, stageRect, cards, avatarImages = new Map(), mediaImages = new Map()) {
   const canvas = document.createElement("canvas");
   canvas.width = tileWidth;
   canvas.height = tileHeight;
@@ -6607,7 +9788,7 @@ function renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, s
   context.translate(-tileX, -tileY);
   drawThreadExplorerSnapshotEdges(context);
   cards.forEach((card) => {
-    drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages);
+    drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages, mediaImages);
   });
   context.restore();
   return canvas;
@@ -6692,17 +9873,315 @@ function drawThreadExplorerSnapshotAvatarImage(context, image, x, y, size) {
 }
 
 /**
+ * Draws an image inside a rounded rectangle using cover behavior.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {HTMLImageElement|null} image - Loaded image to draw.
+ * @param {number} x - Left coordinate.
+ * @param {number} y - Top coordinate.
+ * @param {number} width - Target width.
+ * @param {number} height - Target height.
+ * @param {number} radius - Clip radius.
+ * @returns {boolean} True when an image was drawn.
+ */
+function drawThreadExplorerSnapshotCoverImage(context, image, x, y, width, height, radius = 6) {
+  if (!image || !image.complete || !image.naturalWidth || !image.naturalHeight) {
+    return false;
+  }
+
+  try {
+    const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    const offsetX = x + ((width - drawWidth) / 2);
+    const offsetY = y + ((height - drawHeight) / 2);
+    context.save();
+    drawThreadExplorerSnapshotRoundRect(context, x, y, width, height, radius);
+    context.clip();
+    context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+    context.restore();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Draws a lightweight placeholder for a media image that cannot be painted into canvas.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {DOMRect} rect - Media rectangle in snapshot coordinates.
+ * @returns {void}
+ */
+function drawThreadExplorerSnapshotMediaPlaceholder(context, rect) {
+  context.save();
+  drawThreadExplorerSnapshotRoundRect(context, rect.left, rect.top, rect.width, rect.height, 6);
+  context.fillStyle = "#dfe8f7";
+  context.fill();
+  context.strokeStyle = "#c9d8ee";
+  context.lineWidth = 1;
+  context.stroke();
+  context.restore();
+}
+
+/**
+ * Draws a compact ALT text overlay for one snapshot media image.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {string} altText - Image ALT text.
+ * @param {DOMRect} rect - Media rectangle in snapshot coordinates.
+ * @param {number} maxBottom - Lowest y-coordinate the ALT text block may use.
+ * @returns {void}
+ */
+function drawThreadExplorerSnapshotImageAltText(context, altText, rect, maxBottom = 0) {
+  const normalizedAlt = String(altText || "").replace(/\s+/g, " ").trim();
+  if (!normalizedAlt) {
+    return;
+  }
+
+  const paddingX = 8;
+  const paddingY = 6;
+  const lineHeight = 13;
+  const labelTop = rect.bottom + 4;
+  let maxLines = 3;
+  if (maxBottom > labelTop) {
+    const availableHeight = Math.max(0, maxBottom - labelTop);
+    maxLines = Math.floor((availableHeight - (paddingY * 2)) / lineHeight);
+    maxLines = Math.min(12, Math.max(1, maxLines));
+  } else {
+    if (rect.height < 96) {
+      maxLines = 2;
+    }
+    if (rect.height < 52) {
+      maxLines = 1;
+    }
+  }
+
+  const label = `${t("archivePdfAltPrefix")} ${normalizedAlt}`;
+  context.save();
+  context.font = "11px Segoe UI, Arial, sans-serif";
+  const lines = wrapThreadExplorerSnapshotText(context, label, Math.max(40, rect.width - (paddingX * 2)), maxLines);
+  if (lines.length === 0) {
+    context.restore();
+    return;
+  }
+
+  const labelHeight = (paddingY * 2) + (lines.length * lineHeight);
+  drawThreadExplorerSnapshotRoundRect(context, rect.left, labelTop, rect.width, labelHeight, 6);
+  context.fillStyle = "#eef5ff";
+  context.fill();
+  context.strokeStyle = "#c9d8ee";
+  context.lineWidth = 1;
+  context.stroke();
+  context.fillStyle = "#345070";
+  drawThreadExplorerSnapshotTextBlock(context, lines, rect.left + paddingX, labelTop + paddingY + 9, lineHeight);
+  context.restore();
+}
+
+/**
+ * Draws all visible media images inside a Thread Explorer card at their rendered positions.
+ * @param {CanvasRenderingContext2D} context - Target canvas context.
+ * @param {HTMLElement} card - Rendered post card.
+ * @param {DOMRect} stageRect - Thread Explorer stage rectangle.
+ * @param {Map<string, HTMLImageElement>} mediaImages - Preloaded canvas-safe media images.
+ * @param {number} altTextMaxBottom - Lowest y-coordinate ALT text blocks may use.
+ * @returns {void}
+ */
+function drawThreadExplorerSnapshotMediaImages(context, card, stageRect, mediaImages = new Map(), altTextMaxBottom = 0) {
+  const images = Array.from(card.querySelectorAll("img"));
+  images.forEach((image) => {
+    if (!isThreadExplorerSnapshotMediaImage(image)) {
+      return;
+    }
+
+    const imageRect = getThreadExplorerStageRect(image, stageRect);
+    if (imageRect.width <= 0 || imageRect.height <= 0) {
+      return;
+    }
+
+    const drawableImage = getThreadExplorerSnapshotDrawableMediaImage(image, mediaImages);
+
+    const wasDrawn = drawThreadExplorerSnapshotCoverImage(context, drawableImage, imageRect.left, imageRect.top, imageRect.width, imageRect.height, 6);
+    if (!wasDrawn) {
+      drawThreadExplorerSnapshotMediaPlaceholder(context, imageRect);
+    }
+    strokeThreadExplorerSnapshotRoundRect(context, imageRect.left, imageRect.top, imageRect.width, imageRect.height, 6, "#d6e2f2", 1);
+    drawThreadExplorerSnapshotImageAltText(context, image.alt || "", imageRect, altTextMaxBottom);
+  });
+}
+
+/**
+ * Builds a readable counts line from rendered Thread Explorer count elements.
+ * @param {HTMLElement} card - Rendered post card.
+ * @returns {string} Snapshot-ready count summary with explicit spacing.
+ */
+function getThreadExplorerSnapshotCountsText(card) {
+  const container = card.querySelector(".thread-explorer-post-counts");
+  if (!container) {
+    return "";
+  }
+
+  const parts = [];
+  Array.from(container.children).forEach((child) => {
+    const text = String(child.textContent || "").replace(/\s+/g, " ").trim();
+    if (text) {
+      parts.push(text);
+    }
+  });
+  return parts.join("   ");
+}
+
+/**
+ * Creates the standard error used when a Thread Explorer snapshot export is cancelled.
+ * @returns {Error} Cancel error.
+ */
+function createThreadExplorerSnapshotAbortError() {
+  const error = new Error(t("threadExplorerSnapshotCancelled"));
+  error.name = "AbortError";
+  return error;
+}
+
+/**
+ * Throws when the current Thread Explorer snapshot export was cancelled.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
+ * @returns {void}
+ */
+function throwIfThreadExplorerSnapshotAborted(signal = null) {
+  if (signal?.aborted) {
+    throw createThreadExplorerSnapshotAbortError();
+  }
+}
+
+/**
+ * Creates the standard error used when a media ZIP export is cancelled.
+ * @returns {Error} Cancel error.
+ */
+function createMediaExportAbortError() {
+  const error = new Error(t("archiveMediaCancelled"));
+  error.name = "AbortError";
+  return error;
+}
+
+/**
+ * Throws when the current media ZIP export was cancelled.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
+ * @returns {void}
+ */
+function throwIfMediaExportAborted(signal = null) {
+  if (signal?.aborted) {
+    throw createMediaExportAbortError();
+  }
+}
+
+/**
+ * Keeps Snapshot progress values inside the visible 0-100 percent range.
+ * @param {number} value - Raw progress value.
+ * @returns {number} Integer progress value between 0 and 100.
+ */
+function clampThreadExplorerSnapshotProgress(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+  if (numericValue < 0) {
+    return 0;
+  }
+  if (numericValue > 100) {
+    return 100;
+  }
+  return Math.round(numericValue);
+}
+
+/**
+ * Waits until the browser has had time to paint progress updates.
+ * @returns {Promise<void>} Resolves after two animation frames.
+ */
+function waitForThreadExplorerSnapshotFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(resolve);
+    });
+  });
+}
+
+/**
+ * Updates the modal Snapshot progress UI.
+ * @param {{percent?: number, step?: string, detail?: string, title?: string}} progress - Progress state to render.
+ * @returns {void}
+ */
+function updateThreadExplorerSnapshotProgress(progress = {}) {
+  const percent = clampThreadExplorerSnapshotProgress(progress.percent);
+  if (threadExplorerSnapshotProgressTitle) {
+    if (progress.title) {
+      threadExplorerSnapshotProgressTitle.textContent = progress.title;
+    } else {
+      threadExplorerSnapshotProgressTitle.textContent = t("threadExplorerSnapshotProgressTitle");
+    }
+  }
+  if (threadExplorerSnapshotProgressStep) {
+    threadExplorerSnapshotProgressStep.textContent = progress.step || "";
+  }
+  if (threadExplorerSnapshotProgressDetail) {
+    threadExplorerSnapshotProgressDetail.textContent = progress.detail || `${percent}%`;
+  }
+  if (threadExplorerSnapshotProgressFill) {
+    threadExplorerSnapshotProgressFill.style.width = `${percent}%`;
+  }
+  if (threadExplorerSnapshotProgressBar) {
+    threadExplorerSnapshotProgressBar.setAttribute("aria-valuenow", String(percent));
+    threadExplorerSnapshotProgressBar.setAttribute("aria-label", `${percent}%`);
+  }
+}
+
+/**
+ * Shows the blocking Snapshot progress dialog.
+ * @param {{percent?: number, step?: string, detail?: string, title?: string}} progress - Initial progress state.
+ * @returns {void}
+ */
+function openThreadExplorerSnapshotProgress(progress = {}) {
+  updateThreadExplorerSnapshotProgress(progress);
+  if (threadExplorerSnapshotProgressDialog && !threadExplorerSnapshotProgressDialog.open) {
+    threadExplorerSnapshotProgressDialog.showModal();
+  }
+}
+
+/**
+ * Hides the blocking Snapshot progress dialog.
+ * @returns {void}
+ */
+function closeThreadExplorerSnapshotProgress() {
+  if (threadExplorerSnapshotProgressDialog && threadExplorerSnapshotProgressDialog.open) {
+    threadExplorerSnapshotProgressDialog.close();
+  }
+}
+
+/**
+ * Creates an awaited progress reporter for long Snapshot export phases.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
+ * @returns {(progress: {percent?: number, step?: string, detail?: string, title?: string}) => Promise<void>} Progress reporter.
+ */
+function createThreadExplorerSnapshotProgressReporter(signal = null) {
+  return async (progress = {}) => {
+    throwIfThreadExplorerSnapshotAborted(signal);
+    updateThreadExplorerSnapshotProgress(progress);
+    await waitForThreadExplorerSnapshotFrame();
+    throwIfThreadExplorerSnapshotAborted(signal);
+  };
+}
+
+/**
  * Renders a full-resolution PNG through small canvas tiles and an assembled PNG stream.
  * @param {number} width - Snapshot width in pixels.
  * @param {number} height - Snapshot height in pixels.
+ * @param {(progress: {percent?: number, step?: string, detail?: string}) => Promise<void>} onProgress - Progress reporter.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
  * @returns {Promise<Blob>} Lossless PNG blob.
  */
-async function renderThreadExplorerTiledPngSnapshotBlob(width, height) {
+async function renderThreadExplorerTiledPngSnapshotBlob(width, height, onProgress = async () => {}, signal = null) {
+  throwIfThreadExplorerSnapshotAborted(signal);
   const crcTable = createThreadExplorerPngCrcTable();
   const parts = [];
   const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
   parts.push(signature);
   parts.push(createThreadExplorerPngChunk("IHDR", createThreadExplorerPngHeaderData(width, height), crcTable));
+  parts.push(...createThreadExplorerPngMetadataChunks(crcTable));
 
   if (typeof CompressionStream !== "function") {
     throw new Error("CompressionStream is not available.");
@@ -6712,14 +10191,37 @@ async function renderThreadExplorerTiledPngSnapshotBlob(width, height) {
   const compressedBytesPromise = new Response(compressionStream.readable).arrayBuffer();
   const stageRect = threadExplorerThreadStage.getBoundingClientRect();
   const cards = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card"));
+  await onProgress({
+    percent: 54,
+    step: t("threadExplorerSnapshotProgressAvatars"),
+    detail: t("threadExplorerSnapshotProgressPostCount", { count: cards.length }),
+  });
   const avatarImages = await preloadThreadExplorerSnapshotAvatarImages(cards);
+  throwIfThreadExplorerSnapshotAborted(signal);
+  await onProgress({
+    percent: 58,
+    step: t("threadExplorerSnapshotProgressMedia"),
+    detail: t("threadExplorerSnapshotProgressPostCount", { count: cards.length }),
+  });
+  const mediaImages = await preloadThreadExplorerSnapshotMediaImages(cards);
+  throwIfThreadExplorerSnapshotAborted(signal);
+  const tileRows = Math.max(1, Math.ceil(height / THREAD_EXPLORER_SNAPSHOT_TILE_SIZE));
+  let tileRow = 0;
 
   for (let tileY = 0; tileY < height; tileY += THREAD_EXPLORER_SNAPSHOT_TILE_SIZE) {
+    throwIfThreadExplorerSnapshotAborted(signal);
+    tileRow += 1;
+    const tilePercent = 60 + ((tileRow - 1) / tileRows * 32);
+    await onProgress({
+      percent: tilePercent,
+      step: t("threadExplorerSnapshotProgressRenderTiles"),
+      detail: t("threadExplorerSnapshotProgressRenderTileDetail", { row: tileRow, rows: tileRows }),
+    });
     const tileHeight = Math.min(THREAD_EXPLORER_SNAPSHOT_TILE_SIZE, height - tileY);
     const rowTiles = [];
     for (let tileX = 0; tileX < width; tileX += THREAD_EXPLORER_SNAPSHOT_TILE_SIZE) {
       const tileWidth = Math.min(THREAD_EXPLORER_SNAPSHOT_TILE_SIZE, width - tileX);
-      const tileCanvas = renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, stageRect, cards, avatarImages);
+      const tileCanvas = renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, stageRect, cards, avatarImages, mediaImages);
       const tileContext = tileCanvas.getContext("2d");
       rowTiles.push({
         x: tileX,
@@ -6741,6 +10243,12 @@ async function renderThreadExplorerTiledPngSnapshotBlob(width, height) {
     }
   }
 
+  throwIfThreadExplorerSnapshotAborted(signal);
+  await onProgress({
+    percent: 94,
+    step: t("threadExplorerSnapshotProgressEncode"),
+    detail: t("threadExplorerSnapshotProgressRenderTileDetail", { row: tileRows, rows: tileRows }),
+  });
   await compressionWriter.close();
   const compressedScanlines = new Uint8Array(await compressedBytesPromise);
   parts.push(createThreadExplorerPngChunk("IDAT", compressedScanlines, crcTable));
@@ -6798,9 +10306,10 @@ function drawThreadExplorerSnapshotEdges(context) {
  * @param {HTMLElement} card - Rendered post card.
  * @param {DOMRect} stageRect - Thread Explorer stage rectangle.
  * @param {Map<string, HTMLImageElement>} avatarImages - Preloaded cached avatars for canvas drawing.
+ * @param {Map<string, HTMLImageElement>} mediaImages - Preloaded canvas-safe media images.
  * @returns {void}
  */
-function drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages = new Map()) {
+function drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages = new Map(), mediaImages = new Map()) {
   const rect = getThreadExplorerStageRect(card, stageRect);
   const computed = getComputedStyle(card);
   context.save();
@@ -6833,8 +10342,16 @@ function drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages =
   const handle = card.querySelector(".thread-explorer-post-handle")?.textContent || "";
   const meta = card.querySelector(".thread-explorer-post-meta")?.textContent || "";
   const body = card.querySelector(".thread-explorer-post-text")?.textContent || "";
-  const counts = card.querySelector(".thread-explorer-post-counts")?.textContent || "";
+  const counts = getThreadExplorerSnapshotCountsText(card);
   const editMarker = card.querySelector(".thread-explorer-edit-button:not([hidden])")?.textContent || "";
+  const countsElement = card.querySelector(".thread-explorer-post-counts");
+  let altTextMaxBottom = rect.bottom - 20;
+  if (countsElement) {
+    const countsRect = getThreadExplorerStageRect(countsElement, stageRect);
+    if (countsRect.top > rect.top) {
+      altTextMaxBottom = countsRect.top - 8;
+    }
+  }
 
   context.fillStyle = "#14233d";
   context.font = "700 16px Segoe UI, Arial, sans-serif";
@@ -6858,10 +10375,13 @@ function drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages =
   context.fillStyle = "#1e3150";
   context.font = "14px Segoe UI, Arial, sans-serif";
   y = drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, body, rect.width - 32, 10), rect.left + 16, y, 19);
+  drawThreadExplorerSnapshotMediaImages(context, card, stageRect, mediaImages, altTextMaxBottom);
   if (counts) {
     context.fillStyle = "#5d7394";
     context.font = "12px Segoe UI, Arial, sans-serif";
-    drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, counts, rect.width - 32, 2), rect.left + 16, Math.min(rect.bottom - 16, y + 12), 15);
+    const countLines = wrapThreadExplorerSnapshotText(context, counts, rect.width - 32, 2);
+    const countY = rect.bottom - 16 - ((countLines.length - 1) * 15);
+    drawThreadExplorerSnapshotTextBlock(context, countLines, rect.left + 16, countY, 15);
   }
   context.restore();
 }
@@ -6871,15 +10391,54 @@ function drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages =
  * @param {string} mimeType - Target image MIME type.
  * @param {number} width - Snapshot width.
  * @param {number} height - Snapshot height.
+ * @param {(progress: {percent?: number, step?: string, detail?: string}) => Promise<void>} onProgress - Progress reporter.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
  * @returns {Promise<Blob>} Image blob.
  */
-async function renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height) {
+async function renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height, onProgress = async () => {}, signal = null) {
+  throwIfThreadExplorerSnapshotAborted(signal);
   const snapshot = createThreadExplorerSnapshotCanvas(width, height);
   const stageRect = threadExplorerThreadStage.getBoundingClientRect();
+  await onProgress({
+    percent: 64,
+    step: t("threadExplorerSnapshotProgressRenderCanvas"),
+    detail: t("threadExplorerSnapshotProgressEdges"),
+  });
   drawThreadExplorerSnapshotEdges(snapshot.context);
   const cards = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card"));
+  await onProgress({
+    percent: 68,
+    step: t("threadExplorerSnapshotProgressAvatars"),
+    detail: t("threadExplorerSnapshotProgressPostCount", { count: cards.length }),
+  });
   const avatarImages = await preloadThreadExplorerSnapshotAvatarImages(cards);
-  cards.forEach((card) => drawThreadExplorerSnapshotCard(snapshot.context, card, stageRect, avatarImages));
+  throwIfThreadExplorerSnapshotAborted(signal);
+  await onProgress({
+    percent: 72,
+    step: t("threadExplorerSnapshotProgressMedia"),
+    detail: t("threadExplorerSnapshotProgressPostCount", { count: cards.length }),
+  });
+  const mediaImages = await preloadThreadExplorerSnapshotMediaImages(cards);
+  throwIfThreadExplorerSnapshotAborted(signal);
+  const totalCards = Math.max(1, cards.length);
+  for (let index = 0; index < cards.length; index += 1) {
+    throwIfThreadExplorerSnapshotAborted(signal);
+    drawThreadExplorerSnapshotCard(snapshot.context, cards[index], stageRect, avatarImages, mediaImages);
+    if ((index % 10) === 0) {
+      const percent = 74 + (index / totalCards * 18);
+      await onProgress({
+        percent,
+        step: t("threadExplorerSnapshotProgressRenderCanvas"),
+        detail: t("threadExplorerSnapshotProgressRenderCardDetail", { index: index + 1, count: cards.length }),
+      });
+    }
+  }
+  throwIfThreadExplorerSnapshotAborted(signal);
+  await onProgress({
+    percent: 94,
+    step: t("threadExplorerSnapshotProgressEncode"),
+    detail: t("threadExplorerSnapshotProgressRenderCardDetail", { index: cards.length, count: cards.length }),
+  });
   return encodeThreadExplorerSnapshotCanvas(snapshot.canvas, mimeType);
 }
 
@@ -6888,10 +10447,18 @@ async function renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height) {
  * @param {string} mimeType - Target image MIME type.
  * @param {number} width - Snapshot width.
  * @param {number} height - Snapshot height.
+ * @param {(progress: {percent?: number, step?: string, detail?: string}) => Promise<void>} onProgress - Progress reporter.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
  * @returns {Promise<Blob>} Image blob.
  */
-async function renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, height) {
+async function renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, height, onProgress = async () => {}, signal = null) {
+  throwIfThreadExplorerSnapshotAborted(signal);
   const sourceStage = threadExplorerThreadStage;
+  await onProgress({
+    percent: 62,
+    step: t("threadExplorerSnapshotProgressRenderSvg"),
+    detail: t("threadExplorerSnapshotProgressClone"),
+  });
   const clone = sourceStage.cloneNode(true);
   clone.style.setProperty("--thread-explorer-zoom", "1");
   clone.style.width = `${width}px`;
@@ -6916,12 +10483,47 @@ async function renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, he
   const svgUrl = URL.createObjectURL(svgBlob);
   try {
     const image = new Image();
+    throwIfThreadExplorerSnapshotAborted(signal);
+    await onProgress({
+      percent: 76,
+      step: t("threadExplorerSnapshotProgressRenderSvg"),
+      detail: t("threadExplorerSnapshotProgressBrowserImage"),
+    });
     await new Promise((resolve, reject) => {
-      image.addEventListener("load", resolve, { once: true });
-      image.addEventListener("error", () => reject(new Error("foreignObject snapshot failed")), { once: true });
+      const handleAbort = () => {
+        reject(createThreadExplorerSnapshotAbortError());
+      };
+      const cleanup = () => {
+        image.removeEventListener("load", handleLoad);
+        image.removeEventListener("error", handleError);
+        if (signal) {
+          signal.removeEventListener("abort", handleAbort);
+        }
+      };
+      const handleLoad = () => {
+        cleanup();
+        resolve();
+      };
+      const handleError = () => {
+        cleanup();
+        const error = new Error("foreignObject snapshot failed");
+        error.name = "ThreadExplorerSnapshotFallbackError";
+        reject(error);
+      };
+      image.addEventListener("load", handleLoad, { once: true });
+      image.addEventListener("error", handleError, { once: true });
+      if (signal) {
+        signal.addEventListener("abort", handleAbort, { once: true });
+      }
       image.src = svgUrl;
     });
 
+    throwIfThreadExplorerSnapshotAborted(signal);
+    await onProgress({
+      percent: 88,
+      step: t("threadExplorerSnapshotProgressRenderSvg"),
+      detail: t("threadExplorerSnapshotProgressEncode"),
+    });
     const snapshot = createThreadExplorerSnapshotCanvas(width, height);
     snapshot.context.drawImage(image, 0, 0);
     return encodeThreadExplorerSnapshotCanvas(snapshot.canvas, mimeType);
@@ -6933,20 +10535,79 @@ async function renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, he
 /**
  * Renders the complete Thread Explorer tree as an image blob.
  * @param {string} mimeType - Target image MIME type.
+ * @param {(progress: {percent?: number, step?: string, detail?: string}) => Promise<void>} onProgress - Progress reporter.
+ * @param {AbortSignal|null} signal - Abort signal for the current export.
  * @returns {Promise<Blob>} Image blob.
  */
-async function renderThreadExplorerSnapshotBlob(mimeType = "image/png") {
+async function renderThreadExplorerSnapshotBlob(mimeType = "image/png", onProgress = async () => {}, signal = null) {
   if (!threadExplorerTree) {
     throw new Error(t("threadExplorerSnapshotNoThread"));
   }
+  throwIfThreadExplorerSnapshotAborted(signal);
 
-  await hydrateThreadExplorerTreeAvatars(threadExplorerTree);
+  await onProgress({
+    percent: 4,
+    step: t("threadExplorerSnapshotProgressPreparing"),
+    detail: t("threadExplorerSnapshotProgressPreparingDetail"),
+  });
+  await hydrateThreadExplorerTreeAvatars(threadExplorerTree, onProgress, signal);
+  throwIfThreadExplorerSnapshotAborted(signal);
+  await onProgress({
+    percent: 18,
+    step: t("threadExplorerSnapshotProgressMedia"),
+    detail: t("threadExplorerSnapshotProgressMediaDetail"),
+  });
+  await hydrateThreadExplorerSnapshotMedia(threadExplorerTree, onProgress, signal);
+  throwIfThreadExplorerSnapshotAborted(signal);
+  await onProgress({
+    percent: 28,
+    step: t("threadExplorerSnapshotProgressAvatars"),
+    detail: t("threadExplorerSnapshotProgressCacheDetail"),
+  });
   await restoreAccountAvatarCache();
   applyThreadExplorerAvatarCacheToTree(threadExplorerTree);
-  renderThreadExplorerTree();
-  await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+  throwIfThreadExplorerSnapshotAborted(signal);
+  await onProgress({
+    percent: 36,
+    step: t("threadExplorerSnapshotProgressRenderTree"),
+    detail: t("threadExplorerSnapshotProgressRenderTreeDetail"),
+  });
+  threadExplorerForceHydrateCards = true;
+  try {
+    renderThreadExplorerTree();
+  } finally {
+    threadExplorerForceHydrateCards = false;
+  }
+  const inspectedMediaCount = cacheLoadedThreadExplorerRenderedMediaImages();
+  await onProgress({
+    percent: 37,
+    step: t("threadExplorerSnapshotProgressMedia"),
+    detail: t("threadExplorerSnapshotProgressRenderedCacheDetail", { count: inspectedMediaCount }),
+  });
+  const hydratedMediaCounts = await applyThreadExplorerSnapshotMediaDataUrisToRenderedTree(onProgress, signal);
+  await onProgress({
+    percent: 40,
+    step: t("threadExplorerSnapshotProgressMedia"),
+    detail: t("threadExplorerSnapshotProgressHydratedMediaDetail", {
+      count: hydratedMediaCounts.embedded,
+      missing: hydratedMediaCounts.missing,
+      total: hydratedMediaCounts.total,
+    }),
+  });
+  throwIfThreadExplorerSnapshotAborted(signal);
+  await onProgress({
+    percent: 44,
+    step: t("threadExplorerSnapshotProgressBrowserFrame"),
+    detail: t("threadExplorerSnapshotProgressBrowserFrameDetail"),
+  });
+  await waitForThreadExplorerSnapshotFrame();
 
   const sourceStage = threadExplorerThreadStage;
+  await onProgress({
+    percent: 50,
+    step: t("threadExplorerSnapshotProgressMeasure"),
+    detail: t("threadExplorerSnapshotProgressMeasureDetail"),
+  });
   const width = Math.ceil(Math.max(sourceStage.scrollWidth, sourceStage.offsetWidth, sourceStage.getBoundingClientRect().width));
   const height = Math.ceil(Math.max(sourceStage.scrollHeight, sourceStage.offsetHeight, sourceStage.getBoundingClientRect().height));
   if (!width || !height) {
@@ -6955,17 +10616,31 @@ async function renderThreadExplorerSnapshotBlob(mimeType = "image/png") {
 
   if (mimeType === "image/png" && shouldUseThreadExplorerTiledPngSnapshot(width, height)) {
     try {
-      return await renderThreadExplorerTiledPngSnapshotBlob(width, height);
+      return await renderThreadExplorerTiledPngSnapshotBlob(width, height, onProgress, signal);
     } catch (error) {
       console.warn("Thread Explorer tiled PNG snapshot failed; using scaled fallback.", error);
+      await onProgress({
+        percent: 58,
+        step: t("threadExplorerSnapshotProgressFallback"),
+        detail: t("threadExplorerSnapshotProgressFallbackDetail"),
+      });
     }
   }
 
   try {
-    return await renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, height);
+    return await renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, height, onProgress, signal);
   } catch (error) {
-    console.warn("Thread Explorer foreignObject snapshot failed; using canvas fallback.", error);
-    return renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height);
+    if (error?.name === "ThreadExplorerSnapshotFallbackError") {
+      console.info("Thread Explorer foreignObject snapshot was not supported for this tree; using canvas fallback.");
+    } else {
+      console.warn("Thread Explorer foreignObject snapshot failed; using canvas fallback.", error);
+    }
+    await onProgress({
+      percent: 58,
+      step: t("threadExplorerSnapshotProgressFallback"),
+      detail: t("threadExplorerSnapshotProgressFallbackDetail"),
+    });
+    return renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height, onProgress, signal);
   }
 }
 
@@ -6974,18 +10649,71 @@ async function renderThreadExplorerSnapshotBlob(mimeType = "image/png") {
  * @returns {Promise<void>} Resolves after the browser download was triggered.
  */
 async function downloadThreadExplorerSnapshot() {
+  threadExplorerSnapshotAbortController = new AbortController();
+  const snapshotSignal = threadExplorerSnapshotAbortController.signal;
+  const reportProgress = createThreadExplorerSnapshotProgressReporter(snapshotSignal);
   try {
     threadExplorerSnapshotPngButton.disabled = true;
+    if (threadExplorerSnapshotCancelButton) {
+      threadExplorerSnapshotCancelButton.disabled = false;
+    }
     threadExplorerSnapshotPngButton.textContent = t("threadExplorerSnapshotBusy");
-    const blob = await renderThreadExplorerSnapshotBlob("image/png");
-    downloadThreadExplorerBlob(blob, buildThreadExplorerSnapshotFileName("png"));
+    openThreadExplorerSnapshotProgress({
+      percent: 0,
+      step: t("threadExplorerSnapshotProgressPreparing"),
+      detail: t("threadExplorerSnapshotProgressPreparingDetail"),
+    });
+    await reportProgress({
+      percent: 1,
+      step: t("threadExplorerSnapshotProgressPreparing"),
+      detail: t("threadExplorerSnapshotProgressPreparingDetail"),
+    });
+    const blob = await renderThreadExplorerSnapshotBlob("image/png", reportProgress, snapshotSignal);
+    const fileName = buildThreadExplorerSnapshotFileName("png");
+    await reportProgress({
+      percent: 97,
+      step: t("threadExplorerSnapshotProgressDownload"),
+      detail: fileName,
+    });
+    downloadThreadExplorerBlob(blob, fileName);
+    await reportProgress({
+      percent: 100,
+      step: t("threadExplorerSnapshotProgressDone"),
+      detail: fileName,
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 260));
   } catch (error) {
-    console.error(error);
-    threadExplorerThreadStatus.textContent = error.message || t("threadExplorerSnapshotFailed");
+    if (error?.name === "AbortError") {
+      threadExplorerThreadStatus.textContent = t("threadExplorerSnapshotCancelled");
+    } else {
+      console.error(error);
+      threadExplorerThreadStatus.textContent = error.message || t("threadExplorerSnapshotFailed");
+    }
   } finally {
+    if (threadExplorerSnapshotCancelButton) {
+      threadExplorerSnapshotCancelButton.disabled = true;
+    }
+    threadExplorerSnapshotAbortController = null;
+    closeThreadExplorerSnapshotProgress();
     threadExplorerSnapshotPngButton.textContent = t("threadExplorerSnapshotPngButton");
     updateThreadExplorerControls();
   }
+}
+
+/**
+ * Cancels the currently running Thread Explorer PNG snapshot export.
+ * @returns {void}
+ */
+function cancelThreadExplorerSnapshotExport() {
+  if (!threadExplorerSnapshotAbortController) {
+    return;
+  }
+  threadExplorerSnapshotAbortController.abort();
+  updateThreadExplorerSnapshotProgress({
+    percent: 100,
+    step: t("threadExplorerSnapshotCancelled"),
+    detail: t("threadExplorerSnapshotCancelledDetail"),
+  });
 }
 
 /**
@@ -7068,22 +10796,6 @@ function handleThreadExplorerUrlClick() {
 }
 
 /**
- * Switches the Thread Explorer feed to follows.
- * @returns {void}
- */
-function handleThreadExplorerFollowsClick() {
-  setThreadExplorerSource("follows");
-}
-
-/**
- * Switches the Thread Explorer feed to mutuals.
- * @returns {void}
- */
-function handleThreadExplorerMutualsClick() {
-  setThreadExplorerSource("mutuals");
-}
-
-/**
  * Reloads or focuses the Thread Explorer root post.
  * @returns {Promise<void>} Resolves after the root is focused.
  */
@@ -7119,11 +10831,30 @@ function handleThreadExplorerReloadThreadClick() {
 }
 
 /**
- * Downloads the current Thread Explorer tree as a PNG snapshot.
- * @returns {void}
+ * Confirms and downloads the current Thread Explorer tree as a PNG snapshot.
+ * @returns {Promise<void>} Resolves after the snapshot was started or cancelled.
  */
-function handleThreadExplorerSnapshotPngClick() {
-  void downloadThreadExplorerSnapshot();
+async function handleThreadExplorerSnapshotPngClick() {
+  const mediaCount = countThreadExplorerSnapshotMediaAssets(threadExplorerTree);
+  if (mediaCount >= THREAD_EXPLORER_SNAPSHOT_MEDIA_WARNING_THRESHOLD) {
+    const confirmed = await openConfirmDialog({
+      title: t("threadExplorerSnapshotLargeWarningTitle"),
+      message: t("threadExplorerSnapshotLargeWarningMessage", {
+        count: mediaCount,
+        threshold: THREAD_EXPLORER_SNAPSHOT_MEDIA_WARNING_THRESHOLD,
+      }),
+      confirmLabel: t("threadExplorerSnapshotLargeWarningConfirm"),
+      cancelLabel: t("cancelButton"),
+      confirmValue: true,
+      cancelValue: false,
+      dismissValue: false,
+    });
+    if (confirmed !== true) {
+      return;
+    }
+  }
+
+  await downloadThreadExplorerSnapshot();
 }
 
 /**
@@ -7159,6 +10890,74 @@ function handleArchiveSavedSearchesClick() {
 }
 
 /**
+ * Opens saved searches from the Search workspace.
+ * @returns {void}
+ */
+function handleSearchSavedClick() {
+  openSavedSearchesDialog("search");
+}
+
+/**
+ * Clears all live search controls and resets the current result state.
+ * @returns {Promise<void>} Resolves after settings were persisted.
+ */
+async function clearSearchForm() {
+  if (searchUrlInput) {
+    searchUrlInput.value = "";
+  }
+  if (searchQueryInput) {
+    searchQueryInput.value = "";
+  }
+  if (searchActorInput) {
+    searchActorInput.value = "";
+  }
+  if (searchModeSelect) {
+    searchModeSelect.value = "network";
+  }
+  if (searchMediaSelect) {
+    searchMediaSelect.value = "all";
+  }
+  if (searchPostTypeSelect) {
+    searchPostTypeSelect.value = "all";
+  }
+  if (searchSortSelect) {
+    searchSortSelect.value = "latest";
+  }
+  if (searchExcludeTextInput) {
+    searchExcludeTextInput.value = "";
+  }
+  if (searchMentionsInput) {
+    searchMentionsInput.value = "";
+  }
+  if (searchDomainInput) {
+    searchDomainInput.value = "";
+  }
+  if (searchTargetUrlInput) {
+    searchTargetUrlInput.value = "";
+  }
+  if (searchSinceInput) {
+    searchSinceInput.value = "";
+  }
+  if (searchUntilInput) {
+    searchUntilInput.value = "";
+  }
+  searchSelectedLanguages = [];
+  searchSelectedHashtags = [];
+  searchResults = [];
+  searchCursor = "";
+  if (searchUrlStatus) {
+    searchUrlStatus.textContent = "";
+  }
+  if (searchStatus) {
+    searchStatus.textContent = t("searchStatusIdle");
+  }
+  renderHashtagCloud();
+  renderSearchResults();
+  renderSearchWorkspace();
+  await persistSettings();
+}
+
+/**
  * Adds the URL currently typed into the saved-searches dialog.
  * @returns {void}
  */
@@ -7177,6 +10976,10 @@ function handleSavedSearchLoadClick(event) {
   const id = String(event.currentTarget?.dataset?.id || "").trim();
   if (savedSearchDialogContext === "archive") {
     void loadSavedSearchInArchive(id);
+    return;
+  }
+  if (savedSearchDialogContext === "search") {
+    void loadSavedSearchInSearchWorkspace(id);
     return;
   }
   void loadSavedSearchInThreadExplorer(id);
@@ -9468,6 +13271,72 @@ function encodePdfHexString(value) {
   return `<${hex}>`;
 }
 
+/**
+ * Builds the application label used in exported file metadata.
+ * @returns {string} Threadline application and version label.
+ */
+function getExportMetadataApplicationLabel() {
+  const appVersion = String(CURRENT_VERSION_INFO.appVersion || "").trim();
+  const cacheVersion = String(CURRENT_VERSION_INFO.cacheVersion || "").trim();
+  const parts = ["Threadline"];
+  if (appVersion) {
+    parts.push(appVersion);
+  }
+  if (cacheVersion) {
+    parts.push(`(${cacheVersion})`);
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Formats a JavaScript date as a PDF metadata date.
+ * @param {Date} date - Date to format.
+ * @returns {string} PDF date string.
+ */
+function formatPdfMetadataDate(date = new Date()) {
+  let safeDate = new Date();
+  if (date instanceof Date) {
+    safeDate = date;
+  }
+  const year = String(safeDate.getFullYear()).padStart(4, "0");
+  const month = String(safeDate.getMonth() + 1).padStart(2, "0");
+  const day = String(safeDate.getDate()).padStart(2, "0");
+  const hours = String(safeDate.getHours()).padStart(2, "0");
+  const minutes = String(safeDate.getMinutes()).padStart(2, "0");
+  const seconds = String(safeDate.getSeconds()).padStart(2, "0");
+  const offsetMinutes = -safeDate.getTimezoneOffset();
+  let sign = "+";
+  if (offsetMinutes < 0) {
+    sign = "-";
+  }
+  const absoluteOffset = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absoluteOffset / 60)).padStart(2, "0");
+  const offsetRemainder = String(absoluteOffset % 60).padStart(2, "0");
+  return `D:${year}${month}${day}${hours}${minutes}${seconds}${sign}${offsetHours}'${offsetRemainder}'`;
+}
+
+/**
+ * Builds a PDF Info dictionary for Threadline exports.
+ * @param {string} title - Optional document title.
+ * @returns {string} PDF Info dictionary object source.
+ */
+function buildPdfMetadataInfoDictionary(title = "") {
+  const applicationLabel = getExportMetadataApplicationLabel();
+  const createdAt = formatPdfMetadataDate(new Date());
+  const entries = [
+    `/Author ${encodePdfHexString(applicationLabel)}`,
+    `/Creator ${encodePdfHexString(applicationLabel)}`,
+    `/Producer ${encodePdfHexString(applicationLabel)}`,
+    `/CreationDate (${escapePdfText(createdAt)})`,
+    `/ModDate (${escapePdfText(createdAt)})`,
+  ];
+  const normalizedTitle = String(title || "").trim();
+  if (normalizedTitle) {
+    entries.unshift(`/Title ${encodePdfHexString(normalizedTitle)}`);
+  }
+  return `<< ${entries.join(" ")} >>`;
+}
+
 function createAnalysisTextPdfPages(options = {}) {
   if (!analysisAccountDataA || !analysisAccountDataB || !analysisComparisonResult) {
     return [];
@@ -10566,7 +14435,9 @@ async function exportAnalysisPdfReport() {
       annotations: [],
     });
   }
-  const blob = buildPdfFile(pages);
+  const blob = buildPdfFile(pages, {
+    title: t("analysisPdfTitle"),
+  });
   const fileName = makeAnalysisExportFileName();
   const file = new File([blob], fileName, { type: "application/pdf" });
   await shareOrDownloadFile(file, fileName, { preferDownload: true });
@@ -13141,7 +17012,9 @@ async function exportDmPdfFromCatalog(catalog = dmCatalog) {
     });
   }
 
-  const blob = buildPdfFile(pages);
+  const blob = buildPdfFile(pages, {
+    title: getDmConversationTitle(catalog?.conversations?.[0], catalog),
+  });
   const fileName = `${makeDmArchiveFileBaseName(catalog)}.pdf`;
   const file = new File([blob], fileName, { type: "application/pdf" });
   await shareOrDownloadFile(file, fileName, { preferDownload: true });
@@ -14088,9 +17961,10 @@ function buildArchiveCatalogNotice(catalog = archiveCatalog) {
 function updateArchiveRunControls() {
   const isRunning = activeArchiveRunState === "running";
   const isPaused = activeArchiveRunState === "paused";
+  const isMediaExportRunning = activeMediaExportState === "running" && Boolean(activeMediaExportAbortController);
   const canPause = isRunning && Boolean(activeArchiveRunId);
   const canResume = isPaused || (archiveSession?.status === "paused");
-  const canCancel = Boolean(activeArchiveRunId) && (isRunning || isPaused);
+  const canCancel = (Boolean(activeArchiveRunId) && (isRunning || isPaused)) || isMediaExportRunning;
   archivePauseButton.disabled = !canPause;
   archiveResumeButton.disabled = !canResume;
   archiveCancelButton.disabled = !canCancel;
@@ -14328,7 +18202,7 @@ function updateClearButtonState() {
 }
 
 function updateComposerLockState() {
-  const composerHashtagLocked = composerLocked && !isArchiveHashtagContext();
+  const composerHashtagLocked = composerLocked && !isArchiveHashtagContext() && !isSearchHashtagContext();
   sourceText.disabled = composerLocked;
   counterToggle.disabled = composerLocked;
   threadIntroToggle.disabled = composerLocked;
@@ -14624,6 +18498,169 @@ function startDesktopColumnResize(target) {
   window.addEventListener("pointercancel", handlePointerUp, { once: true });
 }
 
+/**
+ * Returns the maximum number of language tags allowed in the active dialog context.
+ * @returns {number} Either `3` for search or `3` for posting.
+ */
+function getActiveLanguageDialogMaxSelection() {
+  if (activeLanguageDialogContext === "search") {
+    return MAX_SEARCH_LANGUAGES;
+  }
+  return 3;
+}
+
+/**
+ * Returns the current language selection for the active dialog context.
+ * @returns {string[]} Selected language tags.
+ */
+function getActiveLanguageDialogSelection() {
+  if (activeLanguageDialogContext === "search") {
+    return normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
+  }
+  return getNormalizedPostLanguagesOrDefault();
+}
+
+/**
+ * Stores a language selection for the active dialog context.
+ * @param {string[]} values - Candidate language tags.
+ * @returns {void}
+ */
+function setActiveLanguageDialogSelection(values = []) {
+  if (activeLanguageDialogContext === "search") {
+    searchSelectedLanguages = normalizePostLanguageTags(values, MAX_SEARCH_LANGUAGES);
+    return;
+  }
+  selectedPostLanguages = normalizePostLanguageTags(values);
+}
+
+/**
+ * Renders the compact language summary in the search workspace.
+ * @returns {void}
+ */
+function renderSearchLanguageSummary() {
+  if (!searchLanguageSummary) {
+    return;
+  }
+  searchSelectedLanguages = normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
+  if (!searchSelectedLanguages.length) {
+    searchLanguageSummary.textContent = "";
+    return;
+  }
+  if (searchSelectedLanguages.length === 1) {
+    searchLanguageSummary.textContent = t("searchLanguageSummarySingle", {
+      language: getPostLanguageDisplayName(searchSelectedLanguages[0], currentLocale),
+    });
+    return;
+  }
+
+  const labels = searchSelectedLanguages.map((tag) => {
+    return getPostLanguageDisplayName(tag, currentLocale);
+  });
+  searchLanguageSummary.textContent = t("searchLanguageSummaryMany", {
+    count: labels.length,
+    languages: labels.join(", "),
+  });
+}
+
+/**
+ * Returns true when more than one search language is active.
+ * @returns {boolean} True for multi-language search mode.
+ */
+function isSearchMultiLanguageActive() {
+  searchSelectedLanguages = normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
+  return searchSelectedLanguages.length > 1;
+}
+
+/**
+ * Forces the search sort back to `latest` when multi-language search is active.
+ * @param {boolean} announce - True when a user-facing hint should be shown.
+ * @returns {void}
+ */
+function enforceSearchSortConstraints(announce = false) {
+  if (!searchSortSelect) {
+    return;
+  }
+  if (!isSearchMultiLanguageActive()) {
+    return;
+  }
+  if (String(searchSortSelect.value || "").trim() !== "top") {
+    return;
+  }
+
+  searchSortSelect.value = "latest";
+  if (announce) {
+    setStatus(t("searchLanguageSortLimitedStatus"));
+  }
+}
+
+/**
+ * Updates the search sort dropdown for the active language selection.
+ * @returns {void}
+ */
+function updateSearchSortOptionState() {
+  if (!searchSortSelect) {
+    return;
+  }
+
+  const topOption = searchSortSelect.querySelector("option[value='top']");
+  if (!topOption) {
+    return;
+  }
+
+  topOption.disabled = isSearchMultiLanguageActive();
+}
+
+/**
+ * Renders the language dialog heading, note and hidden sections for the active context.
+ * @returns {void}
+ */
+function renderLanguageDialogContext() {
+  const isSearchContext = activeLanguageDialogContext === "search";
+
+  if (postLanguagesDialogEyebrow) {
+    if (isSearchContext) {
+      postLanguagesDialogEyebrow.textContent = t("searchHeaderEyebrow");
+    } else {
+      postLanguagesDialogEyebrow.textContent = t("postLanguagesEyebrow");
+    }
+  }
+
+  if (postLanguagesDialogTitle) {
+    if (isSearchContext) {
+      postLanguagesDialogTitle.textContent = t("searchLanguageDialogTitle");
+    } else {
+      postLanguagesDialogTitle.textContent = t("postSettingsDialogTitle");
+    }
+  }
+
+  if (postLanguagesDialogDescription) {
+    if (isSearchContext) {
+      postLanguagesDialogDescription.textContent = t("searchLanguageDialogDescription");
+    } else {
+      postLanguagesDialogDescription.textContent = t("postSettingsDialogDescription");
+    }
+  }
+
+  if (postLanguagesSettingsList) {
+    postLanguagesSettingsList.hidden = isSearchContext;
+  }
+  if (postInteractionDisclosure) {
+    postInteractionDisclosure.hidden = isSearchContext;
+  }
+  if (searchLanguageDialogNote) {
+    if (isSearchContext) {
+      searchLanguageDialogNote.hidden = false;
+      searchLanguageDialogNote.textContent = t("searchLanguageDialogNote");
+    } else {
+      searchLanguageDialogNote.hidden = true;
+      searchLanguageDialogNote.textContent = "";
+    }
+  }
+  if (postLanguagesDisclosure) {
+    postLanguagesDisclosure.open = true;
+  }
+}
+
 function renderPostLanguageSummary() {
   selectedPostLanguages = getNormalizedPostLanguagesOrDefault();
   const labels = selectedPostLanguages.map((tag) => getPostLanguageDisplayName(tag, currentLocale));
@@ -14657,7 +18694,9 @@ function renderPostLanguageSummary() {
 }
 
 function renderPostLanguageDialog() {
-  selectedPostLanguages = getNormalizedPostLanguagesOrDefault();
+  renderLanguageDialogContext();
+  const activeSelection = getActiveLanguageDialogSelection();
+  const maxSelection = getActiveLanguageDialogMaxSelection();
   const options = getPostLanguageOptions(currentLocale, postLanguagesSearch.value);
   postLanguagesList.innerHTML = "";
 
@@ -14668,8 +18707,8 @@ function renderPostLanguageDialog() {
     postLanguagesList.appendChild(empty);
   } else {
     options.forEach((option) => {
-      const checked = selectedPostLanguages.includes(option.code);
-      const disabled = !checked && selectedPostLanguages.length >= 3;
+      const checked = activeSelection.includes(option.code);
+      const disabled = !checked && activeSelection.length >= maxSelection;
       const label = document.createElement("label");
       label.className = `post-language-option${checked ? " is-selected" : ""}${disabled ? " is-disabled" : ""}`;
 
@@ -14679,12 +18718,15 @@ function renderPostLanguageDialog() {
       input.disabled = disabled;
       input.addEventListener("change", async () => {
         const nextValues = input.checked
-          ? [...selectedPostLanguages, option.code]
-          : selectedPostLanguages.filter((entry) => entry !== option.code);
-        selectedPostLanguages = normalizePostLanguageTags(nextValues);
+          ? [...activeSelection, option.code]
+          : activeSelection.filter((entry) => entry !== option.code);
+        setActiveLanguageDialogSelection(nextValues);
+        enforceSearchSortConstraints(true);
         renderPostLanguageSummary();
+        renderSearchLanguageSummary();
+        renderSearchSummary();
         renderPostLanguageDialog();
-        if (!composerLocked) {
+        if (activeLanguageDialogContext === "composer" && !composerLocked) {
           renderSegments({ preserveOverrides: false });
         }
         await persistSettings();
@@ -14699,8 +18741,8 @@ function renderPostLanguageDialog() {
   }
 
   postLanguagesSelectionNote.textContent = t("postLanguagesSelectionNote", {
-    count: selectedPostLanguages.length,
-    max: 3,
+    count: activeSelection.length,
+    max: maxSelection,
   });
 }
 
@@ -14749,6 +18791,7 @@ function applyTranslations() {
     element.setAttribute("aria-label", t("contextHelpButtonLabel"));
     element.setAttribute("title", t("contextHelpButtonLabel"));
   });
+  renderSearchHashtagSummary();
   if (networkAccountInput) {
     networkAccountInput.placeholder = t("networkAccountInputPlaceholder");
   }
@@ -14758,6 +18801,7 @@ function applyTranslations() {
   if (postEditCheckUrlInput) {
     postEditCheckUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
   }
+  renderSearchLanguageSummary();
   if (replyTargetUrlInput) {
     replyTargetUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
   }
@@ -15102,8 +19146,28 @@ function formatHashtag(tag) {
   return `#${tag}`;
 }
 
+/**
+ * Resolves one hashtag identifier or object to the visible hashtag text.
+ * @param {string|object} normalized - Normalized hashtag id or hashtag-like object.
+ * @returns {string} Display-ready hashtag text without the leading #.
+ */
 function getDisplayHashtag(normalized) {
-  return findHashtag(normalized)?.value || normalized;
+  let parsed = null;
+  if (typeof normalized === "string") {
+    parsed = parseHashtagValue(normalized);
+  } else {
+    parsed = parseHashtagValue(normalized?.value || normalized?.tag || normalized?.normalized || normalized?.label || "");
+  }
+
+  if (!parsed) {
+    return "";
+  }
+
+  const stored = findHashtag(parsed.normalized);
+  if (stored?.value) {
+    return stored.value;
+  }
+  return parsed.value;
 }
 
 function getHashtagFontClass(tag) {
@@ -15376,6 +19440,8 @@ async function saveEditedHashtag() {
 
   const existing = findHashtag(parsed.normalized);
   const isSelected = selectedHashtags.includes(currentTag.normalized);
+  const isSearchSelected = searchSelectedHashtags.includes(currentTag.normalized);
+  const isArchiveSelected = archiveSelectedHashtags.includes(currentTag.normalized);
 
   if (existing && existing.normalized !== currentTag.normalized) {
     hashtags = hashtags
@@ -15388,15 +19454,35 @@ async function saveEditedHashtag() {
       ],
       hashtags,
     );
+    searchSelectedHashtags = normalizeSelectedHashtagEntries(
+      [
+        ...searchSelectedHashtags.filter((entry) => entry !== currentTag.normalized),
+        ...(isSearchSelected ? [parsed.normalized] : []),
+      ],
+      hashtags,
+    );
+    archiveSelectedHashtags = normalizeSelectedHashtagEntries(
+      [
+        ...archiveSelectedHashtags.filter((entry) => entry !== currentTag.normalized),
+        ...(isArchiveSelected ? [parsed.normalized] : []),
+      ],
+      hashtags,
+    );
   } else {
     hashtags = hashtags.map((entry) => (entry.normalized === currentTag.normalized ? parsed : entry));
     selectedHashtags = selectedHashtags.map((entry) => (entry === currentTag.normalized ? parsed.normalized : entry));
+    searchSelectedHashtags = searchSelectedHashtags.map((entry) => (entry === currentTag.normalized ? parsed.normalized : entry));
+    archiveSelectedHashtags = archiveSelectedHashtags.map((entry) => (entry === currentTag.normalized ? parsed.normalized : entry));
   }
 
   renderHashtagCloud();
-  segmentOverrides = null;
-  setComposerLocked(false);
-  renderSegments({ preserveOverrides: false });
+  if (isSearchHashtagContext()) {
+    renderSearchWorkspace();
+  } else if (!isArchiveHashtagContext()) {
+    segmentOverrides = null;
+    setComposerLocked(false);
+    renderSegments({ preserveOverrides: false });
+  }
   await persistSettings();
   setStatus(t("hashtagUpdated"));
   closeHashtagEditDialog();
@@ -15602,9 +19688,13 @@ function renderSegmentLinkCard(container, segmentIndex) {
   if (standardSite) {
     wrap.classList.add("is-publication");
   }
-  if (card.imageDataUrl) {
+  if (card.imageDataUrl || card.imageUrl) {
     const image = document.createElement("img");
-    image.src = card.imageDataUrl;
+    if (card.imageDataUrl) {
+      image.src = card.imageDataUrl;
+    } else {
+      image.src = card.imageUrl;
+    }
     image.alt = "";
     image.loading = "lazy";
     wrap.appendChild(image);
@@ -15644,13 +19734,20 @@ function openLinkCardDialog(segmentIndex, url) {
   pendingLinkCardUrl = url;
   linkCardUrlNode.textContent = url;
   const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
+  updateLinkCardDialogProviderState();
   linkCardWarning.hidden = !hasImages;
-  linkCardWarning.textContent = hasImages ? t("linkCardImageConflictWarning") : "";
+  if (hasImages) {
+    linkCardWarning.textContent = t("linkCardImageConflictWarning");
+  } else {
+    linkCardWarning.textContent = "";
+  }
   linkCardStatus.textContent = "";
   delete linkCardStatus.dataset.tone;
-  linkCardCreateButton.textContent = hasImages
-    ? t("linkCardCreateAndRemoveImagesButton")
-    : t("linkCardCreateButton");
+  if (hasImages) {
+    linkCardCreateButton.textContent = t("linkCardCreateAndRemoveImagesButton");
+  } else {
+    linkCardCreateButton.textContent = t("linkCardCreateButton");
+  }
   linkCardDialog.showModal();
 }
 
@@ -15669,15 +19766,17 @@ async function createLinkCardForPendingSegment() {
     return;
   }
   const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
-  const createButtonLabel = hasImages
-    ? t("linkCardCreateAndRemoveImagesButton")
-    : t("linkCardCreateButton");
+  let createButtonLabel = t("linkCardCreateButton");
+  if (hasImages) {
+    createButtonLabel = t("linkCardCreateAndRemoveImagesButton");
+  }
   try {
     setBusy(linkCardCreateButton, true, t("linkCardLoading"), createButtonLabel);
     linkCardStatus.textContent = t("linkCardLoading");
-    const card = await requestLinkCardFromProxy(url);
+    const card = await requestLinkCard(url);
+    syncLinkCardProviderUi();
     if (!card) {
-      throw new Error(t("linkCardProxyFailed"));
+      throw new Error(t("linkCardCreateFallback"));
     }
     segmentLinkCards[segmentIndex] = card;
     if (hasImages) {
@@ -15690,7 +19789,12 @@ async function createLinkCardForPendingSegment() {
     closeLinkCardDialog();
   } catch (error) {
     console.error(error);
-    linkCardStatus.textContent = error.message || t("linkCardProxyFailed");
+    syncLinkCardProviderUi();
+    let fallbackMessage = error.message || t("linkCardCreateFallback");
+    if (!fallbackMessage.includes(t("linkCardCreateFallback"))) {
+      fallbackMessage = `${fallbackMessage} ${t("linkCardCreateFallback")}`.trim();
+    }
+    linkCardStatus.textContent = fallbackMessage;
     linkCardStatus.dataset.tone = "error";
   } finally {
     setBusy(linkCardCreateButton, false, t("linkCardLoading"), createButtonLabel);
@@ -15779,6 +19883,147 @@ function getFirstHttpUrl(text) {
   return String(text || "").match(/https?:\/\/[^\s<>"')\]]+/i)?.[0]?.replace(/[.,;:!?]+$/, "") || "";
 }
 
+/**
+ * Normalizes the selected link-card provider to one of the supported values.
+ * @param {string} value - Raw stored or selected provider value.
+ * @returns {string} `none`, `microlink`, or `proxy`.
+ */
+function normalizeLinkCardProvider(value) {
+  if (value === LINK_CARD_PROVIDER_PROXY) {
+    return LINK_CARD_PROVIDER_PROXY;
+  }
+  if (value === LINK_CARD_PROVIDER_MICROLINK) {
+    return LINK_CARD_PROVIDER_MICROLINK;
+  }
+  return LINK_CARD_PROVIDER_NONE;
+}
+
+/**
+ * Returns the local calendar day used for Microlink usage tracking.
+ * @returns {string} Date stamp in `YYYY-MM-DD` format.
+ */
+function getMicrolinkUsageDatePart() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Normalizes the locally persisted Microlink usage counter.
+ * @param {object|null} usage - Raw stored usage payload.
+ * @returns {object} Normalized date and count values.
+ */
+function normalizeMicrolinkUsage(usage = null) {
+  const today = getMicrolinkUsageDatePart();
+  const date = String(usage?.date || "").trim();
+  let count = Math.max(0, Number(usage?.count) || 0);
+  if (date !== today) {
+    count = 0;
+  }
+  return {
+    date: today,
+    count,
+  };
+}
+
+/**
+ * Returns the current locally tracked Microlink usage for today.
+ * @returns {object} Normalized usage payload for today.
+ */
+function getMicrolinkUsageState() {
+  linkCardMicrolinkUsage = normalizeMicrolinkUsage(linkCardMicrolinkUsage);
+  return linkCardMicrolinkUsage;
+}
+
+/**
+ * Builds the short local Microlink usage summary shown in the link-card dialog.
+ * @returns {string} Usage summary such as `2/25`.
+ */
+function getMicrolinkUsageSummary() {
+  const usage = getMicrolinkUsageState();
+  return `${usage.count}/${MICROLINK_DAILY_LIMIT}`;
+}
+
+/**
+ * Builds the settings note for the currently selected link-card provider.
+ * @returns {string} Localized settings note for the selected provider.
+ */
+function getLinkCardProviderSettingsNote() {
+  const provider = getActiveLinkCardProvider();
+  if (provider === LINK_CARD_PROVIDER_MICROLINK) {
+    return t("linkCardMicrolinkUsageNote", {
+      count: getMicrolinkUsageState().count,
+      limit: MICROLINK_DAILY_LIMIT,
+      remaining: getMicrolinkRemainingRequests(),
+    });
+  }
+  if (provider === LINK_CARD_PROVIDER_PROXY) {
+    return t("linkCardProviderProxyNote");
+  }
+  return t("linkCardProviderNoneNote");
+}
+
+/**
+ * Builds the dialog note for the currently selected link-card provider.
+ * @returns {string} Localized dialog note for the selected provider.
+ */
+function getLinkCardDialogProviderNote() {
+  const provider = getActiveLinkCardProvider();
+  if (provider === LINK_CARD_PROVIDER_MICROLINK) {
+    return t("linkCardDialogMicrolinkNote", {
+      usage: getMicrolinkUsageSummary(),
+      limit: MICROLINK_DAILY_LIMIT,
+    });
+  }
+  if (provider === LINK_CARD_PROVIDER_PROXY) {
+    return t("linkCardDialogProxyNote");
+  }
+  return t("linkCardDialogNoneNote");
+}
+
+/**
+ * Refreshes the provider hint inside the link-card creation dialog.
+ * @returns {void}
+ */
+function updateLinkCardDialogProviderState() {
+  if (!linkCardProviderState) {
+    return;
+  }
+  linkCardProviderState.textContent = getLinkCardDialogProviderNote();
+}
+
+/**
+ * Returns the remaining Microlink requests for today.
+ * @returns {number} Remaining locally tracked request budget.
+ */
+function getMicrolinkRemainingRequests() {
+  const usage = getMicrolinkUsageState();
+  return Math.max(0, MICROLINK_DAILY_LIMIT - usage.count);
+}
+
+/**
+ * Returns whether Microlink has remaining local request budget for today.
+ * @returns {boolean} True when another Microlink request may be sent.
+ */
+function canUseMicrolinkToday() {
+  return getMicrolinkRemainingRequests() > 0;
+}
+
+/**
+ * Stores one more local Microlink usage attempt and persists the counter.
+ * @returns {Promise<void>}
+ */
+async function recordMicrolinkUsageAttempt() {
+  const usage = getMicrolinkUsageState();
+  linkCardMicrolinkUsage = {
+    date: usage.date,
+    count: usage.count + 1,
+  };
+  await persistSettings();
+}
+
+/**
+ * Returns whether the configured WordPress link-card proxy is ready to use.
+ * @returns {boolean} True when the proxy endpoint and secret are valid.
+ */
 function isLinkCardProxyConfigured() {
   const { endpoint, secret } = getLinkCardSettings();
   return Boolean(endpoint && secret) && validateLinkCardProxySettings().ok;
@@ -15845,6 +20090,80 @@ function validateLinkCardProxySettings() {
   return { ok: true, message: t("linkCardSettingsSaved"), tone: "", isEmpty: false };
 }
 
+/**
+ * Updates the provider radio buttons and provider note according to the current
+ * proxy configuration and locally tracked Microlink usage.
+ * @param {object} options - UI update options.
+ * @param {boolean} options.persist - True when changed provider state should be saved.
+ * @returns {void}
+ */
+function syncLinkCardProviderUi({ persist = false } = {}) {
+  const proxyConfigured = isLinkCardProxyConfigured();
+  if (linkCardProviderNoneWrap) {
+    linkCardProviderNoneWrap.hidden = false;
+  }
+  if (linkCardProviderProxyWrap) {
+    linkCardProviderProxyWrap.hidden = !proxyConfigured;
+  }
+  if (linkCardProviderProxyInput) {
+    linkCardProviderProxyInput.disabled = !proxyConfigured;
+  }
+
+  linkCardProvider = normalizeLinkCardProvider(linkCardProvider);
+  if (!proxyConfigured && linkCardProvider === LINK_CARD_PROVIDER_PROXY) {
+    linkCardProvider = LINK_CARD_PROVIDER_NONE;
+  }
+
+  if (linkCardProviderNoneInput) {
+    linkCardProviderNoneInput.checked = linkCardProvider === LINK_CARD_PROVIDER_NONE;
+  }
+  if (linkCardProviderMicrolinkInput) {
+    linkCardProviderMicrolinkInput.checked = linkCardProvider === LINK_CARD_PROVIDER_MICROLINK;
+  }
+  if (linkCardProviderProxyInput) {
+    linkCardProviderProxyInput.checked = linkCardProvider === LINK_CARD_PROVIDER_PROXY;
+  }
+
+  if (linkCardProviderNote) {
+    linkCardProviderNote.textContent = getLinkCardProviderSettingsNote();
+  }
+  updateLinkCardDialogProviderState();
+
+  if (persist) {
+    void persistSettings();
+  }
+}
+
+/**
+ * Returns the active link-card provider based on configuration and selection.
+ * @returns {string} `none`, `microlink`, or `proxy`.
+ */
+function getActiveLinkCardProvider() {
+  const provider = normalizeLinkCardProvider(linkCardProvider);
+  if (provider === LINK_CARD_PROVIDER_PROXY) {
+    if (isLinkCardProxyConfigured()) {
+      return LINK_CARD_PROVIDER_PROXY;
+    }
+    return LINK_CARD_PROVIDER_NONE;
+  }
+  return provider;
+}
+
+/**
+ * Returns whether the current provider can create another link card right now.
+ * @returns {boolean} True when the selected provider is currently usable.
+ */
+function canCreateLinkCardsWithCurrentProvider() {
+  const provider = getActiveLinkCardProvider();
+  if (provider === LINK_CARD_PROVIDER_PROXY) {
+    return isLinkCardProxyConfigured();
+  }
+  if (provider === LINK_CARD_PROVIDER_MICROLINK) {
+    return canUseMicrolinkToday();
+  }
+  return true;
+}
+
 function updateLinkCardSettingsStatus({ show = true } = {}) {
   const validation = validateLinkCardProxySettings();
   linkCardEndpointInput?.setCustomValidity(validation.ok || validation.isEmpty ? "" : validation.message);
@@ -15858,6 +20177,7 @@ function updateLinkCardSettingsStatus({ show = true } = {}) {
   } else {
     delete linkCardSettingsStatus.dataset.tone;
   }
+  syncLinkCardProviderUi();
   return validation;
 }
 
@@ -15903,6 +20223,37 @@ function linkCardImageToDataUrl(image = {}) {
 }
 
 /**
+ * Loads a remote link-card image and converts it into a data URL for preview and upload.
+ * @param {string} imageUrl - Absolute HTTP(S) image URL.
+ * @returns {Promise<object>} Embedded image data and detected MIME type.
+ */
+async function fetchLinkCardImageDataUrl(imageUrl) {
+  const normalizedUrl = String(imageUrl || "").trim();
+  if (!/^https?:\/\//i.test(normalizedUrl)) {
+    throw new Error("Link-Card-Bild hat keine gueltige HTTP-Adresse.");
+  }
+
+  const response = await fetch(normalizedUrl, {
+    method: "GET",
+    mode: "cors",
+  });
+  if (!response.ok) {
+    throw new Error(`Link-Card-Bild konnte nicht geladen werden (${response.status}).`);
+  }
+
+  const blob = await response.blob();
+  const mimeType = String(blob.type || "").trim();
+  if (!mimeType.startsWith("image/")) {
+    throw new Error(`Link-Card-Bild hat einen unerwarteten Typ (${mimeType || "unbekannt"}).`);
+  }
+
+  return {
+    imageDataUrl: await fileToDataUrl(blob),
+    imageMimeType: mimeType,
+  };
+}
+
+/**
  * Builds the user-facing error text for a failed link-card proxy response.
  * @param {Response} response - Fetch response returned by the proxy.
  * @param {object} payload - Parsed JSON error payload when available.
@@ -15921,6 +20272,23 @@ function getLinkCardProxyErrorMessage(response, payload = {}) {
     return t("linkCardProxyAuthFailed");
   }
   return payload?.message || payload?.code || t("linkCardProxyFailed");
+}
+
+/**
+ * Builds a localized error message for Microlink failures.
+ * @param {Response|null} response - Fetch response when available.
+ * @param {object|null} payload - Parsed Microlink payload when available.
+ * @returns {string} User-facing error message for the Microlink request.
+ */
+function getMicrolinkErrorMessage(response = null, payload = null) {
+  if (response && response.status === 429) {
+    return t("linkCardMicrolinkLimitReached");
+  }
+  const payloadMessage = String(payload?.description || payload?.message || "").trim();
+  if (payloadMessage) {
+    return payloadMessage;
+  }
+  return t("linkCardMicrolinkFailed");
 }
 
 /**
@@ -15963,6 +20331,104 @@ async function requestLinkCardFromProxy(url) {
     imageMimeType: payload.image?.mimeType || "",
     standardSite: payload.standardSite,
   });
+}
+
+/**
+ * Creates a simple link card without fetching external metadata.
+ * @param {string} url - HTTP(S) URL that should be turned into a basic link card.
+ * @returns {object|null} Normalized link-card data with URL-based fallback fields.
+ */
+function createBasicLinkCard(url) {
+  let title = url;
+  let description = "";
+  try {
+    const parsedUrl = new URL(url);
+    title = parsedUrl.hostname || url;
+    description = parsedUrl.toString();
+  } catch {
+    title = url;
+  }
+  return normalizeLinkCard({
+    url,
+    title,
+    description,
+  });
+}
+
+/**
+ * Requests link-card metadata for a URL from the public Microlink endpoint.
+ * @param {string} url - HTTP(S) URL that should be previewed.
+ * @returns {Promise<object|null>} Normalized link-card data, or null when Microlink returned invalid data.
+ */
+async function requestLinkCardFromMicrolink(url) {
+  if (!canUseMicrolinkToday()) {
+    throw new Error(t("linkCardMicrolinkLimitReached"));
+  }
+
+  const endpoint = `https://api.microlink.io/?url=${encodeURIComponent(url)}`;
+  const response = await fetch(endpoint, {
+    method: "GET",
+  });
+  const payload = await response.json().catch(() => ({}));
+  await recordMicrolinkUsageAttempt();
+  if (!response.ok) {
+    throw new Error(getMicrolinkErrorMessage(response, payload));
+  }
+
+  const data = payload?.data;
+  if (!data || typeof data !== "object") {
+    throw new Error(t("linkCardMicrolinkFailed"));
+  }
+
+  let imageUrl = "";
+  if (typeof data.image === "string") {
+    imageUrl = data.image;
+  } else if (data.image && typeof data.image === "object" && data.image.url) {
+    imageUrl = String(data.image.url).trim();
+  }
+  let imageDataUrl = "";
+  let imageMimeType = "";
+  if (imageUrl) {
+    try {
+      const fetchedImage = await fetchLinkCardImageDataUrl(imageUrl);
+      imageDataUrl = fetchedImage.imageDataUrl;
+      imageMimeType = fetchedImage.imageMimeType;
+    } catch {
+      imageDataUrl = "";
+      imageMimeType = "";
+    }
+  }
+
+  const normalizedCard = normalizeLinkCard({
+    url: data.url || url,
+    title: data.title || data.url || url,
+    description: data.description || "",
+    imageUrl,
+    imageDataUrl,
+    imageMimeType,
+    standardSite: null,
+  });
+
+  if (!normalizedCard) {
+    throw new Error(t("linkCardMicrolinkFailed"));
+  }
+  return normalizedCard;
+}
+
+/**
+ * Requests link-card metadata from the currently active provider.
+ * @param {string} url - HTTP(S) URL that should be previewed.
+ * @returns {Promise<object|null>} Normalized link-card data or null on invalid provider output.
+ */
+async function requestLinkCard(url) {
+  const provider = getActiveLinkCardProvider();
+  if (provider === LINK_CARD_PROVIDER_PROXY) {
+    return await requestLinkCardFromProxy(url);
+  }
+  if (provider === LINK_CARD_PROVIDER_MICROLINK) {
+    return await requestLinkCardFromMicrolink(url);
+  }
+  return createBasicLinkCard(url);
 }
 
 function getHistoryPreviewText(text) {
@@ -16529,9 +20995,30 @@ function hideProgressDialog() {
   }
 }
 
-function showErrorDialog(message, title = t("errorTitle")) {
+/**
+ * Opens the shared dialog for errors, warnings, and informational notes.
+ * @param {string} message - Main dialog message.
+ * @param {string} title - Dialog title.
+ * @param {object} options - Optional dialog extensions.
+ * @param {string} options.linkUrl - Optional clickable URL rendered below the message.
+ * @param {string} options.linkLabel - Optional label for the clickable URL.
+ * @returns {void}
+ */
+function showErrorDialog(message, title = t("errorTitle"), options = {}) {
   errorTitle.textContent = title;
   errorMessage.textContent = message;
+  if (errorLinkWrap && errorLink) {
+    const linkUrl = String(options.linkUrl || "").trim();
+    if (linkUrl) {
+      errorLink.href = linkUrl;
+      errorLink.textContent = String(options.linkLabel || linkUrl).trim();
+      errorLinkWrap.hidden = false;
+    } else {
+      errorLink.href = "#";
+      errorLink.textContent = "";
+      errorLinkWrap.hidden = true;
+    }
+  }
   if (!errorDialog.open) {
     errorDialog.showModal();
   }
@@ -17571,6 +22058,10 @@ function supportsStreamingZipExport() {
   return typeof window.showSaveFilePicker === "function";
 }
 
+const MEDIA_EXPORT_SCAN_TIMEOUT_MS = 900000;
+const MEDIA_EXPORT_ITEM_TIMEOUT_MS = 45000;
+const MEDIA_EXPORT_BATCH_SIZE = 250;
+
 function buildMediaExportPostFolder(post = {}) {
   const rawCreatedAt = String(post?.createdAt || "").trim();
   const timestamp = Number.isNaN(Date.parse(rawCreatedAt))
@@ -17747,6 +22238,215 @@ function makeArchiveFileBaseName(catalog = archiveCatalog) {
   return `threadline-archive-${handle}-${datePart}`;
 }
 
+/**
+ * Builds a stable key for a media-export session based on filters and toggles.
+ * @param {object} options - Media-export options from the archive form.
+ * @returns {string} Stable session key for reuse and resume checks.
+ */
+function buildMediaExportSessionKey(options = {}) {
+  const filters = options.filters || getArchiveFilters();
+  const filterKey = serializeArchiveFilters(filters);
+  const actor = String(options.actor || authAccount || "").trim().toLowerCase();
+  const kinds = [];
+  if (options.includeImages === false) {
+    kinds.push("0");
+  } else {
+    kinds.push("1");
+  }
+  if (options.includeVideos === false) {
+    kinds.push("0");
+  } else {
+    kinds.push("1");
+  }
+  if (options.includeOther === false) {
+    kinds.push("0");
+  } else {
+    kinds.push("1");
+  }
+  return `media:${actor}:${kinds.join("")}:${filterKey}`;
+}
+
+/**
+ * Builds the shared file-name base for media-export part archives.
+ * @param {object} options - Media-export options from the archive form.
+ * @returns {string} Base file name without the `.zip` suffix.
+ */
+function buildArchiveMediaFileBaseName(options = {}) {
+  let targetHandle = String(options.actor || authAccount || "account")
+    .replace(/^@+/, "")
+    .trim()
+    .replace(/[^\w.-]+/g, "-");
+  if (!targetHandle) {
+    targetHandle = "account";
+  }
+  const datePart = new Date().toISOString().slice(0, 10);
+  return `threadline-media-${targetHandle}-${datePart}`;
+}
+
+/**
+ * Builds the suggested file name for one media-export part archive.
+ * @param {string} baseName - Shared base name of the export.
+ * @param {number} batchIndex - Zero-based batch index.
+ * @param {number} batchCount - Total number of batches.
+ * @returns {string} Suggested ZIP file name for the batch.
+ */
+function buildArchiveMediaPartFileName(baseName, batchIndex, batchCount) {
+  const partLabel = String(batchIndex + 1).padStart(3, "0");
+  const totalLabel = String(batchCount).padStart(3, "0");
+  return `${baseName}-part-${partLabel}-of-${totalLabel}.zip`;
+}
+
+/**
+ * Splits media entries into fixed-size batches for safer ZIP exports.
+ * @param {Array} items - Media entries to split.
+ * @param {number} size - Maximum number of media entries per batch.
+ * @returns {Array<Array>} Chunked media-entry batches.
+ */
+function chunkMediaExportEntries(items = [], size = MEDIA_EXPORT_BATCH_SIZE) {
+  let sourceItems = [];
+  if (Array.isArray(items)) {
+    sourceItems = items;
+  }
+  const chunkSize = Math.max(1, Number(size) || MEDIA_EXPORT_BATCH_SIZE);
+  const result = [];
+  for (let index = 0; index < sourceItems.length; index += chunkSize) {
+    result.push(sourceItems.slice(index, index + chunkSize));
+  }
+  return result;
+}
+
+/**
+ * Reads the persisted media-export resume session from the service worker.
+ * @returns {Promise<object|null>} Saved session or null.
+ */
+async function loadMediaExportSession() {
+  return await sendToServiceWorker("GET_MEDIA_EXPORT_SESSION", {}, { timeoutMs: 120000 }).catch(() => null);
+}
+
+/**
+ * Persists the media-export resume session in the service worker store.
+ * @param {object|null} nextSession - Session state to save.
+ * @returns {Promise<void>}
+ */
+async function saveMediaExportSession(nextSession) {
+  await sendToServiceWorker("SAVE_MEDIA_EXPORT_SESSION", { session: nextSession || null }, { timeoutMs: 120000 });
+}
+
+/**
+ * Removes any persisted media-export resume session.
+ * @returns {Promise<void>}
+ */
+async function clearMediaExportSession() {
+  await sendToServiceWorker("CLEAR_MEDIA_EXPORT_SESSION", {}, { timeoutMs: 30000 }).catch((error) => {
+    console.warn("Medien-Export-Sitzung konnte nicht geleert werden.", error);
+  });
+}
+
+/**
+ * Checks whether a persisted media-export session can be resumed for the
+ * currently selected options.
+ * @param {object|null} session - Persisted media-export session.
+ * @param {object} options - Current media-export options.
+ * @returns {boolean} True when the session should be resumed.
+ */
+function canResumeMediaExportSession(session, options) {
+  if (!session || typeof session !== "object") {
+    return false;
+  }
+  if (session.status !== "paused" && session.status !== "running") {
+    return false;
+  }
+  if (String(session.sessionKey || "") !== buildMediaExportSessionKey(options)) {
+    return false;
+  }
+  if (!Array.isArray(session.media) || session.media.length === 0) {
+    return false;
+  }
+  if (!Array.isArray(session.batches) || session.batches.length === 0) {
+    return false;
+  }
+  if ((Number(session.nextBatchIndex) || 0) >= session.batches.length) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Creates the persisted media-export resume session from the scan result.
+ * @param {object} options - Media-export options used for the scan.
+ * @param {object} scanned - Scan result returned by the service worker.
+ * @returns {object} Normalized resume session for later batch exports.
+ */
+function createMediaExportSession(options, scanned) {
+  let media = [];
+  if (Array.isArray(scanned?.media)) {
+    media = scanned.media;
+  }
+  let posts = [];
+  if (Array.isArray(scanned?.posts)) {
+    posts = scanned.posts;
+  }
+  const batches = chunkMediaExportEntries(media, MEDIA_EXPORT_BATCH_SIZE).map((entries, batchIndex) => ({
+    batchIndex,
+    itemCount: entries.length,
+  }));
+  return {
+    mode: "media-export",
+    status: "paused",
+    sessionKey: buildMediaExportSessionKey(options),
+    options,
+    manifest: scanned?.manifest || {},
+    posts,
+    media,
+    batches,
+    nextBatchIndex: 0,
+    exportedMediaCount: 0,
+    skippedMediaCount: 0,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Builds a lookup map for already scanned posts by URI.
+ * @param {Array} scannedPosts - Posts returned from the media scan.
+ * @returns {Map<string, object>} Map keyed by post URI.
+ */
+function buildMediaExportPostsByUri(scannedPosts = []) {
+  let sourcePosts = [];
+  if (Array.isArray(scannedPosts)) {
+    sourcePosts = scannedPosts;
+  }
+  return new Map(sourcePosts.map((post) => [post.uri, post]));
+}
+
+/**
+ * Selects the posts referenced by one media-export batch.
+ * @param {Array} batchEntries - Media entries in the current batch.
+ * @param {Map<string, object>} postsByUri - Post lookup map from the scan.
+ * @returns {Array<object>} Deduplicated posts for this batch.
+ */
+function collectMediaExportBatchPosts(batchEntries, postsByUri) {
+  const result = [];
+  const seenUris = new Set();
+  let sourceEntries = [];
+  if (Array.isArray(batchEntries)) {
+    sourceEntries = batchEntries;
+  }
+  for (const entry of sourceEntries) {
+    const postUri = String(entry?.postUri || "").trim();
+    if (!postUri || seenUris.has(postUri) || !postsByUri.has(postUri)) {
+      continue;
+    }
+    seenUris.add(postUri);
+    result.push(postsByUri.get(postUri));
+  }
+  return result;
+}
+
+/**
+ * Reads the archive-media form and returns the selected export options.
+ * @returns {object} Actor, selected media kinds, and active archive filters.
+ */
 function getArchiveMediaExportOptions() {
   return {
     actor: String(archiveMediaActorInput?.value || "").trim(),
@@ -17757,6 +22457,30 @@ function getArchiveMediaExportOptions() {
   };
 }
 
+/**
+ * Enables or disables media export controls while a ZIP stream is running.
+ * @param {boolean} disabled - Whether controls should be blocked.
+ * @returns {void}
+ */
+function setArchiveMediaExportControlsDisabled(disabled) {
+  const isDisabled = disabled === true;
+  [
+    archiveMediaActorInput,
+    archiveMediaImagesToggle,
+    archiveMediaVideosToggle,
+    archiveMediaOtherToggle,
+  ].forEach((control) => {
+    if (control) {
+      control.disabled = isDisabled;
+    }
+  });
+}
+
+/**
+ * Exports matching account media into resumable ZIP parts. The function reuses a
+ * stored scan result when the same options were already scanned before.
+ * @returns {Promise<void>}
+ */
 async function exportArchiveMediaZip() {
   if (!authAccount) {
     throw new Error(t("archiveMediaRequiresLogin"));
@@ -17769,160 +22493,287 @@ async function exportArchiveMediaZip() {
   if (!options.includeImages && !options.includeVideos && !options.includeOther) {
     throw new Error(t("archiveMediaNeedKind"));
   }
-
-  const targetHandle = String(options.actor || authAccount || "account")
-    .replace(/^@+/, "")
-    .trim()
-    .replace(/[^\w.-]+/g, "-") || "account";
-  const datePart = new Date().toISOString().slice(0, 10);
-  const suggestedName = `threadline-media-${targetHandle}-${datePart}.zip`;
-  let fileHandle = null;
-  try {
-    fileHandle = await window.showSaveFilePicker({
-      suggestedName,
-      types: [{
-        description: t("archiveMediaFilePickerDescription"),
-        accept: {
-          "application/zip": [".zip"],
-        },
-      }],
-    });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      return;
-    }
-    throw new Error(t("archiveMediaFilePickerFailed"));
-  }
+  const mediaExportSignal = activeMediaExportAbortController?.signal || null;
+  throwIfMediaExportAborted(mediaExportSignal);
 
   archiveTransientNotice = "";
   renderArchiveStatusLine();
 
-  setArchiveProgress({
-    title: t("archiveMediaScanTitle"),
-    step: t("archiveMediaScanStep"),
-    percent: 3,
-    detail: "",
-  });
+  let mediaSession = await loadMediaExportSession();
+  throwIfMediaExportAborted(mediaExportSignal);
+  if (!canResumeMediaExportSession(mediaSession, options)) {
+    setArchiveProgress({
+      title: t("archiveMediaScanTitle"),
+      step: t("archiveMediaScanStep"),
+      percent: 3,
+      detail: "",
+    });
 
-  const scanned = await sendToServiceWorker("SCAN_ACCOUNT_MEDIA_EXPORT", options, {
-    timeoutMs: 600000,
-    onProgress(progress) {
-      setArchiveProgress({
-        title: progress.title || t("archiveMediaScanTitle"),
-        step: progress.step || t("archiveMediaScanStep"),
-        percent: Number.isFinite(progress.percent) ? progress.percent : 3,
-        detail: progress.detail || "",
-      });
-    },
-  });
+    const scanned = await sendToServiceWorker("SCAN_ACCOUNT_MEDIA_EXPORT", options, {
+      timeoutMs: MEDIA_EXPORT_SCAN_TIMEOUT_MS,
+      signal: mediaExportSignal,
+      createAbortError: createMediaExportAbortError,
+      onProgress(progress) {
+        setArchiveProgress({
+          title: progress.title || t("archiveMediaScanTitle"),
+          step: progress.step || t("archiveMediaScanStep"),
+          percent: Number.isFinite(progress.percent) ? progress.percent : 3,
+          detail: progress.detail || "",
+        });
+      },
+    });
+    throwIfMediaExportAborted(mediaExportSignal);
+    mediaSession = createMediaExportSession(options, scanned);
+    await saveMediaExportSession(mediaSession);
+  } else {
+    setArchiveProgress({
+      title: t("archiveMediaZipTitle"),
+      step: t("archiveMediaResumeStep", {
+        index: Number(mediaSession.nextBatchIndex) + 1,
+        count: mediaSession.batches.length,
+      }),
+      percent: Math.max(6, Math.round((Number(mediaSession.nextBatchIndex) / Math.max(1, mediaSession.batches.length)) * 100)),
+      detail: t("archiveMediaResumeDetail", {
+        count: Number(mediaSession.exportedMediaCount) || 0,
+        skipped: Number(mediaSession.skippedMediaCount) || 0,
+      }),
+    });
+  }
 
-  const mediaEntries = Array.isArray(scanned?.media) ? scanned.media : [];
+  const mediaEntries = Array.isArray(mediaSession?.media) ? mediaSession.media : [];
   if (!mediaEntries.length) {
+    await clearMediaExportSession();
     throw new Error(t("archiveMediaNoMatches"));
   }
 
-  const writable = await fileHandle.createWritable();
-  const zipWriter = new StreamingZipWriter(writable);
-  const exportedMedia = [];
-  const skippedMedia = [];
-  const scannedPosts = Array.isArray(scanned?.posts) ? scanned.posts : [];
-  const postsByUri = new Map(scannedPosts.map((post) => [post.uri, post]));
-  const writtenPostEntries = new Set();
+  const batches = Array.isArray(mediaSession.batches) ? mediaSession.batches : [];
+  const scannedPosts = Array.isArray(mediaSession.posts) ? mediaSession.posts : [];
+  const postsByUri = buildMediaExportPostsByUri(scannedPosts);
+  const baseName = buildArchiveMediaFileBaseName(options);
 
-  try {
-    for (const [index, item] of mediaEntries.entries()) {
-      setArchiveProgress({
-        title: t("archiveMediaZipTitle"),
-        step: t("archiveMediaZipStep", { index: index + 1, count: mediaEntries.length }),
-        percent: 12 + Math.round(((index + 1) / Math.max(1, mediaEntries.length)) * 80),
-        detail: t("archiveMediaZipDetail", { count: exportedMedia.length, skipped: skippedMedia.length }),
-      });
+  for (let batchIndex = Number(mediaSession.nextBatchIndex) || 0; batchIndex < batches.length; batchIndex += 1) {
+    throwIfMediaExportAborted(mediaExportSignal);
+    const batchMeta = batches[batchIndex] || {};
+    const batchStart = batchIndex * MEDIA_EXPORT_BATCH_SIZE;
+    const batchSize = Number(batchMeta.itemCount) || MEDIA_EXPORT_BATCH_SIZE;
+    const batchItems = mediaEntries.slice(batchStart, batchStart + batchSize);
+    const batchPosts = collectMediaExportBatchPosts(batchItems, postsByUri);
+    const suggestedName = buildArchiveMediaPartFileName(baseName, batchIndex, batches.length);
+    let fileHandle = null;
 
-      try {
-        const loaded = await sendToServiceWorker("DOWNLOAD_ACCOUNT_MEDIA_ASSET", { item }, {
-          timeoutMs: 180000,
-          onProgress(progress) {
-            setArchiveProgress({
-              title: t("archiveMediaZipTitle"),
-              step: progress.step || t("archiveMediaZipStep", { index: index + 1, count: mediaEntries.length }),
-              percent: 12 + Math.round(((index + 1) / Math.max(1, mediaEntries.length)) * 80),
-              detail: progress.detail || t("archiveMediaZipDetail", { count: exportedMedia.length, skipped: skippedMedia.length }),
-            });
-          },
-        });
-
-        const modifiedAt = loaded?.createdAt ? new Date(loaded.createdAt) : new Date();
-        const relatedPost = postsByUri.get(loaded?.postUri || item.postUri || "") || null;
-        const postFolder = String(
-          relatedPost?.postFolder
-          || item.postFolder
-          || loaded?.postFolder
-          || buildMediaExportPostFolder(relatedPost || item || loaded || {}),
-        ).trim();
-        if (postFolder && !writtenPostEntries.has(postFolder) && relatedPost) {
-          const postSummary = {
-            ...relatedPost,
-            exportedAt: new Date().toISOString(),
-          };
-          await zipWriter.addFile(`${postFolder}/post.json`, utf8Bytes(JSON.stringify(postSummary, null, 2)), modifiedAt);
-          writtenPostEntries.add(postFolder);
-        }
-        await zipWriter.addFile(String(loaded.path || item.pathStem || `asset-${index + 1}`), loaded.bytes || new Uint8Array(), modifiedAt);
-        exportedMedia.push({
-          id: loaded.id || item.id || "",
-          kind: loaded.kind || item.kind || "",
-          path: loaded.path || "",
-          postFolder,
-          type: loaded.type || "",
-          sizeBytes: Number(loaded.sizeBytes) || 0,
-          createdAt: loaded.createdAt || item.createdAt || "",
-          postUri: loaded.postUri || item.postUri || "",
-          alt: loaded.alt || item.alt || "",
-          width: Number(loaded.width) || 0,
-          height: Number(loaded.height) || 0,
-        });
-      } catch (error) {
-        skippedMedia.push({
-          id: item.id || "",
-          kind: item.kind || "",
-          postFolder: String(item.postFolder || buildMediaExportPostFolder(item || {})).trim(),
-          createdAt: item.createdAt || "",
-          postUri: item.postUri || "",
-          reason: error?.message || t("archiveMediaSkippedUnknown"),
-        });
-      }
-    }
-
-    const exportManifest = {
-      ...(scanned?.manifest || {}),
-      exportedAt: new Date().toISOString(),
-      mediaCount: exportedMedia.length,
-      skippedMediaCount: skippedMedia.length,
-    };
-
-    await zipWriter.addFile("_meta/manifest.json", utf8Bytes(JSON.stringify(exportManifest, null, 2)));
-    await zipWriter.addFile("_meta/posts.json", utf8Bytes(JSON.stringify(scannedPosts, null, 2)));
-    await zipWriter.addFile("_meta/media.json", utf8Bytes(JSON.stringify(exportedMedia, null, 2)));
-    if (skippedMedia.length > 0) {
-      await zipWriter.addFile("_meta/skipped-media.json", utf8Bytes(JSON.stringify(skippedMedia, null, 2)));
-    }
-    await zipWriter.close();
-  } catch (error) {
     try {
-      await writable.abort();
-    } catch {
-      // Ignore secondary abort errors.
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: t("archiveMediaFilePickerDescription"),
+          accept: {
+            "application/zip": [".zip"],
+          },
+        }],
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        mediaSession.status = "paused";
+        mediaSession.nextBatchIndex = batchIndex;
+        mediaSession.updatedAt = new Date().toISOString();
+        await saveMediaExportSession(mediaSession);
+        archiveTransientNotice = t("archiveMediaPausedDetail", {
+          index: batchIndex + 1,
+          count: batches.length,
+        });
+        renderArchiveStatusLine();
+        setArchiveProgress({
+          title: t("archiveProgressPausedTitle"),
+          step: t("archiveMediaResumeStep", { index: batchIndex + 1, count: batches.length }),
+          percent: Math.max(6, Math.round((batchIndex / Math.max(1, batches.length)) * 100)),
+          detail: archiveTransientNotice,
+        });
+        return;
+      }
+      throw new Error(t("archiveMediaFilePickerFailed"));
     }
-    throw error;
+
+    const writable = await fileHandle.createWritable();
+    const zipWriter = new StreamingZipWriter(writable);
+    const exportedMedia = [];
+    const skippedMedia = [];
+    const writtenPostEntries = new Set();
+
+    try {
+      for (const [itemOffset, item] of batchItems.entries()) {
+        throwIfMediaExportAborted(mediaExportSignal);
+        const overallIndex = batchStart + itemOffset;
+        const batchShare = (itemOffset + 1) / Math.max(1, batchItems.length);
+        const progressPercent = 12 + Math.round((((batchIndex + batchShare) / Math.max(1, batches.length)) * 80));
+        setArchiveProgress({
+          title: t("archiveMediaZipTitle"),
+          step: t("archiveMediaBatchStep", {
+            batch: batchIndex + 1,
+            count: batches.length,
+            index: itemOffset + 1,
+            total: batchItems.length,
+          }),
+          percent: progressPercent,
+          detail: t("archiveMediaZipRobustDetail", {
+            index: overallIndex + 1,
+            total: mediaEntries.length,
+            remaining: Math.max(0, mediaEntries.length - overallIndex - 1),
+            count: (Number(mediaSession.exportedMediaCount) || 0) + exportedMedia.length,
+            skipped: (Number(mediaSession.skippedMediaCount) || 0) + skippedMedia.length,
+          }),
+        });
+
+        try {
+          const loaded = await sendToServiceWorker("DOWNLOAD_ACCOUNT_MEDIA_ASSET", { item }, {
+            timeoutMs: MEDIA_EXPORT_ITEM_TIMEOUT_MS,
+            signal: mediaExportSignal,
+            createAbortError: createMediaExportAbortError,
+            onProgress(progress) {
+              setArchiveProgress({
+                title: t("archiveMediaZipTitle"),
+                step: progress.step || t("archiveMediaBatchStep", {
+                  batch: batchIndex + 1,
+                  count: batches.length,
+                  index: itemOffset + 1,
+                  total: batchItems.length,
+                }),
+                percent: progressPercent,
+                detail: progress.detail || t("archiveMediaZipRobustDetail", {
+                  index: overallIndex + 1,
+                  total: mediaEntries.length,
+                  remaining: Math.max(0, mediaEntries.length - overallIndex - 1),
+                  count: (Number(mediaSession.exportedMediaCount) || 0) + exportedMedia.length,
+                  skipped: (Number(mediaSession.skippedMediaCount) || 0) + skippedMedia.length,
+                }),
+              });
+            },
+          });
+          throwIfMediaExportAborted(mediaExportSignal);
+
+          const modifiedAt = loaded?.createdAt ? new Date(loaded.createdAt) : new Date();
+          const relatedPost = postsByUri.get(loaded?.postUri || item.postUri || "") || null;
+          let postFolder = "";
+          if (relatedPost?.postFolder) {
+            postFolder = String(relatedPost.postFolder).trim();
+          } else if (item.postFolder) {
+            postFolder = String(item.postFolder).trim();
+          } else if (loaded?.postFolder) {
+            postFolder = String(loaded.postFolder).trim();
+          } else {
+            postFolder = String(buildMediaExportPostFolder(relatedPost || item || loaded || {})).trim();
+          }
+
+          if (postFolder && !writtenPostEntries.has(postFolder) && relatedPost) {
+            const postSummary = {
+              ...relatedPost,
+              exportedAt: new Date().toISOString(),
+            };
+            await zipWriter.addFile(`${postFolder}/post.json`, utf8Bytes(JSON.stringify(postSummary, null, 2)), modifiedAt);
+            writtenPostEntries.add(postFolder);
+          }
+
+          await zipWriter.addFile(String(loaded.path || item.pathStem || `asset-${overallIndex + 1}`), loaded.bytes || new Uint8Array(), modifiedAt);
+          exportedMedia.push({
+            id: loaded.id || item.id || "",
+            kind: loaded.kind || item.kind || "",
+            path: loaded.path || "",
+            postFolder,
+            type: loaded.type || "",
+            sizeBytes: Number(loaded.sizeBytes) || 0,
+            createdAt: loaded.createdAt || item.createdAt || "",
+            postUri: loaded.postUri || item.postUri || "",
+            alt: loaded.alt || item.alt || "",
+            width: Number(loaded.width) || 0,
+            height: Number(loaded.height) || 0,
+          });
+        } catch (error) {
+          if (error?.name === "AbortError") {
+            throw error;
+          }
+          skippedMedia.push({
+            id: item.id || "",
+            kind: item.kind || "",
+            postFolder: String(item.postFolder || buildMediaExportPostFolder(item || {})).trim(),
+            createdAt: item.createdAt || "",
+            postUri: item.postUri || "",
+            reason: error?.message || t("archiveMediaSkippedUnknown"),
+          });
+          setArchiveProgress({
+            title: t("archiveMediaZipTitle"),
+            step: t("archiveMediaBatchStep", {
+              batch: batchIndex + 1,
+              count: batches.length,
+              index: itemOffset + 1,
+              total: batchItems.length,
+            }),
+            percent: progressPercent,
+            detail: t("archiveMediaZipRobustDetail", {
+              index: overallIndex + 1,
+              total: mediaEntries.length,
+              remaining: Math.max(0, mediaEntries.length - overallIndex - 1),
+              count: (Number(mediaSession.exportedMediaCount) || 0) + exportedMedia.length,
+              skipped: (Number(mediaSession.skippedMediaCount) || 0) + skippedMedia.length,
+            }),
+          });
+        }
+      }
+
+      throwIfMediaExportAborted(mediaExportSignal);
+      const exportManifest = {
+        ...(mediaSession?.manifest || {}),
+        exportedAt: new Date().toISOString(),
+        mediaCount: exportedMedia.length,
+        skippedMediaCount: skippedMedia.length,
+        batchIndex: batchIndex + 1,
+        batchCount: batches.length,
+        batchSize: batchItems.length,
+      };
+
+      await zipWriter.addFile("_meta/manifest.json", utf8Bytes(JSON.stringify(exportManifest, null, 2)));
+      await zipWriter.addFile("_meta/posts.json", utf8Bytes(JSON.stringify(batchPosts, null, 2)));
+      await zipWriter.addFile("_meta/media.json", utf8Bytes(JSON.stringify(exportedMedia, null, 2)));
+      if (skippedMedia.length > 0) {
+        await zipWriter.addFile("_meta/skipped-media.json", utf8Bytes(JSON.stringify(skippedMedia, null, 2)));
+      }
+      await zipWriter.close();
+    } catch (error) {
+      try {
+        await writable.abort();
+      } catch {
+        // Ignore secondary abort errors.
+      }
+      mediaSession.status = "paused";
+      mediaSession.nextBatchIndex = batchIndex;
+      mediaSession.updatedAt = new Date().toISOString();
+      await saveMediaExportSession(mediaSession);
+      throw error;
+    }
+
+    mediaSession.exportedMediaCount = (Number(mediaSession.exportedMediaCount) || 0) + exportedMedia.length;
+    mediaSession.skippedMediaCount = (Number(mediaSession.skippedMediaCount) || 0) + skippedMedia.length;
+    mediaSession.nextBatchIndex = batchIndex + 1;
+    mediaSession.status = "paused";
+    if (mediaSession.nextBatchIndex >= batches.length) {
+      mediaSession.status = "completed";
+    }
+    mediaSession.updatedAt = new Date().toISOString();
+    await saveMediaExportSession(mediaSession);
   }
 
+  await clearMediaExportSession();
   setArchiveProgress({
     title: t("archiveProgressDoneTitle"),
     step: t("archiveMediaDoneStep"),
     percent: 100,
-    detail: t("archiveMediaDoneDetail", { count: exportedMedia.length, skipped: skippedMedia.length }),
+    detail: t("archiveMediaDoneDetail", {
+      count: Number(mediaSession.exportedMediaCount) || 0,
+      skipped: Number(mediaSession.skippedMediaCount) || 0,
+    }),
   });
-  archiveTransientNotice = t("archiveMediaDoneDetail", { count: exportedMedia.length, skipped: skippedMedia.length });
+  archiveTransientNotice = t("archiveMediaDoneDetail", {
+    count: Number(mediaSession.exportedMediaCount) || 0,
+    skipped: Number(mediaSession.skippedMediaCount) || 0,
+  });
   renderArchiveStatusLine();
   setStatus(`${t("archiveProgressDoneTitle")}: ${archiveTransientNotice}`);
 }
@@ -20828,7 +25679,14 @@ function canvasRectToPdfRect(rect, canvasWidth, canvasHeight) {
   ];
 }
 
-function buildTextPdfFile(pages) {
+/**
+ * Builds a text-only PDF blob with Threadline file metadata.
+ * @param {Array<object>} pages - Text PDF pages.
+ * @param {object} metadata - Optional metadata values.
+ * @param {string} metadata.title - Optional PDF title.
+ * @returns {Blob} PDF blob.
+ */
+function buildTextPdfFile(pages, metadata = {}) {
   const encoder = new TextEncoder();
   const objects = [null];
 
@@ -20864,6 +25722,7 @@ function buildTextPdfFile(pages) {
     objects[pageId] = objects[pageId].replace("PAGES_REF", `${pagesId} 0 R`);
   }
   const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+  const infoId = addObject(buildPdfMetadataInfoDictionary(metadata.title || ""));
 
   const parts = [encoder.encode("%PDF-1.4\n")];
   const offsets = [0];
@@ -20895,7 +25754,7 @@ function buildTextPdfFile(pages) {
   for (let index = 1; index < objects.length; index += 1) {
     xref.push(`${String(offsets[index]).padStart(10, "0")} 00000 n `);
   }
-  const trailer = `trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  const trailer = `trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R /Info ${infoId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
   parts.push(encoder.encode(`${xref.join("\n")}\n${trailer}`));
 
   return new Blob(parts, { type: "application/pdf" });
@@ -21320,7 +26179,14 @@ function paginateArchivePdfPosts(posts, options) {
   return pages;
 }
 
-function buildPdfFile(pages) {
+/**
+ * Builds an image-backed PDF blob with Threadline file metadata.
+ * @param {Array<object>} pages - PDF pages with content, images and annotations.
+ * @param {object} metadata - Optional metadata values.
+ * @param {string} metadata.title - Optional PDF title.
+ * @returns {Blob} PDF blob.
+ */
+function buildPdfFile(pages, metadata = {}) {
   const encoder = new TextEncoder();
   const objects = [null];
   const fontRegularId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
@@ -21369,6 +26235,7 @@ function buildPdfFile(pages) {
     objects[pageId] = objects[pageId].replace("PAGES_REF", `${pagesId} 0 R`);
   }
   const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+  const infoId = addObject(buildPdfMetadataInfoDictionary(metadata.title || ""));
 
   const parts = [encoder.encode("%PDF-1.4\n")];
   const offsets = [0];
@@ -21400,7 +26267,7 @@ function buildPdfFile(pages) {
   for (let index = 1; index < objects.length; index += 1) {
     xref.push(`${String(offsets[index]).padStart(10, "0")} 00000 n `);
   }
-  const trailer = `trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  const trailer = `trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R /Info ${infoId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
   parts.push(encoder.encode(`${xref.join("\n")}\n${trailer}`));
 
   return new Blob(parts, { type: "application/pdf" });
@@ -21431,7 +26298,9 @@ async function buildArchivePdfBand(catalog, posts, bandIndex, bandCount, options
     });
   }
 
-  return buildPdfFile(pages);
+  return buildPdfFile(pages, {
+    title: catalog?.account?.handle || authAccount || "Threadline Archiv",
+  });
 }
 
 function splitArchiveIntoBands(posts, options) {
@@ -21875,8 +26744,14 @@ function buildComposedText(baseText) {
 function renderHashtagCloud() {
   hashtagCloud.innerHTML = "";
   const isArchiveContext = isArchiveHashtagContext();
-  const activeSelectedHashtags = isArchiveContext ? archiveSelectedHashtags : selectedHashtags;
-  const composerHashtagLocked = composerLocked && !isArchiveContext;
+  const isSearchContext = isSearchHashtagContext();
+  let activeSelectedHashtags = selectedHashtags;
+  if (isArchiveContext) {
+    activeSelectedHashtags = archiveSelectedHashtags;
+  } else if (isSearchContext) {
+    activeSelectedHashtags = searchSelectedHashtags;
+  }
+  const composerHashtagLocked = composerLocked && !isArchiveContext && !isSearchContext;
 
   hashtags.forEach((tag) => {
     const fragment = cloneTemplate("hashtag-item-template");
@@ -21903,7 +26778,12 @@ function renderHashtagCloud() {
       if (composerHashtagLocked) {
         return;
       }
-      const currentSelection = isArchiveContext ? archiveSelectedHashtags : selectedHashtags;
+      let currentSelection = selectedHashtags;
+      if (isArchiveContext) {
+        currentSelection = archiveSelectedHashtags;
+      } else if (isSearchContext) {
+        currentSelection = searchSelectedHashtags;
+      }
       const nextSelection = currentSelection.includes(tag.normalized)
         ? currentSelection.filter((entry) => entry !== tag.normalized)
         : [...currentSelection, tag.normalized];
@@ -21915,6 +26795,11 @@ function renderHashtagCloud() {
         renderHashtagCloud();
         invalidateArchiveCatalog();
         void persistArchivePreferences();
+      } else if (isSearchHashtagContext()) {
+        searchSelectedHashtags = normalizeSelectedHashtagEntries(nextSelection, hashtags);
+        renderHashtagCloud();
+        renderSearchWorkspace();
+        void persistSettings();
       } else {
         selectedHashtags = normalizeSelectedHashtagEntries(nextSelection, hashtags);
         renderHashtagCloud();
@@ -21947,13 +26832,19 @@ function renderHashtagCloud() {
       hashtags = hashtags.filter((entry) => entry.normalized !== tag.normalized);
       selectedHashtags = selectedHashtags.filter((entry) => entry !== tag.normalized);
       archiveSelectedHashtags = archiveSelectedHashtags.filter((entry) => entry !== tag.normalized);
+      searchSelectedHashtags = searchSelectedHashtags.filter((entry) => entry !== tag.normalized);
       renderHashtagCloud();
-      segmentOverrides = null;
-      setComposerLocked(false);
-      renderSegments({ preserveOverrides: false });
+      if (!isArchiveContext && !isSearchContext) {
+        segmentOverrides = null;
+        setComposerLocked(false);
+        renderSegments({ preserveOverrides: false });
+      }
       await persistSettings();
       if (isArchiveContext) {
         invalidateArchiveCatalog();
+      }
+      if (isSearchHashtagContext()) {
+        renderSearchWorkspace();
       }
       setStatus(t("hashtagDeleted"));
     });
@@ -21961,9 +26852,19 @@ function renderHashtagCloud() {
     hashtagCloud.appendChild(fragment);
   });
 
-  hashtagSelectionNote.textContent = activeSelectedHashtags.length > 0
-    ? t(isArchiveContext ? "archiveHashtagSelectionSome" : "hashtagSelectionSome", { count: activeSelectedHashtags.length })
-    : t(isArchiveContext ? "archiveHashtagSelectionNone" : "hashtagSelectionNone");
+  if (isArchiveContext) {
+    hashtagSelectionNote.textContent = activeSelectedHashtags.length > 0
+      ? t("archiveHashtagSelectionSome", { count: activeSelectedHashtags.length })
+      : t("archiveHashtagSelectionNone");
+  } else if (isSearchContext) {
+    hashtagSelectionNote.textContent = activeSelectedHashtags.length > 0
+      ? t("searchHashtagSelectionSome", { count: activeSelectedHashtags.length })
+      : t("searchHashtagSelectionNone");
+  } else {
+    hashtagSelectionNote.textContent = activeSelectedHashtags.length > 0
+      ? t("hashtagSelectionSome", { count: activeSelectedHashtags.length })
+      : t("hashtagSelectionNone");
+  }
 }
 
 async function persistSettings() {
@@ -21984,14 +26885,18 @@ async function persistSettings() {
     addMarkerSpacing,
     postInteraction: getCurrentPostInteractionSettings(),
     linkCardProxy: getLinkCardSettings(),
+    linkCardProvider: getActiveLinkCardProvider(),
+    linkCardMicrolinkUsage: getMicrolinkUsageState(),
     hashtags,
     selectedHashtags,
+    searchSelectedHashtags,
     hashtagPlacement,
     segmentImages,
     segmentLinkCards,
     postingHistory,
     threadExplorerFavorites,
     savedSearches,
+    searchPreferences: getSearchPreferences(),
     archivePreferences: getArchivePreferences(),
     analysisState: getPersistableAnalysisState(),
   };
@@ -22092,6 +26997,9 @@ async function createSettingsBackupPayload() {
       appendThreadEmoji,
       addMarkerSpacing,
       postInteraction: getCurrentPostInteractionSettings(),
+      linkCardProxy: getLinkCardSettings(),
+      linkCardProvider: getActiveLinkCardProvider(),
+      linkCardMicrolinkUsage: getMicrolinkUsageState(),
       savedAccounts: savedAccounts.map((account) => ({
         did: account.did || "",
         handle: account.handle || "",
@@ -22175,12 +27083,18 @@ async function importSettingsBackup(file) {
     [...selectedHashtags, ...(Array.isArray(imported.selectedHashtags) ? imported.selectedHashtags : [])],
     mergedHashtags,
   );
+  const mergedSearchSelectedHashtags = normalizeSelectedHashtagEntries(
+    [...searchSelectedHashtags, ...(Array.isArray(imported.searchSelectedHashtags) ? imported.searchSelectedHashtags : [])],
+    mergedHashtags,
+  );
 
   hashtags = mergedHashtags;
   selectedHashtags = mergedSelectedHashtags;
+  searchSelectedHashtags = mergedSearchSelectedHashtags;
   postingHistory = mergePostingHistoryEntries(postingHistory, imported.postingHistory);
   threadExplorerFavorites = normalizeThreadExplorerFavorites(imported.threadExplorerFavorites);
   savedSearches = normalizeSavedSearches(imported.savedSearches);
+  applySearchPreferences(imported.searchPreferences || {});
   hashtagPlacement = normalizeHashtagPlacement(imported.hashtagPlacement);
   hashtagPlacementSelect.value = hashtagPlacement;
   tipsVisible = imported.tipsVisible !== false;
@@ -22215,6 +27129,9 @@ async function importSettingsBackup(file) {
     linkCardEndpointInput.value = imported.linkCardProxy.endpoint || "";
     linkCardSecretInput.value = imported.linkCardProxy.secret || "";
   }
+  linkCardProvider = normalizeLinkCardProvider(imported.linkCardProvider);
+  linkCardMicrolinkUsage = normalizeMicrolinkUsage(imported.linkCardMicrolinkUsage);
+  syncLinkCardProviderUi();
   localePreference = SUPPORTED_LOCALES.includes(imported.localePreference) || imported.localePreference === "auto"
     ? imported.localePreference
     : localePreference;
@@ -23121,6 +28038,26 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicArchiveProgressBullet1"),
           t("helpTopicArchiveProgressBullet2"),
           t("helpTopicArchiveProgressBullet3"),
+        ],
+      };
+    case "search_workspace":
+      return {
+        eyebrow: t("helpEyebrow"),
+        title: t("helpTopicSearchWorkspaceTitle"),
+        text: t("helpTopicSearchWorkspaceText"),
+        bullets: [
+          t("helpTopicSearchWorkspaceBullet1"),
+          t("helpTopicSearchWorkspaceBullet2"),
+          t("helpTopicSearchWorkspaceBullet3"),
+          t("helpTopicSearchWorkspaceBullet4"),
+          t("helpTopicSearchWorkspaceBullet5"),
+          t("helpTopicSearchWorkspaceBullet6"),
+          t("helpTopicSearchWorkspaceBullet7"),
+          t("helpTopicSearchWorkspaceBullet8"),
+          t("helpTopicSearchWorkspaceBullet9"),
+          t("helpTopicSearchWorkspaceBullet10"),
+          t("helpTopicSearchWorkspaceBullet11"),
+          t("helpTopicSearchWorkspaceBullet12"),
         ],
       };
     case "network_workspace":
@@ -24361,15 +29298,19 @@ function renderSegments(options = {}) {
     const existingLinkCard = normalizeLinkCard(segmentLinkCards[index]);
     const detectedUrl = getFirstHttpUrl(segment);
     const linkCardUrl = detectedUrl || existingLinkCard?.url || "";
-    const linkCardConfigured = isLinkCardProxyConfigured();
-    linkCardButton.hidden = !linkCardConfigured;
-    if (linkCardConfigured) {
+    const linkCardAvailable = canCreateLinkCardsWithCurrentProvider();
+    linkCardButton.hidden = false;
+    if (linkCardAvailable) {
       linkCardButton.textContent = existingLinkCard ? t("linkCardRefreshButton") : t("linkCardSegmentButton");
       linkCardButton.disabled = !linkCardUrl;
       linkCardButton.title = !linkCardUrl
         ? t("linkCardNoUrl")
         : t("linkCardSegmentButton");
       linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl));
+    } else {
+      linkCardButton.textContent = existingLinkCard ? t("linkCardRefreshButton") : t("linkCardSegmentButton");
+      linkCardButton.disabled = true;
+      linkCardButton.title = t("linkCardMicrolinkLimitReached");
     }
     renderSegmentLinkCard(linkCardContainer, index);
     renderSegmentImages(imageContainer, index);
@@ -24443,6 +29384,8 @@ async function hydrateAppState() {
     ));
     hashtags = normalizeHashtagEntries(state.hashtags);
     selectedHashtags = normalizeSelectedHashtagEntries(state.selectedHashtags, hashtags);
+    searchSelectedHashtags = normalizeSelectedHashtagEntries(state.searchSelectedHashtags, hashtags);
+    applySearchPreferences(state.searchPreferences || {});
     hashtagPlacement = normalizeHashtagPlacement(state.hashtagPlacement);
     segmentImages = normalizeSegmentImages(state.segmentImages);
     segmentLinkCards = normalizeSegmentLinkCards(state.segmentLinkCards);
@@ -24456,6 +29399,9 @@ async function hydrateAppState() {
     applyPostInteractionSettings(state.postInteraction || {});
     linkCardEndpointInput.value = state.linkCardProxy?.endpoint || "";
     linkCardSecretInput.value = state.linkCardProxy?.secret || "";
+    linkCardProvider = normalizeLinkCardProvider(state.linkCardProvider);
+    linkCardMicrolinkUsage = normalizeMicrolinkUsage(state.linkCardMicrolinkUsage);
+    syncLinkCardProviderUi();
     if (imageAutoResizeSelect) {
       imageAutoResizeSelect.value = imageAutoResizeMode;
     }
@@ -24992,6 +29938,10 @@ archiveButton.addEventListener("click", () => {
   showArchiveWorkspace();
 });
 
+searchButton.addEventListener("click", () => {
+  showSearchWorkspace();
+});
+
 networkButton.addEventListener("click", () => {
   showNetworkWorkspace();
 });
@@ -25000,10 +29950,94 @@ threadExplorerButton.addEventListener("click", handleThreadExplorerLaunchClick);
 threadExplorerUrlButton.addEventListener("click", handleThreadExplorerUrlClick);
 threadExplorerSearchesButton.addEventListener("click", handleThreadExplorerSearchesClick);
 threadExplorerRefreshButton.addEventListener("click", handleThreadExplorerRefreshClick);
-threadExplorerFollowsButton.addEventListener("click", handleThreadExplorerFollowsClick);
-threadExplorerMutualsButton.addEventListener("click", handleThreadExplorerMutualsClick);
+threadExplorerSourceSelect.addEventListener("change", handleThreadExplorerSourceSelectChange);
 threadExplorerFeedSelect.addEventListener("change", handleThreadExplorerFeedSelectChange);
+
+searchModeSelect?.addEventListener("change", () => {
+  updateSearchModeUi();
+  renderSearchWorkspace();
+  scheduleSearchPreferencesPersist();
+});
+searchUseOwnAccountButton?.addEventListener("click", handleSearchUseOwnAccountClick);
+searchUrlInput?.addEventListener("input", () => {
+  if (searchUrlStatus) {
+    searchUrlStatus.textContent = "";
+  }
+  scheduleSearchPreferencesPersist();
+});
+searchUrlInput?.addEventListener("paste", () => {
+  scheduleSearchUrlImport();
+});
+searchUrlInput?.addEventListener("change", () => {
+  importSearchUrlFromField();
+});
+searchQueryInput?.addEventListener("input", () => {
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+});
+searchExcludeTextInput?.addEventListener("input", () => {
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+});
+searchActorInput?.addEventListener("input", () => {
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+});
+searchSortSelect?.addEventListener("change", () => {
+  enforceSearchSortConstraints(true);
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+});
+searchMediaSelect?.addEventListener("change", () => {
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+});
+searchPostTypeSelect?.addEventListener("change", () => {
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+});
+searchMentionsInput?.addEventListener("input", () => {
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+});
+searchDomainInput?.addEventListener("input", scheduleSearchPreferencesPersist);
+searchTargetUrlInput?.addEventListener("input", scheduleSearchPreferencesPersist);
+searchSinceInput?.addEventListener("input", () => {
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+});
+searchUntilInput?.addEventListener("input", () => {
+  renderSearchSummary();
+  scheduleSearchPreferencesPersist();
+});
+searchRunButton?.addEventListener("click", () => {
+  void loadSearchResults({ append: false });
+});
+searchMoreButton?.addEventListener("click", () => {
+  void loadSearchResults({ append: true });
+});
+searchCancelButton?.addEventListener("click", () => {
+  void cancelActiveSearchRun();
+});
+searchSaveButton?.addEventListener("click", () => {
+  void saveCurrentSearchPreferences();
+});
+searchSavedButton?.addEventListener("click", handleSearchSavedClick);
+searchHashtagButton?.addEventListener("click", openSearchHashtagDialog);
+searchTagMatchSelect?.addEventListener("change", () => {
+  renderSearchWorkspace();
+  scheduleSearchPreferencesPersist();
+});
+searchClearButton?.addEventListener("click", () => {
+  void clearSearchForm();
+});
+searchCopyUrlButton?.addEventListener("click", () => {
+  void copyCurrentSearchAsBskyUrl();
+});
 threadExplorerFeedList.addEventListener("scroll", handleThreadExplorerFeedScroll);
+threadExplorerActorFocusCloseButton.addEventListener("click", closeThreadExplorerActorFocus);
+threadExplorerActorModeSelect.addEventListener("change", handleThreadExplorerActorModeChange);
+threadExplorerActorMoreButton.addEventListener("click", handleThreadExplorerActorMoreClick);
 threadExplorerRootButton.addEventListener("click", handleThreadExplorerRootClick);
 threadExplorerReloadThreadButton.addEventListener("click", handleThreadExplorerReloadThreadClick);
 threadExplorerSnapshotPngButton.addEventListener("click", handleThreadExplorerSnapshotPngClick);
@@ -25020,6 +30054,14 @@ threadExplorerThreadTree.addEventListener("pointermove", handleThreadExplorerPoi
 threadExplorerThreadTree.addEventListener("pointerup", handleThreadExplorerPointerUp);
 threadExplorerThreadTree.addEventListener("pointercancel", handleThreadExplorerPointerUp);
 threadExplorerThreadTree.addEventListener("wheel", handleThreadExplorerWheel, { passive: false });
+if (threadExplorerSnapshotProgressDialog) {
+  threadExplorerSnapshotProgressDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+  });
+}
+if (threadExplorerSnapshotCancelButton) {
+  threadExplorerSnapshotCancelButton.addEventListener("click", cancelThreadExplorerSnapshotExport);
+}
 threadExplorerUrlCloseTopButton.addEventListener("click", closeThreadExplorerUrlDialog);
 threadExplorerUrlCloseButton.addEventListener("click", closeThreadExplorerUrlDialog);
 threadExplorerUrlLoadButton.addEventListener("click", () => {
@@ -25037,6 +30079,8 @@ threadExplorerFavoritesCloseButton.addEventListener("click", () => {
 savedSearchesCloseButton.addEventListener("click", () => {
   savedSearchesDialog.close();
 });
+searchHashtagCloseTop?.addEventListener("click", closeSearchHashtagDialog);
+searchHashtagCloseButton?.addEventListener("click", closeSearchHashtagDialog);
 savedSearchAddButton.addEventListener("click", handleSavedSearchAddClick);
 savedSearchUrlInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
@@ -25798,6 +30842,18 @@ archiveResumeButton.addEventListener("click", () => {
 });
 
 archiveCancelButton.addEventListener("click", () => {
+  if (activeMediaExportAbortController) {
+    activeMediaExportAbortController.abort();
+    activeMediaExportState = "cancelled";
+    setArchiveProgress({
+      title: t("archiveProgressPausedTitle"),
+      step: t("archiveMediaCancelled"),
+      percent: Number(archiveProgressFill?.style?.width?.replace("%", "")) || 0,
+      detail: t("archiveMediaCancelledDetail"),
+    });
+    updateArchiveRunControls();
+    return;
+  }
   void setArchiveRunControl("cancel");
 });
 
@@ -25823,9 +30879,24 @@ archiveExportZipButton.addEventListener("click", async () => {
 if (archiveExportMediaZipButton) {
   archiveExportMediaZipButton.addEventListener("click", async () => {
     try {
+      activeMediaExportAbortController = new AbortController();
+      activeMediaExportState = "running";
+      setArchiveMediaExportControlsDisabled(true);
+      updateArchiveRunControls();
       setBusy(archiveExportMediaZipButton, true, t("archiveWorkingButton"), t("archiveExportMediaZipButton"));
       await exportArchiveMediaZip();
     } catch (error) {
+      if (error?.name === "AbortError") {
+        setArchiveProgress({
+          title: t("archiveProgressPausedTitle"),
+          step: t("archiveMediaCancelled"),
+          percent: 0,
+          detail: t("archiveMediaCancelledDetail"),
+        });
+        archiveTransientNotice = t("archiveMediaCancelledDetail");
+        renderArchiveStatusLine();
+        return;
+      }
       console.error(error);
       setArchiveProgress({
         title: t("archiveErrorTitle"),
@@ -25835,6 +30906,10 @@ if (archiveExportMediaZipButton) {
       });
       showErrorDialog(error.message || t("archiveExportFailed"), t("archiveErrorTitle"));
     } finally {
+      activeMediaExportAbortController = null;
+      activeMediaExportState = "idle";
+      setArchiveMediaExportControlsDisabled(false);
+      updateArchiveRunControls();
       setBusy(archiveExportMediaZipButton, false, t("archiveWorkingButton"), t("archiveExportMediaZipButton"));
     }
   });
@@ -25963,6 +31038,16 @@ composerPostedDismissButton?.addEventListener("click", () => {
 });
 
 postSettingsButton.addEventListener("click", () => {
+  activeLanguageDialogContext = "composer";
+  renderPostLanguageDialog();
+  postLanguagesDialog.showModal();
+  if (postLanguagesDisclosure.open) {
+    window.setTimeout(() => postLanguagesSearch.focus(), 0);
+  }
+});
+
+searchLanguageButton?.addEventListener("click", () => {
+  activeLanguageDialogContext = "search";
   renderPostLanguageDialog();
   postLanguagesDialog.showModal();
   if (postLanguagesDisclosure.open) {
@@ -26123,7 +31208,7 @@ hideTipsButton.addEventListener("click", async () => {
 
 hashtagForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (composerLocked && !isArchiveHashtagContext()) {
+  if (composerLocked && !isArchiveHashtagContext() && !isSearchHashtagContext()) {
     return;
   }
   const parsed = parseHashtagValue(hashtagInput.value);
@@ -26135,21 +31220,33 @@ hashtagForm.addEventListener("submit", async (event) => {
   if (!findHashtag(parsed.normalized)) {
     hashtags = [...hashtags, parsed];
   }
-  if (!selectedHashtags.includes(parsed.normalized)) {
+  if (isArchiveHashtagContext()) {
+    if (!archiveSelectedHashtags.includes(parsed.normalized)) {
+      archiveSelectedHashtags = [...archiveSelectedHashtags, parsed.normalized];
+    }
+  } else if (isSearchHashtagContext()) {
+    if (!searchSelectedHashtags.includes(parsed.normalized)) {
+      searchSelectedHashtags = [...searchSelectedHashtags, parsed.normalized];
+    }
+  } else if (!selectedHashtags.includes(parsed.normalized)) {
     selectedHashtags = [...selectedHashtags, parsed.normalized];
   }
 
   hashtagInput.value = "";
   renderHashtagCloud();
-  segmentOverrides = null;
-  setComposerLocked(false);
-  renderSegments({ preserveOverrides: false });
+  if (isSearchHashtagContext()) {
+    renderSearchWorkspace();
+  } else if (!isArchiveHashtagContext()) {
+    segmentOverrides = null;
+    setComposerLocked(false);
+    renderSegments({ preserveOverrides: false });
+  }
   await persistSettings();
   setStatus(t("hashtagAdded"));
 });
 
 hashtagPlacementSelect.addEventListener("change", async () => {
-  if (composerLocked && !isArchiveHashtagContext()) {
+  if (composerLocked && !isArchiveHashtagContext() && !isSearchHashtagContext()) {
     return;
   }
   hashtagPlacement = normalizeHashtagPlacement(hashtagPlacementSelect.value);
@@ -26418,6 +31515,21 @@ confirmDialog.addEventListener("close", () => {
   input?.addEventListener("change", async () => {
     normalizeLinkCardSettingsInputs();
     updateLinkCardSettingsStatus();
+    await persistSettings();
+    renderSegments({ preserveOverrides: true, preserveView: true });
+  });
+});
+
+[linkCardProviderNoneInput, linkCardProviderMicrolinkInput, linkCardProviderProxyInput].forEach((input) => {
+  input?.addEventListener("change", async () => {
+    if (linkCardProviderNoneInput?.checked) {
+      linkCardProvider = LINK_CARD_PROVIDER_NONE;
+    } else if (linkCardProviderProxyInput?.checked) {
+      linkCardProvider = LINK_CARD_PROVIDER_PROXY;
+    } else {
+      linkCardProvider = LINK_CARD_PROVIDER_MICROLINK;
+    }
+    syncLinkCardProviderUi();
     await persistSettings();
     renderSegments({ preserveOverrides: true, preserveView: true });
   });

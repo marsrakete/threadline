@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https: data: blob:; font-src 'self' data:; media-src 'self' data: blob: https:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:; manifest-src 'self'">
     <meta name="theme-color" content="#0d1321">
-    <meta name="description" content="App zum Entwerfen und Veröffentlichen von Bluesky-Posts und Threads mit Bildern, Hashtags und Archiv-Funktion.">
+    <meta name="description" content="App zum Entwerfen, Durchsuchen und Veröffentlichen von Bluesky-Posts und Threads mit Bildern, Hashtags, Thread Explorer und Archiv-Funktion.">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Threadline">
     <meta property="og:title" content="Threadline">
-    <meta property="og:description" content="App zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archiv-Funktion.">
+    <meta property="og:description" content="App zum Entwerfen, Aufteilen, Durchsuchen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags, Thread Explorer und Archiv-Funktion.">
     <meta property="og:url" content="https://marsrakete.github.io/threadline/">
     <meta property="og:image" content="https://marsrakete.github.io/threadline/icons/threadline-og-workspaces.png">
     <meta property="og:image:type" content="image/png">
@@ -18,7 +18,7 @@
     <meta property="og:image:alt" content="Threadline Vorschau mit den Bereichen Composer, Archiv-Funktion, Netzwerk, Analyse und DM-Archiv">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Threadline">
-    <meta name="twitter:description" content="App zum Entwerfen, Aufteilen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags und Archiv-Funktion.">
+    <meta name="twitter:description" content="App zum Entwerfen, Aufteilen, Durchsuchen und Veröffentlichen von Bluesky-Threads mit Bildern, Hashtags, Thread Explorer und Archiv-Funktion.">
     <meta name="twitter:image" content="https://marsrakete.github.io/threadline/icons/threadline-og-workspaces.png">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -117,6 +117,15 @@
               </button>
               <p id="thread-explorer-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="threadExplorerLaunchDisabledNote">
                 Zum Lesen aktueller Threads bitte zuerst verbinden.
+              </p>
+            </div>
+
+            <div class="workspace-launch-chip">
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="search-button" data-i18n="searchLaunchButton" disabled>
+                Suche
+              </button>
+              <p id="search-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="searchLaunchDisabledNote">
+                Für Live-Suchen bitte zuerst verbinden.
               </p>
             </div>
 
@@ -677,16 +686,42 @@
                   <button type="button" class="ghost-button" id="thread-explorer-refresh-button" data-i18n="threadExplorerRefreshButton">Aktualisieren</button>
                 </div>
               </div>
-              <div class="network-filter-group thread-explorer-source-tabs" role="toolbar" aria-label="Thread Explorer Quelle">
-                <button type="button" class="ghost-button thread-explorer-source-button is-active" id="thread-explorer-follows-button" data-thread-explorer-source="follows" data-i18n="threadExplorerFollowsButton">Latest from Follows</button>
-                <button type="button" class="ghost-button thread-explorer-source-button" id="thread-explorer-mutuals-button" data-thread-explorer-source="mutuals" data-i18n="threadExplorerMutualsButton">Latest from Mutuals</button>
-              </div>
+              <label class="settings-field thread-explorer-source-picker">
+                <span data-i18n="threadExplorerSourcePickerLabel">Beziehungsgruppe</span>
+                <select id="thread-explorer-source-select">
+                  <option value="mutuals" data-i18n="threadExplorerMutualsOption">Mutuals</option>
+                  <option value="follows" data-i18n="threadExplorerFollowsOption">Follows</option>
+                  <option value="followers" data-i18n="threadExplorerFollowersOption">Follower</option>
+                </select>
+              </label>
               <label class="settings-field thread-explorer-feed-picker">
                 <span data-i18n="threadExplorerFeedPickerLabel">Angepinnte Feeds</span>
                 <select id="thread-explorer-feed-select">
                   <option value="" data-i18n="threadExplorerFeedPickerPlaceholder">Feed auswaehlen ...</option>
                 </select>
               </label>
+              <section class="thread-explorer-actor-focus" id="thread-explorer-actor-focus" hidden>
+                <div class="thread-explorer-actor-focus-head">
+                  <img class="thread-explorer-avatar" id="thread-explorer-actor-focus-avatar" alt="" loading="lazy">
+                  <div class="thread-explorer-actor-focus-copy">
+                    <p class="eyebrow" data-i18n="threadExplorerActorFocusEyebrow">Account-Fokus</p>
+                    <h4 id="thread-explorer-actor-focus-title">Posts von Account</h4>
+                    <p id="thread-explorer-actor-focus-handle" class="thread-explorer-post-handle"></p>
+                  </div>
+                  <button type="button" class="ghost-button thread-explorer-actor-focus-close" id="thread-explorer-actor-focus-close" data-i18n-title="threadExplorerActorFocusCloseButton" title="Account-Fokus schließen">×</button>
+                </div>
+                <label class="settings-field thread-explorer-actor-mode-picker">
+                  <span data-i18n="threadExplorerActorModeLabel">Anzeigen</span>
+                  <select id="thread-explorer-actor-mode-select">
+                    <option value="posts" data-i18n="threadExplorerActorModePosts">Posts</option>
+                    <option value="replies" data-i18n="threadExplorerActorModeReplies">Replies</option>
+                    <option value="all" data-i18n="threadExplorerActorModeAll">Alle</option>
+                  </select>
+                </label>
+                <p id="thread-explorer-actor-focus-status" class="archive-run-status-line"></p>
+                <div id="thread-explorer-actor-feed-list" class="thread-explorer-feed-list thread-explorer-actor-feed-list" aria-live="polite"></div>
+                <button type="button" class="ghost-button thread-explorer-actor-more-button" id="thread-explorer-actor-more-button" data-i18n="threadExplorerActorMoreButton">Mehr laden</button>
+              </section>
               <p id="thread-explorer-feed-status" class="archive-run-status-line" data-i18n="threadExplorerFeedIdle">Noch keine Posts geladen.</p>
               <div id="thread-explorer-feed-list" class="thread-explorer-feed-list" aria-live="polite"></div>
             </section>
@@ -749,20 +784,24 @@
               <div class="thread-explorer-node">
                 <article class="thread-explorer-post-card">
                   <header class="thread-explorer-post-head">
-                    <img class="thread-explorer-avatar" alt="" loading="lazy">
-                    <div>
+                    <button type="button" class="thread-explorer-actor-trigger thread-explorer-actor-avatar-trigger" data-i18n-title="threadExplorerActorFocusTriggerTitle" title="Posts dieses Accounts anzeigen">
+                      <img class="thread-explorer-avatar" alt="" loading="lazy">
+                    </button>
+                    <button type="button" class="thread-explorer-actor-trigger thread-explorer-actor-name-trigger" data-i18n-title="threadExplorerActorFocusTriggerTitle" title="Posts dieses Accounts anzeigen">
                       <strong class="thread-explorer-post-author"></strong>
                       <p class="thread-explorer-post-handle"></p>
+                    </button>
+                    <div class="thread-explorer-post-head-buttons">
+                      <a class="thread-explorer-view-link" target="_blank" rel="noreferrer noopener" data-i18n-title="threadExplorerViewInBskyButton" title="Post öffnen">↗</a>
+                      <button type="button" class="thread-explorer-node-toggle" aria-label="Antworten einklappen">-</button>
                     </div>
-                    <button type="button" class="thread-explorer-node-toggle" aria-label="Antworten einklappen">-</button>
                   </header>
                   <p class="thread-explorer-post-meta"></p>
-                  <div class="thread-explorer-post-actions">
+                  <div class="thread-explorer-post-actions" hidden>
                     <button type="button" class="thread-explorer-edit-button" data-i18n-title="threadExplorerEditDetailsButton" title="Bearbeitungsdetails anzeigen" hidden>
                       <span aria-hidden="true">✎</span>
                       <span data-i18n="threadExplorerEditedBadge">Wurde bearbeitet</span>
                     </button>
-                    <a class="thread-explorer-view-link" target="_blank" rel="noreferrer noopener" data-i18n-title="threadExplorerViewInBskyButton" title="Post öffnen">↗</a>
                   </div>
                   <p class="thread-explorer-post-text"></p>
                   <div class="thread-explorer-post-gallery"></div>
@@ -834,7 +873,7 @@
                 <span class="thread-explorer-favorite-meta saved-search-meta"></span>
                 <span class="thread-explorer-favorite-text saved-search-url"></span>
               </button>
-              <button type="button" class="thread-explorer-favorite-remove saved-search-remove" data-i18n-title="savedSearchRemoveButton" title="Entfernen">×</button>
+              <button type="button" class="thread-explorer-favorite-remove saved-search-remove" data-i18n-title="savedSearchRemoveButton" title="Entfernen"></button>
             </article>
           </template>
 
@@ -845,6 +884,224 @@
                 <strong class="thread-explorer-actor-name"></strong>
                 <small class="thread-explorer-actor-handle"></small>
               </span>
+            </article>
+          </template>
+        </section>
+
+        <section id="search-workspace" class="archive-workspace search-workspace workspace-view" hidden>
+          <div class="archive-header-panel">
+            <div>
+              <p class="eyebrow" data-i18n="searchHeaderEyebrow">Suche</p>
+              <div class="help-heading">
+                <h2 data-i18n="searchHeaderTitle">Posts gezielt durchsuchen</h2>
+                <button type="button" class="help-trigger" data-help-topic="search_workspace" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+              <p class="section-note" data-i18n="searchHeaderNote">
+                Suche global, in einem Account oder nur in reposteten Posts eines Accounts.
+              </p>
+            </div>
+          </div>
+
+          <div class="archive-grid search-layout-grid">
+            <div class="search-sidebar-column">
+            <section class="archive-card search-config-card">
+              <p class="eyebrow" data-i18n="searchConfigEyebrow">Abfrage</p>
+              <div class="help-heading">
+                <h3 data-i18n="searchConfigTitle">Suchmodus und Filter</h3>
+                <button type="button" class="help-trigger" data-help-topic="search_workspace" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
+              </div>
+
+              <label class="settings-field">
+                <span data-i18n="searchModeLabel">Modus</span>
+                <select id="search-mode-select">
+                  <option value="network" data-i18n="searchModeNetwork">Netzwerk-Suche</option>
+                  <option value="posts" data-i18n="searchModePosts">Posts eines Accounts</option>
+                  <option value="reposts" data-i18n="searchModeReposts">Reposts eines Accounts</option>
+                  <option value="hashtags" data-i18n="searchModeHashtags">Hashtag-Suche</option>
+                </select>
+              </label>
+
+              <p id="search-mode-note" class="section-note"></p>
+
+              <label class="settings-field search-url-field">
+                <span data-i18n="searchUrlLabel">aus bsky geteilte Such-URL</span>
+                <input id="search-url-input" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://bsky.app/search?q=...">
+              </label>
+              <p id="search-url-status" class="settings-note search-url-status"></p>
+
+              <label class="settings-field" id="search-query-field">
+                <span id="search-query-label" data-i18n="searchQueryLabel">Suchtext</span>
+                <input id="search-query-input" type="text" autocomplete="off" spellcheck="false" placeholder="Asterix">
+              </label>
+
+              <label class="settings-field" id="search-actor-field">
+                <span id="search-actor-label" data-i18n="searchActorLabel">Account</span>
+                <div class="search-actor-row">
+                  <input id="search-actor-input" type="text" autocomplete="off" spellcheck="false" placeholder="@handle.bsky.social">
+                  <button type="button" id="search-use-own-account-button" class="ghost-button" data-i18n="searchUseOwnAccountButton">Mein Account</button>
+                </div>
+              </label>
+
+              <div class="settings-field search-tags-field" id="search-tags-field">
+                <div class="help-heading">
+                  <span id="search-tags-label" data-i18n="searchTagsLabel">Hashtags</span>
+                </div>
+                <div class="search-tags-card">
+                  <button type="button" id="search-hashtag-button" class="ghost-button" data-i18n="searchHashtagButton">Hashtag-Filter öffnen</button>
+                  <label class="settings-field search-tag-match-field">
+                    <span data-i18n="searchTagMatchLabel">Hashtag-Verknüpfung</span>
+                    <select id="search-tag-match-select">
+                      <option value="all" data-i18n="searchTagMatchAll">Alle Hashtags</option>
+                      <option value="any" data-i18n="searchTagMatchAny">Mindestens ein Hashtag</option>
+                    </select>
+                  </label>
+                  <p id="search-hashtag-summary" class="settings-note search-hashtag-summary"></p>
+                </div>
+              </div>
+
+              <div class="search-extra-grid">
+                <label class="settings-field">
+                  <span data-i18n="searchMediaLabel">Medien</span>
+                  <select id="search-media-select">
+                    <option value="all" data-i18n="searchMediaAll">Alle Posts</option>
+                    <option value="images" data-i18n="searchMediaImages">Posts mit Bildern</option>
+                    <option value="videos" data-i18n="searchMediaVideos">Posts mit Videos</option>
+                    <option value="none" data-i18n="searchMediaNoMedia">Posts ohne Medien</option>
+                  </select>
+                </label>
+                <label class="settings-field">
+                  <span data-i18n="searchPostTypeLabel">Post-Typ</span>
+                  <select id="search-post-type-select">
+                    <option value="all" data-i18n="searchPostTypeAll">Alle</option>
+                    <option value="originals" data-i18n="searchPostTypeOriginals">Nur Original-Posts</option>
+                    <option value="replies" data-i18n="searchPostTypeReplies">Nur Replies</option>
+                    <option value="quotes" data-i18n="searchPostTypeQuotes">Nur Quotes</option>
+                    <option value="reposts" data-i18n="searchPostTypeReposts">Nur Reposts</option>
+                    <option value="non-reposts" data-i18n="searchPostTypeNonReposts">Alles ausser Reposts</option>
+                  </select>
+                </label>
+                <label class="settings-field">
+                  <span data-i18n="searchExcludeTextLabel">Enthält nicht</span>
+                  <input id="search-exclude-text-input" type="text" autocomplete="off" spellcheck="false" placeholder="Obelix, \"gallisches Dorf\"">
+                </label>
+                <label class="settings-field">
+                  <span data-i18n="searchMentionsLabel">Erwähnt Account</span>
+                  <input id="search-mentions-input" type="text" autocomplete="off" spellcheck="false" placeholder="@handle.bsky.social">
+                </label>
+                <label class="settings-field search-language-field">
+                  <span data-i18n="searchLanguageLabel">Sprache</span>
+                  <div class="composer-language-row search-language-row">
+                    <button id="search-language-button" type="button" class="ghost-button composer-language-button" data-i18n="searchLanguageButton">Sprache</button>
+                    <p id="search-language-summary" class="composer-language-summary"></p>
+                  </div>
+                </label>
+                <label class="settings-field search-domain-field">
+                  <span data-i18n="searchDomainLabel">Domain</span>
+                  <input id="search-domain-input" type="text" autocomplete="off" spellcheck="false" placeholder="example.com">
+                </label>
+                <label class="settings-field search-target-url-field">
+                  <span data-i18n="searchTargetUrlLabel">Link-URL</span>
+                  <input id="search-target-url-input" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/article">
+                </label>
+              </div>
+
+              <label class="settings-field search-sort-field" id="search-sort-field">
+                <span data-i18n="searchSortLabel">Sortierung</span>
+                <select id="search-sort-select">
+                  <option value="latest" data-i18n="searchSortLatest">Neueste</option>
+                  <option value="top" data-i18n="searchSortTop">Top</option>
+                </select>
+              </label>
+
+              <div class="search-date-grid">
+                <label class="settings-field">
+                  <span data-i18n="searchSinceLabel">Von</span>
+                  <input id="search-since-input" type="date">
+                </label>
+                <label class="settings-field">
+                  <span data-i18n="searchUntilLabel">Bis</span>
+                  <input id="search-until-input" type="date">
+                </label>
+              </div>
+
+              <p id="search-status" class="archive-run-status-line" data-i18n="searchStatusIdle">Noch keine Suche gestartet.</p>
+              <p id="search-summary" class="settings-note search-summary"></p>
+
+              <div class="settings-actions search-primary-actions">
+                <button type="button" id="search-run-button" data-i18n="searchRunButton">Suche starten</button>
+                <button type="button" id="search-cancel-button" class="ghost-button" data-i18n="cancelButton" hidden>Abbrechen</button>
+                <button type="button" id="search-saved-button" class="ghost-button" data-i18n="searchSavedParamsButton">Gespeicherte Suchen</button>
+                <button type="button" id="search-save-button" class="ghost-button" data-i18n="searchSaveParamsButton">Suche speichern</button>
+              </div>
+              <div class="settings-actions search-secondary-actions">
+                <button type="button" id="search-clear-button" class="ghost-button" data-i18n="searchClearFormButton">Suchmaske leeren</button>
+                <button type="button" id="search-copy-url-button" class="ghost-button" data-i18n="searchCopyUrlButton">Bsky-URL kopieren</button>
+                <button type="button" id="search-more-button" class="ghost-button" data-i18n="searchMoreButton" hidden>Mehr laden</button>
+              </div>
+            </section>
+            </div>
+
+            <section class="archive-card search-results-card">
+              <p class="eyebrow" data-i18n="searchResultsEyebrow">Treffer</p>
+              <h3 data-i18n="searchResultsTitle">Gefundene Posts</h3>
+              <ul id="search-results-list" class="search-results-list"></ul>
+            </section>
+          </div>
+
+          <template id="search-result-item-template">
+            <article class="search-result-item">
+              <div class="search-result-head">
+                <img class="search-result-avatar" alt="" loading="lazy">
+                <div class="search-result-copy">
+                  <strong class="search-result-author"></strong>
+                  <p class="search-result-handle"></p>
+                  <p class="search-result-meta"></p>
+                </div>
+              </div>
+              <div class="search-result-badges"></div>
+              <div class="thread-explorer-post-actions" hidden>
+                <button type="button" class="thread-explorer-edit-button" data-i18n-title="threadExplorerEditDetailsButton" title="Bearbeitungsdetails anzeigen" hidden>
+                  <span aria-hidden="true">✎</span>
+                  <span data-i18n="threadExplorerEditedBadge">Wurde bearbeitet</span>
+                </button>
+              </div>
+              <p class="search-result-text"></p>
+              <div class="thread-explorer-post-gallery"></div>
+              <a class="thread-explorer-link-card" target="_blank" rel="noreferrer noopener" hidden>
+                <img class="thread-explorer-link-card-image" alt="" loading="lazy">
+                <span>
+                  <strong class="thread-explorer-link-card-title"></strong>
+                  <span class="thread-explorer-link-card-description"></span>
+                  <small class="thread-explorer-link-card-url"></small>
+                </span>
+              </a>
+              <a class="thread-explorer-quote-card" target="_blank" rel="noreferrer noopener" hidden>
+                <span class="thread-explorer-quote-card-head">
+                  <img class="thread-explorer-quote-card-avatar" alt="" loading="lazy">
+                  <span>
+                    <strong class="thread-explorer-quote-card-author"></strong>
+                    <small class="thread-explorer-quote-card-handle"></small>
+                  </span>
+                </span>
+                <span class="thread-explorer-quote-card-text"></span>
+                <span class="thread-explorer-quote-card-gallery"></span>
+                <span class="thread-explorer-quote-link-card" hidden>
+                  <img class="thread-explorer-quote-link-card-image" alt="" loading="lazy">
+                  <span>
+                    <strong class="thread-explorer-quote-link-card-title"></strong>
+                    <span class="thread-explorer-quote-link-card-description"></span>
+                    <small class="thread-explorer-quote-link-card-url"></small>
+                  </span>
+                </span>
+                <small class="thread-explorer-quote-card-meta"></small>
+              </a>
+              <div class="search-result-actions">
+                <button type="button" class="ghost-button thread-explorer-icon-action search-result-favorite" data-i18n-title="threadExplorerSaveButton" title="Speichern" aria-label="Speichern">
+                  <span aria-hidden="true">★</span>
+                  <span aria-hidden="true">▣</span>
+                </button>
+                <a class="thread-explorer-view-link search-result-open" target="_blank" rel="noreferrer noopener" data-i18n-title="threadExplorerViewInBskyButton" title="Post öffnen" aria-label="Post öffnen">↗</a>
+              </div>
             </article>
           </template>
         </section>
@@ -1292,6 +1549,22 @@
         <section class="settings-block">
           <p class="eyebrow" data-i18n="linkCardSettingsEyebrow">Link-Cards</p>
           <p class="settings-note" data-i18n="linkCardSettingsNote">Optionaler WordPress-Proxy für Link-Card-Metadaten.</p>
+          <fieldset class="settings-fieldset">
+            <legend data-i18n="linkCardProviderLabel">Quelle</legend>
+            <label class="settings-check" id="link-card-provider-none-wrap">
+              <input id="link-card-provider-none" name="link-card-provider" type="radio" value="none" checked>
+              <span data-i18n="linkCardProviderNone">Kein Dienst</span>
+            </label>
+            <label class="settings-check" id="link-card-provider-microlink-wrap">
+              <input id="link-card-provider-microlink" name="link-card-provider" type="radio" value="microlink">
+              <span data-i18n="linkCardProviderMicrolink">Microlink</span>
+            </label>
+            <label class="settings-check" id="link-card-provider-proxy-wrap" hidden>
+              <input id="link-card-provider-proxy" name="link-card-provider" type="radio" value="proxy">
+              <span data-i18n="linkCardProviderProxy">WordPress-Proxy</span>
+            </label>
+          </fieldset>
+          <p id="link-card-provider-note" class="settings-note" data-i18n="linkCardProviderNoneNote">Standard ist Kein Dienst. Dann legt Threadline einfache Link-Cards ohne geladene Metadaten an.</p>
           <label>
             <span data-i18n="linkCardEndpointLabel">Proxy-Endpunkt</span>
             <input id="link-card-endpoint-input" name="threadline-proxy-endpoint" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="https://example.com/wp-json/threadline/v1/link-card">
@@ -1431,6 +1704,26 @@
       </form>
     </dialog>
 
+    <dialog id="thread-explorer-snapshot-progress-dialog" class="settings-dialog thread-explorer-snapshot-progress-dialog">
+      <form method="dialog" class="settings-sheet thread-explorer-snapshot-progress-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="threadExplorerSnapshotProgressEyebrow">PNG Export</p>
+            <h2 id="thread-explorer-snapshot-progress-title" data-i18n="threadExplorerSnapshotProgressTitle">Snapshot wird erstellt</h2>
+          </div>
+        </div>
+
+        <p id="thread-explorer-snapshot-progress-step" class="settings-note" aria-live="polite"></p>
+        <div id="thread-explorer-snapshot-progress-bar" class="archive-progress-bar thread-explorer-snapshot-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span id="thread-explorer-snapshot-progress-fill"></span>
+        </div>
+        <p id="thread-explorer-snapshot-progress-detail" class="settings-note"></p>
+        <div class="settings-actions thread-explorer-snapshot-progress-actions">
+          <button type="button" id="thread-explorer-snapshot-cancel-button" class="ghost-button" data-i18n="cancelButton">Abbrechen</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="error-dialog" class="settings-dialog">
       <form method="dialog" class="settings-sheet">
         <div class="section-heading settings-heading">
@@ -1442,6 +1735,9 @@
         </div>
 
         <p id="error-message" class="settings-note"></p>
+        <p id="error-link-wrap" class="settings-note error-link-note" hidden>
+          <a id="error-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+        </p>
       </form>
     </dialog>
 
@@ -1555,17 +1851,17 @@
       <form method="dialog" class="settings-sheet post-languages-sheet">
         <div class="section-heading settings-heading">
           <div>
-            <p class="eyebrow" data-i18n="postLanguagesEyebrow">Posting</p>
-            <h2 data-i18n="postSettingsDialogTitle">Einstellungen für den Post</h2>
+            <p id="post-languages-dialog-eyebrow" class="eyebrow" data-i18n="postLanguagesEyebrow">Posting</p>
+            <h2 id="post-languages-dialog-title" data-i18n="postSettingsDialogTitle">Einstellungen für den Post</h2>
           </div>
           <button type="button" id="post-languages-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
 
-        <p class="settings-note" data-i18n="postSettingsDialogDescription">
+        <p id="post-languages-dialog-description" class="settings-note" data-i18n="postSettingsDialogDescription">
           Diese Einstellungen beeinflussen die Segmentierung und das spätere Posting auf Bluesky.
         </p>
 
-        <div class="post-settings-toggle-list">
+        <div id="post-languages-settings-list" class="post-settings-toggle-list">
           <label class="toggle">
             <input id="counter-toggle" type="checkbox" checked>
             <span data-i18n="counterToggle">Zähler anhängen</span>
@@ -1657,6 +1953,7 @@
               <input id="post-languages-search" type="search" autocomplete="off" placeholder="Sprachen suchen">
             </label>
 
+            <p id="search-language-dialog-note" class="settings-note" hidden></p>
             <p id="post-languages-selection-note" class="settings-note"></p>
             <div id="post-languages-list" class="post-languages-list"></div>
           </div>
@@ -1907,18 +2204,37 @@
           </div>
           <button type="button" id="saved-searches-close-button" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
-        <p class="settings-note" data-i18n="savedSearchesNote">
+        <p id="saved-searches-note" class="settings-note" data-i18n="savedSearchesNote">
           Speichere geteilte Bluesky-Such-URLs und lade sie später im Thread Explorer oder Archiv wieder.
         </p>
-        <label class="settings-field" for="saved-search-url-input">
+        <label id="saved-search-url-field" class="settings-field" for="saved-search-url-input">
           <span data-i18n="savedSearchUrlLabel">Such-URL</span>
           <input id="saved-search-url-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://bsky.app/search?q=...">
         </label>
-        <div class="settings-actions">
+        <div id="saved-searches-actions" class="settings-actions">
           <button type="button" id="saved-search-add-button" data-i18n="savedSearchAddButton">Suche hinzufügen</button>
         </div>
         <p id="saved-searches-status" class="settings-note"></p>
         <div id="saved-searches-list" class="thread-explorer-favorites-list saved-searches-list"></div>
+      </form>
+    </dialog>
+
+    <dialog id="search-hashtag-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet thread-explorer-dialog-sheet">
+        <div class="section-heading settings-heading">
+          <div>
+            <p class="eyebrow" data-i18n="searchHashtagDialogEyebrow">Hashtag-Filter</p>
+            <h2 data-i18n="searchHashtagDialogTitle">Hashtags für diese Suche</h2>
+          </div>
+          <button type="button" id="search-hashtag-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
+        </div>
+        <p class="settings-note" data-i18n="searchHashtagDialogNote">
+          Wähle hier die Hashtags, die in der Suchmaske aktiv sein sollen.
+        </p>
+        <div id="search-hashtag-dialog-slot" class="search-hashtag-dialog-slot"></div>
+        <div class="settings-actions">
+          <button type="button" id="search-hashtag-close-button" class="ghost-button" data-i18n="closeButton">Schließen</button>
+        </div>
       </form>
     </dialog>
 
@@ -1981,6 +2297,7 @@
           <button type="button" id="link-card-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
         <p id="link-card-url" class="settings-note"></p>
+        <p id="link-card-provider-state" class="settings-note"></p>
         <p id="link-card-warning" class="settings-note link-card-warning" hidden></p>
         <p id="link-card-status" class="settings-note"></p>
         <div class="settings-actions">

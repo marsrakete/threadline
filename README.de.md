@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  Eine Progressive Web App zum Schreiben, Aufteilen, Speichern und Veröffentlichen von Bluesky-Threads inklusive Bildern, Hashtags und lokaler Backup-Funktion.
+  Eine Progressive Web App zum Schreiben, Suchen, Speichern und Veröffentlichen von Bluesky-Posts und Threads.
 </p>
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U7U01OC260)
@@ -19,422 +19,144 @@
 
 ## Überblick
 
-Threadline ist eine statische PWA für Bluesky-Threads. Die App verbindet sich mit einem Bluesky-App-Passwort, speichert Entwürfe lokal im Browser und hilft dabei, längere Texte in bearbeitbare Thread-Abschnitte aufzuteilen. Bilder, Hashtags, Segment-Änderungen und weitere Einstellungen bleiben lokal erhalten und können zusätzlich exportiert oder als kompletter Thread gespeichert werden.
-
-## Kurz
+Threadline ist eine statische Bluesky-Arbeitsumgebung, die direkt im Browser läuft. Die App hilft beim Schreiben und Veröffentlichen von Threads, beim Lesen aktueller Gespräche, bei flexibleren Suchanfragen, beim lokalen Archivieren von Accounts, beim Vergleichen von Accounts und beim Laden von DMs für spätere Exporte.
 
-Threadline ist inzwischen deutlich mehr als ein Thread-Composer. Mit eigenen Workspaces für Archiv-Funktion, Analyse, Netzwerk und DM-Archiv, direkter In-App-Hilfe, robusterem Export, besserer mobiler HTML-Lesbarkeit und Drag-and-Drop für Bilder wird die App zu einer kleinen Bluesky-Arbeitsumgebung.
+Wenn du Threadline neu kennenlernst, denke weniger an einen einzelnen Composer und mehr an eine App mit sieben klar getrennten Arbeitsbereichen.
 
-## Projektleitlinien
+## Die 7 Arbeitsbereiche
 
-Die Entwicklung folgt der lokalen [PROJECT_GUIDELINES.md](PROJECT_GUIDELINES.md): Struktur, Styling, Verhalten und Übersetzungen bleiben getrennt; wiederkehrende Oberfläche nutzt Templates und DOM-APIs statt großer HTML-Strings; sichtbare Texte werden zentral gepflegt; kaputte Kodierung gilt als Fehler.
-
-## In 3 Schritten Zum Ersten Thread-Post
-
-1. Erzeuge ein Bluesky-App-Passwort, füge dein Konto in Threadline hinzu und melde dich an.
-2. Schreibe oder füge deinen Text in den Composer ein, ergänze bei Bedarf Bilder, ALT-Texte und Hashtags.
-3. Prüfe die Thread-Abschnitte und veröffentliche den Thread mit dem Post-Button.
-
-## Bluesky-App-Passwort Erzeugen
-
-Threadline verwendet ein Bluesky-App-Passwort und nicht dein normales Konto-Passwort.
+- `Composer`: einen Post oder längeren Thread schreiben, in Abschnitte aufteilen, Bilder und Hashtags ergänzen und direkt veröffentlichen.
+- `Suche`: Bluesky global durchsuchen, nur in einem Account suchen, Reposts durchsuchen oder gespeicherte Suchmasken wiederverwenden.
+- `Archiv`: einen Account lokal laden und daraus ZIP-, HTML- oder PDF-Ausgaben erzeugen.
+- `Thread Explorer`: aktuelle Posts öffnen und den vollständigen Live-Thread als Baum oder Mindmap lesen.
+- `Netzwerk`: Follower, Following und Mutuals in einer interaktiven Beziehungsansicht erkunden.
+- `Analyse`: zwei Accounts stilistisch und zeitlich vorsichtig miteinander vergleichen.
+- `DM-Archiv`: Direct Messages lokal laden und für spätere Exporte vorbereiten.
 
-1. Öffne Bluesky.
-2. Gehe zu `Einstellungen`.
-3. Öffne `Datenschutz und Sicherheit`.
-4. Öffne `App-Passwörter`.
-5. Erzeuge ein neues App-Passwort.
-6. Kopiere das erzeugte Passwort und verwende es in Threadline.
-
-Ein eigenes App-Passwort ist sinnvoll, weil du es später wieder entziehen kannst, ohne dein normales Login-Passwort ändern zu müssen.
-
-## Funktionsumfang
-
-- Bluesky-Anmeldung mit App-Passwort über einen kompakten `Konto hinzufügen`-Dialog
-- Presets für `bsky.social`, `eurosky.social`, Mu.social mit automatischer PDS-Erkennung und eigene PDS-Server
-- Mehrere gespeicherte Logins mit schnellem Kontowechsel
-- Konten bleiben nach dem Abmelden sichtbar und können per Icon wieder angemeldet oder entfernt werden
-- Lokale Session-Erneuerung ohne eigenes Backend
-- Mehrsprachige Oberfläche: Deutsch, Englisch, Französisch
-- Automatische Sprachwahl anhand der Browser-Sprache mit Fallback auf Englisch
-- Manuelle Sprachwahl in den Einstellungen, inklusive `Automatisch`
-- Installierbare PWA mit Service Worker, Offline-App-Hülle und Install-Button
-- Auf mobilen Geräten lässt sich die linke Spalte über einen Aufklapper ein- und ausblenden
-- Hilfe-Dialog direkt aus dem README in der App
-- Die App erkennt neue Versionen, kann manuell danach suchen und zeigt bei Bedarf direkt einen Neu-laden-Button
-- Statusanzeige und Historie der letzten Postings
-- Bestehende Threads lassen sich fortsetzen oder per Posting-URL gezielt beantworten
-- Optionaler WordPress-Link-Card-Proxy, um aus URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards zu erzeugen
-- Eigener Workspace `Analyse`, um zwei Accounts stilometrisch und zeitlich miteinander zu vergleichen
-
-## Schreiben Und Aufteilen
-
-- Ein großes Composer-Feld für den Ausgangstext
-- Automatisches Aufteilen in Thread-Abschnitte ab mehr als 300 Zeichen
-- Umbruch möglichst an Wortgrenzen
-- Vorhandene Zeilenumbrüche werden berücksichtigt
-- `Post-Einstellungen` als eigenes UI-Popup für Marker, Sprachen und Interaktionsregeln
-- Bis zu 3 Post-Sprachen auswählbar; Standard ist die aktuelle App-Sprache
-- Optionaler Zähler `1/x`, immer in einer eigenen Schlusszeile pro Abschnitt
-- Optionaler Hinweis `Ein Thread 🧵` am Ende des ersten Abschnitts
-- Optionales Thread-Emoji `⤵️` für alle Abschnitte außer dem letzten, vor einem aktiven Zähler
-- Optional kann vor diesen Markern eine Leerzeile eingefügt werden
-- Diese Marker erscheinen nur dann, wenn wirklich mehr als ein Thread-Abschnitt entsteht
-- Manueller harter Abschnittswechsel mit `%%`
-- Die Thread-Abschnitte dürfen nachträglich bearbeitet werden
-- Sobald ein Abschnitt manuell verändert wurde, wird der Composer gesperrt, damit die Bearbeitung nicht versehentlich überschrieben wird
-- Mit `Änderung ignorieren` wird nur der Composer wieder freigegeben; die vorhandene Thread-Anzeige bleibt dabei unverändert
-
-### Offizielle Bluesky-Limits
-
-Die Protokoll-Details hinter diesen Limits stehen gesammelt in [ATPROTO.de.md](ATPROTO.de.md).
-
-Ein kompletter Thread hat bei Bluesky nach der offiziellen Dokumentation kein eigenes Gesamtlimit. Begrenzt wird stattdessen jeder einzelne Post innerhalb des Threads.
-
-- Jeder Thread-Abschnitt wird als eigener `app.bsky.feed.post` veröffentlicht
-- Das entscheidende Limit pro Post sind `300` Unicode-Grapheme, also sichtbare Zeichen so, wie Bluesky sie zählt
-- Darum prüft und splittet Threadline pro Abschnitt und nicht nach einer Gesamtlänge des ganzen Threads
-- Emojis, verbundene Emoji-Sequenzen und andere Unicode-Kombinationen können anders zählen als eine einfache JavaScript-Zeichenlänge
-- Chinesische, japanische und ähnliche Schriften sind im Protokoll kein Sonderfall, aber jedes sichtbare Zeichen zählt direkt in dasselbe `300`-Limit hinein
-
-Ein offizielles Gesamt-Zeichenlimit für den gesamten Thread ist in der AT-Proto- oder Bluesky-Dokumentation derzeit nicht beschrieben. Technisch ist ein Thread einfach eine Antwort-Kette, in der die einzelnen Posts über `reply.root` und `reply.parent` verbunden werden.
-
-Bei extrem langen Threads greifen in der Praxis eher die Schreib-Limits pro Account als ein Thread-Längenlimit. Bluesky dokumentiert derzeit `5.000` Write-Punkte pro Stunde und `35.000` pro Tag, und das Erstellen eines normalen neuen Posts kostet dabei `3` Punkte.
-
-### Grapheme-Testfälle
-
-Threadline folgt beim Post-Limit inzwischen der offiziellen Bluesky-Regel von `300` Unicode-Graphemen pro Post und nicht nur einer einfachen JavaScript-Stringlänge.
-
-- `\"🙂\".repeat(300)` sind genau `300` Grapheme und sollten noch in einen einzelnen Post passen
-- `\"🙂\".repeat(301)` sind `301` Grapheme und müssen gesplittet oder mindestens gewarnt werden
-- `\"👨‍👩‍👧‍👦\".repeat(300)` sind ebenfalls genau `300` Grapheme, obwohl jedes sichtbare Familien-Emoji intern aus mehreren Codepoints und vielen UTF-16-Zeichen besteht
-- `\"漢\".repeat(300)` sind genau `300` Grapheme; `\"漢\".repeat(301)` ist zu lang. Das ist ein guter CJK-Testfall, weil jedes sichtbare Zeichen direkt ins Limit eingeht
-
-Schneller Browser-Konsolencheck:
-
-```js
-const examples = {
-  emoji300: "🙂".repeat(300),
-  emoji301: "🙂".repeat(301),
-  family300: "👨‍👩‍👧‍👦".repeat(300),
-  han300: "漢".repeat(300),
-  han301: "漢".repeat(301),
-};
-
-const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-for (const [name, text] of Object.entries(examples)) {
-  const graphemes = Array.from(segmenter.segment(text)).length;
-  console.log(name, {
-    graphemes,
-    codePoints: Array.from(text).length,
-    codeUnits: text.length,
-  });
-}
-```
-
-## Antworten Und Thread Fortsetzen
-
-![Vergleichsgrafik für Thread fortsetzen und Auf Posting antworten](icons/readme-reply-targets-de.svg)
-
-- Über den Button neben `Post-Einstellungen` kann eine Posting-URL geprüft und als Antwortsziel gesetzt werden
-- Im Composer erscheint dann eine Ziel-Kachel mit Avatar, Name und Textausschnitt des Ziel-Postings oder Threads
-- `Auf Posting antworten` bedeutet: Threadline antwortet genau auf das angegebene Posting
-- `Thread fortsetzen` bedeutet: Threadline hängt den neuen Abschnitt an den letzten eigenen Post innerhalb dieses Threads an
-- Für `Thread fortsetzen` reicht ein Eintrag aus `Letzte Postings`; Threadline ermittelt daraus den letzten eigenen Post im Thread
-- Bei einer Thread-Fortsetzung zeigt die Kachel zur Orientierung den Thread-Einstieg, gepostet wird aber als Antwort auf den letzten eigenen Post
-- Bei einer Thread-Fortsetzung kann eine bestehende Nummerierung wie `1/x` nicht mehr konsistent bleiben, weil frühere Posts nicht nachträglich angepasst werden können
-- Das gewählte Ziel bleibt reload-sicher als Teil des lokalen Entwurfs erhalten
-- Vor dem Posten erscheint zusätzlich eine Sicherheitsabfrage, die klar benennt, ob geantwortet oder ein Thread fortgesetzt wird
-
-## Post-Interaktionen
-
-- In `Post-Einstellungen` lässt sich festlegen, wer antworten darf
-- Unterstützt werden `Jeder`, `Niemand` oder eine Auswahl aus `Follower`, `Personen, denen du folgst` und `Personen, die du erwähnst`
-- Zusätzlich kann gesteuert werden, ob Zitate des Posts erlaubt sind
-- Diese Einstellungen werden reload-sicher gespeichert und beim Posten an Bluesky übergeben
-
-## Hashtag-Verwalter
-
-- Hashtags können mit oder ohne `#` eingegeben werden
-- Groß- und Kleinschreibung bleibt erhalten, zum Beispiel `#mdRzA`
-- Darstellung als klickbare Word-Cloud
-- Einzelne Hashtags können ausgewählt, bearbeitet oder gelöscht werden
-- Bearbeiten erfolgt über ein UI-Popup
-- Ausgewählte Hashtags werden automatisch gesammelt im ersten, letzten oder in jedem Thread-Abschnitt eingefügt
-- Für `in jedem Abschnitt` gibt es Varianten oben und unten
-- Beim Posten werden Hashtags als Bluesky-Rich-Text-Facets übertragen, damit sie anklickbar sind
-
-## Bilder Pro Thread-Abschnitt
-
-- Pro Abschnitt können bis zu 10 Bilder angehängt werden
-- Bilder werden unter dem jeweiligen Abschnitt als kleine Vorschau angezeigt
-- Jedes Bild bleibt seinem Thread-Abschnitt fest zugeordnet
-- Bilder können innerhalb eines Abschnitts nach links oder rechts sortiert werden
-- Ein Mülleimer entfernt einzelne Bilder
-- Ein ALT-Text-Editor öffnet sich als UI-Popup
-- Ein Bild-Editor erlaubt:
-- Ausschnitt verschieben
-- Zoomen
-- horizontal spiegeln
-- vertikal spiegeln
-- um 90° nach links drehen
-- Ein Klick auf die Bildvorschau öffnet ebenfalls den Bild-Editor
-- Auf dem Desktop ist der Bild-Editor bewusst größer ausgelegt, und Zoomen funktioniert dort auch per Mausrad
-- Wenn ein Bild für Bluesky zu groß ist, wird es markiert und das Posting blockiert
-- Im Editor gibt es dann den Hinweis `Reinzoomen und Ausschnitt festlegen` sowie `Verkleinern (Verlustbehaftet)`
-- Angezeigt werden sowohl die Originalgröße als auch die Exportgröße für Bluesky
-- Die ALT-Text-Eingabe zeigt zusätzlich eine kleine Vorschau des später geposteten Ausschnitts
-- Wenn der optionale WordPress-Proxy eingerichtet ist, kann eine erkannte URL in einem Abschnitt in eine Bluesky-Link-Card umgewandelt werden
-- Link-Cards und Bilder schließen sich im selben Bluesky-Posting aus; Threadline warnt, bevor Bilder aus diesem Abschnitt entfernt werden
-
-## Optionale Link-Cards Mit WordPress-Proxy
-
-Threadline kann für URLs in einzelnen Thread-Abschnitten Bluesky-Link-Cards erzeugen. Die PWA selbst bleibt statisch, deshalb läuft das Abrufen der Metadaten über ein kleines optionales WordPress-Plugin.
-
-- Plugin-Paket: `wordpress-plugin/threadline-link-card-proxy.zip`
-- Plugin-Dokumentation: `wordpress-plugin/threadline-link-card-proxy/README.md`
-- Nach Änderungen am Plugin wird das ZIP mit `npm run package:wordpress` neu gebaut
-- Voraussetzungen: Admin-Zugriff auf eine eigene WordPress-Installation, WordPress 6.0+, PHP 7.4+, eine erreichbare REST-API und ausgehende HTTP(S)-Requests vom Server
-- Das Plugin zeigt Proxy-Endpunkt und Secret im WordPress-Admin unter `Threadline`
-- In Threadline werden beide Werte unter `Einstellungen` -> `Link-Cards` eingetragen
-- Link-Cards werden pro Abschnitt erzeugt; Bilder und Link-Cards schließen sich im selben Abschnitt aus
-- Standard.site-Seiten werden als Publication Cards erkannt, wenn ihr HTML `site.standard.document`- / `site.standard.publication`-Metadaten liefert; Threadline markiert sie im Composer, Thread Explorer und HTML-Archiv als Publikationen
-- Der Thread Explorer lädt aktuelle Posts in 50er-Seiten, hängt beim Scrollen weitere Seiten an und kann angepinnte Bluesky-Feed-Generatoren aus den Account-Preferences als zusätzliche Einstiege verwenden
-- Geladene Thread-Explorer-Bäume können als PNG-Snapshot heruntergeladen werden; der Dateiname enthält Handle und Datum des Root-Posts
-
-## Inklusion Und ALT-Texte
-
-- ALT-Texte können pro Bild gepflegt werden
-- Optional lässt sich in den Einstellungen `ALT-Text Pflicht: Ich möchte inklusive Postings erstellen` aktivieren
-- Diese Option ist standardmäßig eingeschaltet
-- Wenn aktiviert, darf nur gepostet werden, wenn alle Bilder einen ALT-Text haben
-- Fehlende ALT-Texte werden sichtbar markiert
-- Oberhalb des Post-Buttons erscheint ein Warnhinweis
-
-## Speichern, Laden Und Backup
-
-### Automatische Lokale Speicherung
-
-- Ausgangstext bleibt über Reloads und Neustarts erhalten
-- Thread-Abschnitte bleiben erhalten, auch wenn sie manuell bearbeitet wurden
-- Bilder, ALT-Texte, Hashtags, Sprache, Historie und weitere Einstellungen bleiben lokal gespeichert
-- Die Daten liegen in `IndexedDB`, nicht im `localStorage`
-
-### Thread Speichern Und Laden
-
-- Ein kompletter Thread kann als Datei gespeichert werden
-- Wenn verfügbar, wird dafür ein komprimiertes `*.threadline.gz` verwendet; sonst normales JSON
-- Gespeichert werden dabei:
-- Ausgangstext
-- aktuelle Thread-Abschnitte
-- Bilder pro Abschnitt
-- ALT-Texte
-- Bildbearbeitungen
-- Hashtags und Platzierung
-- Ein gespeicherter Thread kann später wieder geladen werden
-- Beim Laden wird ein bestehender Thread nach Sicherheitsabfrage überschrieben
-- Der Import baut die gespeicherten Thread-Abschnitte wieder so auf, wie sie gespeichert wurden, unabhängig davon, wie der Ausgangstext heute neu gesplittet würde
-
-### Einstellungen-Backup
-
-- In den Einstellungen kann ein Backup gespeichert und importiert werden
-- Das Backup enthält unter anderem:
-- Spracheinstellung
-- Sichtbarkeit der Tipps
-- Einstellung zur ALT-Text-Pflicht
-- Layout- und Composer-Einstellungen
-- gespeicherte Login-Einträge mit Handle, Server und Avatar
-- lokale Avatar-Bilder gespeicherter Accounts
-- Hashtags
-- ausgewählte Hashtags
-- Hashtag-Platzierung
-- lokal gespeicherte Thread-Explorer-Favoriten
-- Posting-Historie
-- Archiv-Voreinstellungen
-- Analyse-Workspace-Status
-- zwischengespeicherte DM-Partner-Metadaten und lokale Kontakt-Avatar-Assets
-- Beim Import von Hashtags wird gemerged
-- Vorhandene Hashtags bleiben erhalten
-- Neue Hashtags werden ergänzt
-- Dubletten werden nicht doppelt importiert
-- Threadline erinnert daran, ein neues Einstellungen-Backup zu speichern, wenn das zuletzt vermerkte Backup mehr als 30 Tage alt ist
-- Das Erinnerungs-Popup enthält direkt den Button `Backup speichern`
-- Wichtig: Das Backup enthält gespeicherte Login-Einträge, aber ausdrücklich **keine** App-Passwörter, Session-Tokens, vollständige Archiv-Datenbanken, vollständige Archiv-Posts, komplette DM-Exporte oder aktuelle Bilder aus Composer-Segmenten
-- Nach einem Import können diese Konten deshalb erneut nach dem App-Passwort fragen
-
-### Account-Archiv
-
-- Über den Bereich `Account-Archiv` können das eigene Bluesky-Konto oder ein anderes erreichbares Account samt Bildern als Archiv gesichert werden
-- Für sehr große Archive entwickelt sich Threadline schrittweise in Richtung einer Aufteilung: interaktive Filter und Vorschau im Browser, lange Schwerlast-Abrufe in PowerShell
-- Vor dem Laden lassen sich Quelle, Zeitraum, Archivtyp und optionaler Konversationskontext festlegen
-- In der PWA ist der Zeitraum bewusst auf maximal drei Monate begrenzt
-- Beim Laden kann zusätzlich der `Archivtyp` gewählt werden:
-- `Voll-Archiv`: lädt alle eigenen Posts und alle eigenen Replies, auch in fremden Threads
-- `Nur eigene Postings`: lädt eigene Top-Level-Posts und eigene Replies nur in eigenen Threads, aber keine eigenen Replies in fremden Threads
-- `Eigene Threads komplett`: lädt eigene Posts, eigene Replies in diesen Threads und zusätzlich Antworten fremder Accounts innerhalb dieser eigenen Threads
-- `Gesamte Konversationen mitspeichern`: ergänzt passenden sichtbaren Antwortkontext und fremde Antwortzweige für Replies und Threads
-- `Post-Änderung prüfen` untersucht eine Bluesky- oder Mu-Posting-URL auf Mu-kompatible Bearbeitungsmetadaten und vergleicht Originaltext und aktuellen Text
-- Der Ablauf für normale Nutzung ist:
-1. Quelle, Zeitraum von maximal drei Monaten und Archivtyp festlegen
-2. Entscheiden, ob zusätzlich ganzer Konversationskontext mitgespeichert werden soll
-3. Mit `Archiv laden` Posts und Assets in die aktuelle Archiv-Sitzung holen
-4. Bei Bedarf pausieren oder abbrechen und später an derselben Stelle fortsetzen
-5. Mit `Archiv als ZIP sichern` ein technisches Backup aus Posts, Metadaten und Bildern speichern
-6. SVG-Bilder werden in der PWA aus Sicherheitsgründen nicht direkt übernommen, sondern durch ein kleines Dummy-Bild ersetzt
-7. Mit `HTML-Archiv erzeugen`, `Kompaktes HTML erzeugen` oder `PDF-Bände erzeugen` daraus Lesefassungen aus dem bereits geladenen Stand bauen
-8. Für Einzel-Threads darunter die URL-Werkzeuge nutzen, um einen einzelnen Thread zu laden, auf Änderungen zu prüfen und genau diesen Bestand zu exportieren
-- Für große Accounts sollte der Export am besten auf einem Desktop-Gerät mit viel freiem Speicher durchgeführt werden
-- Wenn das eingebettete HTML-Archiv zu groß wird, empfiehlt Threadline stattdessen den Archiv-Export plus PowerShell-Script `scripts/convert-threadline-archive-to-html.ps1`
-- Ein eigenständiger PowerShell-Bulk-Archiver liegt unter `scripts/archive-threadline.ps1`, dazu kommt die neuere SQLite-Variante `scripts/archive-threadline-sqlite.ps1`
-- Beide PowerShell-Skripte ersetzen SVG-Dateien standardmaessig ebenfalls durch ein kleines Dummy-Bild; mit `-AllowSvg` kann dieses Schutzverhalten bewusst abgeschaltet werden
-- Dokumentation und Beispiel-Konfiguration dazu liegen unter `scripts/README.threadline-archiver.de.md`, `scripts/threadline-archiver.config.sample.json` und `scripts/threadline-archiver-sqlite.config.sample.json`
-- Der PowerShell-Archiver soll ausdrücklich **denselben Archiv-JSON-Vertrag** erzeugen wie die Browser-App, damit seine ZIP-Ausgabe weiterhin direkt in Threadline geladen werden kann
-- Für große Archive ist die SQLite-Variante mitsamt separatem Viewer in der Regel die bessere Route als ein reiner Browser-Lauf
-- Das Script:
-- akzeptiert entweder ein Threadline-Archiv-ZIP oder einen bereits entpackten Archiv-Ordner
-- erzeugt daraus ein lokales HTML-Archiv
-- legt Bilder, Avatare und Link-Card-Vorschaubilder für das erzeugte HTML unter `archive-assets/` ab
-- erhält erkannte Standard.site-Publication-Metadaten und zeigt diese Link-Cards im erzeugten HTML als Publication Cards an
-- bleibt damit unabhängig von Browser-Grenzen für riesige Ein-Datei-HTMLs
-- Beispielaufruf:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to-html.ps1 `
-  -ArchiveSourcePath "C:\Pfad\zu\threadline-archive-....zip"
-```
-
-- Optional mit eigenem Zielordner:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to-html.ps1 `
-  -ArchiveSourcePath "C:\Pfad\zu\threadline-archive-....zip" `
-  -OutputDirectory "C:\Pfad\zu\mein-html-archiv" `
-  -Force
-```
-
-- Es kann auch direkt auf einem bereits entpackten Archiv-Ordner arbeiten und die HTML-Datei dort erzeugen:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\convert-threadline-archive-to-html.ps1 `
-  -ArchiveSourcePath "C:\Pfad\zu\threadline-archive-ordner"
-```
-
-- Optional: `-InlineAssets` bettet Avatare, Bilder und Link-Card-Vorschaubilder direkt als Data-URLs in das HTML ein. Der Konverter verwendet dafür eine konservative Empfehlung von etwa 150 MB Quelldaten, außer du erzwingst es mit `-Force`.
-- Standardmaessig liest der Konverter die Posts direkt aus `threadline-archive.sqlite`. Mit `-UsePostsJson` laesst sich bei Bedarf explizit auf `posts.json` als Fallback umschalten.
-
-- Das Ergebnis ist ein Ordner mit `manifest.json`, `threadline-archive.sqlite`, optional `posts.json`, allen Assets und einer erzeugten HTML-Datei
-
-## Posting Auf Bluesky
-
-- Ein einzelner kurzer Text kann als normaler Post gesendet werden
-- Längere Texte werden als Thread veröffentlicht
-- Bilder werden gemeinsam mit den jeweiligen Segmenten hochgeladen
-- Der Composer kann wahlweise einen neuen Post senden, auf ein bestehendes Posting antworten oder einen eigenen Thread fortsetzen
-- Für Bilder berücksichtigt Threadline das aktuelle Bluesky-Limit von `2.000.000` Bytes und `4000 × 4000` Pixeln pro Bild
-- Zu große Bilder werden im Composer markiert und müssen vor dem Posten im Bildeditor verkleinert werden
-- Vor dem Posten gibt es eine Sicherheitsabfrage mit dem aktuell verwendeten Konto
-- Nach erfolgreichem Post erscheint ein Dialog mit Link zum erstellten Posting
-- Fortschritt und Fehler werden in UI-Popups angezeigt
-- Hashtags, Mentions und Links werden beim Posten als Rich-Text-Facets übertragen, damit sie in Bluesky anklickbar sind
-- Auch die gewählten Post-Sprachen und Interaktionseinstellungen werden an Bluesky übergeben
-
-## Netzwerk-Workspace
-
-- Der Bereich `Netzwerk` lädt Follower, Following und Mutuals schrittweise in Wellen und zeigt sie als interaktive Bühnenansicht
-- Accounts können nach Beziehungstyp gefiltert, gesucht und direkt in einem Fokus-Overlay untersucht werden
-- Der Fokus zeigt unter anderem Relevanz, Follow-Daten, Vorschau-Listen, gegenseitige Likes im Sample und aktuelle Aktivität
-- `Relevant` hebt Accounts mit einem internen Score hervor, der aktuell vor allem Beziehungstyp, Follower-Zahl dieses Accounts und dessen Posting-Aktivität kombiniert
-- Der Aktivitätsblock zeigt zurzeit den letzten Post sowie Posts und Likes auf diese aktuellen Posts in den letzten 14 und 60 Tagen
-
-## Analyse-Workspace
-
-- Der Bereich `Analyse` lädt zwei Accounts und vergleicht sie als zusätzlichen Indikator darauf, ob beide möglicherweise von derselben Person betrieben werden
-- Die Analyse kombiniert sprachliche Merkmale wie Funktionswörter, Character n-grams, Jaccard-Ähnlichkeit, Cosine Similarity, Burrows's Delta und ein Kennzahlen-Profil
-- Zusätzlich wird ein Zeitprofil aus Posting-Zeiten, Wochenrhythmus, Pausenverhalten und zeitlicher Nähe beider Accounts berechnet
-- Zusätzlich vergleicht sie jetzt gemeinsame Follower, gemeinsames Following, gemeinsame Mutuals, die direkte A/B-Beziehung, Mention-Muster, verlinkte Domains, Hashtags, typische Reply-Ziele, Quote-Ziele, Sprach-Tags und den Medienanteil
-- Gemeinsame Mutes und Blocks werden ebenfalls verglichen, wenn die betroffenen Vergleichsaccounts auch als gespeicherte Threadline-Konten vorliegen; sonst bleiben diese Werte nicht verfügbar
-- Für jeden Account werden ein Überblick, typische Stunden, typische Wochentage, eine Wochen-Heatmap und eine 30-Tage-Ansicht mit Aktivitätspunkten gezeigt
-- Im Vergleichsteil erscheinen Gesamtwertung, Einzelverfahren, Zeitvergleich sowie Stilmuster pro Kategorie nebeneinander
-- Die Analyse ist nur ein Indiz. Sehr kurze Textbasis, Scheduling, stark wechselnde Themen oder absichtliche Stiländerungen können das Bild deutlich verzerren
-- Die Ergebnisse lassen sich als PDF exportieren
-
-## Letzte Postings
-
-- Unterhalb des Statusbereichs gibt es einen Bereich `Letzte Postings`
-- Ein Klick öffnet eine Liste mit:
-- Zeitstempel
-- Bluesky-URL
-- verwendetes Konto
-- Textvorschau des ersten Abschnitts
-- Anzahl der Thread-Posts
-- Anzahl der verwendeten Bilder
-- Für passende Einträge gibt es dort einen Button `Thread fortsetzen`
-- Einzelne Einträge lassen sich löschen
-- Die komplette Historie kann in den Einstellungen geleert werden
-- Die Historie ist auch im Backup enthalten
-
-## Tipps
-
-- Unter dem Composer wird ein zufälliger Tipp angezeigt
-- Es gibt einen Button für den nächsten Tipp
-- Tipps können ausgeblendet werden
-- In den Einstellungen lassen sie sich später wieder einschalten
+## Schnellstart
+
+1. Ein Bluesky-App-Passwort erzeugen.
+2. Das eigene Konto in Threadline hinzufügen und verbinden.
+3. Den passenden Arbeitsbereich öffnen und dort loslegen.
+
+Threadline verwendet ein App-Passwort und nicht das normale Bluesky-Passwort.
+
+## Arbeitsbereiche Im Überblick
+
+## Composer
+
+Sinn und Zweck:
+Aus Rohtext einen Post oder Thread machen, den du vor dem Veröffentlichen noch in Ruhe bearbeiten kannst.
+
+Was dich hier erwartet:
+Der Composer nimmt deinen Ausgangstext, teilt ihn in editierbare Abschnitte auf und hält Bilder, ALT-Texte, Hashtags, Antwortziele und Post-Einstellungen direkt am Thread zusammen.
+
+Beispiele:
+- Einen längeren Erklär-Thread schreiben und automatisch in postfähige Abschnitte zerlegen lassen.
+- Auf ein bestimmtes Bluesky-Posting antworten oder einen eigenen Thread fortsetzen.
+
+## Suche
+
+Sinn und Zweck:
+Bluesky flexibler durchsuchen als mit der Standardsuche im offiziellen Client.
+
+Was dich hier erwartet:
+Die Suche kann global suchen, die Posts eines einzelnen Accounts lokal durchgehen, Reposts eines Accounts prüfen, Suchmasken speichern und Treffer direkt im Thread Explorer öffnen.
+
+Beispiele:
+- Herausfinden, was ein bestimmter Account zu einem Thema repostet hat.
+- Nach Posts mit einem oder mehreren Hashtags suchen und diese Suchmaske für später speichern.
+
+## Archiv
+
+Sinn und Zweck:
+Ein lesbares oder technisches lokales Archiv eines Bluesky-Accounts erzeugen.
+
+Was dich hier erwartet:
+Du wählst Account, Zeitraum und Archivumfang. Threadline lädt die passenden Posts und Medien in eine lokale Archiv-Sitzung, aus der sich ZIP-, HTML- oder PDF-Ausgaben erzeugen lassen.
+
+Beispiele:
+- Die eigenen letzten Posts als lokales ZIP sichern.
+- Für einen ausgewählten Zeitraum ein lesbares HTML- oder PDF-Archiv erzeugen.
+
+## Thread Explorer
+
+Sinn und Zweck:
+Aktuelle Bluesky-Gespräche übersichtlicher lesen.
+
+Was dich hier erwartet:
+Der Thread Explorer lädt aktuelle Posts und öffnet den vollständigen Live-Thread als Baum. Replies, Bilder, Quote-Posts, Link-Cards und Counts bleiben dabei direkt zusammen sichtbar.
+
+Beispiele:
+- Eine laufende Diskussion öffnen und den Antwortbaum visuell verfolgen.
+- Einen interessanten Live-Thread als Favorit sichern und später wieder öffnen.
+
+## Netzwerk
+
+Sinn und Zweck:
+Sichtbar machen, wie ein Account mit anderen Accounts verbunden ist.
+
+Was dich hier erwartet:
+Die Netzwerkansicht lädt Follower, Following und Mutuals in Wellen und zeigt sie in einer interaktiven Bühne mit Filtern und Fokus-Karten an.
+
+Beispiele:
+- Erkunden, welche Accounts gegenseitig verbunden sind und welche nur einseitig folgen.
+- Einen Account in der Fokusansicht öffnen und Beziehungsdetails plus Aktivitätshinweise prüfen.
+
+## Analyse
+
+Sinn und Zweck:
+Zwei Accounts als vorsichtigen Zusatzhinweis vergleichen, nicht als Beweis.
+
+Was dich hier erwartet:
+Threadline vergleicht Schreibmuster, Zeitmuster und einige netzwerknahe Signale und zeigt diese als gruppiertes Ergebnis mit mehreren Teilwerten.
+
+Beispiele:
+- Zwei Accounts vergleichen, die sprachlich ähnlich wirken.
+- Prüfen, ob sich bei zwei Accounts ungewöhnliche Ähnlichkeiten bei Zeitmustern oder Sprachgewohnheiten zeigen.
+
+## DM-Archiv
+
+Sinn und Zweck:
+Direct Messages lokal laden und für spätere Exporte vorbereiten.
+
+Was dich hier erwartet:
+Du kannst DM-Konversationen lokal in den Browser laden, dort sichten und sie als Grundlage für spätere JSON-, HTML- oder PDF-Exporte nutzen.
+
+Beispiele:
+- Den Verlauf mit einem Gesprächspartner lokal sichern.
+- Ein DM-Archiv vorbereiten, bevor daraus eine lesbare Ausgabe gebaut wird.
+
+## Was Unsere Suche Mehr Kann Als Die Originale Bsky-Suche
+
+Threadlines Suche erweitert die Standardsuche von Bluesky an ein paar besonders praktischen Stellen:
+
+- sie kann die Posts eines einzelnen Accounts direkt durchgehen
+- sie kann die Reposts eines einzelnen Accounts direkt durchgehen
+- sie unterstützt lokal gespeicherte Suchmasken
+- sie ergänzt lokale Filter für Post-Typ und Medien
+- sie kann Hashtags als `alle` oder `mindestens ein Hashtag` verknüpfen
+- sie kann gefundene Posts direkt im Thread Explorer öffnen
 
 ## Als App Installieren
 
 Threadline ist eine PWA und kann auf Handy und Desktop installiert werden.
 
-### Auf Dem Handy
+Auf iPhone oder iPad:
+- die App in Safari öffnen
+- `Teilen` verwenden
+- `Zum Home-Bildschirm` wählen
 
-#### iPhone / iPad (Safari)
+Auf Android, Chrome, Edge oder am Desktop mit Chromium-Browsern:
+- die App öffnen
+- den Install-Button in Threadline oder die Installationsfunktion des Browsers verwenden
 
-1. Öffne [https://marsrakete.github.io/threadline/](https://marsrakete.github.io/threadline/) in Safari.
-2. Tippe auf den Teilen-Button.
-3. Wähle `Zum Home-Bildschirm`.
-4. Bestätige mit `Hinzufügen`.
+## Technische Dokumentation
 
-Hinweis: Unter iOS kann die Installation nicht automatisch ausgelöst werden. In der App gibt es dafür einen Install-Button mit Anleitung. Die linke Spalte kann auf mobilen Geräten platzsparend ein- und ausgeklappt werden.
+Technische Details stehen bewusst nicht mehr im README.
 
-#### Android (Chrome oder Edge)
-
-1. Öffne [https://marsrakete.github.io/threadline/](https://marsrakete.github.io/threadline/) im Browser.
-2. Nutze den Install-Button in der App oder das Browser-Menü.
-3. Tippe auf `App installieren` oder `Zum Startbildschirm hinzufügen`.
-4. Bestätige die Installation.
-
-### Auf Dem Desktop
-
-#### Chrome oder Edge
-
-1. Öffne [https://marsrakete.github.io/threadline/](https://marsrakete.github.io/threadline/).
-2. Nutze den Install-Button in der App oder das Installationssymbol in der Browser-Leiste.
-3. Bestätige den Installationsdialog.
-
-#### Das Bringt Die Installation
-
-- ein eigenständiges App-Fenster
-- eine Verknüpfung auf Startbildschirm oder Desktop
-- schnelleres Wiederöffnen wie bei einer normalen App
-- offline-fähige App-Hülle durch den Service Worker
-
-## Technische Hinweise
-
-Ausführlichere technische Informationen zu Archiv, Analyse-Verfahren, Netzwerk-Datenbasis, Link-Cards, lokalem Start, Update-Erkennung und empfohlenen Tests stehen in [TECHNICAL.de.md](TECHNICAL.de.md).
-
-Die protokollspezifischen Hinweise zu Endpunkten, Auth, DID/PDS, Cursorn und Limits stehen getrennt in [ATPROTO.de.md](ATPROTO.de.md).
-
-## OpenGraph-Bild
-
-Die maßgebliche Quelle für das OpenGraph-Bild ist [icons/threadline-og-workspaces.svg](/C:/Projekte/threadline/icons/threadline-og-workspaces.svg).
-
-Die abgeleiteten Rasterdateien erzeugst du mit:
-
-```bash
-npm run build:og-image
-```
-
-Render-Parameter und Ausgabeziele stehen in [og-image.config.json](/C:/Projekte/threadline/og-image.config.json).
+- Allgemeine technische Dokumentation: [TECHNICAL.de.md](TECHNICAL.de.md)
+- AT-Protocol- und Bluesky-Endpunkte: [ATPROTO.de.md](ATPROTO.de.md)
 
 ## Lizenz
 
@@ -442,4 +164,5 @@ Render-Parameter und Ausgabeziele stehen in [og-image.config.json](/C:/Projekte/
 
 ## Kontakt
 
-- Kontakt: [millux@marsrakete.de](mailto:millux@marsrakete.de)
+- E-Mail: [millux@marsrakete.de](mailto:millux@marsrakete.de)
+- Bluesky: [https://bsky.app/profile/marsrakete.de](https://bsky.app/profile/marsrakete.de)

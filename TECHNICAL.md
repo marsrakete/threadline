@@ -39,6 +39,11 @@ flowchart TD
     I --> I3["Hydrate metrics<br/>app.bsky.feed.getPosts"]
     I --> I4["Download images<br/>com.atproto.sync.getBlob"]
 
+    C --> S["Search"]
+    S --> S1["Global search<br/>app.bsky.feed.searchPosts"]
+    S --> S2["Account posts / reposts<br/>app.bsky.feed.getAuthorFeed"]
+    S --> S3["URL resolve / favorites<br/>local Thread Explorer integration"]
+
     C --> J["Analysis"]
     J --> J1["Profiles<br/>app.bsky.actor.getProfile"]
     J --> J2["Author feed<br/>app.bsky.feed.getAuthorFeed"]
@@ -53,6 +58,99 @@ flowchart TD
     K --> K1["Conversations<br/>chat.bsky.convo.listConvos"]
     K --> K2["Messages<br/>chat.bsky.convo.getMessages"]
     K --> K3["Attachments / images"]
+```
+
+## Thread Explorer Cache And Snapshot Pipeline
+
+The Thread Explorer is split between the visible browser app in [app.js](app.js) and the service worker in [sw.js](sw.js). The app owns selection state, tree rendering, lazy card hydration, zoom/pan state, and the PNG export dialog. The service worker owns authenticated Bluesky requests, thread loading, avatar hydration, media hydration, and cache access.
+
+### Live thread loading
+
+When a post is selected, `app.js` sends `LOAD_THREAD_EXPLORER_THREAD` to the service worker. The service worker loads the selected post through `app.bsky.feed.getPostThread`, normalizes the thread tree, and returns a root node plus post count. If the selected post is a reply inside another thread, Threadline tries to reload from the detected root and merge the selected path back into the full tree.
+
+After the tree is rendered, the app starts a non-blocking media prewarm. This prewarm calls `HYDRATE_THREAD_EXPLORER_MEDIA` in the background. It must not delay normal thread selection: stale prewarm runs are aborted or ignored when the user selects another post.
+
+### Media and avatar caches
+
+Threadline uses multiple caches for different jobs:
+
+- `account-avatar-cache` is an IndexedDB-backed app cache for account avatar assets. It stores bytes, MIME type, DID, source URL, and timestamp.
+- `threadline-remote-media-v1` is the Cache API store for remote media responses used by the service worker.
+- `threadExplorerRenderedMediaCache` in `app.js` is a short-lived in-memory map for the currently displayed thread. It maps media URLs to canvas-safe data URIs.
+- `threadExplorerSnapshotMediaDataUris` in `app.js` is the snapshot-specific data URI map filled during PNG export.
+
+The remote media cache can contain two kinds of entries:
+
+- readable responses written by Threadline's own hydration path
+- opaque browser image responses created by normal cross-origin image loading
+
+Opaque responses can be replayed by the browser, but their bytes cannot be read back by JavaScript. For PNG export, only readable responses can be converted into data URIs and drawn safely into canvas.
+
+### PNG snapshot stages
+
+The PNG export intentionally blocks Thread Explorer input while it runs. The export changes rendered DOM state, forces all cards to hydrate, swaps images to data URIs, measures the full tree, and then draws the output. Letting the user switch threads, collapse nodes, or zoom while this is happening would invalidate the snapshot geometry.
+
+The main stages are:
+
+1. `app.js` opens the progress dialog and creates an abort controller.
+2. `HYDRATE_THREAD_EXPLORER_AVATARS` collects all authors in the tree and ensures their avatars are in `account-avatar-cache`.
+3. `HYDRATE_THREAD_EXPLORER_MEDIA` collects post images, quoted-post images, link-card thumbnails, and publication-card thumbnails.
+4. For each media URL, the service worker checks `threadline-remote-media-v1`.
+5. On cache hit, readable bytes are converted directly to a data URI.
+6. On cache miss, the service worker downloads the asset through blob resolution when possible, normalizes SVGs to a PNG placeholder, writes the readable response back to `threadline-remote-media-v1`, and returns a data URI.
+7. `app.js` stores returned data URIs in the short-lived media maps.
+8. The app forces all lazy Thread Explorer cards to render once.
+9. Rendered images are swapped to data URIs and checked by the browser image decoder.
+10. The complete tree is measured and exported through the browser `foreignObject` path when possible.
+11. If `foreignObject` is not supported for the current tree, Threadline falls back to the direct canvas renderer.
+
+### Cache hit and miss progress
+
+During media hydration, the service worker reports:
+
+- `current` / `total`
+- `remaining`
+- `hydrated`
+- `skipped`
+- `cacheHits`
+- `downloaded`
+
+This lets the UI distinguish between a slow network run and a mostly cached export. A healthy repeated export of the same thread should show many cache hits and fewer newly downloaded assets. If `downloaded` remains high after a previous full export, the likely causes are expired browser storage, cache eviction, opaque-only image entries, changed CDN URLs, or media URLs that failed normalization.
+
+### Flow
+
+```mermaid
+flowchart TD
+    A["User selects a post"] --> B["app.js<br/>selectThreadExplorerPost"]
+    B --> C["Service worker<br/>LOAD_THREAD_EXPLORER_THREAD"]
+    C --> D["Bluesky API<br/>app.bsky.feed.getPostThread"]
+    D --> E["Normalized thread tree"]
+    E --> F["app.js renders visible tree"]
+    F --> G["Background prewarm<br/>HYDRATE_THREAD_EXPLORER_MEDIA"]
+
+    G --> H["Collect media URLs<br/>images, quote images,<br/>link cards, publication cards"]
+    H --> I{"Cache API<br/>threadline-remote-media-v1"}
+    I -->|readable hit| J["Convert cached bytes<br/>to data URI"]
+    I -->|miss or opaque| K["Download via blob/PDS<br/>or remote URL"]
+    K --> L["Normalize image<br/>SVG placeholder if needed"]
+    L --> M["Write readable response<br/>back to remote media cache"]
+    M --> J
+    J --> N["Return data URIs to app.js"]
+    N --> O["Short-lived maps<br/>threadExplorerRenderedMediaCache<br/>threadExplorerSnapshotMediaDataUris"]
+    O --> P["Visible cards use cache source<br/>when available"]
+
+    Q["User clicks PNG Snapshot"] --> R["app.js blocks Thread Explorer input<br/>and opens progress dialog"]
+    R --> S["HYDRATE_THREAD_EXPLORER_AVATARS<br/>account-avatar-cache"]
+    S --> T["HYDRATE_THREAD_EXPLORER_MEDIA<br/>cache hit/miss pipeline"]
+    T --> U["Force all lazy cards to render"]
+    U --> V["Swap rendered images<br/>to data URIs"]
+    V --> W["Browser decodes image objects"]
+    W --> X["Measure full tree"]
+    X --> Y{"foreignObject works?"}
+    Y -->|yes| Z["Browser snapshot to canvas"]
+    Y -->|no| AA["Direct canvas fallback renderer"]
+    Z --> AB["Encode PNG and download"]
+    AA --> AB
 ```
 
 ## PowerShell Archiver
@@ -77,6 +175,53 @@ A dedicated script and note for that tool live in:
 
 - `scripts/archive-threadline.ps1`
 - `scripts/README.threadline-archiver.md`
+
+## Search Workspace Internals
+
+The search workspace deliberately combines two strategies:
+
+- direct server-side search through `app.bsky.feed.searchPosts`
+- local feed scanning through `app.bsky.feed.getAuthorFeed`
+
+This split exists because the built-in Bluesky search API is strong for global discovery, but not enough for all of Threadline's search modes and filters.
+
+### Search modes
+
+- `Network search`
+  - uses `app.bsky.feed.searchPosts`
+  - best for global topic search, account-scoped global search, hashtag search, and URL/domain filters
+- `Posts of one account`
+  - walks `app.bsky.feed.getAuthorFeed`
+  - lets Threadline inspect one account's posts even when the global search index is incomplete
+- `Reposts of one account`
+  - also walks `app.bsky.feed.getAuthorFeed`
+  - keeps only entries whose feed reason is `reasonRepost`
+- `Hashtag search`
+  - starts from `app.bsky.feed.searchPosts`
+  - can switch between documented AND-style tag matching and Threadline's own `at least one hashtag` mode
+
+### Why local filtering exists
+
+The Bluesky API does not expose every UI filter as one server-side parameter. Threadline therefore applies a second filtering pass in `sw.js` after loading results.
+
+Typical local filters are:
+
+- exclude text
+- post type such as originals, replies, quotes, reposts, or non-reposts
+- posts without media
+- mention checks
+- multi-language merging
+- account-feed-only scans
+- `any hashtag` matching across several API variants
+
+### Multi-language and hashtag variants
+
+When the user selects more than one language, Threadline runs multiple `searchPosts` requests and merges the pages locally. The same happens for `at least one hashtag`:
+
+- Bluesky documents multiple `tag` parameters as AND matching
+- Threadline emulates OR matching by running one search variant per tag and deduplicating the returned post URIs
+
+This is why the search workspace keeps its own cursor state in addition to the plain API cursor.
 
 ## Login And Auth
 
