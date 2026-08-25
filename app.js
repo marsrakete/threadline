@@ -91,8 +91,8 @@ const DEFAULT_AVATAR_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponen
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.271",
-  cacheVersion: "v290",
+  appVersion: "0.4.272",
+  cacheVersion: "v291",
   label: "Fix Thread Explorer reply handoff to composer",
 });
 
