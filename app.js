@@ -351,6 +351,12 @@ const linkCardCancelButton = document.querySelector("#link-card-cancel-button");
 const linkCardCreateButton = document.querySelector("#link-card-create-button");
 const linkCardDialogTitle = document.querySelector("#link-card-dialog h2");
 const linkCardUrlNode = document.querySelector("#link-card-url");
+const linkCardUrlField = document.querySelector("#link-card-url-field");
+const linkCardUrlInput = document.querySelector("#link-card-url-input");
+const linkCardTargetListField = document.querySelector("#link-card-target-list-field");
+const linkCardTargetListNote = document.querySelector("#link-card-target-list-note");
+const linkCardTargetList = document.querySelector("#link-card-target-list");
+const linkCardTargetTemplate = document.querySelector("#link-card-target-template");
 const linkCardProviderState = document.querySelector("#link-card-provider-state");
 const linkCardWarning = document.querySelector("#link-card-warning");
 const linkCardStatus = document.querySelector("#link-card-status");
@@ -22368,6 +22374,9 @@ function applyTranslations() {
   if (linkCardEndpointInput) {
     linkCardEndpointInput.placeholder = "https://example.com/wp-json/threadline/v1/link-card";
   }
+  if (linkCardUrlInput) {
+    linkCardUrlInput.placeholder = t("linkCardUrlPlaceholder");
+  }
   sourceText.placeholder = t("sourcePlaceholder");
   hashtagInput.placeholder = t("hashtagInputPlaceholder");
   if (networkSearchInput) {
@@ -23333,21 +23342,147 @@ function findOtherLinkCardSegmentIndex(targetSegmentIndex) {
 }
 
 /**
- * Opens the link-card dialog for create, refresh, or move actions.
+ * Returns every available target entry for one link-card move or swap operation.
+ * @param {number} currentSegmentIndex - Segment from which the management dialog was opened.
+ * @returns {Array<object>} Available target entries with target segment and action kind.
+ */
+function getLinkCardTargetEntries(currentSegmentIndex) {
+  const entries = [];
+  const currentCard = normalizeLinkCard(segmentLinkCards[currentSegmentIndex]);
+  const currentHasCard = Boolean(currentCard);
+
+  for (let index = 0; index < activeSegments.length; index += 1) {
+    if (index === currentSegmentIndex) {
+      continue;
+    }
+
+    const targetCard = normalizeLinkCard(segmentLinkCards[index]);
+    if (!currentHasCard && !targetCard) {
+      continue;
+    }
+
+    let action = "move";
+    if (currentHasCard && targetCard) {
+      action = "swap";
+    }
+
+    entries.push({
+      segmentIndex: index,
+      action,
+      card: targetCard,
+      textPreview: String(activeSegments[index] || "").replace(/\s+/g, " ").trim().slice(0, 140),
+    });
+  }
+
+  return entries;
+}
+
+/**
+ * Renders the target list used for link-card move and swap actions.
+ * @param {number} currentSegmentIndex - Segment from which the management dialog was opened.
+ * @returns {void}
+ */
+function renderLinkCardTargetList(currentSegmentIndex) {
+  if (!linkCardTargetList || !linkCardTargetTemplate || !linkCardTargetListNote) {
+    return;
+  }
+
+  linkCardTargetList.replaceChildren();
+  const entries = getLinkCardTargetEntries(currentSegmentIndex);
+  linkCardTargetListNote.textContent = t("linkCardManageDialogDescription");
+
+  if (entries.length === 0) {
+    const emptyNote = document.createElement("p");
+    emptyNote.className = "settings-note";
+    emptyNote.textContent = t("linkCardManageNoTargets");
+    linkCardTargetList.appendChild(emptyNote);
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const fragment = linkCardTargetTemplate.content.cloneNode(true);
+    const item = fragment.querySelector(".link-card-target-item");
+    const title = fragment.querySelector(".link-card-target-title");
+    const meta = fragment.querySelector(".link-card-target-meta");
+    const actionButton = fragment.querySelector(".link-card-target-action");
+    const segmentLabel = t("segmentPart", { index: entry.segmentIndex + 1 });
+
+    title.textContent = segmentLabel;
+    if (entry.card) {
+      const urlLabel = shortenThreadExplorerUrlForDisplay(entry.card.url);
+      meta.textContent = `${entry.card.title || urlLabel} · ${urlLabel}`;
+    } else if (entry.textPreview) {
+      meta.textContent = entry.textPreview;
+    } else {
+      meta.textContent = t("linkCardManageEmptySegment");
+    }
+
+    if (entry.action === "swap") {
+      actionButton.textContent = t("linkCardSwapAction");
+    } else {
+      actionButton.textContent = t("linkCardMoveAction");
+    }
+    actionButton.addEventListener("click", async () => {
+      await applyLinkCardTargetAction(currentSegmentIndex, entry.segmentIndex);
+    });
+
+    item.dataset.segmentIndex = String(entry.segmentIndex);
+    linkCardTargetList.appendChild(fragment);
+  });
+}
+
+/**
+ * Applies one link-card move or swap between two segments.
+ * @param {number} currentSegmentIndex - Segment from which the action starts.
+ * @param {number} targetSegmentIndex - Segment chosen as the destination or swap target.
+ * @returns {Promise<void>}
+ */
+async function applyLinkCardTargetAction(currentSegmentIndex, targetSegmentIndex) {
+  const currentCard = normalizeLinkCard(segmentLinkCards[currentSegmentIndex]);
+  const targetCard = normalizeLinkCard(segmentLinkCards[targetSegmentIndex]);
+  if (!currentCard && !targetCard) {
+    return;
+  }
+
+  if (currentCard && targetCard) {
+    segmentLinkCards[currentSegmentIndex] = targetCard;
+    segmentLinkCards[targetSegmentIndex] = currentCard;
+    setStatus(t("linkCardSwapped"));
+  } else if (currentCard) {
+    segmentLinkCards[targetSegmentIndex] = currentCard;
+    segmentLinkCards[currentSegmentIndex] = null;
+    setStatus(t("linkCardMoved"));
+  } else if (targetCard) {
+    segmentLinkCards[currentSegmentIndex] = targetCard;
+    segmentLinkCards[targetSegmentIndex] = null;
+    setStatus(t("linkCardMoved"));
+  }
+
+  await persistSettings();
+  preserveScrollPosition(() => renderSegments({ preserveOverrides: true }));
+  queueDraftSave();
+  closeLinkCardDialog();
+}
+
+/**
+ * Opens the link-card dialog for create, refresh, move, or manage actions.
  * @param {number} segmentIndex - Target segment index for the action.
  * @param {string} url - URL that should be used for create or refresh.
- * @param {string} action - Dialog action: `create`, `refresh`, or `move`.
+ * @param {string} action - Dialog action: `create`, `refresh`, `move`, or `manage`.
  * @param {number} sourceSegmentIndex - Optional source segment for move actions.
  * @returns {void}
  */
 function openLinkCardDialog(segmentIndex, url, action = "create", sourceSegmentIndex = -1) {
+  const normalizedUrl = normalizeLinkCardTargetUrl(url);
   pendingLinkCardSegmentIndex = segmentIndex;
   pendingLinkCardSourceSegmentIndex = sourceSegmentIndex;
   pendingLinkCardAction = action;
-  pendingLinkCardUrl = url;
+  pendingLinkCardUrl = normalizedUrl;
   if (linkCardDialogTitle) {
     if (action === "move") {
       linkCardDialogTitle.textContent = t("linkCardMoveButton");
+    } else if (action === "manage") {
+      linkCardDialogTitle.textContent = t("linkCardManageDialogTitle");
     } else {
       linkCardDialogTitle.textContent = t("linkCardDialogTitle");
     }
@@ -23357,8 +23492,37 @@ function openLinkCardDialog(segmentIndex, url, action = "create", sourceSegmentI
       source: sourceSegmentIndex + 1,
       target: segmentIndex + 1,
     });
+  } else if (action === "manage") {
+    linkCardUrlNode.textContent = t("linkCardManagePrompt", {
+      target: segmentIndex + 1,
+    });
   } else {
-    linkCardUrlNode.textContent = url;
+    linkCardUrlNode.textContent = t("linkCardDialogDescription");
+  }
+  if (linkCardUrlField) {
+    if (action === "move" || action === "manage") {
+      linkCardUrlField.hidden = true;
+    } else {
+      linkCardUrlField.hidden = false;
+    }
+  }
+  if (linkCardTargetListField) {
+    if (action === "manage") {
+      linkCardTargetListField.hidden = false;
+      renderLinkCardTargetList(segmentIndex);
+    } else {
+      linkCardTargetListField.hidden = true;
+      if (linkCardTargetList) {
+        linkCardTargetList.replaceChildren();
+      }
+    }
+  }
+  if (linkCardUrlInput) {
+    if (action === "move" || action === "manage") {
+      linkCardUrlInput.value = "";
+    } else {
+      linkCardUrlInput.value = normalizedUrl;
+    }
   }
   const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
   updateLinkCardDialogProviderState();
@@ -23372,37 +23536,78 @@ function openLinkCardDialog(segmentIndex, url, action = "create", sourceSegmentI
   delete linkCardStatus.dataset.tone;
   if (action === "move") {
     linkCardCreateButton.textContent = t("linkCardMoveButton");
+  } else if (action === "manage") {
+    linkCardCreateButton.hidden = true;
   } else if (hasImages) {
+    linkCardCreateButton.hidden = false;
     linkCardCreateButton.textContent = t("linkCardCreateAndRemoveImagesButton");
   } else if (action === "refresh") {
+    linkCardCreateButton.hidden = false;
     linkCardCreateButton.textContent = t("linkCardRefreshButton");
   } else {
+    linkCardCreateButton.hidden = false;
     linkCardCreateButton.textContent = t("linkCardCreateButton");
   }
   linkCardDialog.showModal();
+  if (linkCardUrlInput && action !== "move" && action !== "manage") {
+    window.setTimeout(() => {
+      linkCardUrlInput.focus();
+      linkCardUrlInput.select();
+    }, 0);
+  }
 }
 
+/**
+ * Closes the link-card dialog and resets the transient dialog state.
+ * @returns {void}
+ */
 function closeLinkCardDialog() {
   pendingLinkCardSegmentIndex = -1;
   pendingLinkCardSourceSegmentIndex = -1;
   pendingLinkCardUrl = "";
   pendingLinkCardAction = "create";
+  if (linkCardCreateButton) {
+    linkCardCreateButton.hidden = false;
+  }
+  if (linkCardUrlInput) {
+    linkCardUrlInput.value = "";
+  }
+  if (linkCardTargetListField) {
+    linkCardTargetListField.hidden = true;
+  }
+  if (linkCardTargetList) {
+    linkCardTargetList.replaceChildren();
+  }
   if (linkCardDialog.open) {
     linkCardDialog.close();
   }
 }
 
+/**
+ * Creates, refreshes, or moves the currently pending segment link card.
+ * @returns {Promise<void>}
+ */
 async function createLinkCardForPendingSegment() {
   const segmentIndex = pendingLinkCardSegmentIndex;
-  const url = pendingLinkCardUrl;
   const action = pendingLinkCardAction;
   if (segmentIndex < 0) {
     return;
   }
-  if (action !== "move" && !url) {
-    return;
-  }
   const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
+  let url = pendingLinkCardUrl;
+  if (action !== "move") {
+    const validation = validateLinkCardTargetUrl(linkCardUrlInput?.value || "");
+    if (!validation.ok) {
+      linkCardStatus.textContent = validation.message;
+      linkCardStatus.dataset.tone = "error";
+      return;
+    }
+    url = validation.url;
+    pendingLinkCardUrl = url;
+    if (linkCardUrlInput && linkCardUrlInput.value !== url) {
+      linkCardUrlInput.value = url;
+    }
+  }
   let createButtonLabel = t("linkCardCreateButton");
   if (action === "move") {
     createButtonLabel = t("linkCardMoveButton");
@@ -23539,6 +23744,78 @@ function getFirstHttpUrl(text) {
 }
 
 /**
+ * Normalizes one manually entered link-card target URL to a safe absolute http(s) URL.
+ * @param {string} rawUrl - Raw URL from the composer text or dialog input.
+ * @returns {string} Normalized absolute http(s) URL, or an empty string when invalid.
+ */
+function normalizeLinkCardTargetUrl(rawUrl) {
+  const value = String(rawUrl || "").trim();
+  if (!value) {
+    return "";
+  }
+  if (/^ttps:\/\//i.test(value)) {
+    return `h${value}`;
+  }
+  if (/^\/\//.test(value)) {
+    return `https:${value}`;
+  }
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:\/|$)/i.test(value)) {
+    return `https://${value}`;
+  }
+  return "";
+}
+
+/**
+ * Validates and normalizes the URL currently entered in the link-card dialog.
+ * @param {string} rawUrl - Raw URL from the dialog input.
+ * @returns {{ok: boolean, url: string, message: string}} Validation state and normalized URL.
+ */
+function validateLinkCardTargetUrl(rawUrl) {
+  const originalValue = String(rawUrl || "").trim();
+  const normalizedUrl = normalizeLinkCardTargetUrl(originalValue);
+  if (!originalValue) {
+    return {
+      ok: false,
+      url: "",
+      message: t("linkCardUrlMissing"),
+    };
+  }
+  if (!normalizedUrl) {
+    return {
+      ok: false,
+      url: "",
+      message: t("linkCardUrlInvalid"),
+    };
+  }
+
+  try {
+    const parsedUrl = new URL(normalizedUrl);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return {
+        ok: false,
+        url: "",
+        message: t("linkCardUrlInvalid"),
+      };
+    }
+  } catch {
+    return {
+      ok: false,
+      url: "",
+      message: t("linkCardUrlInvalid"),
+    };
+  }
+
+  return {
+    ok: true,
+    url: normalizedUrl,
+    message: "",
+  };
+}
+
+/**
  * Normalizes the selected link-card provider to one of the supported values.
  * @param {string} value - Raw stored or selected provider value.
  * @returns {string} `none`, `microlink`, or `proxy`.
@@ -23642,7 +23919,7 @@ function updateLinkCardDialogProviderState() {
   if (!linkCardProviderState) {
     return;
   }
-  if (pendingLinkCardAction === "move") {
+  if (pendingLinkCardAction === "move" || pendingLinkCardAction === "manage") {
     linkCardProviderState.hidden = true;
     linkCardProviderState.textContent = "";
     return;
@@ -34079,6 +34356,8 @@ function renderSegments(options = {}) {
     const mentionContainer = fragment.querySelector(".segment-mentions");
     const addImagesButton = fragment.querySelector(".segment-add-image-button");
     const linkCardButton = fragment.querySelector(".segment-link-card-button");
+    const linkCardManualButton = fragment.querySelector(".segment-link-card-manual-button");
+    const linkCardManageButton = fragment.querySelector(".segment-link-card-manage-button");
     const linkCardContainer = fragment.querySelector(".segment-link-card");
     const imageContainer = fragment.querySelector(".segment-images");
     const existingImages = Array.isArray(segmentImages[index]) ? segmentImages[index] : [];
@@ -34164,47 +34443,73 @@ function renderSegments(options = {}) {
     });
     card.appendChild(input);
     const existingLinkCard = normalizeLinkCard(segmentLinkCards[index]);
-    const otherLinkCardSegmentIndex = findOtherLinkCardSegmentIndex(index);
     const detectedUrl = getFirstHttpUrl(segment);
     const linkCardUrl = detectedUrl || existingLinkCard?.url || "";
     const linkCardAvailable = canCreateLinkCardsWithCurrentProvider();
     const hasImages = existingImages.length > 0;
+    const linkCardTargetEntries = getLinkCardTargetEntries(index);
     linkCardButton.hidden = false;
+    if (linkCardManualButton) {
+      linkCardManualButton.hidden = false;
+      linkCardManualButton.textContent = t("linkCardManualButton");
+    }
+    if (linkCardManageButton) {
+      linkCardManageButton.hidden = linkCardTargetEntries.length === 0;
+      linkCardManageButton.textContent = t("linkCardManageButton");
+      linkCardManageButton.disabled = hasImages;
+      if (hasImages) {
+        linkCardManageButton.title = t("linkCardBlocksImages");
+      } else {
+        linkCardManageButton.title = t("linkCardManageButton");
+        linkCardManageButton.addEventListener("click", () => openLinkCardDialog(index, "", "manage"));
+      }
+    }
     if (existingLinkCard) {
       linkCardButton.textContent = t("linkCardRefreshButton");
-      linkCardButton.disabled = !linkCardAvailable || !linkCardUrl;
+      linkCardButton.disabled = !linkCardAvailable;
       if (!linkCardAvailable) {
         linkCardButton.title = t("linkCardMicrolinkLimitReached");
-      } else if (!linkCardUrl) {
-        linkCardButton.title = t("linkCardNoUrl");
       } else {
         linkCardButton.title = t("linkCardRefreshButton");
       }
       linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl, "refresh"));
-    } else if (otherLinkCardSegmentIndex >= 0) {
-      linkCardButton.textContent = t("linkCardMoveButton");
-      linkCardButton.disabled = hasImages;
-      linkCardButton.title = hasImages
-        ? t("linkCardBlocksImages")
-        : t("linkCardMoveButton");
-      linkCardButton.addEventListener("click", () => {
-        openLinkCardDialog(index, "", "move", otherLinkCardSegmentIndex);
-      });
+      if (linkCardManualButton) {
+        linkCardManualButton.disabled = !linkCardAvailable;
+        if (!linkCardAvailable) {
+          linkCardManualButton.title = t("linkCardMicrolinkLimitReached");
+        } else {
+          linkCardManualButton.title = t("linkCardManualButton");
+        }
+        linkCardManualButton.addEventListener("click", () => openLinkCardDialog(index, existingLinkCard.url || linkCardUrl, "refresh"));
+      }
     } else if (linkCardAvailable) {
-      linkCardButton.textContent = t("linkCardSegmentButton");
-      linkCardButton.disabled = !linkCardUrl || hasImages;
+      linkCardButton.textContent = t("linkCardDetectedButton");
+      linkCardButton.disabled = hasImages || !linkCardUrl;
       if (hasImages) {
         linkCardButton.title = t("linkCardBlocksImages");
       } else if (!linkCardUrl) {
         linkCardButton.title = t("linkCardNoUrl");
       } else {
-        linkCardButton.title = t("linkCardSegmentButton");
+        linkCardButton.title = t("linkCardDetectedButton");
       }
       linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl, "create"));
+      if (linkCardManualButton) {
+        linkCardManualButton.disabled = hasImages;
+        if (hasImages) {
+          linkCardManualButton.title = t("linkCardBlocksImages");
+        } else {
+          linkCardManualButton.title = t("linkCardManualButton");
+        }
+        linkCardManualButton.addEventListener("click", () => openLinkCardDialog(index, "", "create"));
+      }
     } else {
-      linkCardButton.textContent = t("linkCardSegmentButton");
+      linkCardButton.textContent = t("linkCardDetectedButton");
       linkCardButton.disabled = true;
       linkCardButton.title = t("linkCardMicrolinkLimitReached");
+      if (linkCardManualButton) {
+        linkCardManualButton.disabled = true;
+        linkCardManualButton.title = t("linkCardMicrolinkLimitReached");
+      }
     }
     renderSegmentLinkCard(linkCardContainer, index);
     renderSegmentImages(imageContainer, index);
@@ -36554,6 +36859,16 @@ linkCardCreateButton?.addEventListener("click", () => {
 });
 linkCardCancelButton?.addEventListener("click", closeLinkCardDialog);
 linkCardCloseTop?.addEventListener("click", closeLinkCardDialog);
+linkCardUrlInput?.addEventListener("input", () => {
+  linkCardStatus.textContent = "";
+  delete linkCardStatus.dataset.tone;
+});
+linkCardUrlInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void createLinkCardForPendingSegment();
+  }
+});
 
 mentionSearchCloseTop?.addEventListener("click", closeMentionSearchDialog);
 mentionSearchCloseButton?.addEventListener("click", closeMentionSearchDialog);

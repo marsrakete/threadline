@@ -2352,6 +2352,23 @@
           <button type="button" id="link-card-close-top" class="ghost-button close-button" data-i18n="closeButton">Schließen</button>
         </div>
         <p id="link-card-url" class="settings-note"></p>
+        <label id="link-card-url-field" for="link-card-url-input">
+          <span data-i18n="linkCardUrlLabel">Externe URL</span>
+          <input
+            id="link-card-url-input"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            placeholder="https://example.com/article"
+          >
+        </label>
+        <div id="link-card-target-list-field" hidden>
+          <p id="link-card-target-list-note" class="settings-note"></p>
+          <div id="link-card-target-list" class="link-card-target-list"></div>
+        </div>
         <p id="link-card-provider-state" class="settings-note"></p>
         <p id="link-card-warning" class="settings-note link-card-warning" hidden></p>
         <p id="link-card-status" class="settings-note"></p>
@@ -2400,10 +2417,22 @@
         <div class="segment-mentions" hidden></div>
         <div class="segment-image-actions">
           <button type="button" class="ghost-button segment-add-image-button" data-i18n="addImagesButton">Bilder laden</button>
-          <button type="button" class="ghost-button segment-link-card-button" data-i18n="linkCardSegmentButton">Link-Card</button>
+          <button type="button" class="ghost-button segment-link-card-button" data-i18n="linkCardDetectedButton">URL aus Abschnitt</button>
+          <button type="button" class="ghost-button segment-link-card-manual-button" data-i18n="linkCardManualButton">Externe URL</button>
+          <button type="button" class="ghost-button segment-link-card-manage-button" data-i18n="linkCardManageButton">Link-Card verwalten</button>
         </div>
         <div class="segment-link-card"></div>
         <div class="segment-images"></div>
+      </article>
+    </template>
+
+    <template id="link-card-target-template">
+      <article class="link-card-target-item">
+        <div class="link-card-target-body">
+          <strong class="link-card-target-title"></strong>
+          <span class="link-card-target-meta"></span>
+        </div>
+        <button type="button" class="ghost-button link-card-target-action"></button>
       </article>
     </template>
 
