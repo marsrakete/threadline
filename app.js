@@ -55,6 +55,8 @@ const TOOLS_WORKSPACE_STORAGE_KEY = "threadline:last-tools-workspace";
 const THEME_MODE_STORAGE_KEY = "threadline:theme-mode";
 const COMPACT_MODE_STORAGE_KEY = "threadline:compact-mode";
 const PENDING_PAGE_SWITCH_URL_SESSION_KEY = "threadline:pending-page-switch-url";
+const PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY = "threadline:pending-composer-reply-target";
+const PENDING_COMPOSER_REPLY_TARGET_QUERY_KEY = "_replyTarget";
 const THREAD_EXPLORER_SELECTION_STORAGE_KEY = "threadline:thread-explorer-selection";
 const THREAD_EXPLORER_ORIENTATION_STORAGE_KEY = "threadline:thread-explorer-orientation";
 const THREAD_EXPLORER_VIEW_MODE_STORAGE_KEY = "threadline:thread-explorer-view-mode";
@@ -89,9 +91,9 @@ const DEFAULT_AVATAR_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponen
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.270",
-  cacheVersion: "v289",
-  label: "Stabilize split composer and tools navigation",
+  appVersion: "0.4.271",
+  cacheVersion: "v290",
+  label: "Fix Thread Explorer reply handoff to composer",
 });
 
 /**
@@ -2879,6 +2881,48 @@ function applyAppearancePreferencesFromUrl() {
 }
 
 /**
+ * Encodes one normalized composer reply target for a cross-page URL handoff.
+ * @param {object|null} target - Normalized reply target that should be transported in the URL.
+ * @returns {string} Encoded JSON payload, or an empty string when no valid target exists.
+ */
+function encodeComposerReplyTargetForUrl(target) {
+  const normalizedTarget = normalizeReplyTarget(target);
+  if (!normalizedTarget) {
+    return "";
+  }
+
+  try {
+    return encodeURIComponent(JSON.stringify(normalizedTarget));
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Decodes one composer reply target from the current URL query string and removes it afterwards.
+ * @returns {object|null} Normalized reply target from the URL, or null.
+ */
+function consumeComposerReplyTargetFromUrl() {
+  const currentUrl = new URL(window.location.href);
+  const rawValue = String(currentUrl.searchParams.get(PENDING_COMPOSER_REPLY_TARGET_QUERY_KEY) || "").trim();
+  if (!rawValue) {
+    return null;
+  }
+
+  let normalizedTarget = null;
+  try {
+    const decodedValue = decodeURIComponent(rawValue);
+    normalizedTarget = normalizeReplyTarget(JSON.parse(decodedValue));
+  } catch {
+    normalizedTarget = null;
+  }
+
+  currentUrl.searchParams.delete(PENDING_COMPOSER_REPLY_TARGET_QUERY_KEY);
+  window.history.replaceState({}, document.title, currentUrl.toString());
+  return normalizedTarget;
+}
+
+/**
  * Builds one page-switch URL that carries the current appearance state.
  * @param {string} href - Raw target URL from the page-switch link.
  * @returns {string} Target URL with appearance transfer parameters.
@@ -2952,6 +2996,58 @@ function clearMatchingPendingPageSwitchUrl() {
   } catch {
     // Ignore malformed URL or sessionStorage errors.
   }
+}
+
+/**
+ * Stores one pending composer reply target for a cross-page jump into the composer.
+ * @param {object|null} target - Normalized reply target that should survive the page switch.
+ * @returns {void}
+ */
+function persistPendingComposerReplyTarget(target) {
+  const normalizedTarget = normalizeReplyTarget(target);
+  try {
+    if (!normalizedTarget) {
+      window.sessionStorage.removeItem(PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY);
+      return;
+    }
+    window.sessionStorage.setItem(
+      PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY,
+      JSON.stringify(normalizedTarget),
+    );
+  } catch {
+    // Ignore sessionStorage access errors in restricted contexts.
+  }
+}
+
+/**
+ * Reads one pending composer reply target without removing it.
+ * @returns {object|null} Normalized reply target from sessionStorage, or null.
+ */
+function getPendingComposerReplyTarget() {
+  try {
+    const rawValue = String(window.sessionStorage.getItem(PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY) || "").trim();
+    if (!rawValue) {
+      return null;
+    }
+    const parsedValue = JSON.parse(rawValue);
+    return normalizeReplyTarget(parsedValue);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads and removes one pending composer reply target after a page switch.
+ * @returns {object|null} Normalized reply target from sessionStorage, or null.
+ */
+function consumePendingComposerReplyTarget() {
+  const target = getPendingComposerReplyTarget();
+  try {
+    window.sessionStorage.removeItem(PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY);
+  } catch {
+    // Ignore sessionStorage access errors in restricted contexts.
+  }
+  return target;
 }
 
 /**
@@ -6741,6 +6837,18 @@ function openComposerReplyForPost(post = {}) {
   }
 
   composerReplyTarget = target;
+  if (getCurrentThreadlinePage() !== THREADLINE_PAGE_COMPOSER) {
+    persistPendingComposerReplyTarget(target);
+    const targetUrl = new URL(buildAppearanceAwarePageSwitchUrl("./"), window.location.href);
+    const encodedReplyTarget = encodeComposerReplyTargetForUrl(target);
+    if (encodedReplyTarget) {
+      targetUrl.searchParams.set(PENDING_COMPOSER_REPLY_TARGET_QUERY_KEY, encodedReplyTarget);
+    }
+    const nextHref = targetUrl.toString();
+    persistPendingPageSwitchUrl(nextHref);
+    window.location.href = nextHref;
+    return;
+  }
   showComposerWorkspace({ redirectPage: true });
   renderReplyTargetCard();
   publishButton.textContent = getPublishButtonLabel();
@@ -24067,6 +24175,7 @@ function closeReplyTargetDialog() {
 function clearComposerReplyTarget({ render = true } = {}) {
   replyTargetRequestToken += 1;
   composerReplyTarget = null;
+  persistPendingComposerReplyTarget(null);
   if (replyTargetUrlInput) {
     replyTargetUrlInput.value = "";
   }
@@ -34198,7 +34307,12 @@ async function hydrateAppState() {
     segmentImages = normalizeSegmentImages(state.segmentImages);
     segmentLinkCards = normalizeSegmentLinkCards(state.segmentLinkCards);
     segmentOverrides = normalizeSegmentOverrides(state.segmentOverrides);
+    const pendingComposerReplyTargetFromUrl = consumeComposerReplyTargetFromUrl();
+    const pendingComposerReplyTarget = pendingComposerReplyTargetFromUrl || consumePendingComposerReplyTarget();
     composerReplyTarget = normalizeReplyTarget(state.replyTarget);
+    if (pendingComposerReplyTarget) {
+      composerReplyTarget = pendingComposerReplyTarget;
+    }
     restorePersistedAnalysisState(state.analysisState);
     selectedPostLanguages = normalizePostLanguageTags(state.postLanguages);
     appendThreadIntro = state.appendThreadIntro === true;

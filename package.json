@@ -1,6 +1,6 @@
 {
   "name": "threadline",
-  "version": "0.4.270",
+  "version": "0.4.271",
   "private": true,
   "scripts": {
     "check": "npm run check:encoding && node --check app.js && node --check translations.js && node --check sw.js && node --check sw-atproto.js",

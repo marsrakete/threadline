@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.270",
-  cacheVersion: "v289",
-  label: "Stabilize split composer and tools navigation",
+  appVersion: "0.4.271",
+  cacheVersion: "v290",
+  label: "Fix Thread Explorer reply handoff to composer",
 });
