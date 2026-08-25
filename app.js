@@ -10,6 +10,7 @@ const MAX_ALT_TEXT_LENGTH = 2000;
 const IMAGE_BLOB_LIMIT = 2_000_000;
 const IMAGE_MAX_DIMENSION = 4_000;
 const COMPOSER_SEGMENT_RENDER_DEBOUNCE_MS = 1000;
+const COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS = 350;
 const IMAGE_MIN_EXPORT_SCALE = 0.05;
 const IMAGE_EDITOR_CANVAS_WIDTH = 980;
 const IMAGE_EDITOR_CANVAS_HEIGHT = 630;
@@ -47,19 +48,32 @@ const DM_ACCESS_QUERY_PARAM = "DMSECRET";
 const DM_ACCESS_HASH_PARAM = "dmsecret";
 const DM_ACCESS_SESSION_KEY = "threadline:dm-access";
 const DM_ACCESS_GATE_ENABLED = false;
-const WORKSPACE_STORAGE_KEY = "threadline:last-workspace";
+const THREADLINE_PAGE_COMPOSER = "composer";
+const THREADLINE_PAGE_TOOLS = "tools";
+const LEGACY_WORKSPACE_STORAGE_KEY = "threadline:last-workspace";
+const TOOLS_WORKSPACE_STORAGE_KEY = "threadline:last-tools-workspace";
+const THEME_MODE_STORAGE_KEY = "threadline:theme-mode";
+const COMPACT_MODE_STORAGE_KEY = "threadline:compact-mode";
+const PENDING_PAGE_SWITCH_URL_SESSION_KEY = "threadline:pending-page-switch-url";
 const THREAD_EXPLORER_SELECTION_STORAGE_KEY = "threadline:thread-explorer-selection";
 const THREAD_EXPLORER_ORIENTATION_STORAGE_KEY = "threadline:thread-explorer-orientation";
+const THREAD_EXPLORER_VIEW_MODE_STORAGE_KEY = "threadline:thread-explorer-view-mode";
 const SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY = "threadline:last-settings-backup-export";
 const SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY = "threadline:settings-backup-reminder-dismissed-at";
 const SETTINGS_BACKUP_REMINDER_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 const SETTINGS_BACKUP_REMINDER_SNOOZE_MS = 24 * 60 * 60 * 1000;
 const THREAD_EXPLORER_ORIENTATION_VERTICAL = "vertical";
 const THREAD_EXPLORER_ORIENTATION_HORIZONTAL = "horizontal";
+const THREAD_EXPLORER_VIEW_MODE_TREE = "tree";
+const THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER = "reply-cluster";
 const THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION = 8192;
 const THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS = 24000000;
 const THREAD_EXPLORER_SNAPSHOT_TILE_SIZE = 2048;
 const THREAD_EXPLORER_SNAPSHOT_MEDIA_WARNING_THRESHOLD = 100;
+const THREAD_EXPLORER_DRAG_THRESHOLD_PX = 6;
+const THREAD_EXPLORER_INERTIA_MIN_VELOCITY = 0.35;
+const THREAD_EXPLORER_INERTIA_STOP_VELOCITY = 0.04;
+const THREAD_EXPLORER_INERTIA_FRICTION = 0.92;
 const NETWORK_STAGE_SHAPE_STORAGE_KEY = "threadline:network-stage-shape";
 const NETWORK_STAGE_SHAPE_ROUND = "round";
 const NETWORK_STAGE_SHAPE_SQUIRCLE = "squircle";
@@ -75,9 +89,9 @@ const DEFAULT_AVATAR_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponen
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.267",
-  cacheVersion: "v286",
-  label: "Add search workspace phase 1",
+  appVersion: "0.4.270",
+  cacheVersion: "v289",
+  label: "Stabilize split composer and tools navigation",
 });
 
 /**
@@ -333,10 +347,21 @@ const linkCardDialog = document.querySelector("#link-card-dialog");
 const linkCardCloseTop = document.querySelector("#link-card-close-top");
 const linkCardCancelButton = document.querySelector("#link-card-cancel-button");
 const linkCardCreateButton = document.querySelector("#link-card-create-button");
+const linkCardDialogTitle = document.querySelector("#link-card-dialog h2");
 const linkCardUrlNode = document.querySelector("#link-card-url");
 const linkCardProviderState = document.querySelector("#link-card-provider-state");
 const linkCardWarning = document.querySelector("#link-card-warning");
 const linkCardStatus = document.querySelector("#link-card-status");
+const mentionSearchDialog = document.querySelector("#mention-search-dialog");
+const mentionSearchDialogEyebrow = mentionSearchDialog?.querySelector(".eyebrow");
+const mentionSearchDialogTitle = document.querySelector("#mention-search-dialog-title");
+const mentionSearchDialogNote = document.querySelector("#mention-search-dialog-note");
+const mentionSearchCloseTop = document.querySelector("#mention-search-close-top");
+const mentionSearchCloseButton = document.querySelector("#mention-search-close-button");
+const mentionSearchInput = document.querySelector("#mention-search-input");
+const mentionSearchStatus = document.querySelector("#mention-search-status");
+const mentionSearchResults = document.querySelector("#mention-search-results");
+const mentionSearchResultTemplate = document.querySelector("#mention-search-result-template");
 const helpDialog = document.querySelector("#help-dialog");
 const helpDialogEyebrow = document.querySelector("#help-dialog-eyebrow");
 const helpDialogTitle = document.querySelector("#help-dialog-title");
@@ -348,14 +373,18 @@ const imageEditorSheet = imageEditorDialog?.querySelector(".image-editor-sheet")
 const confirmDialog = document.querySelector("#confirm-dialog");
 const languageSelect = document.querySelector("#language-select");
 const themeToggleButton = document.querySelector("#theme-toggle-button");
+const compactModeToggleButtons = Array.from(document.querySelectorAll("#compact-mode-toggle-button"));
+const pageSwitchLinks = Array.from(document.querySelectorAll(".page-switch-link"));
 const resetColumnWidthsButton = document.querySelector("#reset-column-widths-button");
 const themeStatusNote = document.querySelector("#theme-status-note");
+const compactModeStatusNote = document.querySelector("#compact-mode-status-note");
 const versionLabel = document.querySelector("#version-label");
 const checkUpdatesButton = document.querySelector("#check-updates-button");
 const reloadAppButton = document.querySelector("#reload-app-button");
 const updateStatus = document.querySelector("#update-status");
 const publishResultText = document.querySelector("#publish-result-text");
 const publishResultRateLimitNote = document.querySelector("#publish-result-rate-limit-note");
+const publishResultThreadExplorerButton = document.querySelector("#publish-result-thread-explorer-button");
 const publishResultLink = document.querySelector("#publish-result-link");
 const progressTitle = document.querySelector("#progress-title");
 const progressMessage = document.querySelector("#progress-message");
@@ -547,7 +576,15 @@ const searchResultsList = document.querySelector("#search-results-list");
 const threadExplorerUrlButton = document.querySelector("#thread-explorer-url-button");
 const threadExplorerSearchesButton = document.querySelector("#thread-explorer-searches-button");
 const threadExplorerRefreshButton = document.querySelector("#thread-explorer-refresh-button");
+const threadExplorerSourceField = document.querySelector("#thread-explorer-source-field");
+const threadExplorerAccountField = document.querySelector("#thread-explorer-account-field");
 const threadExplorerSourceSelect = document.querySelector("#thread-explorer-source-select");
+const threadExplorerAccountInput = document.querySelector("#thread-explorer-account-input");
+const threadExplorerUseOwnAccountButton = document.querySelector("#thread-explorer-use-own-account-button");
+const threadExplorerAccountModeField = document.querySelector("#thread-explorer-account-mode-field");
+const threadExplorerAccountModeSelect = document.querySelector("#thread-explorer-account-mode-select");
+const threadExplorerAccountNote = document.querySelector("#thread-explorer-account-note");
+const threadExplorerFeedPickerField = document.querySelector("#thread-explorer-feed-picker-field");
 const threadExplorerFeedSelect = document.querySelector("#thread-explorer-feed-select");
 const threadExplorerActorFocus = document.querySelector("#thread-explorer-actor-focus");
 const threadExplorerActorFocusAvatar = document.querySelector("#thread-explorer-actor-focus-avatar");
@@ -572,9 +609,12 @@ const threadExplorerFavoritesButton = document.querySelector("#thread-explorer-f
 const threadExplorerZoomOutButton = document.querySelector("#thread-explorer-zoom-out-button");
 const threadExplorerZoomResetButton = document.querySelector("#thread-explorer-zoom-reset-button");
 const threadExplorerZoomInButton = document.querySelector("#thread-explorer-zoom-in-button");
+const threadExplorerViewModeButton = document.querySelector("#thread-explorer-view-mode-button");
 const threadExplorerOrientationButton = document.querySelector("#thread-explorer-orientation-button");
+const threadExplorerFullscreenButton = document.querySelector("#thread-explorer-fullscreen-button");
 const threadExplorerCollapseButton = document.querySelector("#thread-explorer-collapse-button");
 const threadExplorerExpandButton = document.querySelector("#thread-explorer-expand-button");
+const threadExplorerFullscreenCloseButton = document.querySelector("#thread-explorer-fullscreen-close-button");
 const threadExplorerFeedItemTemplate = document.querySelector("#thread-explorer-feed-item-template");
 const threadExplorerFeedOptionTemplate = document.querySelector("#thread-explorer-feed-option-template");
 const threadExplorerNodeTemplate = document.querySelector("#thread-explorer-node-template");
@@ -681,6 +721,7 @@ const archiveMediaOtherToggle = document.querySelector("#archive-media-other-tog
 const archiveExportMediaZipButton = document.querySelector("#archive-export-media-zip-button");
 const dmContactSearchInput = document.querySelector("#dm-contact-search-input");
 const dmContactList = document.querySelector("#dm-contact-list");
+const dmContactSearchNote = document.querySelector("#dm-contact-search-note");
 const dmContactSelectionNote = document.querySelector("#dm-contact-selection-note");
 const dmCheckButton = document.querySelector("#dm-check-button");
 const dmLoadPartnersButton = document.querySelector("#dm-load-partners-button");
@@ -718,6 +759,7 @@ const archiveResults = document.querySelector("#archive-results");
 const archiveSpecContent = document.querySelector("#archive-spec-content");
 const networkSearchInput = document.querySelector("#network-search-input");
 const networkAccountInput = document.querySelector("#network-account-input");
+const networkAccountNote = document.querySelector("#network-account-note");
 const networkOwnLoadButton = document.querySelector("#network-own-load-button");
 const networkAccountLoadButton = document.querySelector("#network-account-load-button");
 const networkFilterButtons = Array.from(document.querySelectorAll("[data-network-filter]"));
@@ -753,6 +795,8 @@ const networkStageCard = document.querySelector(".network-stage-card");
 const networkInsightsCard = document.querySelector(".network-insights-card");
 const analysisAccountAInput = document.querySelector("#analysis-account-a-input");
 const analysisAccountBInput = document.querySelector("#analysis-account-b-input");
+const analysisAccountANote = document.querySelector("#analysis-account-a-note");
+const analysisAccountBNote = document.querySelector("#analysis-account-b-note");
 const analysisAccountAOwnButton = document.querySelector("#analysis-account-a-own-button");
 const analysisAccountBOwnButton = document.querySelector("#analysis-account-b-own-button");
 const analysisAccountALoadButton = document.querySelector("#analysis-account-a-load-button");
@@ -807,6 +851,7 @@ let altTextRequired = true;
 let imageAutoResizeMode = "off";
 let archiveExpertMode = false;
 let themeMode = "light";
+let compactMode = false;
 let composerReplyTarget = null;
 let confirmDialogValues = {
   confirm: true,
@@ -835,6 +880,7 @@ let currentComposedText = "";
 let selectedPostLanguages = [];
 let searchSelectedLanguages = [];
 const MAX_SEARCH_LANGUAGES = 3;
+const ACCOUNT_PICKER_AUTO_OPEN_MIN_LENGTH = 3;
 let activeLanguageDialogContext = "composer";
 let appendThreadIntro = false;
 let appendThreadEmoji = false;
@@ -860,8 +906,27 @@ let editingHashtagNormalized = null;
 let segmentImages = [];
 let segmentLinkCards = [];
 let segmentImageDragState = null;
+let segmentMentionUpdateVersion = 0;
+let segmentMentionResolveTimerByIndex = new Map();
+let composerMentionResolutionCache = new Map();
+let composerMentionSourceSyncBySegment = new Map();
+let mentionSearchSegmentIndex = -1;
+let mentionSearchOriginalHandle = "";
+let mentionSearchMode = "repair";
+let mentionSearchContext = "mention";
+let mentionSearchSelectionHandler = null;
+let mentionSearchAccountSourceInput = null;
+let mentionSearchAccountSourceQuery = "";
+let mentionSearchAccountSelectionApplied = false;
+let mentionSearchRequestToken = 0;
+let mentionSearchInputTimer = 0;
+let accountPickerAutoOpenTimers = new WeakMap();
+let accountPickerAutoOpenMutedInputs = new WeakSet();
+let accountPickerAutoOpenDismissedQueries = new WeakMap();
 let pendingLinkCardSegmentIndex = -1;
+let pendingLinkCardSourceSegmentIndex = -1;
 let pendingLinkCardUrl = "";
+let pendingLinkCardAction = "create";
 let linkCardProvider = "none";
 let linkCardMicrolinkUsage = {
   date: "",
@@ -879,6 +944,9 @@ let confirmResolver = null;
 let ignoreNextConfirmClose = false;
 let imageValidationToken = 0;
 let currentWorkspace = "composer";
+if (document.body && String(document.body.dataset.page || "").trim() === THREADLINE_PAGE_TOOLS) {
+  currentWorkspace = "search";
+}
 let searchResults = [];
 let searchCursor = "";
 let searchResultPreferences = null;
@@ -957,6 +1025,11 @@ let networkCommonMutualsDids = new Set();
 let networkCommonMutualsLoadingDid = "";
 let networkCommonMutualsHasMore = false;
 let threadExplorerSource = "follows";
+let threadExplorerAccountActor = "";
+let threadExplorerAccountMode = "posts";
+let threadExplorerAccountError = "";
+let threadExplorerAccountActorBeforeFocus = "";
+let threadExplorerAccountModeBeforeFocus = "posts";
 let threadExplorerFeedSources = [];
 let threadExplorerFeedSourcesLoaded = false;
 let threadExplorerFeedSourcesLoading = false;
@@ -980,7 +1053,14 @@ let threadExplorerFeedError = "";
 let threadExplorerThreadError = "";
 let threadExplorerZoom = 1;
 let threadExplorerDragState = null;
+let threadExplorerPanInertiaFrame = 0;
+let threadExplorerPanVelocityX = 0;
+let threadExplorerPanVelocityY = 0;
+let threadExplorerPanX = 24;
+let threadExplorerPanY = 24;
 let threadExplorerOrientation = THREAD_EXPLORER_ORIENTATION_VERTICAL;
+let threadExplorerViewMode = THREAD_EXPLORER_VIEW_MODE_TREE;
+let threadExplorerFullscreen = false;
 let threadExplorerEdgeRenderFrame = 0;
 let threadExplorerFavorites = [];
 let savedSearches = [];
@@ -994,8 +1074,20 @@ let threadExplorerRenderedMediaCache = new Map();
 let threadExplorerMediaCacheGeneration = 0;
 let threadExplorerMediaCachePrewarmController = null;
 let threadExplorerCardObserver = null;
+let threadExplorerReplyClusterLayoutState = null;
+let threadExplorerReplyClusterExpandedUris = new Set();
 let threadExplorerForceHydrateCards = false;
 let threadExplorerSnapshotAbortController = null;
+let threadExplorerLikePendingUris = new Set();
+let threadExplorerCardZoomState = null;
+let threadExplorerLastTouchZoomTarget = {
+  uri: "",
+  timestamp: 0,
+};
+let threadExplorerPendingCardClickTimer = 0;
+let threadExplorerPendingCardClickUri = "";
+let threadExplorerPendingZoomResetClickTimer = 0;
+let threadExplorerLastManualZoomBeforeReset = 1;
 let analysisLoading = false;
 let analysisStatusLine = "";
 let analysisAccountDataA = null;
@@ -1068,7 +1160,10 @@ async function registerServiceWorker() {
         return;
       }
       refreshing = true;
-      const nextUrl = new URL(window.location.href);
+      const pendingPageSwitchUrl = consumePendingPageSwitchUrl();
+      const nextUrl = pendingPageSwitchUrl
+        ? new URL(pendingPageSwitchUrl, window.location.href)
+        : new URL(window.location.href);
       nextUrl.searchParams.set("reload", String(Date.now()));
       window.location.replace(nextUrl.toString());
     });
@@ -2557,13 +2652,347 @@ function renderAccountSwitcher() {
   });
 }
 
+/**
+ * Normalizes one requested Threadline page identifier.
+ * @param {string} page - Raw page identifier from DOM state or navigation.
+ * @returns {string} Supported page identifier.
+ */
+function normalizeThreadlinePage(page) {
+  const normalizedPage = String(page || "").trim();
+  if (normalizedPage === THREADLINE_PAGE_TOOLS) {
+    return THREADLINE_PAGE_TOOLS;
+  }
+  return THREADLINE_PAGE_COMPOSER;
+}
+
+/**
+ * Returns the current Threadline page from the body dataset.
+ * @returns {string} Active page identifier.
+ */
+function getCurrentThreadlinePage() {
+  if (!document.body) {
+    return THREADLINE_PAGE_COMPOSER;
+  }
+  return normalizeThreadlinePage(document.body.dataset.page);
+}
+
+/**
+ * Returns whether one workspace is available on the current page.
+ * @param {string} workspace - Workspace identifier such as composer or search.
+ * @returns {boolean} True when the workspace belongs to the current page.
+ */
+function isWorkspaceAllowedOnCurrentPage(workspace) {
+  const normalizedWorkspace = String(workspace || "").trim();
+  const currentPage = getCurrentThreadlinePage();
+  if (currentPage === THREADLINE_PAGE_TOOLS) {
+    if (normalizedWorkspace === "archive" || normalizedWorkspace === "search" || normalizedWorkspace === "network" || normalizedWorkspace === "threadExplorer" || normalizedWorkspace === "analysis" || normalizedWorkspace === "dm") {
+      return true;
+    }
+    return false;
+  }
+  return normalizedWorkspace === "composer";
+}
+
+/**
+ * Returns the default workspace for the active page.
+ * @returns {string} Default workspace identifier.
+ */
+function getDefaultWorkspaceForCurrentPage() {
+  if (getCurrentThreadlinePage() === THREADLINE_PAGE_TOOLS) {
+    return "search";
+  }
+  return "composer";
+}
+
+/**
+ * Maps a workspace identifier to one that exists on the active page.
+ * @param {string} workspace - Raw workspace identifier from storage or events.
+ * @returns {string} Workspace identifier allowed on the current page.
+ */
+function normalizeWorkspaceForCurrentPage(workspace) {
+  const normalizedWorkspace = String(workspace || "").trim();
+  if (isWorkspaceAllowedOnCurrentPage(normalizedWorkspace)) {
+    return normalizedWorkspace;
+  }
+  return getDefaultWorkspaceForCurrentPage();
+}
+
+/**
+ * Navigates to the requested Threadline page when the current page does not match.
+ * @param {string} page - Desired page identifier.
+ * @returns {boolean} True when navigation was started.
+ */
+function navigateToThreadlinePage(page) {
+  const targetPage = normalizeThreadlinePage(page);
+  const currentPage = getCurrentThreadlinePage();
+  if (currentPage === targetPage) {
+    return false;
+  }
+
+  if (targetPage === THREADLINE_PAGE_TOOLS) {
+    window.location.href = "./tools.html";
+    return true;
+  }
+
+  window.location.href = "./";
+  return true;
+}
+
+/**
+ * Shows exactly one main workspace and hides the others.
+ * @param {string} workspace - Workspace identifier that should stay visible.
+ * @returns {void}
+ */
+function setVisibleWorkspace(workspace) {
+  const normalizedWorkspace = normalizeWorkspaceForCurrentPage(workspace);
+  const workspaceEntries = [
+    ["composer", composerWorkspace],
+    ["archive", archiveWorkspace],
+    ["search", searchWorkspace],
+    ["network", networkWorkspace],
+    ["threadExplorer", threadExplorerWorkspace],
+    ["analysis", analysisWorkspace],
+    ["dm", dmWorkspace],
+  ];
+
+  workspaceEntries.forEach(([workspaceName, element]) => {
+    const isActive = workspaceName === normalizedWorkspace;
+    if (!element) {
+      return;
+    }
+    element.hidden = !isActive;
+    element.classList.toggle("workspace-view-active", isActive);
+  });
+}
+
+/**
+ * Opens the default workspace for the active page.
+ * @param {object} options - Display options for the default workspace.
+ * @param {boolean} [options.persist=true] - Persists the restored workspace when true.
+ * @param {boolean} [options.allowUnauthenticated=false] - Allows unauthenticated search on the tools page.
+ * @returns {void}
+ */
+function showDefaultWorkspaceForCurrentPage(options = {}) {
+  const defaultWorkspace = getDefaultWorkspaceForCurrentPage();
+  if (defaultWorkspace === "search") {
+    showSearchWorkspace(options);
+    return;
+  }
+  showComposerWorkspace(options);
+}
+
+/**
+ * Reads the locally cached appearance preferences from localStorage.
+ * @returns {{themeMode: string, compactMode: boolean, hasThemeMode: boolean, hasCompactMode: boolean}} Normalized appearance preferences plus presence flags.
+ */
+function getStoredAppearancePreferences() {
+  let storedThemeMode = "light";
+  let storedCompactMode = false;
+  let hasThemeMode = false;
+  let hasCompactMode = false;
+
+  try {
+    const rawThemeMode = String(window.localStorage.getItem(THEME_MODE_STORAGE_KEY) || "").trim();
+    if (rawThemeMode === "dark" || rawThemeMode === "light") {
+      hasThemeMode = true;
+    }
+    if (rawThemeMode === "dark") {
+      storedThemeMode = "dark";
+    }
+
+    const rawCompactMode = String(window.localStorage.getItem(COMPACT_MODE_STORAGE_KEY) || "").trim();
+    if (rawCompactMode === "true" || rawCompactMode === "false") {
+      hasCompactMode = true;
+    }
+    if (rawCompactMode === "true") {
+      storedCompactMode = true;
+    }
+  } catch {
+    // Ignore localStorage access errors in restricted contexts.
+  }
+
+  return {
+    themeMode: storedThemeMode,
+    compactMode: storedCompactMode,
+    hasThemeMode,
+    hasCompactMode,
+  };
+}
+
+/**
+ * Persists the current appearance preferences immediately in localStorage.
+ * @returns {void}
+ */
+function persistAppearancePreferences() {
+  try {
+    window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
+    if (compactMode === true) {
+      window.localStorage.setItem(COMPACT_MODE_STORAGE_KEY, "true");
+    } else {
+      window.localStorage.setItem(COMPACT_MODE_STORAGE_KEY, "false");
+    }
+  } catch {
+    // Ignore localStorage access errors in restricted contexts.
+  }
+}
+
+/**
+ * Applies locally cached appearance preferences before async app-state hydration finishes.
+ * @returns {void}
+ */
+function restoreAppearancePreferencesFromLocalStorage() {
+  const storedPreferences = getStoredAppearancePreferences();
+  themeMode = storedPreferences.themeMode;
+  compactMode = storedPreferences.compactMode;
+}
+
+/**
+ * Applies appearance preferences passed through page-switch URL parameters.
+ * @returns {boolean} True when at least one appearance value was applied from the URL.
+ */
+function applyAppearancePreferencesFromUrl() {
+  const currentUrl = new URL(window.location.href);
+  const rawThemeMode = String(currentUrl.searchParams.get("_theme") || "").trim();
+  const rawDensity = String(currentUrl.searchParams.get("_density") || "").trim();
+  let didApply = false;
+
+  if (rawThemeMode === "dark" || rawThemeMode === "light") {
+    themeMode = rawThemeMode;
+    didApply = true;
+  }
+  if (rawDensity === "compact") {
+    compactMode = true;
+    didApply = true;
+  } else if (rawDensity === "normal") {
+    compactMode = false;
+    didApply = true;
+  }
+
+  if (didApply) {
+    persistAppearancePreferences();
+    currentUrl.searchParams.delete("_theme");
+    currentUrl.searchParams.delete("_density");
+    window.history.replaceState({}, document.title, currentUrl.toString());
+  }
+
+  return didApply;
+}
+
+/**
+ * Builds one page-switch URL that carries the current appearance state.
+ * @param {string} href - Raw target URL from the page-switch link.
+ * @returns {string} Target URL with appearance transfer parameters.
+ */
+function buildAppearanceAwarePageSwitchUrl(href) {
+  const targetUrl = new URL(String(href || ""), window.location.href);
+  targetUrl.searchParams.set("_theme", themeMode);
+  if (compactMode === true) {
+    targetUrl.searchParams.set("_density", "compact");
+  } else {
+    targetUrl.searchParams.set("_density", "normal");
+  }
+  return targetUrl.toString();
+}
+
+/**
+ * Stores one pending page-switch target for service-worker-driven reload interruptions.
+ * @param {string} url - Absolute target URL of the intended page switch.
+ * @returns {void}
+ */
+function persistPendingPageSwitchUrl(url) {
+  try {
+    window.sessionStorage.setItem(PENDING_PAGE_SWITCH_URL_SESSION_KEY, String(url || "").trim());
+  } catch {
+    // Ignore sessionStorage access errors in restricted contexts.
+  }
+}
+
+/**
+ * Returns the stored pending page-switch target without removing it.
+ * @returns {string} Pending absolute target URL, or an empty string.
+ */
+function getPendingPageSwitchUrl() {
+  try {
+    return String(window.sessionStorage.getItem(PENDING_PAGE_SWITCH_URL_SESSION_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Reads and removes the stored pending page-switch target.
+ * @returns {string} Pending absolute target URL, or an empty string.
+ */
+function consumePendingPageSwitchUrl() {
+  const pendingUrl = getPendingPageSwitchUrl();
+  try {
+    window.sessionStorage.removeItem(PENDING_PAGE_SWITCH_URL_SESSION_KEY);
+  } catch {
+    // Ignore sessionStorage access errors in restricted contexts.
+  }
+  return pendingUrl;
+}
+
+/**
+ * Clears a pending page-switch target when the current page already matches it.
+ * @returns {void}
+ */
+function clearMatchingPendingPageSwitchUrl() {
+  const pendingUrl = getPendingPageSwitchUrl();
+  if (!pendingUrl) {
+    return;
+  }
+
+  try {
+    const currentUrl = new URL(window.location.href);
+    const targetUrl = new URL(pendingUrl, window.location.href);
+    if (currentUrl.pathname === targetUrl.pathname) {
+      window.sessionStorage.removeItem(PENDING_PAGE_SWITCH_URL_SESSION_KEY);
+    }
+  } catch {
+    // Ignore malformed URL or sessionStorage errors.
+  }
+}
+
+/**
+ * Re-synchronizes the appearance state from localStorage and reapplies it to the page.
+ * @returns {void}
+ */
+function syncAppearanceFromLocalStorage() {
+  const storedPreferences = getStoredAppearancePreferences();
+  let needsThemeUpdate = false;
+  let needsCompactUpdate = false;
+
+  if (storedPreferences.hasThemeMode && themeMode !== storedPreferences.themeMode) {
+    themeMode = storedPreferences.themeMode;
+    needsThemeUpdate = true;
+  }
+  if (storedPreferences.hasCompactMode && compactMode !== storedPreferences.compactMode) {
+    compactMode = storedPreferences.compactMode;
+    needsCompactUpdate = true;
+  }
+
+  if (needsThemeUpdate) {
+    applyTheme();
+  }
+  if (needsCompactUpdate) {
+    applyCompactMode();
+  }
+}
+
+/**
+ * Updates workspace launch buttons and auth-dependent sidebar labels.
+ * @returns {void}
+ */
 function updateAuthButtons() {
   const isAuthenticated = Boolean(authAccount);
+  const currentPage = getCurrentThreadlinePage();
+  const isToolsPage = currentPage === THREADLINE_PAGE_TOOLS;
   addAccountButton.textContent = t("addAccountButton");
   publishButton.textContent = getPublishButtonLabel();
   composerButton.disabled = false;
   archiveButton.disabled = !isAuthenticated;
-  searchButton.disabled = !isAuthenticated;
+  searchButton.disabled = false;
   if (searchUseOwnAccountButton) {
     searchUseOwnAccountButton.disabled = !isAuthenticated;
   }
@@ -2598,18 +3027,26 @@ function updateAuthButtons() {
   }
   analysisLaunchNote.textContent = isAuthenticated ? t("analysisLaunchEnabledNote") : t("analysisLaunchDisabledNote");
   dmLaunchNote.textContent = isAuthenticated ? t("dmLaunchEnabledNote") : t("dmLaunchDisabledNote");
+  if (isToolsPage && !isAuthenticated) {
+    searchLaunchNote.textContent = t("searchLaunchDisabledNote");
+  }
   renderAccountSwitcher();
   renderArchiveBackgroundNotice();
   updateAnalysisControls();
 }
 
+/**
+ * Resets auth-bound workspace state after a disconnect or logout.
+ * @param {boolean} [showStatus=true] - Shows the connection-lost status when true.
+ * @returns {void}
+ */
 function applyDisconnectedState(showStatus = true) {
   authAccount = null;
   authAccountDid = "";
   resetNetworkState();
   updateAuthButtons();
-  if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network" || currentWorkspace === "threadExplorer" || currentWorkspace === "analysis" || currentWorkspace === "search") {
-    showComposerWorkspace({ persist: false });
+  if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network" || currentWorkspace === "threadExplorer" || currentWorkspace === "analysis") {
+    showDefaultWorkspaceForCurrentPage({ persist: false, allowUnauthenticated: true });
   }
 
   if (showStatus) {
@@ -2638,20 +3075,42 @@ function setElementVisibility(element, isVisible) {
   element.style.display = isVisible ? "" : "none";
 }
 
+/**
+ * Persists the last active tools workspace for reload restore.
+ * @param {string} workspace - Active workspace identifier.
+ * @returns {void}
+ */
 function persistWorkspacePreference(workspace) {
+  if (getCurrentThreadlinePage() !== THREADLINE_PAGE_TOOLS) {
+    return;
+  }
+
+  const normalizedWorkspace = normalizeWorkspaceForCurrentPage(workspace);
   try {
-    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, String(workspace || "composer"));
+    window.localStorage.setItem(TOOLS_WORKSPACE_STORAGE_KEY, normalizedWorkspace);
+    window.localStorage.setItem(LEGACY_WORKSPACE_STORAGE_KEY, normalizedWorkspace);
   } catch {
     // Ignore storage errors in private or restricted contexts.
   }
 }
 
+/**
+ * Reads the persisted tools workspace preference for the active page.
+ * @returns {string} Stored workspace identifier for the current page.
+ */
 function getStoredWorkspacePreference() {
-  try {
-    const value = String(window.localStorage.getItem(WORKSPACE_STORAGE_KEY) || "").trim();
-    return value || "composer";
-  } catch {
+  if (getCurrentThreadlinePage() !== THREADLINE_PAGE_TOOLS) {
     return "composer";
+  }
+
+  try {
+    let value = String(window.localStorage.getItem(TOOLS_WORKSPACE_STORAGE_KEY) || "").trim();
+    if (!value) {
+      value = String(window.localStorage.getItem(LEGACY_WORKSPACE_STORAGE_KEY) || "").trim();
+    }
+    return normalizeWorkspaceForCurrentPage(value);
+  } catch {
+    return normalizeWorkspaceForCurrentPage("");
   }
 }
 
@@ -2702,6 +3161,210 @@ function normalizeThreadExplorerSource(source) {
     }
   }
   return "follows";
+}
+
+/**
+ * Returns a normalized account target mode for the Thread Explorer account field.
+ * @param {string} mode - Raw mode value from UI or saved state.
+ * @returns {string} One of posts, replies, or all.
+ */
+function normalizeThreadExplorerAccountMode(mode) {
+  const normalizedMode = String(mode || "").trim();
+  if (normalizedMode === "replies") {
+    return "replies";
+  }
+  if (normalizedMode === "all") {
+    return "all";
+  }
+  return "posts";
+}
+
+/**
+ * Returns a normalized actor value for the Thread Explorer account field.
+ * @param {string} value - Raw actor field value.
+ * @returns {string} Trimmed handle or DID without leading at signs.
+ */
+function normalizeThreadExplorerActor(value = "") {
+  return String(value || "").trim().replace(/^@+/, "");
+}
+
+/**
+ * Returns the active account label for "Mein Account" actions in the Thread Explorer.
+ * @returns {string} Handle, identifier, DID, or an empty string when unavailable.
+ */
+function getThreadExplorerOwnActor() {
+  const activeAccount = savedAccounts.find((account) => {
+    return account?.did && account.did === authAccountDid;
+  }) || null;
+  const actor = String(
+    activeAccount?.handle
+    || activeAccount?.identifier
+    || authAccount
+    || authAccountDid
+    || "",
+  ).trim();
+  return actor.replace(/^@+/, "");
+}
+
+/**
+ * Checks whether the Thread Explorer account field currently targets the signed-in account.
+ * @returns {boolean} True when no foreign-account mode should be used.
+ */
+function isThreadExplorerOwnAccountTarget() {
+  const normalizedTarget = normalizeThreadExplorerActor(threadExplorerAccountActor);
+  if (!normalizedTarget) {
+    return true;
+  }
+
+  const ownHandle = normalizeThreadExplorerActor(authAccount || "");
+  const ownDid = normalizeThreadExplorerActor(authAccountDid || "");
+  if (ownHandle && normalizedTarget.toLowerCase() === ownHandle.toLowerCase()) {
+    return true;
+  }
+  if (ownDid && normalizedTarget.toLowerCase() === ownDid.toLowerCase()) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks whether the Thread Explorer should load posts from a foreign account.
+ * @returns {boolean} True when the account field points to another account.
+ */
+function isThreadExplorerForeignAccountMode() {
+  return !isThreadExplorerOwnAccountTarget();
+}
+
+/**
+ * Checks whether one actor belongs to the signed-in account.
+ * @param {object|null} actor - Normalized actor object from Thread Explorer data.
+ * @returns {boolean} True when the actor is the signed-in account.
+ */
+function isThreadExplorerOwnActor(actor = null) {
+  const actorHandle = normalizeThreadExplorerActor(actor?.handle || "");
+  const actorDid = normalizeThreadExplorerActor(actor?.did || "");
+  const ownHandle = normalizeThreadExplorerActor(authAccount || "");
+  const ownDid = normalizeThreadExplorerActor(authAccountDid || "");
+
+  if (actorDid && ownDid && actorDid.toLowerCase() === ownDid.toLowerCase()) {
+    return true;
+  }
+  if (actorHandle && ownHandle && actorHandle.toLowerCase() === ownHandle.toLowerCase()) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks whether the Thread Explorer currently shows a foreign-account actor focus.
+ * @returns {boolean} True when the top source controls should be hidden.
+ */
+function isThreadExplorerForeignActorFocusMode() {
+  if (!threadExplorerActorFocusActor) {
+    return false;
+  }
+  return !isThreadExplorerOwnActor(threadExplorerActorFocusActor);
+}
+
+/**
+ * Builds a minimal Thread Explorer actor object from the account field value.
+ * @param {string} actorValue - Normalized handle or DID from the account field.
+ * @returns {object} Actor stub with either handle or DID filled.
+ */
+function createThreadExplorerActorStub(actorValue = "") {
+  const normalizedActor = normalizeThreadExplorerActor(actorValue);
+  if (!normalizedActor) {
+    return {};
+  }
+
+  if (normalizedActor.startsWith("did:")) {
+    return {
+      did: normalizedActor,
+      handle: "",
+      displayName: normalizedActor,
+    };
+  }
+
+  return {
+    did: "",
+    handle: normalizedActor,
+    displayName: normalizedActor,
+  };
+}
+
+/**
+ * Returns the actor that should currently be loaded in the Thread Explorer account mode.
+ * @returns {string} Normalized handle or DID, or an empty string.
+ */
+function getThreadExplorerRequestedActor() {
+  if (isThreadExplorerForeignAccountMode()) {
+    return normalizeThreadExplorerActor(threadExplorerAccountActor);
+  }
+  return getThreadExplorerOwnActor();
+}
+
+/**
+ * Writes the current Thread Explorer account-mode note below the account field.
+ * @returns {void}
+ */
+function renderThreadExplorerAccountNote() {
+  if (isThreadExplorerForeignActorFocusMode()) {
+    setAccountFieldNote(threadExplorerAccountNote, "");
+    return;
+  }
+  if (threadExplorerAccountError) {
+    setAccountFieldNote(threadExplorerAccountNote, threadExplorerAccountError);
+    return;
+  }
+  if (isThreadExplorerForeignAccountMode()) {
+    setAccountFieldNote(threadExplorerAccountNote, t("threadExplorerAccountModeHint"));
+    return;
+  }
+  setAccountFieldNote(threadExplorerAccountNote, "");
+}
+
+/**
+ * Applies the current Thread Explorer fullscreen state to the workspace shell.
+ * @returns {void}
+ */
+function applyThreadExplorerFullscreenState() {
+  const isActive = currentWorkspace === "threadExplorer" && threadExplorerFullscreen === true;
+  if (threadExplorerWorkspace) {
+    threadExplorerWorkspace.classList.toggle("is-fullscreen", isActive);
+  }
+  document.body.classList.toggle("thread-explorer-fullscreen-active", isActive);
+}
+
+/**
+ * Returns the persistable Thread Explorer state for reload-safe account mode.
+ * @returns {object} Saved account target, account mode, and fullscreen preference.
+ */
+function getPersistableThreadExplorerState() {
+  return {
+    actor: normalizeThreadExplorerActor(threadExplorerAccountActor),
+    accountMode: normalizeThreadExplorerAccountMode(threadExplorerAccountMode),
+    fullscreen: threadExplorerFullscreen === true,
+  };
+}
+
+/**
+ * Restores the persisted Thread Explorer account mode from saved settings.
+ * @param {object} state - Saved Thread Explorer state object.
+ * @returns {void}
+ */
+function restorePersistedThreadExplorerState(state = {}) {
+  threadExplorerAccountActor = normalizeThreadExplorerActor(state?.actor || "");
+  threadExplorerAccountMode = normalizeThreadExplorerAccountMode(state?.accountMode);
+  threadExplorerFullscreen = state?.fullscreen === true;
+  threadExplorerAccountError = "";
+  if (threadExplorerAccountInput) {
+    threadExplorerAccountInput.value = threadExplorerAccountActor;
+  }
+  if (threadExplorerAccountModeSelect) {
+    threadExplorerAccountModeSelect.value = threadExplorerAccountMode;
+  }
+  renderThreadExplorerAccountNote();
+  applyThreadExplorerFullscreenState();
 }
 
 /**
@@ -2912,6 +3575,56 @@ function restoreThreadExplorerOrientationPreference() {
   return threadExplorerOrientation;
 }
 
+/**
+ * Returns a normalized Thread Explorer view mode.
+ * @param {string} mode - Raw view mode from state or storage.
+ * @returns {string} Either "tree" or "reply-cluster".
+ */
+function normalizeThreadExplorerViewMode(mode) {
+  if (mode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
+    return THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER;
+  }
+  return THREAD_EXPLORER_VIEW_MODE_TREE;
+}
+
+/**
+ * Saves the current Thread Explorer view mode.
+ * @param {string} mode - View mode to persist.
+ * @returns {void}
+ */
+function persistThreadExplorerViewModePreference(mode) {
+  try {
+    window.localStorage.setItem(
+      THREAD_EXPLORER_VIEW_MODE_STORAGE_KEY,
+      normalizeThreadExplorerViewMode(mode),
+    );
+  } catch {
+    // Ignore storage errors in private or restricted contexts.
+  }
+}
+
+/**
+ * Reads the saved Thread Explorer view mode.
+ * @returns {string} Saved mode, or the tree default.
+ */
+function getStoredThreadExplorerViewModePreference() {
+  try {
+    const value = String(window.localStorage.getItem(THREAD_EXPLORER_VIEW_MODE_STORAGE_KEY) || "").trim();
+    return normalizeThreadExplorerViewMode(value);
+  } catch {
+    return THREAD_EXPLORER_VIEW_MODE_TREE;
+  }
+}
+
+/**
+ * Restores the saved Thread Explorer view mode into memory.
+ * @returns {string} Restored mode.
+ */
+function restoreThreadExplorerViewModePreference() {
+  threadExplorerViewMode = getStoredThreadExplorerViewModePreference();
+  return threadExplorerViewMode;
+}
+
 async function enterNetworkStageMode() {
   networkStageMode = true;
   networkStageModeFocusVisible = false;
@@ -2965,6 +3678,10 @@ function getStoredNetworkStageShape() {
   }
 }
 
+/**
+ * Restores the preferred workspace after settings and auth state finished hydrating.
+ * @returns {void}
+ */
 function restorePreferredWorkspaceIfPossible() {
   if (!workspaceRestorePending) {
     return;
@@ -2974,13 +3691,13 @@ function restorePreferredWorkspaceIfPossible() {
   }
   if (!authAccount) {
     workspaceRestorePending = false;
-    if (currentWorkspace !== "composer") {
-      showComposerWorkspace();
+    if (currentWorkspace !== getDefaultWorkspaceForCurrentPage()) {
+      showDefaultWorkspaceForCurrentPage({ allowUnauthenticated: true });
     }
     return;
   }
 
-  const preferred = getStoredWorkspacePreference();
+  const preferred = normalizeWorkspaceForCurrentPage(getStoredWorkspacePreference());
   if (preferred === "dm" && DM_ACCESS_GATE_ENABLED && !dmAccessChecked) {
     return;
   }
@@ -3010,7 +3727,7 @@ function restorePreferredWorkspaceIfPossible() {
     showDmWorkspace();
     return;
   }
-  showComposerWorkspace();
+  showDefaultWorkspaceForCurrentPage();
 }
 
 function getDmSecretFromLocation() {
@@ -4264,6 +4981,24 @@ function createSearchResultFavoriteButton(item = {}) {
 }
 
 /**
+ * Creates the button that opens one search result inside the Thread Explorer.
+ * @param {object} item - Normalized search result item.
+ * @returns {HTMLButtonElement} Ready-to-use action button.
+ */
+function createSearchResultThreadExplorerButton(item = {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-button thread-explorer-view-link search-result-thread-explorer-button";
+  button.textContent = "🧵";
+  button.title = t("searchResultOpenInThreadExplorerButton");
+  button.setAttribute("aria-label", t("searchResultOpenInThreadExplorerButton"));
+  button.addEventListener("click", () => {
+    void openSearchResultInThreadExplorer(item);
+  });
+  return button;
+}
+
+/**
  * Opens one search result directly in the Thread Explorer.
  * @param {object} item - Normalized search result item.
  * @returns {Promise<void>} Resolves after the Thread Explorer load was started.
@@ -4380,11 +5115,15 @@ function createSearchResultElement(item = {}, highlightQuery = "") {
   }
   meta.textContent = buildSearchResultMetaText(item);
   renderThreadExplorerViewLink(post, viewLink);
-  actions.hidden = !renderThreadExplorerEditButton(post, editButton);
+  viewLink.title = t("searchResultOpenPostInBskyButton");
+  viewLink.setAttribute("aria-label", t("searchResultOpenPostInBskyButton"));
+  renderThreadExplorerEditButton(post, editButton);
+  renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink);
   text.textContent = getThreadExplorerPostDisplayText(post) || t("threadExplorerNoText");
   highlightSearchQueryInElement(text, highlightQuery);
   renderSearchResultCounts(post, counts);
   headButtons.prepend(createSearchResultFavoriteButton(item));
+  headButtons.insertBefore(createSearchResultThreadExplorerButton(item), viewLink);
 
   actorTriggers.forEach((trigger) => {
     applyTranslatedTitle(trigger, "searchResultOpenInThreadExplorerButton");
@@ -4518,22 +5257,27 @@ async function loadSearchResults(options = {}) {
 
 /**
  * Shows the live search workspace.
+ * @param {object} options - Display options for the search workspace.
+ * @param {boolean} [options.persist=true] - Persists the active workspace when true.
+ * @param {boolean} [options.allowUnauthenticated=false] - Allows the tools page to open search before login.
  * @returns {void}
  */
-function showSearchWorkspace() {
-  if (!authAccount) {
+function showSearchWorkspace(options = {}) {
+  if (navigateToThreadlinePage(THREADLINE_PAGE_TOOLS)) {
+    return;
+  }
+
+  const allowUnauthenticated = options.allowUnauthenticated === true;
+  if (!authAccount && !allowUnauthenticated) {
     return;
   }
 
   currentWorkspace = "search";
-  persistWorkspacePreference(currentWorkspace);
-  composerWorkspace.hidden = true;
-  archiveWorkspace.hidden = true;
-  networkWorkspace.hidden = true;
-  threadExplorerWorkspace.hidden = true;
-  analysisWorkspace.hidden = true;
-  dmWorkspace.hidden = true;
-  searchWorkspace.hidden = false;
+  applyThreadExplorerFullscreenState();
+  if (options.persist !== false) {
+    persistWorkspacePreference(currentWorkspace);
+  }
+  setVisibleWorkspace(currentWorkspace);
   applyHashtagPaneContext();
   updateAuthButtons();
   renderSearchWorkspace();
@@ -5033,41 +5777,45 @@ async function saveSearchResultAsFavorite(item = {}) {
   setStatus(t("searchFavoriteSavedStatus"));
 }
 
+/**
+ * Shows the archive workspace on the tools page.
+ * @returns {void}
+ */
 function showArchiveWorkspace() {
+  if (navigateToThreadlinePage(THREADLINE_PAGE_TOOLS)) {
+    return;
+  }
   if (!authAccount) {
     return;
   }
 
   currentWorkspace = "archive";
+  applyThreadExplorerFullscreenState();
   persistWorkspacePreference(currentWorkspace);
-  composerWorkspace.hidden = true;
-  searchWorkspace.hidden = true;
-  networkWorkspace.hidden = true;
-  threadExplorerWorkspace.hidden = true;
-  analysisWorkspace.hidden = true;
-  dmWorkspace.hidden = true;
-  archiveWorkspace.hidden = false;
+  setVisibleWorkspace(currentWorkspace);
   ensureArchiveWorkspaceLayout();
   applyHashtagPaneContext();
   updateAuthButtons();
   renderArchiveWorkspace();
 }
 
+/**
+ * Shows the network workspace on the tools page.
+ * @returns {void}
+ */
 function showNetworkWorkspace() {
+  if (navigateToThreadlinePage(THREADLINE_PAGE_TOOLS)) {
+    return;
+  }
   if (!authAccount) {
     return;
   }
 
   ensureNetworkStateForAccount();
   currentWorkspace = "network";
+  applyThreadExplorerFullscreenState();
   persistWorkspacePreference(currentWorkspace);
-  composerWorkspace.hidden = true;
-  archiveWorkspace.hidden = true;
-  searchWorkspace.hidden = true;
-  threadExplorerWorkspace.hidden = true;
-  analysisWorkspace.hidden = true;
-  dmWorkspace.hidden = true;
-  networkWorkspace.hidden = false;
+  setVisibleWorkspace(currentWorkspace);
   applyHashtagPaneContext();
   updateAuthButtons();
   renderNetworkWorkspace();
@@ -5081,21 +5829,20 @@ function showNetworkWorkspace() {
  * @returns {void}
  */
 function showThreadExplorerWorkspace() {
+  if (navigateToThreadlinePage(THREADLINE_PAGE_TOOLS)) {
+    return;
+  }
   if (!authAccount) {
     return;
   }
 
   restoreThreadExplorerSelectionPreference();
   restoreThreadExplorerOrientationPreference();
+  restoreThreadExplorerViewModePreference();
   currentWorkspace = "threadExplorer";
+  applyThreadExplorerFullscreenState();
   persistWorkspacePreference(currentWorkspace);
-  composerWorkspace.hidden = true;
-  archiveWorkspace.hidden = true;
-  networkWorkspace.hidden = true;
-  searchWorkspace.hidden = true;
-  analysisWorkspace.hidden = true;
-  dmWorkspace.hidden = true;
-  threadExplorerWorkspace.hidden = false;
+  setVisibleWorkspace(currentWorkspace);
   applyHashtagPaneContext();
   updateAuthButtons();
   renderThreadExplorerWorkspace();
@@ -5105,39 +5852,43 @@ function showThreadExplorerWorkspace() {
   }
 }
 
+/**
+ * Shows the analysis workspace on the tools page.
+ * @returns {void}
+ */
 function showAnalysisWorkspace() {
+  if (navigateToThreadlinePage(THREADLINE_PAGE_TOOLS)) {
+    return;
+  }
   if (!authAccount) {
     return;
   }
 
   currentWorkspace = "analysis";
+  applyThreadExplorerFullscreenState();
   persistWorkspacePreference(currentWorkspace);
-  composerWorkspace.hidden = true;
-  archiveWorkspace.hidden = true;
-  networkWorkspace.hidden = true;
-  threadExplorerWorkspace.hidden = true;
-  searchWorkspace.hidden = true;
-  dmWorkspace.hidden = true;
-  analysisWorkspace.hidden = false;
+  setVisibleWorkspace(currentWorkspace);
   applyHashtagPaneContext();
   updateAuthButtons();
   renderAnalysisWorkspace();
 }
 
+/**
+ * Shows the DM archive workspace on the tools page.
+ * @returns {void}
+ */
 function showDmWorkspace() {
+  if (navigateToThreadlinePage(THREADLINE_PAGE_TOOLS)) {
+    return;
+  }
   if (!authAccount || !isDmAccessAvailable()) {
     return;
   }
 
   currentWorkspace = "dm";
+  applyThreadExplorerFullscreenState();
   persistWorkspacePreference(currentWorkspace);
-  composerWorkspace.hidden = true;
-  archiveWorkspace.hidden = true;
-  networkWorkspace.hidden = true;
-  threadExplorerWorkspace.hidden = true;
-  analysisWorkspace.hidden = true;
-  searchWorkspace.hidden = true;
-  dmWorkspace.hidden = false;
+  setVisibleWorkspace(currentWorkspace);
   applyHashtagPaneContext();
   updateAuthButtons();
   if (!dmRecentContacts.length || (dmPartnerCacheAccountDid && authAccountDid && dmPartnerCacheAccountDid !== authAccountDid)) {
@@ -5150,18 +5901,28 @@ function showDmWorkspace() {
   renderDmWorkspace();
 }
 
+/**
+ * Shows the composer workspace on the writing page.
+ * @param {object} options - Display options for the composer workspace.
+ * @param {boolean} [options.persist=true] - Persists the active workspace when true.
+ * @param {boolean} [options.redirectPage=false] - Allows a tools-page call to navigate to the composer page.
+ * @returns {void}
+ */
 function showComposerWorkspace(options = {}) {
+  const shouldRedirectPage = options.redirectPage === true;
+  if (getCurrentThreadlinePage() === THREADLINE_PAGE_TOOLS && !shouldRedirectPage) {
+    return;
+  }
+
+  if (navigateToThreadlinePage(THREADLINE_PAGE_COMPOSER)) {
+    return;
+  }
   currentWorkspace = "composer";
+  applyThreadExplorerFullscreenState();
   if (options.persist !== false) {
     persistWorkspacePreference(currentWorkspace);
   }
-  archiveWorkspace.hidden = true;
-  networkWorkspace.hidden = true;
-  threadExplorerWorkspace.hidden = true;
-  searchWorkspace.hidden = true;
-  analysisWorkspace.hidden = true;
-  dmWorkspace.hidden = true;
-  composerWorkspace.hidden = false;
+  setVisibleWorkspace(currentWorkspace);
   applyHashtagPaneContext();
   updateAuthButtons();
 }
@@ -5762,6 +6523,389 @@ function createThreadExplorerCountElement(type, value, isInteractive) {
     count: formatCount(value),
   });
   return element;
+}
+
+/**
+ * Returns the current viewer like record URI from one normalized live post.
+ * @param {object} post - Normalized live post from search or Thread Explorer.
+ * @returns {string} Existing like record URI, or an empty string.
+ */
+function getViewerLikeUri(post = {}) {
+  if (!post?.viewer || typeof post.viewer !== "object") {
+    return "";
+  }
+  return String(post.viewer.like || "").trim();
+}
+
+/**
+ * Checks whether the signed-in account currently likes one live post.
+ * @param {object} post - Normalized live post from search or Thread Explorer.
+ * @returns {boolean} True when the viewer has a like record for this post.
+ */
+function isPostLikedByViewer(post = {}) {
+  return Boolean(getViewerLikeUri(post));
+}
+
+/**
+ * Creates one compact interaction button for a live post card.
+ * @param {string} translationKey - Translation key for the visible label.
+ * @param {object} options - Visual and behavioral options.
+ * @param {boolean} options.active - Whether the button should look active.
+ * @param {boolean} options.disabled - Whether the button should be disabled.
+ * @param {Function} options.onClick - Click handler for the button.
+ * @returns {HTMLButtonElement} Ready-to-use action button.
+ */
+function createThreadExplorerInteractionButton(translationKey, options = {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-button thread-explorer-inline-action";
+  button.textContent = t(translationKey);
+  if (options.active === true) {
+    button.classList.add("is-active");
+  }
+  if (options.disabled === true) {
+    button.disabled = true;
+  }
+  if (typeof options.onClick === "function") {
+    button.addEventListener("click", options.onClick);
+  }
+  return button;
+}
+
+/**
+ * Applies one local like state update to a normalized live post object.
+ * @param {object} post - Normalized live post to mutate in place.
+ * @param {string} likeUri - Next like record URI, or an empty string after unlike.
+ * @param {number} delta - Count delta that should be applied to the like counter.
+ * @returns {void}
+ */
+function applyLikeStateToPost(post = {}, likeUri = "", delta = 0) {
+  if (!post || typeof post !== "object") {
+    return;
+  }
+  if (!post.viewer || typeof post.viewer !== "object") {
+    post.viewer = {};
+  }
+
+  post.likeCount = Math.max(0, (Number(post.likeCount) || 0) + delta);
+  if (likeUri) {
+    post.viewer.like = likeUri;
+    return;
+  }
+  delete post.viewer.like;
+}
+
+/**
+ * Applies one local like-state update to all feed-like item collections.
+ * @param {object[]} items - Feed or search result items with nested posts.
+ * @param {string} postUri - Post URI that should be updated.
+ * @param {string} likeUri - Next like record URI, or an empty string after unlike.
+ * @param {number} delta - Count delta that should be applied.
+ * @returns {void}
+ */
+function applyLikeStateToItemCollection(items = [], postUri = "", likeUri = "", delta = 0) {
+  if (!Array.isArray(items) || !postUri) {
+    return;
+  }
+
+  items.forEach((item) => {
+    const post = item?.post || null;
+    if (!post || post.uri !== postUri) {
+      return;
+    }
+    applyLikeStateToPost(post, likeUri, delta);
+  });
+}
+
+/**
+ * Applies one local like-state update to a Thread Explorer tree.
+ * @param {object|null} node - Normalized Thread Explorer tree node.
+ * @param {string} postUri - Post URI that should be updated.
+ * @param {string} likeUri - Next like record URI, or an empty string after unlike.
+ * @param {number} delta - Count delta that should be applied.
+ * @returns {void}
+ */
+function applyLikeStateToThreadTree(node = null, postUri = "", likeUri = "", delta = 0) {
+  if (!node || !postUri) {
+    return;
+  }
+
+  if (node.post?.uri === postUri) {
+    applyLikeStateToPost(node.post, likeUri, delta);
+  }
+
+  const replies = Array.isArray(node.replies) ? node.replies : [];
+  replies.forEach((reply) => {
+    applyLikeStateToThreadTree(reply, postUri, likeUri, delta);
+  });
+}
+
+/**
+ * Applies one local like-state update to every known live-post cache.
+ * @param {string} postUri - Post URI that should be updated.
+ * @param {string} likeUri - Next like record URI, or an empty string after unlike.
+ * @param {number} delta - Count delta that should be applied.
+ * @returns {void}
+ */
+function applyLikeStateToKnownPosts(postUri = "", likeUri = "", delta = 0) {
+  if (!postUri) {
+    return;
+  }
+
+  applyLikeStateToItemCollection(threadExplorerItems, postUri, likeUri, delta);
+  applyLikeStateToItemCollection(threadExplorerActorFocusItems, postUri, likeUri, delta);
+  applyLikeStateToItemCollection(searchResults, postUri, likeUri, delta);
+  applyLikeStateToThreadTree(threadExplorerTree, postUri, likeUri, delta);
+}
+
+/**
+ * Builds a composer reply target directly from one normalized live post.
+ * @param {object} post - Normalized live post from search or Thread Explorer.
+ * @returns {object|null} Normalized reply target, or null when required fields are missing.
+ */
+function buildReplyTargetFromLivePost(post = {}) {
+  const postUri = String(post?.uri || "").trim();
+  const postCid = String(post?.cid || "").trim();
+  if (!postUri || !postCid) {
+    return null;
+  }
+
+  let rootUri = postUri;
+  let rootCid = postCid;
+  if (post.reply && typeof post.reply === "object") {
+    const rawRootUri = String(post.reply.root?.uri || "").trim();
+    const rawRootCid = String(post.reply.root?.cid || "").trim();
+    if (rawRootUri && rawRootCid) {
+      rootUri = rawRootUri;
+      rootCid = rawRootCid;
+    }
+  }
+
+  let sourceUrl = buildThreadExplorerPostWebUrl(post);
+  if (!sourceUrl) {
+    sourceUrl = "";
+  }
+
+  const target = {
+    mode: "post",
+    sourceUrl,
+    threadLength: 1,
+    replyHint: "",
+    targetPost: {
+      uri: postUri,
+      cid: postCid,
+      text: String(post?.text || "").trim(),
+      createdAt: String(post?.createdAt || post?.indexedAt || "").trim(),
+    },
+    rootPost: {
+      uri: rootUri,
+      cid: rootCid,
+      text: "",
+      createdAt: "",
+    },
+    targetAccount: {
+      did: String(post.author?.did || "").trim(),
+      handle: String(post.author?.handle || "").trim(),
+      displayName: String(post.author?.displayName || "").trim(),
+      avatar: String(post.author?.avatar || "").trim(),
+    },
+    rootAccount: {
+      did: "",
+      handle: "",
+      displayName: "",
+      avatar: "",
+    },
+    lastOwnPost: null,
+    replyRoot: {
+      uri: rootUri,
+      cid: rootCid,
+    },
+    replyParent: {
+      uri: postUri,
+      cid: postCid,
+    },
+  };
+  return normalizeReplyTarget(target);
+}
+
+/**
+ * Opens the composer and prepares a direct reply to one live post.
+ * @param {object} post - Normalized live post from search or Thread Explorer.
+ * @returns {void}
+ */
+function openComposerReplyForPost(post = {}) {
+  const target = buildReplyTargetFromLivePost(post);
+  if (!target) {
+    showErrorDialog(t("replyTargetResolveFailed"));
+    return;
+  }
+
+  composerReplyTarget = target;
+  showComposerWorkspace({ redirectPage: true });
+  renderReplyTargetCard();
+  publishButton.textContent = getPublishButtonLabel();
+  updatePublishAvailability();
+  queueDraftSave();
+  setStatus(t("replyTargetPostReady"));
+}
+
+/**
+ * Refreshes counts and interaction buttons inside one already rendered live post card.
+ * @param {HTMLElement|null} card - Rendered Thread Explorer or search-result post card.
+ * @returns {void}
+ */
+function refreshRenderedLivePostCard(card = null) {
+  if (!card) {
+    return;
+  }
+
+  const post = card._threadExplorerPost || null;
+  const counts = card.querySelector(".thread-explorer-post-counts");
+  const actions = card.querySelector(".thread-explorer-post-actions");
+  const headButtons = card.querySelector(".thread-explorer-post-head-buttons");
+  const viewLink = card.querySelector(".thread-explorer-view-link");
+  if (!post || !counts || !actions || !headButtons || !viewLink) {
+    return;
+  }
+
+  const inSearchResult = Boolean(card.closest(".search-result-item"));
+  if (inSearchResult) {
+    renderSearchResultCounts(post, counts);
+  } else {
+    renderThreadExplorerCounts(post, counts);
+  }
+  renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink);
+}
+
+/**
+ * Refreshes every rendered live post card for one specific URI.
+ * @param {string} postUri - Post URI that should be refreshed in the DOM.
+ * @returns {void}
+ */
+function refreshRenderedLivePostCards(postUri = "") {
+  const normalizedUri = String(postUri || "").trim();
+  if (!normalizedUri) {
+    return;
+  }
+
+  let selectorValue = normalizedUri.replace(/["\\]/g, "\\$&");
+  if (window.CSS && typeof window.CSS.escape === "function") {
+    selectorValue = window.CSS.escape(normalizedUri);
+  }
+  document.querySelectorAll(`.thread-explorer-node-item[data-uri="${selectorValue}"] .thread-explorer-post-card`).forEach((card) => {
+    refreshRenderedLivePostCard(card);
+  });
+}
+
+/**
+ * Toggles the like state for one live post and updates all known render targets.
+ * @param {object} post - Normalized live post from search or Thread Explorer.
+ * @returns {Promise<void>} Resolves after the server action completed.
+ */
+async function toggleLikeForLivePost(post = {}) {
+  const postUri = String(post?.uri || "").trim();
+  const postCid = String(post?.cid || "").trim();
+  if (!postUri || !postCid) {
+    return;
+  }
+  if (threadExplorerLikePendingUris.has(postUri)) {
+    return;
+  }
+
+  const wasLiked = isPostLikedByViewer(post);
+  const previousLikeUri = getViewerLikeUri(post);
+  let nextLikeUri = "";
+  let delta = 0;
+
+  if (wasLiked) {
+    delta = -1;
+  } else {
+    delta = 1;
+    nextLikeUri = `pending:${postUri}`;
+  }
+
+  threadExplorerLikePendingUris.add(postUri);
+  applyLikeStateToKnownPosts(postUri, nextLikeUri, delta);
+  refreshRenderedLivePostCards(postUri);
+
+  try {
+    if (wasLiked) {
+      await sendToServiceWorker("UNLIKE_POST", {
+        likeUri: previousLikeUri,
+      });
+      applyLikeStateToKnownPosts(postUri, "", 0);
+    } else {
+      const result = await sendToServiceWorker("LIKE_POST", {
+        uri: postUri,
+        cid: postCid,
+      });
+      applyLikeStateToKnownPosts(postUri, String(result?.uri || "").trim(), 0);
+    }
+  } catch (error) {
+    applyLikeStateToKnownPosts(postUri, previousLikeUri, delta * -1);
+    showErrorDialog(error?.message || t("threadExplorerThreadFailed"));
+  } finally {
+    threadExplorerLikePendingUris.delete(postUri);
+    refreshRenderedLivePostCards(postUri);
+  }
+}
+
+/**
+ * Renders reply and like controls into one live post header row.
+ * @param {object} post - Normalized live post from search or Thread Explorer.
+ * @param {HTMLElement|null} actions - Existing action-row container from the card template.
+ * @param {HTMLElement|null} headButtons - Existing header button row from the card template.
+ * @param {HTMLElement|null} anchor - Existing view-link element used as insertion anchor.
+ * @returns {void}
+ */
+function renderThreadExplorerInteractionActions(post, actions, headButtons, anchor) {
+  if (!actions || !headButtons || !anchor) {
+    return;
+  }
+
+  headButtons.querySelectorAll(".thread-explorer-interaction-actions").forEach((node) => {
+    node.remove();
+  });
+
+  const editButton = actions.querySelector(".thread-explorer-edit-button");
+  const hasValidPost = Boolean(String(post?.uri || "").trim() && String(post?.cid || "").trim());
+  const interactionWrap = document.createElement("div");
+  interactionWrap.className = "thread-explorer-interaction-actions";
+
+  if (hasValidPost) {
+    const replyButton = createThreadExplorerInteractionButton("threadExplorerReplyAction", {
+      onClick: () => {
+        openComposerReplyForPost(post);
+      },
+    });
+    interactionWrap.appendChild(replyButton);
+
+    let likeTranslationKey = "threadExplorerLikeAction";
+    if (isPostLikedByViewer(post)) {
+      likeTranslationKey = "threadExplorerUnlikeAction";
+    }
+    const likeButton = createThreadExplorerInteractionButton(likeTranslationKey, {
+      active: isPostLikedByViewer(post),
+      disabled: threadExplorerLikePendingUris.has(String(post.uri || "").trim()),
+      onClick: () => {
+        void toggleLikeForLivePost(post);
+      },
+    });
+    interactionWrap.appendChild(likeButton);
+  }
+
+  if (interactionWrap.childElementCount > 0) {
+    headButtons.insertBefore(interactionWrap, anchor);
+  }
+
+  let shouldShowActions = false;
+  if (editButton && editButton.hidden !== true) {
+    shouldShowActions = true;
+  }
+  if (interactionWrap.childElementCount > 0) {
+    shouldShowActions = true;
+  }
+  actions.hidden = !shouldShowActions;
 }
 
 /**
@@ -6438,6 +7582,31 @@ function findThreadExplorerTreeNode(node, uri) {
 }
 
 /**
+ * Finds the direct parent node for one normalized Thread Explorer post URI.
+ * @param {object|null} node - Current normalized tree node.
+ * @param {string} uri - AT URI to locate below the current node.
+ * @returns {object|null} Direct parent node, or null when the URI is the root or missing.
+ */
+function findThreadExplorerParentNode(node, uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!node || !normalizedUri || !Array.isArray(node.replies)) {
+    return null;
+  }
+
+  for (const reply of node.replies) {
+    if (reply?.post?.uri === normalizedUri) {
+      return node;
+    }
+    const found = findThreadExplorerParentNode(reply, normalizedUri);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Renders loaded replies for a Thread Explorer post into the replies dialog.
  * @param {object|null} node - Normalized tree node whose replies should be listed.
  * @returns {void}
@@ -6613,7 +7782,7 @@ function handleThreadExplorerPostImageError(event) {
   if (figure) {
     figure.hidden = true;
   }
-  scheduleThreadExplorerEdgeRender();
+  refreshThreadExplorerRenderedGeometry();
 }
 
 /**
@@ -6625,7 +7794,7 @@ function handleThreadExplorerQuoteImageError(event) {
   const image = event.currentTarget;
   image.removeAttribute("src");
   image.hidden = true;
-  scheduleThreadExplorerEdgeRender();
+  refreshThreadExplorerRenderedGeometry();
 }
 
 /**
@@ -6917,6 +8086,15 @@ function createThreadExplorerEdgePath(parentRect, childRect) {
  * @returns {void}
  */
 function scheduleThreadExplorerEdgeRender() {
+  if (isThreadExplorerReplyClusterModeActive()) {
+    return;
+  }
+  if (threadExplorerDragState?.started === true) {
+    return;
+  }
+  if (threadExplorerPanInertiaFrame) {
+    return;
+  }
   if (threadExplorerEdgeRenderFrame) {
     window.cancelAnimationFrame(threadExplorerEdgeRenderFrame);
   }
@@ -6938,12 +8116,134 @@ function clearThreadExplorerEdges() {
 }
 
 /**
+ * Enables or disables the lightweight panning mode for the Thread Explorer.
+ * @param {boolean} active - Whether the viewport is currently being panned.
+ * @returns {void}
+ */
+function setThreadExplorerPanningMode(active) {
+  const isActive = active === true;
+  threadExplorerThreadTree.classList.toggle("is-dragging", isActive);
+  threadExplorerThreadStage.classList.toggle("is-panning", isActive);
+  if (!isActive) {
+    threadExplorerThreadTree.classList.remove("is-pan-armed");
+  }
+}
+
+/**
+ * Stops any running inertial panning animation in the Thread Explorer.
+ * @returns {void}
+ */
+function cancelThreadExplorerPanInertia() {
+  if (threadExplorerPanInertiaFrame) {
+    window.cancelAnimationFrame(threadExplorerPanInertiaFrame);
+    threadExplorerPanInertiaFrame = 0;
+  }
+  threadExplorerPanVelocityX = 0;
+  threadExplorerPanVelocityY = 0;
+  if (!threadExplorerDragState) {
+    setThreadExplorerPanningMode(false);
+  }
+}
+
+/**
+ * Applies one scroll delta to the Thread Explorer viewport.
+ * @param {number} deltaX - Horizontal movement delta in CSS pixels.
+ * @param {number} deltaY - Vertical movement delta in CSS pixels.
+ * @returns {void}
+ */
+function applyThreadExplorerScrollDelta(deltaX, deltaY) {
+  if (!threadExplorerThreadTree) {
+    return;
+  }
+  threadExplorerPanX += deltaX;
+  threadExplorerPanY += deltaY;
+  applyThreadExplorerStageTransform();
+}
+
+/**
+ * Updates the recent pan velocity sample for inertial Thread Explorer panning.
+ * @param {object} state - Active drag state.
+ * @param {PointerEvent} event - Current pointer move event.
+ * @returns {void}
+ */
+function updateThreadExplorerPanVelocity(state, event) {
+  if (!state) {
+    return;
+  }
+
+  const lastSampleTime = Number(state.lastSampleTime) || 0;
+  const elapsedMs = Math.max(1, event.timeStamp - lastSampleTime);
+  const moveX = event.clientX - state.lastSampleX;
+  const moveY = event.clientY - state.lastSampleY;
+
+  state.velocityX = moveX / elapsedMs;
+  state.velocityY = moveY / elapsedMs;
+  state.lastSampleX = event.clientX;
+  state.lastSampleY = event.clientY;
+  state.lastSampleTime = event.timeStamp;
+}
+
+/**
+ * Starts inertial panning after the pointer was released from the Thread Explorer.
+ * @returns {void}
+ */
+function startThreadExplorerPanInertia() {
+  cancelThreadExplorerPanInertia();
+
+  const velocityMagnitude = Math.max(Math.abs(threadExplorerPanVelocityX), Math.abs(threadExplorerPanVelocityY));
+  if (velocityMagnitude < THREAD_EXPLORER_INERTIA_MIN_VELOCITY) {
+    setThreadExplorerPanningMode(false);
+    scheduleThreadExplorerEdgeRender();
+    return;
+  }
+
+  let previousTime = performance.now();
+  setThreadExplorerPanningMode(true);
+
+  /**
+   * Advances one frame of inertial Thread Explorer panning.
+   * @param {number} now - Current animation frame timestamp.
+   * @returns {void}
+   */
+  function step(now) {
+    const elapsedMs = Math.max(1, now - previousTime);
+    previousTime = now;
+
+    const moveX = threadExplorerPanVelocityX * elapsedMs;
+    const moveY = threadExplorerPanVelocityY * elapsedMs;
+    applyThreadExplorerScrollDelta(moveX, moveY);
+
+    const frameFriction = Math.pow(THREAD_EXPLORER_INERTIA_FRICTION, elapsedMs / 16.67);
+    threadExplorerPanVelocityX *= frameFriction;
+    threadExplorerPanVelocityY *= frameFriction;
+
+    const nextMagnitude = Math.max(Math.abs(threadExplorerPanVelocityX), Math.abs(threadExplorerPanVelocityY));
+    if (nextMagnitude <= THREAD_EXPLORER_INERTIA_STOP_VELOCITY) {
+      threadExplorerPanInertiaFrame = 0;
+      threadExplorerPanVelocityX = 0;
+      threadExplorerPanVelocityY = 0;
+      setThreadExplorerPanningMode(false);
+      scheduleThreadExplorerEdgeRender();
+      return;
+    }
+
+    threadExplorerPanInertiaFrame = window.requestAnimationFrame(step);
+  }
+
+  threadExplorerPanInertiaFrame = window.requestAnimationFrame(step);
+}
+
+/**
  * Renders curved SVG edges between visible Thread Explorer parent and child cards.
  * @returns {void}
  */
 function renderThreadExplorerEdges() {
   clearThreadExplorerEdges();
   if (!threadExplorerTree) {
+    threadExplorerThreadStage.classList.remove("has-svg-edges");
+    return;
+  }
+  if (isThreadExplorerReplyClusterModeActive()) {
     threadExplorerThreadStage.classList.remove("has-svg-edges");
     return;
   }
@@ -7054,7 +8354,7 @@ function renderThreadExplorerFeedSourceSelect() {
 
   const activeFeedSource = getThreadExplorerFeedUriFromSource(threadExplorerSource) ? normalizeThreadExplorerSource(threadExplorerSource) : "";
   threadExplorerFeedSelect.value = activeFeedSource;
-  threadExplorerFeedSelect.disabled = !authAccount || threadExplorerFeedSourcesLoading;
+  threadExplorerFeedSelect.disabled = !authAccount || threadExplorerFeedSourcesLoading || isThreadExplorerForeignAccountMode();
 }
 
 /**
@@ -7486,17 +8786,86 @@ function sortThreadExplorerFeedItemsByDate(items = []) {
 }
 
 /**
+ * Returns whether any modal dialog is currently open.
+ * @returns {boolean} True when at least one dialog element is open.
+ */
+function hasOpenDialog() {
+  return Boolean(document.querySelector("dialog[open]"));
+}
+
+/**
+ * Enables or disables the Thread Explorer fullscreen reading mode.
+ * @param {boolean} nextFullscreen - Desired fullscreen state.
+ * @returns {void}
+ */
+function setThreadExplorerFullscreen(nextFullscreen) {
+  const isFullscreen = nextFullscreen === true;
+  if (threadExplorerFullscreen === isFullscreen) {
+    return;
+  }
+  threadExplorerFullscreen = isFullscreen;
+  applyThreadExplorerFullscreenState();
+  updateThreadExplorerControls();
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Toggles the Thread Explorer fullscreen reading mode.
+ * @returns {void}
+ */
+function toggleThreadExplorerFullscreen() {
+  if (threadExplorerFullscreen === true) {
+    setThreadExplorerFullscreen(false);
+    return;
+  }
+  setThreadExplorerFullscreen(true);
+}
+
+/**
  * Updates Thread Explorer toolbar controls and status text.
  * @returns {void}
  */
 function updateThreadExplorerControls() {
   const hasAuth = Boolean(authAccount);
+  const isForeignAccountMode = isThreadExplorerForeignAccountMode();
+  const isForeignActorFocusMode = isThreadExplorerForeignActorFocusMode();
   threadExplorerUrlButton.disabled = !hasAuth || threadExplorerLoadingThread;
   threadExplorerSearchesButton.disabled = !hasAuth;
   if (archiveSavedSearchesButton) {
     archiveSavedSearchesButton.disabled = !hasAuth;
   }
   threadExplorerRefreshButton.disabled = !hasAuth || threadExplorerLoadingFeed;
+  if (threadExplorerAccountInput) {
+    threadExplorerAccountInput.disabled = !hasAuth || threadExplorerLoadingFeed;
+    if (!threadExplorerAccountInput.matches(":focus")) {
+      threadExplorerAccountInput.value = normalizeThreadExplorerActor(threadExplorerAccountActor);
+    }
+  }
+  if (threadExplorerUseOwnAccountButton) {
+    threadExplorerUseOwnAccountButton.disabled = !hasAuth || threadExplorerLoadingFeed;
+  }
+  if (threadExplorerSourceField) {
+    threadExplorerSourceField.hidden = isForeignActorFocusMode;
+  }
+  if (threadExplorerAccountField) {
+    threadExplorerAccountField.hidden = isForeignActorFocusMode;
+  }
+  if (threadExplorerAccountModeField) {
+    threadExplorerAccountModeField.hidden = !isForeignAccountMode || isForeignActorFocusMode;
+  }
+  if (threadExplorerAccountModeSelect) {
+    threadExplorerAccountModeSelect.value = normalizeThreadExplorerAccountMode(threadExplorerAccountMode);
+    threadExplorerAccountModeSelect.disabled = !hasAuth || threadExplorerLoadingFeed || !isForeignAccountMode;
+  }
+  if (threadExplorerFeedPickerField) {
+    threadExplorerFeedPickerField.hidden = isForeignAccountMode || isForeignActorFocusMode;
+  }
+  if (threadExplorerFeedStatus) {
+    threadExplorerFeedStatus.hidden = isForeignActorFocusMode;
+  }
+  if (threadExplorerFeedList) {
+    threadExplorerFeedList.hidden = isForeignActorFocusMode;
+  }
   threadExplorerRootButton.disabled = !threadExplorerTree;
   threadExplorerReloadThreadButton.disabled = !hasAuth || !threadExplorerSelectedUri || threadExplorerLoadingThread;
   threadExplorerSnapshotPngButton.disabled = !threadExplorerTree || threadExplorerLoadingThread;
@@ -7505,10 +8874,27 @@ function updateThreadExplorerControls() {
   threadExplorerZoomOutButton.disabled = !threadExplorerTree;
   threadExplorerZoomResetButton.disabled = !threadExplorerTree;
   threadExplorerZoomInButton.disabled = !threadExplorerTree;
-  threadExplorerOrientationButton.disabled = !hasAuth;
-  threadExplorerCollapseButton.disabled = !threadExplorerTree;
-  threadExplorerExpandButton.disabled = !threadExplorerTree;
+  threadExplorerZoomResetButton.title = t("threadExplorerFitThreadButton");
+  threadExplorerZoomResetButton.setAttribute("aria-label", t("threadExplorerFitThreadButton"));
+  threadExplorerViewModeButton.disabled = !threadExplorerTree;
+  threadExplorerOrientationButton.disabled = !hasAuth || isThreadExplorerReplyClusterModeActive();
+  threadExplorerFullscreenButton.disabled = !hasAuth;
+  threadExplorerCollapseButton.disabled = !threadExplorerTree || isThreadExplorerReplyClusterModeActive();
+  threadExplorerExpandButton.disabled = !threadExplorerTree || isThreadExplorerReplyClusterModeActive();
+  if (threadExplorerFullscreenCloseButton) {
+    threadExplorerFullscreenCloseButton.disabled = !threadExplorerFullscreen;
+    threadExplorerFullscreenCloseButton.hidden = threadExplorerFullscreen !== true;
+    threadExplorerFullscreenCloseButton.title = t("threadExplorerExitFullscreenButton");
+    threadExplorerFullscreenCloseButton.setAttribute("aria-label", t("threadExplorerExitFullscreenButton"));
+  }
   threadExplorerZoomResetButton.textContent = `${Math.round(threadExplorerZoom * 100)}%`;
+  if (isThreadExplorerReplyClusterModeActive()) {
+    threadExplorerViewModeButton.textContent = t("threadExplorerTreeViewButton");
+    threadExplorerViewModeButton.setAttribute("aria-pressed", "true");
+  } else {
+    threadExplorerViewModeButton.textContent = t("threadExplorerReplyClusterButton");
+    threadExplorerViewModeButton.setAttribute("aria-pressed", "false");
+  }
   let saveButtonLabel = t("threadExplorerSaveButton");
   let saveButtonActive = false;
   if (isCurrentThreadExplorerThreadSaved()) {
@@ -7525,6 +8911,15 @@ function updateThreadExplorerControls() {
     threadExplorerOrientationButton.textContent = t("threadExplorerHorizontalButton");
     threadExplorerOrientationButton.setAttribute("aria-pressed", "false");
   }
+  if (threadExplorerFullscreen === true) {
+    threadExplorerFullscreenButton.textContent = t("threadExplorerExitFullscreenButton");
+    threadExplorerFullscreenButton.setAttribute("aria-pressed", "true");
+    threadExplorerFullscreenButton.setAttribute("aria-label", t("threadExplorerExitFullscreenButton"));
+  } else {
+    threadExplorerFullscreenButton.textContent = t("threadExplorerFullscreenButton");
+    threadExplorerFullscreenButton.setAttribute("aria-pressed", "false");
+    threadExplorerFullscreenButton.setAttribute("aria-label", t("threadExplorerFullscreenButton"));
+  }
 
   if (threadExplorerSourceSelect) {
     if (["mutuals", "follows", "followers"].includes(threadExplorerSource)) {
@@ -7532,8 +8927,9 @@ function updateThreadExplorerControls() {
     } else {
       threadExplorerSourceSelect.value = "follows";
     }
-    threadExplorerSourceSelect.disabled = !hasAuth || threadExplorerLoadingFeed;
+    threadExplorerSourceSelect.disabled = !hasAuth || threadExplorerLoadingFeed || isForeignAccountMode;
   }
+  renderThreadExplorerAccountNote();
   renderThreadExplorerFeedSourceSelect();
 }
 
@@ -7542,6 +8938,7 @@ function updateThreadExplorerControls() {
  * @returns {void}
  */
 function renderThreadExplorerWorkspace() {
+  applyThreadExplorerFullscreenState();
   applyThreadExplorerOrientation();
   updateThreadExplorerControls();
   renderThreadExplorerFeed();
@@ -7599,6 +8996,19 @@ function applyThreadExplorerOrientation() {
   threadExplorerThreadTree.classList.toggle("is-vertical", !isHorizontal);
   threadExplorerThreadStage.classList.toggle("is-horizontal", isHorizontal);
   threadExplorerThreadStage.classList.toggle("is-vertical", !isHorizontal);
+  threadExplorerThreadTree.classList.toggle("is-reply-cluster-mode", isThreadExplorerReplyClusterModeActive());
+  threadExplorerThreadStage.classList.toggle("is-reply-cluster-mode", isThreadExplorerReplyClusterModeActive());
+}
+
+/**
+ * Applies the current Thread Explorer pan and zoom to the stage element.
+ * @returns {void}
+ */
+function applyThreadExplorerStageTransform() {
+  threadExplorerThreadStage.style.setProperty("--thread-explorer-zoom", String(threadExplorerZoom));
+  threadExplorerThreadStage.style.setProperty("--thread-explorer-pan-x", `${threadExplorerPanX}px`);
+  threadExplorerThreadStage.style.setProperty("--thread-explorer-pan-y", `${threadExplorerPanY}px`);
+  threadExplorerZoomResetButton.textContent = `${Math.round(threadExplorerZoom * 100)}%`;
 }
 
 /**
@@ -7606,8 +9016,7 @@ function applyThreadExplorerOrientation() {
  * @returns {void}
  */
 function applyThreadExplorerZoom() {
-  threadExplorerThreadStage.style.setProperty("--thread-explorer-zoom", String(threadExplorerZoom));
-  threadExplorerZoomResetButton.textContent = `${Math.round(threadExplorerZoom * 100)}%`;
+  applyThreadExplorerStageTransform();
 }
 
 /**
@@ -7621,6 +9030,9 @@ function setThreadExplorerZoom(nextZoom) {
     return;
   }
   threadExplorerZoom = Math.min(2, Math.max(0.01, numericZoom));
+  if (Math.abs(threadExplorerZoom - 1) > 0.01) {
+    threadExplorerLastManualZoomBeforeReset = threadExplorerZoom;
+  }
   applyThreadExplorerZoom();
 }
 
@@ -7629,6 +9041,9 @@ function setThreadExplorerZoom(nextZoom) {
  * @returns {void}
  */
 function toggleThreadExplorerOrientation() {
+  if (isThreadExplorerReplyClusterModeActive()) {
+    return;
+  }
   if (threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
     threadExplorerOrientation = THREAD_EXPLORER_ORIENTATION_VERTICAL;
   } else {
@@ -7651,12 +9066,28 @@ function toggleThreadExplorerOrientation() {
 function zoomThreadExplorerAtPoint(factor, clientX, clientY) {
   const previousZoom = threadExplorerZoom;
   const bounds = threadExplorerThreadTree.getBoundingClientRect();
-  const offsetX = clientX - bounds.left + threadExplorerThreadTree.scrollLeft;
-  const offsetY = clientY - bounds.top + threadExplorerThreadTree.scrollTop;
+  const localX = clientX - bounds.left;
+  const localY = clientY - bounds.top;
+  const stageX = (localX - threadExplorerPanX) / previousZoom;
+  const stageY = (localY - threadExplorerPanY) / previousZoom;
   setThreadExplorerZoom(previousZoom * factor);
-  const ratio = threadExplorerZoom / previousZoom;
-  threadExplorerThreadTree.scrollLeft = (offsetX * ratio) - (clientX - bounds.left);
-  threadExplorerThreadTree.scrollTop = (offsetY * ratio) - (clientY - bounds.top);
+  threadExplorerPanX = localX - (stageX * threadExplorerZoom);
+  threadExplorerPanY = localY - (stageY * threadExplorerZoom);
+  applyThreadExplorerStageTransform();
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Sets one absolute Thread Explorer zoom around the current viewport center.
+ * @param {number} nextZoom - Desired absolute zoom factor.
+ * @returns {void}
+ */
+function setThreadExplorerZoomAtViewportCenter(nextZoom) {
+  const bounds = threadExplorerThreadTree.getBoundingClientRect();
+  const centerX = bounds.left + (bounds.width / 2);
+  const centerY = bounds.top + (bounds.height / 2);
+  const currentZoom = Math.max(0.01, Number(threadExplorerZoom) || 1);
+  zoomThreadExplorerAtPoint(nextZoom / currentZoom, centerX, centerY);
 }
 
 /**
@@ -7731,11 +9162,6 @@ function renderThreadExplorerActorFocus() {
   threadExplorerActorFocusItems.forEach((item) => {
     threadExplorerActorFeedList.appendChild(createThreadExplorerFeedItemFragment(item));
   });
-
-  if (threadExplorerActorMoreButton) {
-    threadExplorerActorMoreButton.hidden = !threadExplorerActorFocusHasMore;
-    threadExplorerActorMoreButton.disabled = threadExplorerActorFocusLoading;
-  }
 }
 
 /**
@@ -7745,11 +9171,14 @@ function renderThreadExplorerActorFocus() {
 function renderThreadExplorerFeed() {
   threadExplorerFeedList.replaceChildren();
   renderThreadExplorerActorFocus();
+  const isForeignAccountMode = isThreadExplorerForeignAccountMode();
 
   if (threadExplorerFeedError) {
     threadExplorerFeedStatus.textContent = threadExplorerFeedError;
   } else if (threadExplorerLoadingFeed) {
-    if (threadExplorerItems.length > 0) {
+    if (isForeignAccountMode) {
+      threadExplorerFeedStatus.textContent = t("threadExplorerActorFocusLoading");
+    } else if (threadExplorerItems.length > 0) {
       threadExplorerFeedStatus.textContent = t("threadExplorerFeedLoadingMore", {
         count: formatCount(threadExplorerItems.length),
       });
@@ -7757,9 +9186,17 @@ function renderThreadExplorerFeed() {
       threadExplorerFeedStatus.textContent = t("threadExplorerFeedLoading");
     }
   } else if (!threadExplorerItems.length) {
-    threadExplorerFeedStatus.textContent = t("threadExplorerFeedEmpty");
+    if (isForeignAccountMode) {
+      threadExplorerFeedStatus.textContent = t("threadExplorerActorFocusEmpty");
+    } else {
+      threadExplorerFeedStatus.textContent = t("threadExplorerFeedEmpty");
+    }
   } else {
-    if (getThreadExplorerSearchIdFromSource(threadExplorerSource)) {
+    if (isForeignAccountMode) {
+      threadExplorerFeedStatus.textContent = t("threadExplorerActorFocusLoaded", {
+        count: formatCount(threadExplorerItems.length),
+      });
+    } else if (getThreadExplorerSearchIdFromSource(threadExplorerSource)) {
       threadExplorerFeedStatus.textContent = t("threadExplorerSearchLoaded", {
         count: formatCount(threadExplorerItems.length),
       });
@@ -7822,6 +9259,21 @@ function handleThreadExplorerFeedScroll() {
 }
 
 /**
+ * Loads the next Actor-Fokus page when the focus list is scrolled near the bottom.
+ * @returns {void}
+ */
+function handleThreadExplorerActorFocusScroll() {
+  if (!threadExplorerActorFocusHasMore || threadExplorerActorFocusLoading || !threadExplorerActorFeedList) {
+    return;
+  }
+  const remaining = threadExplorerActorFeedList.scrollHeight - threadExplorerActorFeedList.scrollTop - threadExplorerActorFeedList.clientHeight;
+  if (remaining > 240) {
+    return;
+  }
+  void loadThreadExplorerActorFocusFeed({ append: true });
+}
+
+/**
  * Switches the Thread Explorer to the selected pinned feed.
  * @returns {void}
  */
@@ -7867,7 +9319,7 @@ async function loadThreadExplorerActorFocusFeed(options = {}) {
 
   threadExplorerActorFocusLoading = true;
   threadExplorerActorFocusError = "";
-  renderThreadExplorerActorFocus();
+  renderThreadExplorerWorkspace();
   try {
     const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_ACTOR_FEED", {
       actor: getThreadExplorerActorFocusId(threadExplorerActorFocusActor),
@@ -7891,7 +9343,7 @@ async function loadThreadExplorerActorFocusFeed(options = {}) {
     threadExplorerActorFocusError = error.message || t("threadExplorerActorFocusFailed");
   } finally {
     threadExplorerActorFocusLoading = false;
-    renderThreadExplorerActorFocus();
+    renderThreadExplorerWorkspace();
   }
 }
 
@@ -7906,13 +9358,27 @@ function openThreadExplorerActorFocus(actor = {}) {
     return;
   }
 
+  const isOwnActor = isThreadExplorerOwnActor(actor);
+  if (!isOwnActor) {
+    if (!isThreadExplorerForeignActorFocusMode()) {
+      threadExplorerAccountActorBeforeFocus = normalizeThreadExplorerActor(threadExplorerAccountActor);
+      threadExplorerAccountModeBeforeFocus = normalizeThreadExplorerAccountMode(threadExplorerAccountMode);
+    }
+    threadExplorerAccountActor = normalizeThreadExplorerActor(actor.handle || actor.did || "");
+    if (threadExplorerAccountInput) {
+      threadExplorerAccountInput.value = threadExplorerAccountActor;
+    }
+    threadExplorerAccountError = "";
+    threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(threadExplorerAccountMode);
+  }
   threadExplorerActorFocusActor = { ...actor };
   threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(threadExplorerActorFocusMode);
   threadExplorerActorFocusItems = [];
   threadExplorerActorFocusCursor = "";
   threadExplorerActorFocusHasMore = false;
   threadExplorerActorFocusError = "";
-  renderThreadExplorerActorFocus();
+  renderThreadExplorerWorkspace();
+  void persistSettings();
   void loadThreadExplorerActorFocusFeed({ append: false });
 }
 
@@ -7921,13 +9387,33 @@ function openThreadExplorerActorFocus(actor = {}) {
  * @returns {void}
  */
 function closeThreadExplorerActorFocus() {
+  const shouldRestoreOwnContext = isThreadExplorerForeignActorFocusMode();
   threadExplorerActorFocusActor = null;
   threadExplorerActorFocusItems = [];
   threadExplorerActorFocusCursor = "";
   threadExplorerActorFocusHasMore = false;
   threadExplorerActorFocusLoading = false;
   threadExplorerActorFocusError = "";
-  renderThreadExplorerActorFocus();
+  if (shouldRestoreOwnContext) {
+    threadExplorerAccountActor = normalizeThreadExplorerActor(threadExplorerAccountActorBeforeFocus);
+    threadExplorerAccountMode = normalizeThreadExplorerAccountMode(threadExplorerAccountModeBeforeFocus);
+    threadExplorerAccountError = "";
+    if (threadExplorerAccountInput) {
+      threadExplorerAccountInput.value = threadExplorerAccountActor;
+    }
+    if (threadExplorerAccountModeSelect) {
+      threadExplorerAccountModeSelect.value = threadExplorerAccountMode;
+    }
+    threadExplorerAccountActorBeforeFocus = "";
+    threadExplorerAccountModeBeforeFocus = "posts";
+    void loadThreadExplorerFeedSources();
+  }
+  renderThreadExplorerWorkspace();
+  void persistSettings();
+  if (shouldRestoreOwnContext && authAccount && !threadExplorerLoadingFeed) {
+    void loadThreadExplorerFeed({ reset: true, clearSelection: true });
+    return;
+  }
 }
 
 /**
@@ -7978,9 +9464,11 @@ function handleThreadExplorerRepliesCountClick(event) {
  */
 function renderThreadExplorerTree() {
   resetThreadExplorerLazyCardObserver();
+  threadExplorerReplyClusterLayoutState = null;
   threadExplorerThreadStage.replaceChildren();
   threadExplorerThreadStage.classList.remove("has-svg-edges");
-  applyThreadExplorerZoom();
+  threadExplorerThreadStage.classList.remove("is-reply-cluster-mode");
+  applyThreadExplorerStageTransform();
 
   if (threadExplorerThreadError) {
     threadExplorerThreadTitle.textContent = t("threadExplorerThreadLoadedTitle", {
@@ -8012,11 +9500,17 @@ function renderThreadExplorerTree() {
     count: formatCount(count),
   });
 
-  const rootList = document.createElement("ul");
-  rootList.appendChild(createThreadExplorerNode(threadExplorerTree));
-  threadExplorerThreadStage.appendChild(rootList);
+  if (threadExplorerViewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
+    renderThreadExplorerReplyCluster();
+  } else {
+    const rootList = document.createElement("ul");
+    rootList.appendChild(createThreadExplorerNode(threadExplorerTree));
+    threadExplorerThreadStage.appendChild(rootList);
+  }
   hydrateVisibleThreadExplorerCards();
-  scheduleThreadExplorerEdgeRender();
+  if (threadExplorerViewMode !== THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
+    scheduleThreadExplorerEdgeRender();
+  }
 }
 
 /**
@@ -8083,11 +9577,16 @@ function hydrateThreadExplorerCardContent(card = null) {
   markThreadExplorerAvatarImage(avatar, post.author);
   setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
   renderThreadExplorerImages(post, gallery);
+  syncThreadExplorerPostCardImageShape(card, gallery);
   renderThreadExplorerExternalCard(post, card);
   renderThreadExplorerQuoteCard(post, card);
   card.dataset.hydrated = "true";
   card.classList.remove("is-awaiting-content");
-  scheduleThreadExplorerEdgeRender();
+  if (isThreadExplorerReplyClusterModeActive()) {
+    layoutThreadExplorerReplyCluster(threadExplorerReplyClusterLayoutState);
+  } else {
+    scheduleThreadExplorerEdgeRender();
+  }
 }
 
 /**
@@ -8178,11 +9677,16 @@ function getChronologicalThreadExplorerReplies(replies) {
 }
 
 /**
- * Creates one Thread Explorer tree node from the node template.
+ * Creates a rendered Thread Explorer post item from the shared node template.
  * @param {object} node - Normalized Thread Explorer tree node.
- * @returns {HTMLElement} A rendered list item containing the post and child replies.
+ * @param {object} options - Rendering options for this shared post item.
+ * @param {boolean} options.renderReplies - Whether child replies should be rendered recursively.
+ * @param {boolean} options.showToggle - Whether the collapse toggle should stay visible.
+ * @returns {{item:HTMLElement, card:HTMLElement, children:HTMLElement, post:object, replies:Array<object>}} Rendered node parts.
  */
-function createThreadExplorerNode(node) {
+function createThreadExplorerRenderedItem(node, options = {}) {
+  const renderReplies = options.renderReplies !== false;
+  const showToggle = options.showToggle !== false;
   const fragment = threadExplorerNodeTemplate.content.cloneNode(true);
   const item = fragment.querySelector(".thread-explorer-node-item");
   const toggle = fragment.querySelector(".thread-explorer-node-toggle");
@@ -8193,6 +9697,7 @@ function createThreadExplorerNode(node) {
   const handle = fragment.querySelector(".thread-explorer-post-handle");
   const meta = fragment.querySelector(".thread-explorer-post-meta");
   const viewLink = fragment.querySelector(".thread-explorer-view-link");
+  const headButtons = fragment.querySelector(".thread-explorer-post-head-buttons");
   const editButton = fragment.querySelector(".thread-explorer-edit-button");
   const actions = fragment.querySelector(".thread-explorer-post-actions");
   const text = fragment.querySelector(".thread-explorer-post-text");
@@ -8241,7 +9746,8 @@ function createThreadExplorerNode(node) {
     }
     meta.textContent = formatThreadExplorerDate(post.createdAt || post.indexedAt);
     renderThreadExplorerViewLink(post, viewLink);
-    actions.hidden = !renderThreadExplorerEditButton(post, editButton);
+    renderThreadExplorerEditButton(post, editButton);
+    renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink);
     text.textContent = getThreadExplorerPostDisplayText(post) || t("threadExplorerNoText");
     renderThreadExplorerCounts(post, counts);
     actorTriggers.forEach((trigger) => {
@@ -8255,24 +9761,753 @@ function createThreadExplorerNode(node) {
     prepareThreadExplorerCardHydration(card, post);
   }
 
-  if (!replies.length) {
+  card.addEventListener("click", handleThreadExplorerCardClick);
+  card.addEventListener("dblclick", handleThreadExplorerCardDoubleClick);
+  card.addEventListener("pointerup", handleThreadExplorerCardPointerUp);
+
+  if (!showToggle || !replies.length) {
     toggle.classList.add("is-hidden");
     toggle.disabled = true;
   } else {
-    if (threadExplorerCollapsedUris.has(post.uri)) {
-      toggle.textContent = "+";
+    if (isThreadExplorerReplyClusterModeActive()) {
+      if (isThreadExplorerReplyClusterExpanded(post.uri)) {
+        toggle.textContent = "-";
+      } else {
+        toggle.textContent = "+";
+      }
     } else {
-      toggle.textContent = "-";
+      if (threadExplorerCollapsedUris.has(post.uri)) {
+        toggle.textContent = "+";
+      } else {
+        toggle.textContent = "-";
+      }
     }
     toggle.dataset.uri = post.uri;
     toggle.addEventListener("click", handleThreadExplorerNodeToggleClick);
   }
 
+  if (renderReplies) {
+    replies.forEach((reply) => {
+      children.appendChild(createThreadExplorerNode(reply));
+    });
+  } else {
+    children.remove();
+  }
+
+  return {
+    item,
+    card,
+    children,
+    post,
+    replies,
+  };
+}
+
+/**
+ * Creates one Thread Explorer tree node from the node template.
+ * @param {object} node - Normalized Thread Explorer tree node.
+ * @returns {HTMLElement} A rendered list item containing the post and child replies.
+ */
+function createThreadExplorerNode(node) {
+  return createThreadExplorerRenderedItem(node, {
+    renderReplies: true,
+    showToggle: true,
+  }).item;
+}
+
+/**
+ * Returns whether the Thread Explorer currently renders the reply-cluster mode.
+ * @returns {boolean} True when the reply-cluster mode is active.
+ */
+function isThreadExplorerReplyClusterModeActive() {
+  return threadExplorerViewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER;
+}
+
+/**
+ * Ensures that the current thread root is always expanded in reply-cluster mode.
+ * @returns {void}
+ */
+function ensureThreadExplorerReplyClusterRootExpanded() {
+  const rootUri = String(threadExplorerTree?.post?.uri || "").trim();
+  if (!rootUri) {
+    return;
+  }
+
+  threadExplorerReplyClusterExpandedUris.add(rootUri);
+}
+
+/**
+ * Expands the complete loaded reply-cluster tree.
+ * @param {object|null} node - Normalized Thread Explorer tree node.
+ * @returns {void}
+ */
+function expandAllThreadExplorerReplyClusterNodes(node) {
+  if (!node || !node.post?.uri) {
+    return;
+  }
+
+  threadExplorerReplyClusterExpandedUris.add(String(node.post.uri).trim());
+  const replies = Array.isArray(node.replies) ? node.replies : [];
   replies.forEach((reply) => {
-    children.appendChild(createThreadExplorerNode(reply));
+    expandAllThreadExplorerReplyClusterNodes(reply);
+  });
+}
+
+/**
+ * Returns whether one reply-cluster node is currently expanded.
+ * @param {string} uri - AT URI of the cluster node.
+ * @returns {boolean} True when the node is expanded or is the current root.
+ */
+function isThreadExplorerReplyClusterExpanded(uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri) {
+    return false;
+  }
+
+  ensureThreadExplorerReplyClusterRootExpanded();
+  return threadExplorerReplyClusterExpandedUris.has(normalizedUri);
+}
+
+/**
+ * Toggles one reply-cluster subtree and keeps the current open state for every other node.
+ * @param {string} uri - AT URI of the subtree root that should toggle.
+ * @returns {void}
+ */
+function toggleThreadExplorerReplyClusterNode(uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri) {
+    return;
+  }
+
+  if (threadExplorerReplyClusterExpandedUris.has(normalizedUri)) {
+    threadExplorerReplyClusterExpandedUris.delete(normalizedUri);
+  } else {
+    threadExplorerReplyClusterExpandedUris.add(normalizedUri);
+  }
+  renderThreadExplorerTree();
+}
+
+/**
+ * Refreshes rendered Thread Explorer geometry after media changed size.
+ * @returns {void}
+ */
+function refreshThreadExplorerRenderedGeometry() {
+  if (isThreadExplorerReplyClusterModeActive()) {
+    layoutThreadExplorerReplyCluster(threadExplorerReplyClusterLayoutState);
+    return;
+  }
+
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Applies one absolute center position to a reply-cluster card.
+ * @param {HTMLElement|null} item - Cluster item element to move.
+ * @param {number} centerX - Horizontal stage-space center.
+ * @param {number} centerY - Vertical stage-space center.
+ * @returns {void}
+ */
+function setThreadExplorerReplyClusterItemPosition(item, centerX, centerY) {
+  if (!item) {
+    return;
+  }
+
+  item.style.setProperty("--thread-explorer-cluster-x", `${Math.round(centerX)}px`);
+  item.style.setProperty("--thread-explorer-cluster-y", `${Math.round(centerY)}px`);
+}
+
+/**
+ * Returns the edge anchor point where a reply-cluster line should leave one card.
+ * @param {{x:number, y:number}} center - Card center in stage space.
+ * @param {{width:number, height:number}} size - Rendered card size.
+ * @param {{x:number, y:number}} target - Opposing card center that defines the direction.
+ * @returns {{x:number, y:number}} Anchor point on the card edge.
+ */
+function getThreadExplorerReplyClusterEdgeAnchor(center, size, target) {
+  const deltaX = Number(target?.x) - Number(center?.x);
+  const deltaY = Number(target?.y) - Number(center?.y);
+  const distance = Math.hypot(deltaX, deltaY);
+  if (!distance || !size) {
+    return {
+      x: Number(center?.x) || 0,
+      y: Number(center?.y) || 0,
+    };
+  }
+
+  const directionX = deltaX / distance;
+  const directionY = deltaY / distance;
+  const halfWidth = Math.max(1, Number(size.width) || 0) / 2;
+  const halfHeight = Math.max(1, Number(size.height) || 0) / 2;
+  let scaleX = Number.POSITIVE_INFINITY;
+  let scaleY = Number.POSITIVE_INFINITY;
+  if (Math.abs(directionX) > 0.0001) {
+    scaleX = halfWidth / Math.abs(directionX);
+  }
+  if (Math.abs(directionY) > 0.0001) {
+    scaleY = halfHeight / Math.abs(directionY);
+  }
+  const edgeDistance = Math.min(scaleX, scaleY);
+  return {
+    x: center.x + (directionX * edgeDistance),
+    y: center.y + (directionY * edgeDistance),
+  };
+}
+
+/**
+ * Measures one rendered reply-cluster card.
+ * @param {HTMLElement|null} item - Cluster item element to measure.
+ * @returns {{width:number, height:number}} Rendered size in CSS pixels.
+ */
+function getThreadExplorerReplyClusterItemSize(item) {
+  if (!item) {
+    return {
+      width: 0,
+      height: 0,
+    };
+  }
+
+  return {
+    width: Math.max(0, item.offsetWidth),
+    height: Math.max(0, item.offsetHeight),
+  };
+}
+
+/**
+ * Returns the current rectangle of one positioned reply-cluster item.
+ * @param {object|null} renderNode - Positioned reply-cluster render node.
+ * @returns {{left:number, top:number, right:number, bottom:number, width:number, height:number}} Rectangle in stage space.
+ */
+function getThreadExplorerReplyClusterNodeRect(renderNode) {
+  const itemSize = renderNode?.itemSize || getThreadExplorerReplyClusterItemSize(renderNode?.item || null);
+  const centerX = Number(renderNode?.position?.x) || 0;
+  const centerY = Number(renderNode?.position?.y) || 0;
+  return {
+    left: centerX - (itemSize.width / 2),
+    top: centerY - (itemSize.height / 2),
+    right: centerX + (itemSize.width / 2),
+    bottom: centerY + (itemSize.height / 2),
+    width: itemSize.width,
+    height: itemSize.height,
+  };
+}
+
+/**
+ * Applies one new reply-cluster center position to a positioned render node.
+ * @param {object|null} renderNode - Positioned reply-cluster render node.
+ * @param {number} nextX - New center X position in stage space.
+ * @param {number} nextY - New center Y position in stage space.
+ * @returns {void}
+ */
+function setThreadExplorerReplyClusterNodePosition(renderNode, nextX, nextY) {
+  if (!renderNode) {
+    return;
+  }
+
+  renderNode.position = {
+    x: nextX,
+    y: nextY,
+  };
+  setThreadExplorerReplyClusterItemPosition(renderNode.item, nextX, nextY);
+}
+
+/**
+ * Pushes overlapping reply-cluster cards apart after media growth changed their size.
+ * @param {object|null} layoutState - Current reply-cluster render state.
+ * @returns {void}
+ */
+function resolveThreadExplorerReplyClusterOverlaps(layoutState) {
+  if (!layoutState?.rootRenderNode || !Array.isArray(layoutState.positionedItems) || layoutState.positionedItems.length < 2) {
+    return;
+  }
+
+  const rootNode = layoutState.rootRenderNode;
+  const collisionPadding = 24;
+  const maxIterations = 18;
+
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    let hasMoved = false;
+
+    for (let indexA = 0; indexA < layoutState.positionedItems.length; indexA += 1) {
+      const nodeA = layoutState.positionedItems[indexA];
+      const rectA = getThreadExplorerReplyClusterNodeRect(nodeA);
+
+      for (let indexB = indexA + 1; indexB < layoutState.positionedItems.length; indexB += 1) {
+        const nodeB = layoutState.positionedItems[indexB];
+        const rectB = getThreadExplorerReplyClusterNodeRect(nodeB);
+        const overlapX = Math.min(rectA.right, rectB.right) - Math.max(rectA.left, rectB.left);
+        const overlapY = Math.min(rectA.bottom, rectB.bottom) - Math.max(rectA.top, rectB.top);
+        if (overlapX <= 0 || overlapY <= 0) {
+          continue;
+        }
+
+        let deltaX = (Number(nodeB.position?.x) || 0) - (Number(nodeA.position?.x) || 0);
+        let deltaY = (Number(nodeB.position?.y) || 0) - (Number(nodeA.position?.y) || 0);
+        if (!deltaX && !deltaY) {
+          deltaX = (Number(nodeB.position?.x) || 0) - (Number(rootNode.position?.x) || 0);
+          deltaY = (Number(nodeB.position?.y) || 0) - (Number(rootNode.position?.y) || 0);
+        }
+        if (!deltaX && !deltaY) {
+          deltaY = 1;
+        }
+
+        const distance = Math.hypot(deltaX, deltaY) || 1;
+        const directionX = deltaX / distance;
+        const directionY = deltaY / distance;
+        const pushDistance = Math.max(overlapX, overlapY) + collisionPadding;
+
+        if (nodeA === rootNode) {
+          setThreadExplorerReplyClusterNodePosition(
+            nodeB,
+            (Number(nodeB.position?.x) || 0) + (directionX * pushDistance),
+            (Number(nodeB.position?.y) || 0) + (directionY * pushDistance),
+          );
+        } else if (nodeB === rootNode) {
+          setThreadExplorerReplyClusterNodePosition(
+            nodeA,
+            (Number(nodeA.position?.x) || 0) - (directionX * pushDistance),
+            (Number(nodeA.position?.y) || 0) - (directionY * pushDistance),
+          );
+        } else {
+          const halfPush = pushDistance / 2;
+          setThreadExplorerReplyClusterNodePosition(
+            nodeA,
+            (Number(nodeA.position?.x) || 0) - (directionX * halfPush),
+            (Number(nodeA.position?.y) || 0) - (directionY * halfPush),
+          );
+          setThreadExplorerReplyClusterNodePosition(
+            nodeB,
+            (Number(nodeB.position?.x) || 0) + (directionX * halfPush),
+            (Number(nodeB.position?.y) || 0) + (directionY * halfPush),
+          );
+        }
+
+        hasMoved = true;
+      }
+    }
+
+    if (!hasMoved) {
+      break;
+    }
+  }
+}
+
+/**
+ * Measures one recursive reply-cluster subtree and returns its required bounds.
+ * @param {object|null} renderNode - Recursive reply-cluster render node.
+ * @returns {{width:number, height:number}} Required subtree bounds.
+ */
+function measureThreadExplorerReplyClusterSubtree(renderNode) {
+  if (!renderNode) {
+    return {
+      width: 0,
+      height: 0,
+    };
+  }
+
+  const itemSize = getThreadExplorerReplyClusterItemSize(renderNode.item);
+  renderNode.itemSize = itemSize;
+  if (!Array.isArray(renderNode.children) || renderNode.children.length === 0) {
+    renderNode.subtreeWidth = Math.max(220, itemSize.width);
+    renderNode.subtreeHeight = Math.max(120, itemSize.height);
+    return {
+      width: renderNode.subtreeWidth,
+      height: renderNode.subtreeHeight,
+    };
+  }
+
+  const childGap = 48;
+  let totalChildWidth = 0;
+  let maxChildHeight = 0;
+  renderNode.children.forEach((childNode, childIndex) => {
+    const childBounds = measureThreadExplorerReplyClusterSubtree(childNode);
+    totalChildWidth += childBounds.width;
+    if (childIndex > 0) {
+      totalChildWidth += childGap;
+    }
+    maxChildHeight = Math.max(maxChildHeight, childBounds.height);
   });
 
+  renderNode.subtreeWidth = Math.max(itemSize.width, totalChildWidth);
+  renderNode.subtreeHeight = itemSize.height + 84 + maxChildHeight;
+  return {
+    width: renderNode.subtreeWidth,
+    height: renderNode.subtreeHeight,
+  };
+}
+
+/**
+ * Returns the combined breadth of all direct child subtrees including gaps.
+ * @param {object|null} renderNode - Recursive reply-cluster render node.
+ * @param {number} childGap - Gap between sibling subtrees in local layout space.
+ * @returns {number} Total local breadth for the child row.
+ */
+function getThreadExplorerReplyClusterChildrenBreadth(renderNode, childGap) {
+  if (!renderNode || !Array.isArray(renderNode.children) || renderNode.children.length === 0) {
+    return 0;
+  }
+
+  let totalBreadth = 0;
+  renderNode.children.forEach((childNode, childIndex) => {
+    totalBreadth += childNode.subtreeWidth;
+    if (childIndex > 0) {
+      totalBreadth += childGap;
+    }
+  });
+  return totalBreadth;
+}
+
+/**
+ * Places one reply-cluster branch so that children continue away from the root direction.
+ * @param {object|null} renderNode - Recursive reply-cluster render node.
+ * @param {number} centerX - Branch center X in stage space.
+ * @param {number} centerY - Branch center Y in stage space.
+ * @param {number} angle - Outward branch angle in radians.
+ * @param {Array<object>} positionedItems - Flat array that receives positioned cards.
+ * @returns {void}
+ */
+function placeThreadExplorerReplyClusterSubtree(renderNode, centerX, centerY, angle, positionedItems) {
+  if (!renderNode) {
+    return;
+  }
+
+  renderNode.position = {
+    x: centerX,
+    y: centerY,
+  };
+  setThreadExplorerReplyClusterItemPosition(renderNode.item, centerX, centerY);
+  positionedItems.push(renderNode);
+
+  if (!Array.isArray(renderNode.children) || renderNode.children.length === 0) {
+    return;
+  }
+
+  const childGap = 48;
+  const childrenBreadth = getThreadExplorerReplyClusterChildrenBreadth(renderNode, childGap);
+  const radialX = Math.cos(angle);
+  const radialY = Math.sin(angle);
+  const tangentX = -Math.sin(angle);
+  const tangentY = Math.cos(angle);
+  let childOffset = -childrenBreadth / 2;
+  const outwardDistance = (renderNode.itemSize.height / 2) + 84;
+  renderNode.children.forEach((childNode) => {
+    const childCenterOffset = childOffset + (childNode.subtreeWidth / 2);
+    const childCenterDistance = outwardDistance + (childNode.itemSize.height / 2);
+    const childCenterX = centerX + (tangentX * childCenterOffset) + (radialX * childCenterDistance);
+    const childCenterY = centerY + (tangentY * childCenterOffset) + (radialY * childCenterDistance);
+    placeThreadExplorerReplyClusterSubtree(childNode, childCenterX, childCenterY, angle, positionedItems);
+    childOffset += childNode.subtreeWidth + childGap;
+  });
+}
+
+/**
+ * Returns stable star angles for the direct replies around the cluster root.
+ * @param {Array<object>} directReplies - Direct reply subtrees around the root.
+ * @param {number} clusterRadius - Radius used for the first reply ring.
+ * @returns {number[]} One outward angle per direct reply in radians.
+ */
+function getThreadExplorerReplyClusterRootChildAngles(directReplies, clusterRadius) {
+  if (!Array.isArray(directReplies) || directReplies.length === 0) {
+    return [];
+  }
+
+  if (directReplies.length === 1) {
+    return [Math.PI / 2];
+  }
+
+  const arcPadding = 56;
+  let totalAngularSpan = 0;
+  directReplies.forEach((childNode) => {
+    totalAngularSpan += (childNode.subtreeWidth + arcPadding) / Math.max(1, clusterRadius);
+  });
+
+  if (totalAngularSpan <= 0) {
+    return [];
+  }
+
+  const normalizedSpan = Math.min(Math.PI * 2, totalAngularSpan);
+  let currentAngle = (-Math.PI / 2) - (normalizedSpan / 2);
+  const angles = [];
+  directReplies.forEach((childNode) => {
+    const childSpan = (childNode.subtreeWidth + arcPadding) / Math.max(1, clusterRadius);
+    const centeredSpan = Math.min(childSpan, Math.PI * 2);
+    angles.push(currentAngle + (centeredSpan / 2));
+    currentAngle += centeredSpan;
+  });
+  return angles;
+}
+
+/**
+ * Renders every visible reply-cluster edge for the positioned recursive tree.
+ * @param {object|null} layoutState - Current reply-cluster render state.
+ * @returns {void}
+ */
+function renderThreadExplorerReplyClusterEdges(layoutState) {
+  if (!layoutState?.edgeLayer || !Array.isArray(layoutState.positionedItems)) {
+    return;
+  }
+
+  layoutState.edgeLayer.replaceChildren();
+  layoutState.positionedItems.forEach((renderNode) => {
+    if (!Array.isArray(renderNode.children) || renderNode.children.length === 0) {
+      return;
+    }
+
+    const parentSize = getThreadExplorerReplyClusterItemSize(renderNode.item);
+    renderNode.children.forEach((childNode) => {
+      const childSize = getThreadExplorerReplyClusterItemSize(childNode.item);
+      const start = getThreadExplorerReplyClusterEdgeAnchor(renderNode.position, parentSize, childNode.position);
+      const end = getThreadExplorerReplyClusterEdgeAnchor(childNode.position, childSize, renderNode.position);
+      appendThreadExplorerReplyClusterEdge(layoutState.edgeLayer, start, end, "thread-explorer-edge-reply");
+    });
+  });
+}
+
+/**
+ * Applies the positioned recursive reply-cluster tree to the stage and updates bounds.
+ * @param {object|null} layoutState - Current reply-cluster render state.
+ * @returns {void}
+ */
+function applyThreadExplorerReplyClusterBounds(layoutState) {
+  if (!layoutState?.cluster || !Array.isArray(layoutState.positionedItems)) {
+    return;
+  }
+
+  let minLeft = Number.POSITIVE_INFINITY;
+  let minTop = Number.POSITIVE_INFINITY;
+  let maxRight = Number.NEGATIVE_INFINITY;
+  let maxBottom = Number.NEGATIVE_INFINITY;
+  layoutState.positionedItems.forEach((renderNode) => {
+    const itemSize = getThreadExplorerReplyClusterItemSize(renderNode.item);
+    minLeft = Math.min(minLeft, renderNode.position.x - (itemSize.width / 2));
+    minTop = Math.min(minTop, renderNode.position.y - (itemSize.height / 2));
+    maxRight = Math.max(maxRight, renderNode.position.x + (itemSize.width / 2));
+    maxBottom = Math.max(maxBottom, renderNode.position.y + (itemSize.height / 2));
+  });
+
+  const shiftX = Math.max(0, 80 - minLeft);
+  const shiftY = Math.max(0, 80 - minTop);
+  if (shiftX || shiftY) {
+    layoutState.positionedItems.forEach((renderNode) => {
+      renderNode.position.x += shiftX;
+      renderNode.position.y += shiftY;
+      setThreadExplorerReplyClusterItemPosition(renderNode.item, renderNode.position.x, renderNode.position.y);
+    });
+    maxRight += shiftX;
+    maxBottom += shiftY;
+  }
+
+  const stageWidth = Math.max(1120, Math.ceil(maxRight + 80));
+  const stageHeight = Math.max(860, Math.ceil(maxBottom + 80));
+  layoutState.cluster.style.width = `${stageWidth}px`;
+  layoutState.cluster.style.height = `${stageHeight}px`;
+  layoutState.edgeLayer.setAttribute("width", String(stageWidth));
+  layoutState.edgeLayer.setAttribute("height", String(stageHeight));
+  layoutState.edgeLayer.setAttribute("viewBox", `0 0 ${stageWidth} ${stageHeight}`);
+  renderThreadExplorerReplyClusterEdges(layoutState);
+}
+
+/**
+ * Recomputes the complete recursive reply-cluster layout without overlaps.
+ * @param {object|null} layoutState - Current reply-cluster render state.
+ * @returns {void}
+ */
+function layoutThreadExplorerReplyCluster(layoutState) {
+  if (!layoutState?.rootRenderNode) {
+    return;
+  }
+
+  measureThreadExplorerReplyClusterSubtree(layoutState.rootRenderNode);
+  layoutState.positionedItems = [];
+  const rootNode = layoutState.rootRenderNode;
+  const rootSize = rootNode.itemSize || getThreadExplorerReplyClusterItemSize(rootNode.item);
+  const rootCenterX = 720;
+  const rootCenterY = 540;
+
+  rootNode.position = {
+    x: rootCenterX,
+    y: rootCenterY,
+  };
+  setThreadExplorerReplyClusterItemPosition(rootNode.item, rootCenterX, rootCenterY);
+  layoutState.positionedItems.push(rootNode);
+
+  const directReplies = Array.isArray(rootNode.children) ? rootNode.children : [];
+  if (directReplies.length > 0) {
+    const maxChildWidth = directReplies.reduce((maximumWidth, childNode) => {
+      return Math.max(maximumWidth, childNode.itemSize?.width || 0);
+    }, 0);
+    const totalBreadth = directReplies.reduce((breadthSum, childNode) => {
+      return breadthSum + childNode.subtreeWidth;
+    }, 0);
+    const rootClearanceRadius = (Math.max(rootSize.width, rootSize.height) / 2) + (maxChildWidth / 2) + 120;
+    const circumferenceRadius = totalBreadth / (Math.PI * 1.75);
+    const clusterRadius = Math.max(320, rootClearanceRadius, circumferenceRadius);
+    const directReplyAngles = getThreadExplorerReplyClusterRootChildAngles(directReplies, clusterRadius);
+
+    directReplies.forEach((childNode, childIndex) => {
+      const angle = directReplyAngles[childIndex];
+      const childCenterX = rootCenterX + (Math.cos(angle) * clusterRadius);
+      const childCenterY = rootCenterY + (Math.sin(angle) * clusterRadius);
+      placeThreadExplorerReplyClusterSubtree(childNode, childCenterX, childCenterY, angle, layoutState.positionedItems);
+    });
+  }
+
+  resolveThreadExplorerReplyClusterOverlaps(layoutState);
+  applyThreadExplorerReplyClusterBounds(layoutState);
+}
+
+/**
+ * Selects one already loaded Thread Explorer URI without changing the cluster center.
+ * @param {string} uri - AT URI to select locally.
+ * @returns {void}
+ */
+function setThreadExplorerSelectedUriLocally(uri) {
+  const selectedUri = String(uri || "").trim();
+  if (!selectedUri || selectedUri === threadExplorerSelectedUri) {
+    return;
+  }
+
+  threadExplorerSelectedUri = selectedUri;
+  persistThreadExplorerSelectionPreference(selectedUri);
+  renderThreadExplorerWorkspace();
+  scheduleThreadExplorerSelectedFocus();
+}
+
+/**
+ * Creates one absolute-positioned reply-cluster item from the shared node template.
+ * @param {object} node - Normalized Thread Explorer node for this cluster card.
+ * @param {number} centerX - X center position in stage space.
+ * @param {number} centerY - Y center position in stage space.
+ * @param {string} role - Visual role such as "center", "parent" or "reply".
+ * @returns {HTMLElement} Rendered absolute-positioned cluster item.
+ */
+function createThreadExplorerReplyClusterItem(node, centerX, centerY, role) {
+  const renderedItem = createThreadExplorerRenderedItem(node, {
+    renderReplies: false,
+    showToggle: true,
+  });
+  const item = renderedItem.item;
+  item.classList.add("thread-explorer-cluster-node-item");
+  item.classList.add(`is-cluster-${role}`);
+  item.style.setProperty("--thread-explorer-cluster-x", `${Math.round(centerX)}px`);
+  item.style.setProperty("--thread-explorer-cluster-y", `${Math.round(centerY)}px`);
   return item;
+}
+
+/**
+ * Creates one recursive reply-cluster render node for the expanded cluster tree.
+ * @param {object|null} node - Normalized Thread Explorer tree node.
+ * @returns {object|null} Recursive render node with rendered item and expanded children.
+ */
+function createThreadExplorerReplyClusterRenderNode(node) {
+  if (!node || !node.post?.uri) {
+    return null;
+  }
+
+  let role = "reply";
+  if (node.post?.uri === threadExplorerTree?.post?.uri) {
+    role = "center";
+  }
+  const item = createThreadExplorerReplyClusterItem(node, 0, 0, role);
+  const renderNode = {
+    node,
+    item,
+    children: [],
+    subtreeWidth: 0,
+    subtreeHeight: 0,
+    position: {
+      x: 0,
+      y: 0,
+    },
+  };
+
+  if (!isThreadExplorerReplyClusterExpanded(node.post.uri)) {
+    return renderNode;
+  }
+
+  const replies = getChronologicalThreadExplorerReplies(node.replies);
+  replies.forEach((reply) => {
+    const childRenderNode = createThreadExplorerReplyClusterRenderNode(reply);
+    if (childRenderNode) {
+      renderNode.children.push(childRenderNode);
+    }
+  });
+  return renderNode;
+}
+
+/**
+ * Appends one curved cluster edge between two cluster anchor points.
+ * @param {SVGElement} svg - Target SVG edge layer.
+ * @param {{x:number, y:number}} start - Edge start point.
+ * @param {{x:number, y:number}} end - Edge end point.
+ * @param {string} edgeClassName - Additional CSS class for this edge.
+ * @returns {void}
+ */
+function appendThreadExplorerReplyClusterEdge(svg, start, end, edgeClassName) {
+  if (!svg) {
+    return;
+  }
+
+  const path = createSvgNode("path", {
+    class: `thread-explorer-edge ${edgeClassName}`.trim(),
+    d: `M ${start.x} ${start.y} C ${start.x} ${start.y + ((end.y - start.y) * 0.35)}, ${end.x} ${end.y - ((end.y - start.y) * 0.35)}, ${end.x} ${end.y}`,
+  });
+  svg.appendChild(path);
+}
+
+/**
+ * Renders the reply-cluster layout around the currently selected or contextual post.
+ * @returns {void}
+ */
+function renderThreadExplorerReplyCluster() {
+  if (!threadExplorerTree) {
+    return;
+  }
+
+  ensureThreadExplorerReplyClusterRootExpanded();
+  const rootRenderNode = createThreadExplorerReplyClusterRenderNode(threadExplorerTree);
+  if (!rootRenderNode) {
+    return;
+  }
+
+  const cluster = document.createElement("div");
+  cluster.className = "thread-explorer-reply-cluster";
+  cluster.style.width = "1120px";
+  cluster.style.height = "860px";
+
+  const edgeLayer = createSvgNode("svg", {
+    class: "thread-explorer-reply-cluster-edge-layer",
+    width: 1120,
+    height: 860,
+    viewBox: "0 0 1120 860",
+    "aria-hidden": "true",
+    focusable: "false",
+  });
+  cluster.appendChild(edgeLayer);
+
+  const pendingNodes = [rootRenderNode];
+  while (pendingNodes.length > 0) {
+    const currentNode = pendingNodes.shift();
+    if (!currentNode) {
+      continue;
+    }
+
+    cluster.appendChild(currentNode.item);
+    if (Array.isArray(currentNode.children) && currentNode.children.length > 0) {
+      currentNode.children.forEach((childNode) => {
+        pendingNodes.push(childNode);
+      });
+    }
+  }
+
+  threadExplorerReplyClusterLayoutState = {
+    cluster,
+    edgeLayer,
+    rootRenderNode,
+    positionedItems: [],
+  };
+  threadExplorerThreadStage.classList.add("is-reply-cluster-mode");
+  threadExplorerThreadStage.appendChild(cluster);
+  layoutThreadExplorerReplyCluster(threadExplorerReplyClusterLayoutState);
 }
 
 /**
@@ -8283,7 +10518,132 @@ function createThreadExplorerNode(node) {
 function handleThreadExplorerNodeToggleClick(event) {
   const button = event.currentTarget;
   const uri = String(button?.dataset?.uri || "").trim();
+  if (isThreadExplorerReplyClusterModeActive()) {
+    toggleThreadExplorerReplyClusterNode(uri);
+    return;
+  }
   toggleThreadExplorerNode(uri);
+}
+
+/**
+ * Applies preview-shape classes for one Thread Explorer post image.
+ * @param {HTMLImageElement|null} image - Loaded image element inside the preview figure.
+ * @param {HTMLElement|null} figure - Figure wrapper around the image.
+ * @param {HTMLElement|null} gallery - Gallery container that owns the image.
+ * @returns {void}
+ */
+function applyThreadExplorerPostImagePreviewShape(image = null, figure = null, gallery = null) {
+  if (!image || !figure || !gallery) {
+    return;
+  }
+
+  figure.classList.remove("is-portrait", "is-landscape", "is-square");
+  gallery.classList.remove(
+    "has-single-thread-image",
+    "has-single-thread-image-portrait",
+    "has-single-thread-image-landscape",
+    "has-single-thread-image-square",
+    "has-multiple-thread-images",
+  );
+
+  const imageCount = Math.max(0, Number(gallery.dataset.imageCount) || 0);
+  if (imageCount === 1) {
+    gallery.classList.add("has-single-thread-image");
+  } else if (imageCount > 1) {
+    gallery.classList.add("has-multiple-thread-images");
+  }
+
+  const naturalWidth = Math.max(0, Number(image.naturalWidth) || 0);
+  const naturalHeight = Math.max(0, Number(image.naturalHeight) || 0);
+  if (!naturalWidth || !naturalHeight) {
+    return;
+  }
+
+  if (naturalHeight > naturalWidth * 1.08) {
+    figure.classList.add("is-portrait");
+    if (imageCount === 1) {
+      gallery.classList.add("has-single-thread-image-portrait");
+    }
+    return;
+  }
+
+  if (naturalWidth > naturalHeight * 1.08) {
+    figure.classList.add("is-landscape");
+    if (imageCount === 1) {
+      gallery.classList.add("has-single-thread-image-landscape");
+    }
+    return;
+  }
+
+  figure.classList.add("is-square");
+  if (imageCount === 1) {
+    gallery.classList.add("has-single-thread-image-square");
+  }
+}
+
+/**
+ * Copies gallery image-shape classes onto the surrounding Thread Explorer post card.
+ * @param {HTMLElement|null} card - Rendered Thread Explorer post card.
+ * @param {HTMLElement|null} gallery - Gallery inside the post card.
+ * @returns {void}
+ */
+function syncThreadExplorerPostCardImageShape(card = null, gallery = null) {
+  if (!card || !gallery) {
+    return;
+  }
+
+  card.classList.remove(
+    "has-single-thread-image",
+    "has-single-thread-image-portrait",
+    "has-single-thread-image-landscape",
+    "has-single-thread-image-square",
+    "has-multiple-thread-images",
+  );
+
+  if (gallery.classList.contains("has-single-thread-image")) {
+    card.classList.add("has-single-thread-image");
+  }
+  if (gallery.classList.contains("has-single-thread-image-portrait")) {
+    card.classList.add("has-single-thread-image-portrait");
+  }
+  if (gallery.classList.contains("has-single-thread-image-landscape")) {
+    card.classList.add("has-single-thread-image-landscape");
+  }
+  if (gallery.classList.contains("has-single-thread-image-square")) {
+    card.classList.add("has-single-thread-image-square");
+  }
+  if (gallery.classList.contains("has-multiple-thread-images")) {
+    card.classList.add("has-multiple-thread-images");
+  }
+
+  const node = card.closest(".thread-explorer-node");
+  if (!node) {
+    return;
+  }
+
+  node.classList.remove(
+    "has-single-thread-image",
+    "has-single-thread-image-portrait",
+    "has-single-thread-image-landscape",
+    "has-single-thread-image-square",
+    "has-multiple-thread-images",
+  );
+
+  if (gallery.classList.contains("has-single-thread-image")) {
+    node.classList.add("has-single-thread-image");
+  }
+  if (gallery.classList.contains("has-single-thread-image-portrait")) {
+    node.classList.add("has-single-thread-image-portrait");
+  }
+  if (gallery.classList.contains("has-single-thread-image-landscape")) {
+    node.classList.add("has-single-thread-image-landscape");
+  }
+  if (gallery.classList.contains("has-single-thread-image-square")) {
+    node.classList.add("has-single-thread-image-square");
+  }
+  if (gallery.classList.contains("has-multiple-thread-images")) {
+    node.classList.add("has-multiple-thread-images");
+  }
 }
 
 /**
@@ -8298,6 +10658,7 @@ function renderThreadExplorerImages(post, gallery) {
   if (Array.isArray(post.images)) {
     images = post.images;
   }
+  gallery.dataset.imageCount = String(images.length);
   images.forEach((image, imageIndex) => {
     const fragment = threadExplorerImageTemplate.content.cloneNode(true);
     const figure = fragment.querySelector(".thread-explorer-image");
@@ -8308,6 +10669,11 @@ function renderThreadExplorerImages(post, gallery) {
     const thumb = image.thumb || source;
     setThreadExplorerCachedImageSource(img, source, thumb);
     img.alt = image.alt || "";
+    img.addEventListener("load", () => {
+      applyThreadExplorerPostImagePreviewShape(img, figure, gallery);
+      syncThreadExplorerPostCardImageShape(gallery.closest(".thread-explorer-post-card"), gallery);
+      refreshThreadExplorerRenderedGeometry();
+    }, { once: true });
     attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerPostImageError);
     button.addEventListener("click", () => {
       openThreadExplorerGallery(images, imageIndex);
@@ -8315,6 +10681,11 @@ function renderThreadExplorerImages(post, gallery) {
     caption.textContent = image.alt || "";
     caption.hidden = !image.alt;
     gallery.appendChild(figure);
+    if (img.complete) {
+      applyThreadExplorerPostImagePreviewShape(img, figure, gallery);
+      syncThreadExplorerPostCardImageShape(gallery.closest(".thread-explorer-post-card"), gallery);
+      refreshThreadExplorerRenderedGeometry();
+    }
   });
   gallery.hidden = images.length === 0;
 }
@@ -8347,6 +10718,7 @@ function handleThreadExplorerLinkImageError(event) {
     card.classList.add("has-no-thumb");
     card.classList.remove("has-favicon-thumb");
   }
+  refreshThreadExplorerRenderedGeometry();
 }
 
 /**
@@ -8363,6 +10735,7 @@ function handleThreadExplorerQuoteLinkImageError(event) {
     card.classList.add("has-no-thumb");
     card.classList.remove("has-favicon-thumb");
   }
+  refreshThreadExplorerRenderedGeometry();
 }
 
 /**
@@ -8397,7 +10770,7 @@ function renderThreadExplorerExternalCard(post, fragment) {
   image.addEventListener("error", handleThreadExplorerLinkImageError);
   image.addEventListener("load", () => {
     cacheThreadExplorerRenderedMediaImage(image);
-    scheduleThreadExplorerEdgeRender();
+    refreshThreadExplorerRenderedGeometry();
   }, { once: true });
   if (external.thumb) {
     card.classList.remove("has-no-thumb");
@@ -8447,6 +10820,7 @@ function renderThreadExplorerQuoteImages(quote, gallery) {
   if (Array.isArray(quote?.images)) {
     images = quote.images;
   }
+  gallery.dataset.imageCount = String(images.length);
 
   images.slice(0, 4).forEach((image, imageIndex) => {
     const img = document.createElement("img");
@@ -8454,6 +10828,10 @@ function renderThreadExplorerQuoteImages(quote, gallery) {
     setThreadExplorerCachedImageSource(img, source);
     img.alt = image.alt || "";
     img.loading = "lazy";
+    img.addEventListener("load", () => {
+      applyThreadExplorerPostImagePreviewShape(img, img, gallery);
+      refreshThreadExplorerRenderedGeometry();
+    }, { once: true });
     attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerQuoteImageError);
     img.addEventListener("click", (event) => {
       event.preventDefault();
@@ -8461,6 +10839,10 @@ function renderThreadExplorerQuoteImages(quote, gallery) {
       openThreadExplorerGallery(images, imageIndex);
     });
     gallery.appendChild(img);
+    if (img.complete) {
+      applyThreadExplorerPostImagePreviewShape(img, img, gallery);
+      refreshThreadExplorerRenderedGeometry();
+    }
   });
 
   gallery.hidden = images.length === 0;
@@ -8499,7 +10881,7 @@ function renderThreadExplorerQuoteExternalCard(quote, fragment) {
   image.addEventListener("error", handleThreadExplorerQuoteLinkImageError);
   image.addEventListener("load", () => {
     cacheThreadExplorerRenderedMediaImage(image);
-    scheduleThreadExplorerEdgeRender();
+    refreshThreadExplorerRenderedGeometry();
   }, { once: true });
   if (external.thumb) {
     card.classList.remove("has-no-thumb");
@@ -8562,6 +10944,12 @@ function renderThreadExplorerQuoteCard(post, fragment) {
 
   card.hidden = false;
   card.href = url;
+  card.title = t("searchResultOpenInThreadExplorerButton");
+  card.setAttribute("aria-label", t("searchResultOpenInThreadExplorerButton"));
+  card.addEventListener("click", (event) => {
+    event.preventDefault();
+    void selectThreadExplorerPost(quote.uri);
+  });
   markThreadExplorerAvatarImage(avatar, quote.author);
   setAvatarImage(avatar, getThreadExplorerActorAvatarUri(quote.author), getThreadExplorerActorLabel(quote.author));
   author.textContent = getThreadExplorerActorLabel(quote.author);
@@ -8589,6 +10977,7 @@ async function loadThreadExplorerFeed(options = {}) {
   if (!authAccount || threadExplorerLoadingFeed) {
     return;
   }
+  const isForeignAccountMode = isThreadExplorerForeignAccountMode();
   const append = options.append === true;
   if (append && !threadExplorerHasMore) {
     return;
@@ -8608,26 +10997,39 @@ async function loadThreadExplorerFeed(options = {}) {
   }
   threadExplorerFeedError = "";
   threadExplorerThreadError = "";
+  threadExplorerAccountError = "";
 
   threadExplorerLoadingFeed = true;
   renderThreadExplorerWorkspace();
   try {
-    const searchId = getThreadExplorerSearchIdFromSource(threadExplorerSource);
-    const savedSearch = getSavedSearchById(searchId);
-    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_FEED", {
-      source: threadExplorerSource,
-      cursor: threadExplorerCursor,
-      limit: 50,
-      search: savedSearch?.params || null,
-    }, {
-      timeoutMs: 120000,
-    });
+    let result = null;
+    if (isForeignAccountMode) {
+      result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_ACTOR_FEED", {
+        actor: getThreadExplorerRequestedActor(),
+        cursor: threadExplorerCursor,
+        mode: normalizeThreadExplorerAccountMode(threadExplorerAccountMode),
+        limit: 50,
+      }, {
+        timeoutMs: 120000,
+      });
+    } else {
+      const searchId = getThreadExplorerSearchIdFromSource(threadExplorerSource);
+      const savedSearch = getSavedSearchById(searchId);
+      result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_FEED", {
+        source: threadExplorerSource,
+        cursor: threadExplorerCursor,
+        limit: 50,
+        search: savedSearch?.params || null,
+      }, {
+        timeoutMs: 120000,
+      });
+    }
     threadExplorerCursor = String(result?.cursor || "");
     threadExplorerHasMore = Boolean(threadExplorerCursor);
     if (Array.isArray(result?.items)) {
       if (append) {
         threadExplorerItems = appendThreadExplorerFeedItems(threadExplorerItems, result.items, {
-          groupByRoot: Boolean(getThreadExplorerSearchIdFromSource(threadExplorerSource)),
+          groupByRoot: !isForeignAccountMode && Boolean(getThreadExplorerSearchIdFromSource(threadExplorerSource)),
         });
         threadExplorerItems = sortThreadExplorerFeedItemsByDate(threadExplorerItems);
       } else {
@@ -8647,7 +11049,11 @@ async function loadThreadExplorerFeed(options = {}) {
       }
     }
   } catch (error) {
-    threadExplorerFeedError = error.message || t("threadExplorerFeedFailed");
+    const message = error?.message || t("threadExplorerFeedFailed");
+    threadExplorerFeedError = message;
+    if (isForeignAccountMode) {
+      threadExplorerAccountError = message;
+    }
   } finally {
     threadExplorerLoadingFeed = false;
     renderThreadExplorerWorkspace();
@@ -8668,6 +11074,7 @@ async function selectThreadExplorerPost(uri) {
   threadExplorerSelectedUri = selectedUri;
   persistThreadExplorerSelectionPreference(selectedUri);
   threadExplorerLoadingThread = true;
+  threadExplorerCardZoomState = null;
   threadExplorerTree = null;
   clearThreadExplorerRenderedMediaCache();
   threadExplorerThreadError = "";
@@ -8679,6 +11086,10 @@ async function selectThreadExplorerPost(uri) {
       timeoutMs: 120000,
     });
     threadExplorerTree = result?.root || null;
+    if (threadExplorerTree && isThreadExplorerReplyClusterModeActive()) {
+      threadExplorerReplyClusterExpandedUris.clear();
+      expandAllThreadExplorerReplyClusterNodes(threadExplorerTree);
+    }
   } catch (error) {
     threadExplorerThreadError = error.message || t("threadExplorerThreadFailed");
   } finally {
@@ -8726,14 +11137,27 @@ function toggleThreadExplorerNode(uri) {
  * @returns {void}
  */
 function scrollThreadExplorerToRoot() {
+  if (isThreadExplorerReplyClusterModeActive()) {
+    const rootUri = String(threadExplorerTree?.post?.uri || "").trim();
+    if (rootUri) {
+      const rootItem = findRenderedThreadExplorerNode(rootUri);
+      if (rootItem) {
+        scrollThreadExplorerNodeIntoView(rootItem, {
+          block: "center",
+          inline: "center",
+        });
+      }
+    }
+    return;
+  }
   const firstNode = threadExplorerThreadTree.querySelector(".thread-explorer-node-item");
   if (!firstNode) {
     return;
   }
 
   scrollThreadExplorerNodeIntoView(firstNode, {
-    block: "start",
-    inline: "start",
+    block: "center",
+    inline: "center",
   });
 }
 
@@ -8753,29 +11177,22 @@ function scrollThreadExplorerNodeIntoView(item, options = {}) {
   const viewportRect = threadExplorerThreadTree.getBoundingClientRect();
   const target = getRenderedThreadExplorerCard(item) || item;
   const targetRect = target.getBoundingClientRect();
-  let zoom = Number(threadExplorerZoom) || 1;
-  if (zoom <= 0) {
-    zoom = 1;
-  }
-
-  const targetLeft = (targetRect.left - viewportRect.left) / zoom;
-  const targetTop = (targetRect.top - viewportRect.top) / zoom;
-  const targetWidth = targetRect.width / zoom;
-  const targetHeight = targetRect.height / zoom;
-  const visibleWidth = threadExplorerThreadTree.clientWidth / zoom;
-  const visibleHeight = threadExplorerThreadTree.clientHeight / zoom;
-  let nextLeft = threadExplorerThreadTree.scrollLeft + targetLeft;
-  let nextTop = threadExplorerThreadTree.scrollTop + targetTop;
-
+  const targetWidth = targetRect.width;
+  const targetHeight = targetRect.height;
+  const visibleWidth = threadExplorerThreadTree.clientWidth;
+  const visibleHeight = threadExplorerThreadTree.clientHeight;
+  let desiredLeft = 24;
+  let desiredTop = 24;
   if (options.inline === "center") {
-    nextLeft -= (visibleWidth - targetWidth) / 2;
+    desiredLeft = (visibleWidth - targetWidth) / 2;
   }
   if (options.block === "center") {
-    nextTop -= (visibleHeight - targetHeight) / 2;
+    desiredTop = (visibleHeight - targetHeight) / 2;
   }
-
-  threadExplorerThreadTree.scrollLeft = Math.max(0, nextLeft);
-  threadExplorerThreadTree.scrollTop = Math.max(0, nextTop);
+  threadExplorerPanX += desiredLeft - (targetRect.left - viewportRect.left);
+  threadExplorerPanY += desiredTop - (targetRect.top - viewportRect.top);
+  applyThreadExplorerStageTransform();
+  scheduleThreadExplorerEdgeRender();
 }
 
 /**
@@ -8799,10 +11216,178 @@ function findRenderedThreadExplorerNode(uri) {
 }
 
 /**
+ * Measures one rendered Thread Explorer element in untransformed stage coordinates.
+ * @param {HTMLElement|null} element - Rendered stage element to measure.
+ * @returns {{left:number, top:number, width:number, height:number}|null} Stage-space box or null when unavailable.
+ */
+function getThreadExplorerStageBox(element = null) {
+  if (!element) {
+    return null;
+  }
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+
+  const viewportRect = threadExplorerThreadTree.getBoundingClientRect();
+  let zoom = Number(threadExplorerZoom) || 1;
+  if (zoom <= 0) {
+    zoom = 1;
+  }
+
+  return {
+    left: (rect.left - viewportRect.left - threadExplorerPanX) / zoom,
+    top: (rect.top - viewportRect.top - threadExplorerPanY) / zoom,
+    width: rect.width / zoom,
+    height: rect.height / zoom,
+  };
+}
+
+/**
+ * Collects the complete bounds of the rendered Thread Explorer tree in stage coordinates.
+ * @returns {{left:number, top:number, width:number, height:number}|null} Bounding box for the visible tree.
+ */
+function getThreadExplorerStageContentBounds() {
+  const cards = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card"));
+  if (!cards.length) {
+    return null;
+  }
+
+  let minLeft = Number.POSITIVE_INFINITY;
+  let minTop = Number.POSITIVE_INFINITY;
+  let maxRight = Number.NEGATIVE_INFINITY;
+  let maxBottom = Number.NEGATIVE_INFINITY;
+
+  cards.forEach((card) => {
+    const box = getThreadExplorerStageBox(card);
+    if (!box) {
+      return;
+    }
+    minLeft = Math.min(minLeft, box.left);
+    minTop = Math.min(minTop, box.top);
+    maxRight = Math.max(maxRight, box.left + box.width);
+    maxBottom = Math.max(maxBottom, box.top + box.height);
+  });
+
+  if (!Number.isFinite(minLeft) || !Number.isFinite(minTop) || !Number.isFinite(maxRight) || !Number.isFinite(maxBottom)) {
+    return null;
+  }
+
+  return {
+    left: minLeft,
+    top: minTop,
+    width: Math.max(1, maxRight - minLeft),
+    height: Math.max(1, maxBottom - minTop),
+  };
+}
+
+/**
+ * Merges one stage-space box into an accumulated bounding box.
+ * @param {{left:number, top:number, width:number, height:number}|null} accumulatedBounds - Existing bounds.
+ * @param {{left:number, top:number, width:number, height:number}|null} nextBounds - Box that should extend the bounds.
+ * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null when nothing was available.
+ */
+function mergeThreadExplorerStageBounds(accumulatedBounds, nextBounds) {
+  if (!nextBounds) {
+    return accumulatedBounds;
+  }
+  if (!accumulatedBounds) {
+    return {
+      left: nextBounds.left,
+      top: nextBounds.top,
+      width: nextBounds.width,
+      height: nextBounds.height,
+    };
+  }
+
+  const left = Math.min(accumulatedBounds.left, nextBounds.left);
+  const top = Math.min(accumulatedBounds.top, nextBounds.top);
+  const right = Math.max(accumulatedBounds.left + accumulatedBounds.width, nextBounds.left + nextBounds.width);
+  const bottom = Math.max(accumulatedBounds.top + accumulatedBounds.height, nextBounds.top + nextBounds.height);
+  return {
+    left,
+    top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+  };
+}
+
+/**
+ * Applies a viewport fit to one stage-space bounds box.
+ * @param {{left:number, top:number, width:number, height:number}|null} bounds - Stage-space bounds to reveal.
+ * @param {object} [options] - Optional zoom limits for this fit.
+ * @param {number} [options.minZoom] - Minimum zoom that should be enforced.
+ * @param {number} [options.maxZoom] - Maximum zoom that should be enforced.
+ * @returns {void}
+ */
+function fitThreadExplorerStageToBounds(bounds, options = {}) {
+  if (!bounds) {
+    return;
+  }
+
+  const viewportWidth = Math.max(1, threadExplorerThreadTree.clientWidth);
+  const viewportHeight = Math.max(1, threadExplorerThreadTree.clientHeight);
+  const paddingX = Math.max(40, viewportWidth * 0.1);
+  const paddingY = Math.max(40, viewportHeight * 0.12);
+  const availableWidth = Math.max(1, viewportWidth - (paddingX * 2));
+  const availableHeight = Math.max(1, viewportHeight - (paddingY * 2));
+  const zoomByWidth = availableWidth / bounds.width;
+  const zoomByHeight = availableHeight / bounds.height;
+  let minimumZoom = Number(options.minZoom);
+  if (!Number.isFinite(minimumZoom)) {
+    minimumZoom = 0.08;
+  }
+  let maximumZoom = Number(options.maxZoom);
+  if (!Number.isFinite(maximumZoom)) {
+    maximumZoom = 1.85;
+  }
+  const fittedZoom = Math.min(zoomByWidth, zoomByHeight);
+  const nextZoom = Math.min(maximumZoom, Math.max(minimumZoom, fittedZoom));
+
+  threadExplorerZoom = nextZoom;
+  threadExplorerPanX = ((viewportWidth - (bounds.width * nextZoom)) / 2) - (bounds.left * nextZoom);
+  threadExplorerPanY = ((viewportHeight - (bounds.height * nextZoom)) / 2) - (bounds.top * nextZoom);
+  applyThreadExplorerStageTransform();
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Fits the complete rendered Thread Explorer tree into the visible viewport.
+ * @returns {void}
+ */
+function fitThreadExplorerStageToTree() {
+  threadExplorerCardZoomState = null;
+  const bounds = getThreadExplorerStageContentBounds();
+  if (!bounds) {
+    return;
+  }
+
+  fitThreadExplorerStageToBounds(bounds);
+}
+
+/**
  * Scrolls the selected Thread Explorer post into the center of the viewport.
  * @returns {void}
  */
 function focusSelectedThreadExplorerNode() {
+  if (isThreadExplorerReplyClusterModeActive()) {
+    const clusterUri = String(threadExplorerSelectedUri || threadExplorerTree?.post?.uri || "").trim();
+    if (!clusterUri) {
+      return;
+    }
+
+    const clusterItem = findRenderedThreadExplorerNode(clusterUri);
+    if (!clusterItem) {
+      return;
+    }
+
+    scrollThreadExplorerNodeIntoView(clusterItem, {
+      block: "center",
+      inline: "center",
+    });
+    return;
+  }
   const rootUri = String(threadExplorerTree?.post?.uri || "").trim();
   if (rootUri && rootUri === threadExplorerSelectedUri) {
     scrollThreadExplorerToRoot();
@@ -8820,15 +11405,284 @@ function focusSelectedThreadExplorerNode() {
 }
 
 /**
+ * Finds one rendered reply-cluster node inside the current cluster layout state.
+ * @param {string} uri - AT URI of the wanted reply-cluster node.
+ * @param {object|null} renderNode - Recursive reply-cluster render node.
+ * @returns {object|null} Matching reply-cluster render node or null.
+ */
+function findThreadExplorerReplyClusterRenderNode(uri, renderNode) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri || !renderNode) {
+    return null;
+  }
+
+  if (String(renderNode?.node?.post?.uri || "").trim() === normalizedUri) {
+    return renderNode;
+  }
+
+  const children = Array.isArray(renderNode.children) ? renderNode.children : [];
+  for (const childNode of children) {
+    const matchingNode = findThreadExplorerReplyClusterRenderNode(normalizedUri, childNode);
+    if (matchingNode) {
+      return matchingNode;
+    }
+  }
+  return null;
+}
+
+/**
+ * Collects one stage-space bounds box for a rendered card and its direct replies in tree view.
+ * @param {HTMLElement|null} item - Rendered Thread Explorer node item.
+ * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null.
+ */
+function getThreadExplorerTreeCardNeighborhoodBounds(item) {
+  if (!item) {
+    return null;
+  }
+
+  let combinedBounds = null;
+  const ownCard = getRenderedThreadExplorerCard(item) || item;
+  combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, getThreadExplorerStageBox(ownCard));
+
+  const childCards = item.querySelectorAll(":scope > .thread-explorer-children > .thread-explorer-node-item > .thread-explorer-node > .thread-explorer-post-card");
+  childCards.forEach((childCard) => {
+    combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, getThreadExplorerStageBox(childCard));
+  });
+  return combinedBounds;
+}
+
+/**
+ * Collects one stage-space bounds box for a rendered card and its direct replies in reply-cluster view.
+ * @param {string} uri - AT URI of the clicked post card.
+ * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null.
+ */
+function getThreadExplorerReplyClusterCardNeighborhoodBounds(uri) {
+  const rootRenderNode = threadExplorerReplyClusterLayoutState?.rootRenderNode || null;
+  const targetNode = findThreadExplorerReplyClusterRenderNode(uri, rootRenderNode);
+  if (!targetNode) {
+    return null;
+  }
+
+  let combinedBounds = null;
+  combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, getThreadExplorerStageBox(getRenderedThreadExplorerCard(targetNode.item) || targetNode.item));
+  const children = Array.isArray(targetNode.children) ? targetNode.children : [];
+  children.forEach((childNode) => {
+    combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, getThreadExplorerStageBox(getRenderedThreadExplorerCard(childNode.item) || childNode.item));
+  });
+  return combinedBounds;
+}
+
+/**
+ * Collects one stage-space bounds box for the clicked post card and its immediate reply neighborhood.
+ * @param {HTMLElement|null} item - Rendered Thread Explorer node item.
+ * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null.
+ */
+function getThreadExplorerCardNeighborhoodBounds(item) {
+  const uri = String(item?.dataset?.uri || "").trim();
+  if (!uri) {
+    return null;
+  }
+
+  if (isThreadExplorerReplyClusterModeActive()) {
+    return getThreadExplorerReplyClusterCardNeighborhoodBounds(uri);
+  }
+  return getThreadExplorerTreeCardNeighborhoodBounds(item);
+}
+
+/**
+ * Restores the viewport that was active before the last Thread Explorer card zoom.
+ * @returns {void}
+ */
+function restoreThreadExplorerCardZoomState() {
+  if (!threadExplorerCardZoomState) {
+    return;
+  }
+
+  threadExplorerZoom = threadExplorerCardZoomState.zoom;
+  threadExplorerPanX = threadExplorerCardZoomState.panX;
+  threadExplorerPanY = threadExplorerCardZoomState.panY;
+  threadExplorerCardZoomState = null;
+  applyThreadExplorerStageTransform();
+  scheduleThreadExplorerEdgeRender();
+}
+
+/**
+ * Cancels one pending single-click card selection.
+ * @returns {void}
+ */
+function cancelPendingThreadExplorerCardClick() {
+  if (threadExplorerPendingCardClickTimer) {
+    window.clearTimeout(threadExplorerPendingCardClickTimer);
+    threadExplorerPendingCardClickTimer = 0;
+  }
+  threadExplorerPendingCardClickUri = "";
+}
+
+/**
+ * Schedules the single-click selection for one rendered Thread Explorer post card.
+ * @param {HTMLElement|null} item - Rendered Thread Explorer node item.
+ * @returns {void}
+ */
+function scheduleThreadExplorerCardClickSelection(item) {
+  const uri = String(item?.dataset?.uri || "").trim();
+  if (!uri) {
+    return;
+  }
+
+  cancelPendingThreadExplorerCardClick();
+  threadExplorerPendingCardClickUri = uri;
+  threadExplorerPendingCardClickTimer = window.setTimeout(() => {
+    const pendingUri = threadExplorerPendingCardClickUri;
+    cancelPendingThreadExplorerCardClick();
+    setThreadExplorerSelectedUriLocally(pendingUri);
+  }, 220);
+}
+
+/**
+ * Handles a single click on one Thread Explorer post card.
+ * @param {MouseEvent} event - Click event from a rendered post card.
+ * @returns {void}
+ */
+function handleThreadExplorerCardClick(event) {
+  if (isThreadExplorerInteractiveTarget(event.target)) {
+    return;
+  }
+
+  const card = event.currentTarget;
+  const item = card?.closest(".thread-explorer-node-item");
+  scheduleThreadExplorerCardClickSelection(item);
+}
+
+/**
+ * Toggles a zoom focus for one rendered Thread Explorer post card.
+ * @param {HTMLElement|null} item - Rendered Thread Explorer node item.
+ * @returns {void}
+ */
+function toggleThreadExplorerCardZoom(item) {
+  const uri = String(item?.dataset?.uri || "").trim();
+  if (!uri) {
+    return;
+  }
+
+  if (threadExplorerCardZoomState && threadExplorerCardZoomState.uri === uri) {
+    restoreThreadExplorerCardZoomState();
+    return;
+  }
+
+  const focusBounds = getThreadExplorerCardNeighborhoodBounds(item);
+  if (!focusBounds) {
+    return;
+  }
+
+  threadExplorerCardZoomState = {
+    uri,
+    zoom: threadExplorerZoom,
+    panX: threadExplorerPanX,
+    panY: threadExplorerPanY,
+  };
+  const minimumFocusZoom = Math.min(2, Math.max(1.35, threadExplorerZoom));
+  fitThreadExplorerStageToBounds(focusBounds, {
+    minZoom: minimumFocusZoom,
+    maxZoom: 2,
+  });
+}
+
+/**
+ * Handles a mouse double-click on one Thread Explorer post card.
+ * @param {MouseEvent} event - Double-click event from a rendered post card.
+ * @returns {void}
+ */
+function handleThreadExplorerCardDoubleClick(event) {
+  if (isThreadExplorerNativeInteractiveTarget(event.target)) {
+    return;
+  }
+
+  cancelPendingThreadExplorerCardClick();
+  event.preventDefault();
+  event.stopPropagation();
+  const card = event.currentTarget;
+  const item = card?.closest(".thread-explorer-node-item");
+  toggleThreadExplorerCardZoom(item);
+}
+
+/**
+ * Handles touch-based double-tap zooming on one Thread Explorer post card.
+ * @param {PointerEvent} event - Pointer-up event from a rendered post card.
+ * @returns {void}
+ */
+function handleThreadExplorerCardPointerUp(event) {
+  if (event.pointerType !== "touch" || isThreadExplorerNativeInteractiveTarget(event.target)) {
+    return;
+  }
+
+  const card = event.currentTarget;
+  const item = card?.closest(".thread-explorer-node-item");
+  const uri = String(item?.dataset?.uri || "").trim();
+  if (!uri) {
+    return;
+  }
+
+  const now = Date.now();
+  const sameTargetTappedTwice = threadExplorerLastTouchZoomTarget.uri === uri;
+  const tappedQuicklyEnough = now - threadExplorerLastTouchZoomTarget.timestamp <= 320;
+  threadExplorerLastTouchZoomTarget = {
+    uri,
+    timestamp: now,
+  };
+  if (!sameTargetTappedTwice || !tappedQuicklyEnough) {
+    return;
+  }
+
+  cancelPendingThreadExplorerCardClick();
+  event.preventDefault();
+  event.stopPropagation();
+  threadExplorerLastTouchZoomTarget = {
+    uri: "",
+    timestamp: 0,
+  };
+  toggleThreadExplorerCardZoom(item);
+}
+
+/**
+ * Returns whether a target is a native interactive control that should not trigger card zoom.
+ * @param {EventTarget|null} target - Event target from a card interaction.
+ * @returns {boolean} True when the target is a button, link, or form control.
+ */
+function isThreadExplorerNativeInteractiveTarget(target) {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  const nativeInteractiveTarget = target.closest("button, a, input, textarea, select, summary");
+  if (nativeInteractiveTarget) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Returns whether a pointer target should keep its native interaction.
  * @param {EventTarget|null} target - Event target from a pointer event.
  * @returns {boolean} True when dragging should not start.
  */
 function isThreadExplorerInteractiveTarget(target) {
+  if (isThreadExplorerNativeInteractiveTarget(target)) {
+    return true;
+  }
+
   if (!(target instanceof Element)) {
     return false;
   }
-  return Boolean(target.closest("button, a, input, textarea, select, summary"));
+
+  const selectableTextTarget = target.closest(
+    ".thread-explorer-post-text, .thread-explorer-quote-card-text, .thread-explorer-link-card-title, .thread-explorer-link-card-description, .thread-explorer-link-card-url, .thread-explorer-quote-link-card-title, .thread-explorer-quote-link-card-description, .thread-explorer-quote-link-card-url, .thread-explorer-image figcaption, .thread-explorer-post-author, .thread-explorer-post-handle, .thread-explorer-post-meta, .thread-explorer-feed-text, .thread-explorer-feed-author, .thread-explorer-feed-meta",
+  );
+  if (selectableTextTarget) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -8840,14 +11694,21 @@ function handleThreadExplorerPointerDown(event) {
   if (event.button !== 0 || isThreadExplorerInteractiveTarget(event.target)) {
     return;
   }
+  cancelThreadExplorerPanInertia();
+  threadExplorerThreadTree.classList.add("is-pan-armed");
   threadExplorerDragState = {
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
-    scrollLeft: threadExplorerThreadTree.scrollLeft,
-    scrollTop: threadExplorerThreadTree.scrollTop,
+    panX: threadExplorerPanX,
+    panY: threadExplorerPanY,
+    started: false,
+    lastSampleX: event.clientX,
+    lastSampleY: event.clientY,
+    lastSampleTime: event.timeStamp,
+    velocityX: 0,
+    velocityY: 0,
   };
-  threadExplorerThreadTree.classList.add("is-dragging");
   threadExplorerThreadTree.setPointerCapture(event.pointerId);
   event.preventDefault();
 }
@@ -8861,10 +11722,23 @@ function handleThreadExplorerPointerMove(event) {
   if (!threadExplorerDragState || threadExplorerDragState.pointerId !== event.pointerId) {
     return;
   }
+
   const deltaX = event.clientX - threadExplorerDragState.startX;
   const deltaY = event.clientY - threadExplorerDragState.startY;
-  threadExplorerThreadTree.scrollLeft = threadExplorerDragState.scrollLeft - deltaX;
-  threadExplorerThreadTree.scrollTop = threadExplorerDragState.scrollTop - deltaY;
+  if (threadExplorerDragState.started !== true) {
+    const movement = Math.max(Math.abs(deltaX), Math.abs(deltaY));
+    if (movement < THREAD_EXPLORER_DRAG_THRESHOLD_PX) {
+      return;
+    }
+    threadExplorerDragState.started = true;
+    setThreadExplorerPanningMode(true);
+  }
+
+  updateThreadExplorerPanVelocity(threadExplorerDragState, event);
+  threadExplorerPanX = threadExplorerDragState.panX + deltaX;
+  threadExplorerPanY = threadExplorerDragState.panY + deltaY;
+  applyThreadExplorerStageTransform();
+  event.preventDefault();
 }
 
 /**
@@ -8876,27 +11750,38 @@ function handleThreadExplorerPointerUp(event) {
   if (!threadExplorerDragState || threadExplorerDragState.pointerId !== event.pointerId) {
     return;
   }
+  const completedDragState = threadExplorerDragState;
   threadExplorerDragState = null;
-  threadExplorerThreadTree.classList.remove("is-dragging");
   if (threadExplorerThreadTree.hasPointerCapture(event.pointerId)) {
     threadExplorerThreadTree.releasePointerCapture(event.pointerId);
   }
+  if (completedDragState.started === true) {
+    threadExplorerPanVelocityX = completedDragState.velocityX;
+    threadExplorerPanVelocityY = completedDragState.velocityY;
+    startThreadExplorerPanInertia();
+    return;
+  }
+  setThreadExplorerPanningMode(false);
 }
 
 /**
- * Zooms the Thread Explorer with Ctrl + mouse wheel.
+ * Handles mouse-wheel interaction inside the Thread Explorer viewport.
  * @param {WheelEvent} event - Wheel event from the tree viewport.
  * @returns {void}
  */
 function handleThreadExplorerWheel(event) {
-  if (!event.ctrlKey) {
+  event.preventDefault();
+
+  if (event.altKey || event.shiftKey) {
+    applyThreadExplorerScrollDelta(-event.deltaX, -event.deltaY);
+    scheduleThreadExplorerEdgeRender();
     return;
   }
-  event.preventDefault();
+
   if (event.deltaY < 0) {
-    zoomThreadExplorerAtPoint(1.1, event.clientX, event.clientY);
+    zoomThreadExplorerAtPoint(1.14, event.clientX, event.clientY);
   } else {
-    zoomThreadExplorerAtPoint(1 / 1.1, event.clientX, event.clientY);
+    zoomThreadExplorerAtPoint(1 / 1.14, event.clientX, event.clientY);
   }
 }
 
@@ -9400,7 +12285,7 @@ function attachThreadExplorerRenderedMediaCacheHandlers(image = null, errorHandl
 
   image.addEventListener("load", () => {
     cacheThreadExplorerRenderedMediaImage(image);
-    scheduleThreadExplorerEdgeRender();
+    refreshThreadExplorerRenderedGeometry();
   }, { once: true });
   if (typeof errorHandler === "function") {
     image.addEventListener("error", errorHandler);
@@ -10713,6 +13598,8 @@ async function renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, he
   });
   const clone = sourceStage.cloneNode(true);
   clone.style.setProperty("--thread-explorer-zoom", "1");
+  clone.style.setProperty("--thread-explorer-pan-x", "0px");
+  clone.style.setProperty("--thread-explorer-pan-y", "0px");
   clone.style.width = `${width}px`;
   clone.style.minWidth = `${width}px`;
   clone.style.height = `${height}px`;
@@ -11005,17 +13892,8 @@ async function loadThreadExplorerPostFromUrl() {
   threadExplorerUrlLoadButton.disabled = true;
   threadExplorerUrlStatus.textContent = t("threadExplorerUrlLoading");
   try {
-    const result = await sendToServiceWorker("RESOLVE_THREAD_EXPLORER_POST_URL", {
-      url,
-    }, {
-      timeoutMs: 30000,
-    });
-    const uri = String(result?.uri || "").trim();
-    if (!uri) {
-      throw new Error(t("threadExplorerUrlFailed"));
-    }
+    await openPostUrlInThreadExplorer(url);
     closeThreadExplorerUrlDialog();
-    await selectThreadExplorerPost(uri);
   } catch (error) {
     threadExplorerUrlStatus.textContent = error.message || t("threadExplorerUrlFailed");
   } finally {
@@ -11040,6 +13918,87 @@ function handleThreadExplorerRefreshClick() {
 }
 
 /**
+ * Applies a confirmed Thread Explorer account-field value to state and optionally reloads the feed.
+ * @param {object} options - Input application options.
+ * @param {boolean} options.loadFeed - True when the committed change should trigger a reload.
+ * @returns {void}
+ */
+function applyThreadExplorerAccountInput(options = {}) {
+  const previousForeignMode = isThreadExplorerForeignAccountMode();
+  threadExplorerAccountActor = normalizeThreadExplorerActor(threadExplorerAccountInput?.value || "");
+  threadExplorerAccountError = "";
+  const nextForeignMode = isThreadExplorerForeignAccountMode();
+  if (nextForeignMode) {
+    threadExplorerActorFocusActor = createThreadExplorerActorStub(threadExplorerAccountActor);
+    threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(threadExplorerAccountMode);
+    threadExplorerActorFocusItems = [];
+    threadExplorerActorFocusCursor = "";
+    threadExplorerActorFocusHasMore = false;
+    threadExplorerActorFocusLoading = false;
+    threadExplorerActorFocusError = "";
+  } else if (threadExplorerActorFocusActor && !isThreadExplorerOwnActor(threadExplorerActorFocusActor)) {
+    threadExplorerActorFocusActor = null;
+    threadExplorerActorFocusItems = [];
+    threadExplorerActorFocusCursor = "";
+    threadExplorerActorFocusHasMore = false;
+    threadExplorerActorFocusLoading = false;
+    threadExplorerActorFocusError = "";
+  }
+  if (!nextForeignMode) {
+    void loadThreadExplorerFeedSources();
+  }
+  renderThreadExplorerWorkspace();
+  void persistSettings();
+
+  if (options.loadFeed !== true) {
+    return;
+  }
+  if (!authAccount || threadExplorerLoadingFeed) {
+    return;
+  }
+  if (!threadExplorerAccountActor && nextForeignMode) {
+    return;
+  }
+  const modeChanged = previousForeignMode !== nextForeignMode;
+  if (nextForeignMode) {
+    void loadThreadExplorerActorFocusFeed({ append: false });
+    return;
+  }
+  if (modeChanged || !threadExplorerItems.length) {
+    void loadThreadExplorerFeed({ reset: true, clearSelection: true });
+  }
+}
+
+/**
+ * Copies the signed-in account into the Thread Explorer account field and reloads the own feed mode.
+ * @returns {void}
+ */
+function handleThreadExplorerUseOwnAccountClick() {
+  const ownActor = getThreadExplorerOwnActor();
+  if (threadExplorerAccountInput) {
+    threadExplorerAccountInput.value = ownActor;
+  }
+  applyThreadExplorerAccountInput({ loadFeed: true });
+}
+
+/**
+ * Updates the Thread Explorer account-mode filter and reloads the current foreign-account feed.
+ * @param {Event} event - Change event from the account-mode select.
+ * @returns {void}
+ */
+function handleThreadExplorerAccountModeChange(event) {
+  threadExplorerAccountMode = normalizeThreadExplorerAccountMode(event.currentTarget?.value || "");
+  threadExplorerAccountError = "";
+  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(threadExplorerAccountMode);
+  renderThreadExplorerWorkspace();
+  void persistSettings();
+  if (!authAccount || threadExplorerLoadingFeed || !isThreadExplorerForeignAccountMode()) {
+    return;
+  }
+  void loadThreadExplorerActorFocusFeed({ append: false });
+}
+
+/**
  * Opens the Thread Explorer URL prompt.
  * @returns {void}
  */
@@ -11055,6 +14014,16 @@ async function handleThreadExplorerRootClick() {
   const rootUri = String(threadExplorerTree?.post?.uri || "").trim();
   if (!rootUri) {
     scrollThreadExplorerToRoot();
+    return;
+  }
+
+  if (isThreadExplorerReplyClusterModeActive()) {
+    threadExplorerSelectedUri = rootUri;
+    threadExplorerReplyClusterExpandedUris.clear();
+    threadExplorerReplyClusterExpandedUris.add(rootUri);
+    persistThreadExplorerSelectionPreference(rootUri);
+    renderThreadExplorerWorkspace();
+    window.requestAnimationFrame(scrollThreadExplorerToRoot);
     return;
   }
 
@@ -11249,19 +14218,68 @@ function handleSavedSearchRemoveClick(event) {
 }
 
 /**
+ * Cancels one pending click on the Thread Explorer zoom-reset button.
+ * @returns {void}
+ */
+function cancelPendingThreadExplorerZoomResetClick() {
+  if (threadExplorerPendingZoomResetClickTimer) {
+    window.clearTimeout(threadExplorerPendingZoomResetClickTimer);
+    threadExplorerPendingZoomResetClickTimer = 0;
+  }
+}
+
+/**
+ * Toggles the Thread Explorer between 100% and the last remembered zoom level.
+ * @returns {void}
+ */
+function toggleThreadExplorerZoomResetButtonMode() {
+  cancelPendingThreadExplorerZoomResetClick();
+  const currentZoom = Math.max(0.01, Number(threadExplorerZoom) || 1);
+  if (Math.abs(currentZoom - 1) <= 0.01) {
+    const restoreZoom = Math.max(0.08, Number(threadExplorerLastManualZoomBeforeReset) || 1);
+    setThreadExplorerZoomAtViewportCenter(restoreZoom);
+    return;
+  }
+
+  threadExplorerLastManualZoomBeforeReset = currentZoom;
+  setThreadExplorerZoomAtViewportCenter(1);
+}
+
+/**
  * Zooms out of the Thread Explorer tree.
  * @returns {void}
  */
 function handleThreadExplorerZoomOutClick() {
+  cancelPendingThreadExplorerZoomResetClick();
   setThreadExplorerZoom(threadExplorerZoom / 1.15);
 }
 
 /**
- * Resets the Thread Explorer tree zoom.
+ * Fits the complete Thread Explorer tree into the current viewport.
+ * @param {MouseEvent} [event] - Optional click event from the zoom-reset button.
  * @returns {void}
  */
-function handleThreadExplorerZoomResetClick() {
-  setThreadExplorerZoom(1);
+function handleThreadExplorerZoomResetClick(event) {
+  if (event?.detail > 1) {
+    return;
+  }
+
+  cancelPendingThreadExplorerZoomResetClick();
+  threadExplorerPendingZoomResetClickTimer = window.setTimeout(() => {
+    cancelPendingThreadExplorerZoomResetClick();
+    fitThreadExplorerStageToTree();
+  }, 220);
+}
+
+/**
+ * Toggles the Thread Explorer zoom-reset button between fit and 100%-restore mode.
+ * @param {MouseEvent} event - Double-click event from the zoom-reset button.
+ * @returns {void}
+ */
+function handleThreadExplorerZoomResetDoubleClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  toggleThreadExplorerZoomResetButtonMode();
 }
 
 /**
@@ -11269,6 +14287,7 @@ function handleThreadExplorerZoomResetClick() {
  * @returns {void}
  */
 function handleThreadExplorerZoomInClick() {
+  cancelPendingThreadExplorerZoomResetClick();
   setThreadExplorerZoom(threadExplorerZoom * 1.15);
 }
 
@@ -11278,6 +14297,41 @@ function handleThreadExplorerZoomInClick() {
  */
 function handleThreadExplorerOrientationClick() {
   toggleThreadExplorerOrientation();
+}
+
+/**
+ * Toggles the Thread Explorer between tree view and reply-cluster view.
+ * @returns {void}
+ */
+function toggleThreadExplorerViewMode() {
+  if (threadExplorerViewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
+    threadExplorerViewMode = THREAD_EXPLORER_VIEW_MODE_TREE;
+  } else {
+    threadExplorerViewMode = THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER;
+    threadExplorerReplyClusterExpandedUris.clear();
+    expandAllThreadExplorerReplyClusterNodes(threadExplorerTree);
+  }
+  persistThreadExplorerViewModePreference(threadExplorerViewMode);
+  renderThreadExplorerWorkspace();
+  if (threadExplorerTree) {
+    scheduleThreadExplorerSelectedFocus();
+  }
+}
+
+/**
+ * Handles the Thread Explorer view-mode button click.
+ * @returns {void}
+ */
+function handleThreadExplorerViewModeClick() {
+  toggleThreadExplorerViewMode();
+}
+
+/**
+ * Toggles the Thread Explorer fullscreen reading mode from the toolbar.
+ * @returns {void}
+ */
+function handleThreadExplorerFullscreenClick() {
+  toggleThreadExplorerFullscreen();
 }
 
 /**
@@ -11294,6 +14348,28 @@ function handleThreadExplorerCollapseClick() {
  */
 function handleThreadExplorerExpandClick() {
   setAllThreadExplorerNodesCollapsed(false);
+}
+
+/**
+ * Handles global Escape presses for leaving the Thread Explorer fullscreen mode.
+ * @param {KeyboardEvent} event - Global keyboard event.
+ * @returns {void}
+ */
+function handleGlobalKeydown(event) {
+  if (event.key !== "Escape") {
+    return;
+  }
+  if (currentWorkspace !== "threadExplorer") {
+    return;
+  }
+  if (threadExplorerFullscreen !== true) {
+    return;
+  }
+  if (hasOpenDialog()) {
+    return;
+  }
+  event.preventDefault();
+  setThreadExplorerFullscreen(false);
 }
 
 /**
@@ -14736,6 +17812,64 @@ function renderAnalysisWorkspace() {
   setAnalysisStatus(analysisStatusLine || t("analysisStatusIdle"));
 }
 
+/**
+ * Returns whether one analysis-account error is an expected validation result.
+ * @param {unknown} error - Error returned from the service worker or loaders.
+ * @returns {boolean} True when the error is expected and should stay out of the console.
+ */
+function isExpectedAnalysisAccountError(error) {
+  const errorCode = String(error?.details?.code || "").trim();
+  return errorCode === "ANALYSIS_ACCOUNT_NOT_FOUND" || errorCode === "ANALYSIS_ACCOUNT_MISSING";
+}
+
+/**
+ * Renders or clears a compact warning note below an account input.
+ * @param {HTMLElement|null} note - Target note element below the input.
+ * @param {string} message - Visible warning text, or empty text to hide the note.
+ * @returns {void}
+ */
+function setAccountFieldNote(note, message = "") {
+  if (!note) {
+    return;
+  }
+
+  const normalizedMessage = String(message || "").trim();
+  note.textContent = normalizedMessage;
+  note.hidden = normalizedMessage.length === 0;
+}
+
+/**
+ * Renders or clears the inline validation note for one analysis-account field.
+ * @param {"a"|"b"} slot - Analysis slot whose note should change.
+ * @param {string} message - Visible validation message, or empty text to hide the note.
+ * @returns {void}
+ */
+function setAnalysisAccountFieldNote(slot, message = "") {
+  let note = analysisAccountBNote;
+  if (slot === "a") {
+    note = analysisAccountANote;
+  }
+  setAccountFieldNote(note, message);
+}
+
+/**
+ * Renders or clears the inline validation note below the network-account field.
+ * @param {string} message - Visible warning text, or empty text to hide the note.
+ * @returns {void}
+ */
+function setNetworkAccountFieldNote(message = "") {
+  setAccountFieldNote(networkAccountNote, message);
+}
+
+/**
+ * Renders or clears the inline validation note below the DM-account search field.
+ * @param {string} message - Visible warning text, or empty text to hide the note.
+ * @returns {void}
+ */
+function setDmContactSearchFieldNote(message = "") {
+  setAccountFieldNote(dmContactSearchNote, message);
+}
+
 async function loadAnalysisAccountForSlot(slot, { actor, requestToken } = {}) {
   const normalizedActor = normalizeAnalysisActor(actor);
   if (!normalizedActor) {
@@ -14774,6 +17908,7 @@ async function validateAnalysisAccountInput(slot, { silentSuccess = true } = {})
   if (input) {
     input.setCustomValidity("");
   }
+  setAnalysisAccountFieldNote(slot, "");
   if (!normalizedActor) {
     return null;
   }
@@ -14793,6 +17928,7 @@ async function validateAnalysisAccountInput(slot, { silentSuccess = true } = {})
       input.value = result?.handle || normalizedActor;
       input.setCustomValidity("");
     }
+    setAnalysisAccountFieldNote(slot, "");
     if (!silentSuccess) {
       setAnalysisStatus(t("analysisAccountValidatedStatus", {
         slot: slot === "a" ? "A" : "B",
@@ -14810,8 +17946,8 @@ async function validateAnalysisAccountInput(slot, { silentSuccess = true } = {})
     const message = error?.message || t("analysisLoadFailed");
     if (input) {
       input.setCustomValidity(message);
-      input.reportValidity();
     }
+    setAnalysisAccountFieldNote(slot, message);
     setAnalysisStatus(message);
     return null;
   }
@@ -14843,7 +17979,10 @@ async function handleAnalysisAccountLoad(slot) {
     renderAnalysisWorkspace();
     await persistSettings();
   } catch (error) {
-    console.error(error);
+    if (!isExpectedAnalysisAccountError(error)) {
+      console.error(error);
+    }
+    setAnalysisAccountFieldNote(slot, error.message || t("analysisLoadFailed"));
     setAnalysisStatus(error.message || t("analysisLoadFailed"));
     showErrorDialog(error.message || t("analysisLoadFailed"), t("archiveErrorTitle"));
   } finally {
@@ -14890,7 +18029,15 @@ async function runAnalysisComparison() {
     renderAnalysisWorkspace();
     await persistSettings();
   } catch (error) {
-    console.error(error);
+    if (!isExpectedAnalysisAccountError(error)) {
+      console.error(error);
+    }
+    if (!analysisAccountDataA) {
+      setAnalysisAccountFieldNote("a", error.message || t("analysisLoadFailed"));
+    }
+    if (!analysisAccountDataB) {
+      setAnalysisAccountFieldNote("b", error.message || t("analysisLoadFailed"));
+    }
     setAnalysisStatus(error.message || t("analysisLoadFailed"));
     showErrorDialog(error.message || t("analysisLoadFailed"), t("archiveErrorTitle"));
   } finally {
@@ -16146,15 +19293,20 @@ async function loadNetworkWave(options = {}) {
     return;
   }
 
-  const requestedActor = String(
-    options.actor
-      || (options.append === true
-        ? (networkViewerProfile?.did || networkAccountDid || authAccountDid || "")
-        : getRequestedNetworkActor()),
-  ).trim();
+  let requestedActorSource = options.actor;
+  if (!requestedActorSource) {
+    if (options.append === true) {
+      requestedActorSource = networkViewerProfile?.did || networkAccountDid || authAccountDid || "";
+    } else {
+      requestedActorSource = getRequestedNetworkActor();
+    }
+  }
+  const requestedActor = String(requestedActorSource).trim();
   if (!requestedActor) {
     return;
   }
+
+  setNetworkAccountFieldNote("");
 
   const currentActorIdentity = String(networkViewerProfile?.handle || networkAccountDid || "").trim().toLowerCase();
   const requestedActorIdentity = requestedActor.toLowerCase();
@@ -16196,6 +19348,7 @@ async function loadNetworkWave(options = {}) {
     if (networkAccountInput) {
       networkAccountInput.value = networkViewerProfile?.handle || requestedActor;
     }
+    setNetworkAccountFieldNote("");
     ingestNetworkProfiles(result?.followers || []);
     ingestNetworkProfiles(result?.follows || []);
     networkFollowerCursor = String(result?.followerCursor || "");
@@ -16211,9 +19364,11 @@ async function loadNetworkWave(options = {}) {
     }));
   } catch (error) {
     console.error(error);
-    setNetworkStatus(error.message || t("networkLoadFailed"));
+    const message = error?.message || t("networkLoadFailed");
+    setNetworkAccountFieldNote(message);
+    setNetworkStatus(message);
     if (!options.silentErrors) {
-      showErrorDialog(error.message || t("networkLoadFailed"), t("archiveErrorTitle"));
+      showErrorDialog(message, t("archiveErrorTitle"));
     }
   } finally {
     networkLoading = false;
@@ -16317,9 +19472,11 @@ function renderDmContacts() {
   if (visibleContacts.length === 0) {
     const empty = document.createElement("p");
     empty.className = "settings-note";
-    empty.textContent = dmRecentContacts.length > 0
-      ? t("dmContactSearchEmpty")
-      : t("dmContactSelectionEmpty");
+    if (dmRecentContacts.length > 0) {
+      empty.textContent = t("dmContactSearchEmpty");
+    } else {
+      empty.textContent = t("dmContactSelectionEmpty");
+    }
     dmContactList.appendChild(empty);
   } else {
     visibleContacts.forEach((contact) => {
@@ -16357,13 +19514,25 @@ function renderDmContacts() {
       content.append(name, handle);
       button.append(avatar, content);
       button.addEventListener("click", () => {
-        dmSelectedParticipantDids = dmSelectedParticipantDids.includes(contact.did)
-          ? []
-          : [contact.did];
+        if (dmSelectedParticipantDids.includes(contact.did)) {
+          dmSelectedParticipantDids = [];
+        } else {
+          dmSelectedParticipantDids = [contact.did];
+        }
         renderDmWorkspace();
       });
       dmContactList.appendChild(button);
     });
+  }
+
+  if (!query) {
+    setDmContactSearchFieldNote("");
+  } else if (dmRecentContacts.length === 0) {
+    setDmContactSearchFieldNote(t("dmContactSelectionEmpty"));
+  } else if (visibleContacts.length === 0) {
+    setDmContactSearchFieldNote(t("dmContactSearchEmpty"));
+  } else {
+    setDmContactSearchFieldNote("");
   }
 
   if (dmSelectedParticipantDids.length > 0) {
@@ -18535,13 +21704,66 @@ function t(key, values = {}) {
   return typeof template === "string" ? formatTemplate(template, values) : template;
 }
 
+/**
+ * Applies the selected theme mode and refreshes the settings controls.
+ * @returns {void}
+ */
 function applyTheme() {
-  document.body.classList.toggle("theme-dark", themeMode === "dark");
+  let isDarkTheme = false;
+  if (themeMode === "dark") {
+    isDarkTheme = true;
+  }
+  document.body.classList.toggle("theme-dark", isDarkTheme);
+  persistAppearancePreferences();
+  updateAppearanceModeControls();
+}
+
+/**
+ * Applies or removes the compact UI density mode.
+ * @returns {void}
+ */
+function applyCompactMode() {
+  document.body.classList.toggle("ui-density-compact", compactMode === true);
+  persistAppearancePreferences();
+  applyDesktopLayoutState();
+  updateAppearanceModeControls();
+}
+
+/**
+ * Refreshes the appearance toggle labels and notes in settings.
+ * @returns {void}
+ */
+function updateAppearanceModeControls() {
   if (themeStatusNote) {
-    themeStatusNote.textContent = themeMode === "dark" ? t("themeDarkActive") : t("themeLightActive");
+    if (themeMode === "dark") {
+      themeStatusNote.textContent = t("themeDarkActive");
+    } else {
+      themeStatusNote.textContent = t("themeLightActive");
+    }
   }
   if (themeToggleButton) {
-    themeToggleButton.textContent = themeMode === "dark" ? t("lightModeButton") : t("darkModeButton");
+    if (themeMode === "dark") {
+      themeToggleButton.textContent = t("lightModeButton");
+    } else {
+      themeToggleButton.textContent = t("darkModeButton");
+    }
+  }
+  if (compactModeStatusNote) {
+    if (compactMode === true) {
+      compactModeStatusNote.textContent = t("compactModeActive");
+    } else {
+      compactModeStatusNote.textContent = t("compactModeInactive");
+    }
+  }
+  if (compactModeToggleButtons.length > 0) {
+    compactModeToggleButtons.forEach((button, index) => {
+      button.hidden = index !== compactModeToggleButtons.length - 1;
+      if (compactMode === true) {
+        button.textContent = t("normalModeButton");
+      } else {
+        button.textContent = t("compactModeButton");
+      }
+    });
   }
 }
 
@@ -18667,6 +21889,8 @@ function applyDesktopLayoutState() {
   composerWidthDesktop = resolvedComposerWidth;
   document.documentElement.style.setProperty("--desktop-sidebar-width", `${resolvedSidebarWidth}px`);
   document.documentElement.style.setProperty("--desktop-composer-width", `${resolvedComposerWidth}px`);
+  document.body.style.setProperty("--desktop-sidebar-width", `${resolvedSidebarWidth}px`);
+  document.body.style.setProperty("--desktop-composer-width", `${resolvedComposerWidth}px`);
   scheduleSegmentTextareaResize();
 }
 
@@ -18696,7 +21920,8 @@ function applySidebarState() {
 }
 
 function getDesktopResizeHandleWidth() {
-  const value = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--desktop-resize-handle-width"));
+  const styleTarget = document.body || document.documentElement;
+  const value = Number.parseFloat(getComputedStyle(styleTarget).getPropertyValue("--desktop-resize-handle-width"));
   return Number.isFinite(value) ? value : 14;
 }
 
@@ -19084,9 +22309,8 @@ function applyTranslations() {
   helpButton.textContent = t("helpButton");
   installButton.textContent = t("installButton");
   saveThreadButton.textContent = t("saveThreadButton");
-  themeToggleButton.textContent = themeMode === "dark" ? t("lightModeButton") : t("darkModeButton");
   resetColumnWidthsButton.textContent = t("resetColumnWidthsButton");
-  themeStatusNote.textContent = themeMode === "dark" ? t("themeDarkActive") : t("themeLightActive");
+  updateAppearanceModeControls();
   archiveButton.textContent = t("archiveLaunchButton");
   networkButton.textContent = t("networkLaunchButton");
   analysisButton.textContent = t("analysisLaunchButton");
@@ -19271,6 +22495,7 @@ function applyTranslations() {
   updateStatusForAuth();
   renderArchiveWorkspace();
   applyTheme();
+  applyCompactMode();
 }
 
 function preserveScrollPosition(callback) {
@@ -19982,10 +23207,51 @@ function renderSegmentLinkCard(container, segmentIndex) {
   container.appendChild(wrap);
 }
 
-function openLinkCardDialog(segmentIndex, url) {
+/**
+ * Returns the first other segment that currently carries a link card.
+ * @param {number} targetSegmentIndex - Segment that is currently being inspected.
+ * @returns {number} Source segment index, or `-1` when none was found.
+ */
+function findOtherLinkCardSegmentIndex(targetSegmentIndex) {
+  for (let index = 0; index < segmentLinkCards.length; index += 1) {
+    if (index === targetSegmentIndex) {
+      continue;
+    }
+    if (normalizeLinkCard(segmentLinkCards[index])) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Opens the link-card dialog for create, refresh, or move actions.
+ * @param {number} segmentIndex - Target segment index for the action.
+ * @param {string} url - URL that should be used for create or refresh.
+ * @param {string} action - Dialog action: `create`, `refresh`, or `move`.
+ * @param {number} sourceSegmentIndex - Optional source segment for move actions.
+ * @returns {void}
+ */
+function openLinkCardDialog(segmentIndex, url, action = "create", sourceSegmentIndex = -1) {
   pendingLinkCardSegmentIndex = segmentIndex;
+  pendingLinkCardSourceSegmentIndex = sourceSegmentIndex;
+  pendingLinkCardAction = action;
   pendingLinkCardUrl = url;
-  linkCardUrlNode.textContent = url;
+  if (linkCardDialogTitle) {
+    if (action === "move") {
+      linkCardDialogTitle.textContent = t("linkCardMoveButton");
+    } else {
+      linkCardDialogTitle.textContent = t("linkCardDialogTitle");
+    }
+  }
+  if (action === "move" && sourceSegmentIndex >= 0) {
+    linkCardUrlNode.textContent = t("linkCardMovePrompt", {
+      source: sourceSegmentIndex + 1,
+      target: segmentIndex + 1,
+    });
+  } else {
+    linkCardUrlNode.textContent = url;
+  }
   const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
   updateLinkCardDialogProviderState();
   linkCardWarning.hidden = !hasImages;
@@ -19996,8 +23262,12 @@ function openLinkCardDialog(segmentIndex, url) {
   }
   linkCardStatus.textContent = "";
   delete linkCardStatus.dataset.tone;
-  if (hasImages) {
+  if (action === "move") {
+    linkCardCreateButton.textContent = t("linkCardMoveButton");
+  } else if (hasImages) {
     linkCardCreateButton.textContent = t("linkCardCreateAndRemoveImagesButton");
+  } else if (action === "refresh") {
+    linkCardCreateButton.textContent = t("linkCardRefreshButton");
   } else {
     linkCardCreateButton.textContent = t("linkCardCreateButton");
   }
@@ -20006,7 +23276,9 @@ function openLinkCardDialog(segmentIndex, url) {
 
 function closeLinkCardDialog() {
   pendingLinkCardSegmentIndex = -1;
+  pendingLinkCardSourceSegmentIndex = -1;
   pendingLinkCardUrl = "";
+  pendingLinkCardAction = "create";
   if (linkCardDialog.open) {
     linkCardDialog.close();
   }
@@ -20015,30 +23287,52 @@ function closeLinkCardDialog() {
 async function createLinkCardForPendingSegment() {
   const segmentIndex = pendingLinkCardSegmentIndex;
   const url = pendingLinkCardUrl;
-  if (segmentIndex < 0 || !url) {
+  const action = pendingLinkCardAction;
+  if (segmentIndex < 0) {
+    return;
+  }
+  if (action !== "move" && !url) {
     return;
   }
   const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
   let createButtonLabel = t("linkCardCreateButton");
-  if (hasImages) {
+  if (action === "move") {
+    createButtonLabel = t("linkCardMoveButton");
+  } else if (hasImages) {
     createButtonLabel = t("linkCardCreateAndRemoveImagesButton");
+  } else if (action === "refresh") {
+    createButtonLabel = t("linkCardRefreshButton");
   }
   try {
     setBusy(linkCardCreateButton, true, t("linkCardLoading"), createButtonLabel);
     linkCardStatus.textContent = t("linkCardLoading");
-    const card = await requestLinkCard(url);
-    syncLinkCardProviderUi();
-    if (!card) {
-      throw new Error(t("linkCardCreateFallback"));
-    }
-    segmentLinkCards[segmentIndex] = card;
-    if (hasImages) {
-      segmentImages[segmentIndex] = [];
+    if (action === "move") {
+      const sourceSegmentIndex = pendingLinkCardSourceSegmentIndex;
+      const sourceCard = normalizeLinkCard(segmentLinkCards[sourceSegmentIndex]);
+      if (sourceSegmentIndex < 0 || !sourceCard) {
+        throw new Error(t("linkCardMoveMissingSource"));
+      }
+      segmentLinkCards[sourceSegmentIndex] = null;
+      segmentLinkCards[segmentIndex] = sourceCard;
+    } else {
+      const card = await requestLinkCard(url);
+      syncLinkCardProviderUi();
+      if (!card) {
+        throw new Error(t("linkCardCreateFallback"));
+      }
+      segmentLinkCards[segmentIndex] = card;
+      if (hasImages) {
+        segmentImages[segmentIndex] = [];
+      }
     }
     await persistSettings();
     preserveScrollPosition(() => renderSegments({ preserveOverrides: true }));
     queueDraftSave();
-    setStatus(t("linkCardCreated"));
+    if (action === "move") {
+      setStatus(t("linkCardMoved"));
+    } else {
+      setStatus(t("linkCardCreated"));
+    }
     closeLinkCardDialog();
   } catch (error) {
     console.error(error);
@@ -20240,6 +23534,12 @@ function updateLinkCardDialogProviderState() {
   if (!linkCardProviderState) {
     return;
   }
+  if (pendingLinkCardAction === "move") {
+    linkCardProviderState.hidden = true;
+    linkCardProviderState.textContent = "";
+    return;
+  }
+  linkCardProviderState.hidden = false;
   linkCardProviderState.textContent = getLinkCardDialogProviderNote();
 }
 
@@ -27128,6 +30428,7 @@ async function persistSettings() {
     imageAutoResizeMode,
     archiveExpertMode,
     themeMode,
+    compactMode,
     sidebarCollapsedDesktop,
     desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
     sidebarWidthDesktop,
@@ -27148,6 +30449,7 @@ async function persistSettings() {
     segmentLinkCards,
     postingHistory,
     threadExplorerFavorites,
+    threadExplorerState: getPersistableThreadExplorerState(),
     savedSearches,
     searchPreferences: getSearchPreferences(),
     searchResultState: getPersistableSearchResultState(),
@@ -27242,6 +30544,7 @@ async function createSettingsBackupPayload() {
       imageAutoResizeMode,
       archiveExpertMode,
       themeMode,
+      compactMode,
       sidebarCollapsedDesktop,
       desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
       sidebarWidthDesktop,
@@ -27355,7 +30658,13 @@ async function importSettingsBackup(file) {
   altTextRequired = imported.altTextRequired === true;
   imageAutoResizeMode = normalizeImageAutoResizeMode(imported.imageAutoResizeMode);
   archiveExpertMode = imported.archiveExpertMode === true;
-  themeMode = imported.themeMode === "dark" ? "dark" : "light";
+  if (imported.themeMode === "dark") {
+    themeMode = "dark";
+  } else {
+    themeMode = "light";
+  }
+  compactMode = imported.compactMode === true;
+  persistAppearancePreferences();
   sidebarCollapsedDesktop = imported.sidebarCollapsedDesktop === true;
   ({
     sidebarWidthDesktop,
@@ -27440,6 +30749,8 @@ async function importSettingsBackup(file) {
 
   await persistSettings();
   applyTranslations();
+  applyTheme();
+  applyCompactMode();
   renderAccountSwitcher();
   segmentOverrides = null;
   setComposerLocked(false);
@@ -27713,6 +31024,89 @@ function buildBlueskyPostUrl(handle, uri, serviceUrl = authAccountService) {
   return `${resolvePostWebBase(serviceUrl)}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordId)}`;
 }
 
+/**
+ * Resolves a shared post URL and opens the matching live thread in Thread Explorer.
+ * @param {string} url - Shared post URL from a supported Bluesky web frontend.
+ * @returns {Promise<void>} Resolves after the thread was selected.
+ */
+async function openPostUrlInThreadExplorer(url) {
+  const normalizedUrl = String(url || "").trim();
+  if (!normalizedUrl) {
+    throw new Error(t("threadExplorerUrlMissing"));
+  }
+
+  const result = await sendToServiceWorker("RESOLVE_THREAD_EXPLORER_POST_URL", {
+    url: normalizedUrl,
+  }, {
+    timeoutMs: 30000,
+  });
+  const uri = String(result?.uri || "").trim();
+  if (!uri) {
+    throw new Error(t("threadExplorerUrlFailed"));
+  }
+
+  showThreadExplorerWorkspace();
+  await selectThreadExplorerPost(uri);
+}
+
+/**
+ * Returns the Thread Explorer button inside the publish-result dialog and creates it on demand.
+ * @returns {HTMLButtonElement|null} Existing or newly created button.
+ */
+function ensurePublishResultThreadExplorerButton() {
+  let button = publishResultDialog?.querySelector("#publish-result-thread-explorer-button");
+  if (button instanceof HTMLButtonElement) {
+    return button;
+  }
+
+  const actions = publishResultDialog?.querySelector(".settings-actions");
+  if (!actions) {
+    return null;
+  }
+
+  button = document.createElement("button");
+  button.type = "button";
+  button.id = "publish-result-thread-explorer-button";
+  button.className = "ghost-button history-link";
+  button.textContent = t("openPostInThreadExplorerButton");
+  actions.insertBefore(button, publishResultLink || null);
+  button.addEventListener("click", handlePublishResultThreadExplorerClick);
+  return button;
+}
+
+/**
+ * Opens the most recently published post in Thread Explorer from the publish-result dialog.
+ * @returns {Promise<void>} Resolves after the thread was opened or the dialog restored.
+ */
+async function handlePublishResultThreadExplorerClick() {
+  const button = ensurePublishResultThreadExplorerButton();
+  const postUrl = String(button?.dataset.postUrl || "").trim();
+  if (!postUrl || !button) {
+    return;
+  }
+
+  try {
+    setBusy(
+      button,
+      true,
+      t("historyOpenThreadExplorerBusy"),
+      t("openPostInThreadExplorerButton"),
+    );
+    await openPostUrlInThreadExplorer(postUrl);
+    publishResultDialog.close();
+  } catch (error) {
+    console.error(error);
+    showErrorDialog(error.message || t("threadExplorerUrlFailed"));
+  } finally {
+    setBusy(
+      button,
+      false,
+      t("historyOpenThreadExplorerBusy"),
+      t("openPostInThreadExplorerButton"),
+    );
+  }
+}
+
 function showPublishResult(result) {
   const postCount = result.posts?.length || 0;
   const handle = result.handle || authAccount;
@@ -27731,6 +31125,12 @@ function showPublishResult(result) {
   }
   publishResultLink.href = postUrl || "#";
   publishResultLink.hidden = !postUrl;
+  const threadExplorerButton = ensurePublishResultThreadExplorerButton();
+  if (threadExplorerButton) {
+    threadExplorerButton.disabled = !postUrl;
+    threadExplorerButton.dataset.postUrl = postUrl || "";
+    threadExplorerButton.textContent = t("openPostInThreadExplorerButton");
+  }
   publishResultDialog.showModal();
 }
 
@@ -27823,6 +31223,33 @@ function renderHistoryList() {
     link.rel = "noreferrer noopener";
     link.textContent = t("historyOpenLink");
 
+    const threadExplorerButton = document.createElement("button");
+    threadExplorerButton.type = "button";
+    threadExplorerButton.className = "ghost-button history-link";
+    threadExplorerButton.textContent = t("openPostInThreadExplorerButton");
+    threadExplorerButton.addEventListener("click", async () => {
+      try {
+        setBusy(
+          threadExplorerButton,
+          true,
+          t("historyOpenThreadExplorerBusy"),
+          t("openPostInThreadExplorerButton"),
+        );
+        await openPostUrlInThreadExplorer(entry.url);
+        historyDialog.close();
+      } catch (error) {
+        console.error(error);
+        showErrorDialog(error.message || t("threadExplorerUrlFailed"));
+      } finally {
+        setBusy(
+          threadExplorerButton,
+          false,
+          t("historyOpenThreadExplorerBusy"),
+          t("openPostInThreadExplorerButton"),
+        );
+      }
+    });
+
     const continueButton = document.createElement("button");
     continueButton.type = "button";
     continueButton.className = "ghost-button history-link";
@@ -27840,7 +31267,7 @@ function renderHistoryList() {
         updatePublishAvailability();
         queueDraftSave();
         historyDialog.close();
-        showComposerWorkspace();
+        showComposerWorkspace({ redirectPage: true });
         setStatus(t("replyTargetThreadReady"));
       } catch (error) {
         console.error(error);
@@ -27863,7 +31290,7 @@ function renderHistoryList() {
       setStatus(t("historyDeleted"));
     });
 
-    actions.append(link, continueButton, deleteButton);
+    actions.append(link, threadExplorerButton, continueButton, deleteButton);
     item.append(meta, actions);
     historyList.appendChild(item);
   });
@@ -27901,6 +31328,1076 @@ async function recordPublishedThread(result, preparedSegments) {
 function autoSizeTextarea(textarea) {
   textarea.style.height = "auto";
   textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+/**
+ * Extracts mention candidates from composer text in the same visible form as Bluesky mentions.
+ * @param {string} text - Raw segment text.
+ * @returns {Array<{ handle: string, raw: string }>} Normalized handles plus the original mention text.
+ */
+function parseComposerMentionCandidates(text) {
+  const candidates = [];
+  const value = String(text || "");
+  const regex = /(^|[\s([{"'“„«‹])(@)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+)(?=$|[\s)\]}",;:!?'”»›])/gu;
+  let match;
+
+  while ((match = regex.exec(value))) {
+    const handle = String(match[3] || "").trim().toLowerCase();
+    if (!handle) {
+      continue;
+    }
+    candidates.push({
+      handle,
+      raw: `@${handle}`,
+    });
+  }
+
+  return candidates;
+}
+
+/**
+ * Returns unique mention handles in the order they first appear.
+ * @param {Array<{ handle: string, raw: string }>} candidates - Mention candidates extracted from text.
+ * @returns {string[]} Unique normalized handles.
+ */
+function getUniqueComposerMentionHandles(candidates) {
+  const uniqueHandles = [];
+  const seen = new Set();
+
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const handle = String(candidate?.handle || "").trim().toLowerCase();
+    if (!handle || seen.has(handle)) {
+      continue;
+    }
+    seen.add(handle);
+    uniqueHandles.push(handle);
+  }
+
+  return uniqueHandles;
+}
+
+/**
+ * Resolves mention handles through the service worker and updates the local cache.
+ * @param {string[]} handles - Normalized handles without leading at sign.
+ * @returns {Promise<Map<string, string|null>>} Map of handles to resolved DIDs or null.
+ */
+async function resolveComposerMentionHandles(handles) {
+  const resultMap = new Map();
+  const normalizedHandles = [];
+
+  for (const handle of Array.isArray(handles) ? handles : []) {
+    const normalizedHandle = String(handle || "").trim().toLowerCase();
+    if (!normalizedHandle) {
+      continue;
+    }
+    if (!normalizedHandles.includes(normalizedHandle)) {
+      normalizedHandles.push(normalizedHandle);
+    }
+  }
+
+  const missingHandles = [];
+  for (const handle of normalizedHandles) {
+    if (composerMentionResolutionCache.has(handle)) {
+      resultMap.set(handle, composerMentionResolutionCache.get(handle) || null);
+    } else {
+      missingHandles.push(handle);
+    }
+  }
+
+  if (missingHandles.length > 0) {
+    const response = await sendToServiceWorker("RESOLVE_COMPOSER_MENTIONS", {
+      handles: missingHandles,
+    }, { timeoutMs: 30000 }).catch(() => ({ mentions: [] }));
+    const resolvedMentions = Array.isArray(response?.mentions) ? response.mentions : [];
+    const resolvedMap = new Map();
+
+    for (const mention of resolvedMentions) {
+      const handle = String(mention?.handle || "").trim().toLowerCase();
+      const did = String(mention?.did || "").trim();
+      if (!handle) {
+        continue;
+      }
+      if (did) {
+        resolvedMap.set(handle, did);
+      } else {
+        resolvedMap.set(handle, null);
+      }
+    }
+
+    for (const handle of missingHandles) {
+      let did = null;
+      if (resolvedMap.has(handle)) {
+        did = resolvedMap.get(handle);
+      }
+      composerMentionResolutionCache.set(handle, did);
+      resultMap.set(handle, did);
+    }
+  }
+
+  return resultMap;
+}
+
+/**
+ * Builds the public profile URL for a resolved mention.
+ * @param {string} handle - Normalized handle without leading at sign.
+ * @param {string|null} did - Resolved DID when available.
+ * @returns {string} Public Bluesky profile URL.
+ */
+function buildComposerMentionProfileUrl(handle, did) {
+  const profileIdentifier = String(did || handle || "").trim();
+  if (!profileIdentifier) {
+    return "";
+  }
+  return `${DEFAULT_POST_WEB_APP}/profile/${encodeURIComponent(profileIdentifier)}`;
+}
+
+/**
+ * Escapes a string so it can be used inside a regular expression.
+ * @param {string} value - Raw string that may contain regex control characters.
+ * @returns {string} Escaped regex-safe string.
+ */
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Builds a regular expression that matches one mention handle with safe boundaries.
+ * @param {string} handle - Mention handle without leading at sign.
+ * @returns {RegExp|null} Regex for one handle or null when the handle is empty.
+ */
+function buildMentionHandlePattern(handle) {
+  const normalizedHandle = String(handle || "").trim().replace(/^@/, "");
+  if (!normalizedHandle) {
+    return null;
+  }
+  return new RegExp(`(^|[\\s([{"'“„«‹])@${escapeRegex(normalizedHandle)}(?=$|[\\s)\\]}",;:!?'”»›])`, "gu");
+}
+
+/**
+ * Checks whether a text currently contains a specific mention handle.
+ * @param {string} text - Source text that may contain mentions.
+ * @param {string} handle - Mention handle without leading at sign.
+ * @returns {boolean} True when the mention exists with valid boundaries.
+ */
+function textContainsMentionHandle(text, handle) {
+  const pattern = buildMentionHandlePattern(handle);
+  if (!pattern) {
+    return false;
+  }
+  return pattern.test(String(text || ""));
+}
+
+/**
+ * Replaces one mention handle inside a segment text while keeping surrounding punctuation intact.
+ * @param {string} text - Raw segment text.
+ * @param {string} fromHandle - Old handle without leading at sign.
+ * @param {string} toHandle - New handle without leading at sign.
+ * @returns {string} Updated segment text.
+ */
+function replaceMentionHandleInSegmentText(text, fromHandle, toHandle) {
+  const fromValue = String(fromHandle || "").trim().replace(/^@/, "");
+  const toValue = String(toHandle || "").trim().replace(/^@/, "");
+  if (!fromValue || !toValue || fromValue === toValue) {
+    return String(text || "");
+  }
+
+  const pattern = buildMentionHandlePattern(fromValue);
+  if (!pattern) {
+    return String(text || "");
+  }
+  return String(text || "").replace(pattern, (match, prefix) => `${prefix}@${toValue}`);
+}
+
+/**
+ * Stores or updates a pending source-text mention sync for one composer segment.
+ * @param {number} segmentIndex - Zero-based segment index.
+ * @param {string} fromHandle - Handle that still exists in the original text.
+ * @param {string} toHandle - Handle that is already used in the edited segment.
+ * @returns {void}
+ */
+function queueMentionSourceSync(segmentIndex, fromHandle, toHandle) {
+  const normalizedFrom = String(fromHandle || "").trim().replace(/^@/, "").toLowerCase();
+  const normalizedTo = String(toHandle || "").trim().replace(/^@/, "").toLowerCase();
+  if (!normalizedFrom || !normalizedTo || normalizedFrom === normalizedTo) {
+    return;
+  }
+
+  const nextEntries = [];
+  const existingEntries = composerMentionSourceSyncBySegment.get(segmentIndex) || [];
+  let hasUpdatedEntry = false;
+
+  for (const entry of existingEntries) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const entryFrom = String(entry.fromHandle || "").trim().toLowerCase();
+    const entryTo = String(entry.toHandle || "").trim().toLowerCase();
+    if (!entryFrom || !entryTo) {
+      continue;
+    }
+
+    if (entryTo === normalizedFrom || entryFrom === normalizedFrom) {
+      nextEntries.push({
+        fromHandle: entryFrom,
+        toHandle: normalizedTo,
+      });
+      hasUpdatedEntry = true;
+    } else {
+      nextEntries.push({
+        fromHandle: entryFrom,
+        toHandle: entryTo,
+      });
+    }
+  }
+
+  if (!hasUpdatedEntry) {
+    nextEntries.push({
+      fromHandle: normalizedFrom,
+      toHandle: normalizedTo,
+    });
+  }
+
+  composerMentionSourceSyncBySegment.set(segmentIndex, nextEntries);
+}
+
+/**
+ * Returns only those pending source-sync entries that still differ between source and segment text.
+ * @param {number} segmentIndex - Zero-based segment index.
+ * @param {string} segmentText - Current edited segment text.
+ * @returns {Array<{ fromHandle: string, toHandle: string }>} Valid pending sync entries.
+ */
+function getPendingMentionSourceSyncEntries(segmentIndex, segmentText) {
+  const source = String(sourceText?.value || "");
+  const currentSegmentText = String(segmentText || "");
+  const pendingEntries = composerMentionSourceSyncBySegment.get(segmentIndex) || [];
+  const validEntries = [];
+
+  for (const entry of pendingEntries) {
+    const fromHandle = String(entry?.fromHandle || "").trim().toLowerCase();
+    const toHandle = String(entry?.toHandle || "").trim().toLowerCase();
+    if (!fromHandle || !toHandle || fromHandle === toHandle) {
+      continue;
+    }
+    if (!textContainsMentionHandle(source, fromHandle)) {
+      continue;
+    }
+    if (!textContainsMentionHandle(currentSegmentText, toHandle)) {
+      continue;
+    }
+    validEntries.push({ fromHandle, toHandle });
+  }
+
+  if (validEntries.length > 0) {
+    composerMentionSourceSyncBySegment.set(segmentIndex, validEntries);
+  } else {
+    composerMentionSourceSyncBySegment.delete(segmentIndex);
+  }
+
+  return validEntries;
+}
+
+/**
+ * Applies one pending mention correction from a segment back to the original composer text.
+ * @param {number} segmentIndex - Zero-based segment index.
+ * @param {string} fromHandle - Handle that still exists in the original text.
+ * @param {string} toHandle - Corrected handle that should replace it.
+ * @returns {void}
+ */
+function applyMentionSourceSync(segmentIndex, fromHandle, toHandle) {
+  const normalizedFrom = String(fromHandle || "").trim().replace(/^@/, "").toLowerCase();
+  const normalizedTo = String(toHandle || "").trim().replace(/^@/, "").toLowerCase();
+  if (!normalizedFrom || !normalizedTo || normalizedFrom === normalizedTo) {
+    return;
+  }
+
+  const nextSourceText = replaceMentionHandleInSegmentText(String(sourceText?.value || ""), normalizedFrom, normalizedTo);
+  if (sourceText) {
+    sourceText.value = nextSourceText;
+  }
+
+  const remainingEntries = [];
+  const pendingEntries = composerMentionSourceSyncBySegment.get(segmentIndex) || [];
+  for (const entry of pendingEntries) {
+    const entryFrom = String(entry?.fromHandle || "").trim().toLowerCase();
+    const entryTo = String(entry?.toHandle || "").trim().toLowerCase();
+    if (entryFrom === normalizedFrom && entryTo === normalizedTo) {
+      continue;
+    }
+    remainingEntries.push({
+      fromHandle: entryFrom,
+      toHandle: entryTo,
+    });
+  }
+
+  if (remainingEntries.length > 0) {
+    composerMentionSourceSyncBySegment.set(segmentIndex, remainingEntries);
+  } else {
+    composerMentionSourceSyncBySegment.delete(segmentIndex);
+  }
+
+  composerMentionResolutionCache.delete(normalizedFrom);
+  composerMentionResolutionCache.delete(normalizedTo);
+  setComposerLocked(true);
+  setComposerPosted(false);
+  renderSegments({
+    preserveOverrides: true,
+    preserveView: true,
+    animate: false,
+  });
+  queueDraftSave();
+}
+
+/**
+ * Returns a short relation label for an account search hit relative to the active viewer.
+ * @param {object} actor - Search result actor from the service worker.
+ * @returns {string} Localized relation label or an empty string.
+ */
+function getMentionSearchRelationLabel(actor = {}) {
+  if (actor.followingViewer === true && actor.followedByViewer === true) {
+    return t("mentionSearchRelationMutual");
+  }
+  if (actor.followedByViewer === true) {
+    return t("mentionSearchRelationFollowsYou");
+  }
+  if (actor.followingViewer === true) {
+    return t("mentionSearchRelationYouFollow");
+  }
+  return "";
+}
+
+/**
+ * Returns the best account identifier to write back into a picker target field.
+ * @param {object} actor - Normalized actor search hit.
+ * @returns {string} Preferred handle, falling back to DID.
+ */
+function getAccountPickerSelectionValue(actor = {}) {
+  const handle = String(actor?.handle || "").trim();
+  if (handle) {
+    return handle;
+  }
+  return String(actor?.did || "").trim();
+}
+
+/**
+ * Writes a value into an input field and notifies existing listeners.
+ * @param {HTMLInputElement|null} input - Target input element.
+ * @param {string} value - Next field value.
+ * @returns {void}
+ */
+function setPickerInputValue(input, value) {
+  if (!input) {
+    return;
+  }
+  accountPickerAutoOpenMutedInputs.add(input);
+  input.value = String(value || "");
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/**
+ * Opens the shared account picker dialog for a regular account field.
+ * @param {object} options - Picker configuration for the target field.
+ * @param {string} options.label - Visible field label used in the dialog title.
+ * @param {string} options.initialQuery - Pre-filled search value.
+ * @param {(actor: object, value: string) => void} options.onSelect - Callback after a result was chosen.
+ * @param {string} [options.noteKey] - Optional translation key for the dialog note.
+ * @returns {void}
+ */
+function openAccountPickerDialog(options = {}) {
+  const label = String(options.label || t("accountPickerFallbackLabel")).trim();
+  const initialQuery = String(options.initialQuery || "").trim().replace(/^@/, "");
+  mentionSearchContext = "account";
+  mentionSearchSelectionHandler = typeof options.onSelect === "function" ? options.onSelect : null;
+  mentionSearchAccountSourceInput = options.sourceInput instanceof HTMLInputElement ? options.sourceInput : null;
+  mentionSearchAccountSourceQuery = initialQuery.toLowerCase();
+  mentionSearchAccountSelectionApplied = false;
+  mentionSearchSegmentIndex = -1;
+  mentionSearchOriginalHandle = "";
+  mentionSearchMode = "repair";
+  mentionSearchRequestToken += 1;
+  window.clearTimeout(mentionSearchInputTimer);
+  mentionSearchInputTimer = 0;
+
+  if (mentionSearchDialogEyebrow) {
+    mentionSearchDialogEyebrow.textContent = t("accountPickerDialogEyebrow");
+  }
+  if (mentionSearchDialogTitle) {
+    mentionSearchDialogTitle.textContent = t("accountPickerDialogTitle", { label });
+  }
+  if (mentionSearchDialogNote) {
+    const noteKey = String(options.noteKey || "accountPickerDialogNote");
+    mentionSearchDialogNote.textContent = t(noteKey, { label });
+  }
+  if (mentionSearchStatus) {
+    mentionSearchStatus.textContent = "";
+    delete mentionSearchStatus.dataset.tone;
+  }
+  if (mentionSearchResults) {
+    mentionSearchResults.replaceChildren();
+  }
+  if (mentionSearchInput) {
+    mentionSearchInput.value = initialQuery;
+  }
+
+  mentionSearchDialog?.showModal();
+  mentionSearchInput?.focus();
+  mentionSearchInput?.select();
+  void runMentionSearch(initialQuery);
+}
+
+/**
+ * Applies the selected account to the current non-mention picker target.
+ * @param {object} actor - Chosen account search result.
+ * @returns {void}
+ */
+function applyAccountPickerSelection(actor = {}) {
+  const selectedValue = getAccountPickerSelectionValue(actor);
+  if (!selectedValue) {
+    return;
+  }
+  mentionSearchAccountSelectionApplied = true;
+  if (mentionSearchAccountSourceInput) {
+    accountPickerAutoOpenDismissedQueries.delete(mentionSearchAccountSourceInput);
+  }
+  if (typeof mentionSearchSelectionHandler === "function") {
+    mentionSearchSelectionHandler(actor, selectedValue);
+  }
+  closeMentionSearchDialog();
+}
+
+/**
+ * Updates the archive source field from the shared account picker and refreshes its preview.
+ * @param {object} actor - Chosen account search result.
+ * @param {string} value - Preferred field value, usually the handle.
+ * @returns {void}
+ */
+function applyArchiveSourcePickerSelection(actor, value) {
+  const normalizedValue = String(value || actor?.handle || actor?.did || "").trim();
+  setPickerInputValue(archiveSourceInput, normalizedValue);
+  void validateArchiveSourceInput({ silentSuccess: false }).catch(() => {});
+}
+
+/**
+ * Applies a chosen account to the DM partner search and selects a loaded partner when possible.
+ * @param {object} actor - Chosen account search result.
+ * @param {string} value - Preferred field value, usually the handle.
+ * @returns {void}
+ */
+function applyDmContactPickerSelection(actor, value) {
+  const normalizedValue = String(value || actor?.handle || actor?.did || "").trim();
+  const normalizedHandle = String(actor?.handle || normalizedValue).trim().replace(/^@/, "").toLowerCase();
+  const normalizedDid = String(actor?.did || "").trim().toLowerCase();
+  setPickerInputValue(dmContactSearchInput, normalizedValue);
+
+  let matchedDid = "";
+  for (const contact of Array.isArray(dmRecentContacts) ? dmRecentContacts : []) {
+    const contactDid = String(contact?.did || "").trim();
+    const contactDidLower = contactDid.toLowerCase();
+    const contactHandle = String(contact?.handle || "").trim().replace(/^@/, "").toLowerCase();
+    if (normalizedDid && contactDidLower === normalizedDid) {
+      matchedDid = contactDid;
+      break;
+    }
+    if (normalizedHandle && contactHandle === normalizedHandle) {
+      matchedDid = contactDid;
+      break;
+    }
+  }
+
+  if (matchedDid) {
+    dmSelectedParticipantDids = [matchedDid];
+  } else {
+    dmSelectedParticipantDids = [];
+  }
+  renderDmWorkspace();
+  if (matchedDid) {
+    setDmContactSearchFieldNote("");
+  } else {
+    setDmContactSearchFieldNote(t("dmContactNotLoadedMatch"));
+  }
+}
+
+/**
+ * Opens the shared account picker for a plain input field and writes the chosen value back.
+ * @param {HTMLInputElement|null} input - Target field that should receive the chosen account.
+ * @param {string} label - Visible field label used in the dialog title.
+ * @param {object} [options] - Optional picker settings.
+ * @param {string} [options.noteKey] - Optional translation key for the dialog note.
+ * @param {(actor: object, value: string) => void} [options.onSelect] - Optional custom selection handler.
+ * @returns {void}
+ */
+function openInputAccountPicker(input, label, options = {}) {
+  if (!input) {
+    return;
+  }
+
+  let selectionHandler = null;
+  if (typeof options.onSelect === "function") {
+    selectionHandler = options.onSelect;
+  } else {
+    selectionHandler = (actor, value) => {
+      setPickerInputValue(input, value);
+    };
+  }
+
+  openAccountPickerDialog({
+    label,
+    initialQuery: String(input.value || ""),
+    noteKey: String(options.noteKey || "accountPickerDialogNote"),
+    onSelect: selectionHandler,
+    sourceInput: input,
+  });
+}
+
+/**
+ * Enables automatic account-picker opening for one input field after a short query.
+ * @param {HTMLInputElement|null} input - Target account input field.
+ * @param {string} label - Visible field label used in the picker dialog.
+ * @param {object} [options] - Optional picker settings forwarded to the dialog.
+ * @param {string} [options.noteKey] - Optional translation key for the dialog note.
+ * @param {(actor: object, value: string) => void} [options.onSelect] - Optional custom selection handler.
+ * @returns {void}
+ */
+function enableAutoAccountPicker(input, label, options = {}) {
+  if (!input) {
+    return;
+  }
+
+  input.addEventListener("input", () => {
+    if (accountPickerAutoOpenMutedInputs.has(input)) {
+      accountPickerAutoOpenMutedInputs.delete(input);
+      return;
+    }
+
+    const previousTimer = accountPickerAutoOpenTimers.get(input);
+    if (previousTimer) {
+      window.clearTimeout(previousTimer);
+      accountPickerAutoOpenTimers.delete(input);
+    }
+
+    const query = String(input.value || "").trim().replace(/^@/, "");
+    if (query.length < ACCOUNT_PICKER_AUTO_OPEN_MIN_LENGTH) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      accountPickerAutoOpenTimers.delete(input);
+      const normalizedQuery = String(input.value || "").trim().replace(/^@/, "").toLowerCase();
+      const dismissedQuery = String(accountPickerAutoOpenDismissedQueries.get(input) || "").trim().toLowerCase();
+
+      if (!input.matches(":focus")) {
+        return;
+      }
+      if (mentionSearchDialog?.open) {
+        return;
+      }
+      if (!normalizedQuery || normalizedQuery.length < ACCOUNT_PICKER_AUTO_OPEN_MIN_LENGTH) {
+        return;
+      }
+      if (dismissedQuery && dismissedQuery === normalizedQuery) {
+        return;
+      }
+
+      openInputAccountPicker(input, label, options);
+    }, COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS);
+
+    accountPickerAutoOpenTimers.set(input, timerId);
+  });
+}
+
+/**
+ * Clears the mention search dialog state and visible results.
+ * @returns {void}
+ */
+function resetMentionSearchDialogState() {
+  if (mentionSearchContext === "account" && mentionSearchAccountSourceInput) {
+    if (mentionSearchAccountSelectionApplied) {
+      accountPickerAutoOpenDismissedQueries.delete(mentionSearchAccountSourceInput);
+    } else {
+      accountPickerAutoOpenDismissedQueries.set(
+        mentionSearchAccountSourceInput,
+        mentionSearchAccountSourceQuery,
+      );
+    }
+  }
+  mentionSearchRequestToken += 1;
+  mentionSearchSegmentIndex = -1;
+  mentionSearchOriginalHandle = "";
+  mentionSearchMode = "repair";
+  mentionSearchContext = "mention";
+  mentionSearchSelectionHandler = null;
+  mentionSearchAccountSourceInput = null;
+  mentionSearchAccountSourceQuery = "";
+  mentionSearchAccountSelectionApplied = false;
+  window.clearTimeout(mentionSearchInputTimer);
+  mentionSearchInputTimer = 0;
+  if (mentionSearchInput) {
+    mentionSearchInput.value = "";
+  }
+  if (mentionSearchStatus) {
+    mentionSearchStatus.textContent = "";
+    delete mentionSearchStatus.dataset.tone;
+  }
+  if (mentionSearchDialogEyebrow) {
+    mentionSearchDialogEyebrow.textContent = t("mentionSearchDialogEyebrow");
+  }
+  if (mentionSearchDialogTitle) {
+    mentionSearchDialogTitle.textContent = t("mentionSearchDialogTitle");
+  }
+  if (mentionSearchDialogNote) {
+    mentionSearchDialogNote.textContent = t("mentionSearchDialogNote");
+  }
+  if (mentionSearchResults) {
+    mentionSearchResults.replaceChildren();
+  }
+}
+
+/**
+ * Closes the composer mention search dialog and clears its transient state.
+ * @returns {void}
+ */
+function closeMentionSearchDialog() {
+  resetMentionSearchDialogState();
+  if (mentionSearchDialog?.open) {
+    mentionSearchDialog.close();
+  }
+}
+
+/**
+ * Applies a selected account handle to the currently edited unresolved mention.
+ * @param {string} selectedHandle - Chosen handle without leading at sign.
+ * @returns {void}
+ */
+function applyMentionSearchSelection(selectedHandle) {
+  const normalizedHandle = String(selectedHandle || "").trim().replace(/^@/, "");
+  if (!normalizedHandle) {
+    return;
+  }
+  if (mentionSearchSegmentIndex < 0 || mentionSearchSegmentIndex >= activeSegments.length) {
+    return;
+  }
+
+  const currentSegmentText = String(activeSegments[mentionSearchSegmentIndex] || "");
+  const nextText = replaceMentionHandleInSegmentText(currentSegmentText, mentionSearchOriginalHandle, normalizedHandle);
+  activeSegments[mentionSearchSegmentIndex] = nextText;
+  queueMentionSourceSync(mentionSearchSegmentIndex, mentionSearchOriginalHandle, normalizedHandle);
+  segmentOverrides = normalizeSegmentOverrides(activeSegments);
+  setComposerLocked(true);
+  setComposerPosted(false);
+  composerMentionResolutionCache.delete(String(mentionSearchOriginalHandle || "").trim().toLowerCase());
+  composerMentionResolutionCache.delete(normalizedHandle.toLowerCase());
+  closeMentionSearchDialog();
+  renderSegments({
+    preserveOverrides: true,
+    preserveView: true,
+    animate: false,
+  });
+  queueDraftSave();
+}
+
+/**
+ * Renders one batch of account search hits inside the mention search dialog.
+ * @param {object[]} actors - Normalized actor search results.
+ * @returns {void}
+ */
+function renderMentionSearchResults(actors) {
+  if (!mentionSearchResults) {
+    return;
+  }
+
+  mentionSearchResults.replaceChildren();
+  for (const actor of Array.isArray(actors) ? actors : []) {
+    const fragment = mentionSearchResultTemplate?.content.cloneNode(true);
+    if (!fragment) {
+      continue;
+    }
+
+    const button = fragment.querySelector(".mention-search-result");
+    const avatar = fragment.querySelector(".mention-search-result-avatar");
+    const name = fragment.querySelector(".mention-search-result-name");
+    const handle = fragment.querySelector(".mention-search-result-handle");
+    const meta = fragment.querySelector(".mention-search-result-meta");
+
+    setAvatarImage(avatar, actor.avatar, actor.displayName || actor.handle || actor.did || "account");
+    name.textContent = actor.displayName || actor.handle || actor.did || "";
+    handle.textContent = actor.handle ? `@${actor.handle}` : actor.did || "";
+    meta.textContent = getMentionSearchRelationLabel(actor);
+    button.addEventListener("click", () => {
+      if (mentionSearchContext === "account") {
+        applyAccountPickerSelection(actor);
+        return;
+      }
+      applyMentionSearchSelection(actor.handle || "");
+    });
+
+    mentionSearchResults.appendChild(fragment);
+  }
+}
+
+/**
+ * Runs the live account search for the mention dialog through the service worker.
+ * @param {string} rawQuery - Current dialog input value.
+ * @returns {Promise<void>} Resolves after the UI has been updated.
+ */
+async function runMentionSearch(rawQuery) {
+  if (!mentionSearchStatus || !mentionSearchResults) {
+    return;
+  }
+
+  const query = String(rawQuery || "").trim();
+  const normalizedQuery = query.replace(/^@/, "");
+  const requestToken = ++mentionSearchRequestToken;
+  mentionSearchStatus.textContent = "";
+  delete mentionSearchStatus.dataset.tone;
+
+  if (normalizedQuery.length < 2) {
+    mentionSearchResults.replaceChildren();
+    mentionSearchStatus.textContent = t("mentionSearchNeedQuery");
+    return;
+  }
+
+  mentionSearchStatus.textContent = t("mentionSearchLoading");
+
+  try {
+    const response = await sendToServiceWorker("SEARCH_MENTION_ACTORS", {
+      query: normalizedQuery,
+    }, { timeoutMs: 30000 });
+    if (requestToken !== mentionSearchRequestToken) {
+      return;
+    }
+
+    const actors = Array.isArray(response?.actors) ? response.actors : [];
+    if (actors.length === 0) {
+      mentionSearchResults.replaceChildren();
+      mentionSearchStatus.textContent = t("mentionSearchNoResults");
+      return;
+    }
+
+    renderMentionSearchResults(actors);
+    mentionSearchStatus.textContent = t("mentionSearchResultsLoaded", {
+      count: actors.length,
+    });
+  } catch (error) {
+    if (requestToken !== mentionSearchRequestToken) {
+      return;
+    }
+    mentionSearchStatus.textContent = error.message || t("mentionSearchFailed");
+    mentionSearchStatus.dataset.tone = "error";
+  }
+}
+
+/**
+ * Opens the composer mention search dialog for one mention in repair or review mode.
+ * @param {number} segmentIndex - Segment that contains the unresolved mention.
+ * @param {string} handle - Mention handle without leading at sign.
+ * @param {"repair"|"review"} mode - Dialog mode for unresolved or already resolved mentions.
+ * @returns {void}
+ */
+function openMentionSearchDialog(segmentIndex, handle, mode = "repair") {
+  mentionSearchContext = "mention";
+  mentionSearchSelectionHandler = null;
+  mentionSearchSegmentIndex = segmentIndex;
+  mentionSearchOriginalHandle = String(handle || "").trim().replace(/^@/, "").toLowerCase();
+  mentionSearchMode = mode === "review" ? "review" : "repair";
+  mentionSearchRequestToken += 1;
+  window.clearTimeout(mentionSearchInputTimer);
+  mentionSearchInputTimer = 0;
+  if (mentionSearchDialogEyebrow) {
+    mentionSearchDialogEyebrow.textContent = t("mentionSearchDialogEyebrow");
+  }
+  if (mentionSearchResults) {
+    mentionSearchResults.replaceChildren();
+  }
+  if (mentionSearchStatus) {
+    mentionSearchStatus.textContent = "";
+    delete mentionSearchStatus.dataset.tone;
+  }
+  if (mentionSearchInput) {
+    mentionSearchInput.value = mentionSearchOriginalHandle;
+  }
+  if (mentionSearchDialogTitle) {
+    mentionSearchDialogTitle.textContent = mentionSearchMode === "review"
+      ? t("mentionSearchDialogReviewTitle")
+      : t("mentionSearchDialogTitle");
+  }
+  if (mentionSearchDialogNote) {
+    mentionSearchDialogNote.textContent = mentionSearchMode === "review"
+      ? t("mentionSearchDialogReviewNote")
+      : t("mentionSearchDialogNote");
+  }
+  mentionSearchDialog?.showModal();
+  mentionSearchInput?.focus();
+  mentionSearchInput?.select();
+  void runMentionSearch(mentionSearchOriginalHandle);
+}
+
+/**
+ * Collects known local handles that can be used for typo suggestions.
+ * @returns {string[]} Unique normalized handles known to the current app state.
+ */
+function getKnownComposerMentionHandles() {
+  const handles = [];
+  const seen = new Set();
+  const rawValues = [];
+
+  rawValues.push(authAccount);
+  for (const account of Array.isArray(savedAccounts) ? savedAccounts : []) {
+    rawValues.push(account?.handle);
+    rawValues.push(account?.identifier);
+  }
+
+  for (const rawValue of rawValues) {
+    const normalizedHandle = String(rawValue || "").trim().replace(/^@/, "").toLowerCase();
+    if (!normalizedHandle || seen.has(normalizedHandle)) {
+      continue;
+    }
+    seen.add(normalizedHandle);
+    handles.push(normalizedHandle);
+  }
+
+  return handles;
+}
+
+/**
+ * Calculates the Levenshtein distance between two strings.
+ * @param {string} left - First comparison string.
+ * @param {string} right - Second comparison string.
+ * @returns {number} Edit distance between both strings.
+ */
+function getLevenshteinDistance(left, right) {
+  const source = String(left || "");
+  const target = String(right || "");
+
+  if (source === target) {
+    return 0;
+  }
+  if (!source) {
+    return target.length;
+  }
+  if (!target) {
+    return source.length;
+  }
+
+  const previousRow = new Array(target.length + 1).fill(0);
+  const currentRow = new Array(target.length + 1).fill(0);
+
+  for (let index = 0; index <= target.length; index += 1) {
+    previousRow[index] = index;
+  }
+
+  for (let sourceIndex = 1; sourceIndex <= source.length; sourceIndex += 1) {
+    currentRow[0] = sourceIndex;
+
+    for (let targetIndex = 1; targetIndex <= target.length; targetIndex += 1) {
+      const substitutionCost = source[sourceIndex - 1] === target[targetIndex - 1] ? 0 : 1;
+      const deletionCost = previousRow[targetIndex] + 1;
+      const insertionCost = currentRow[targetIndex - 1] + 1;
+      const substitutionTotal = previousRow[targetIndex - 1] + substitutionCost;
+      currentRow[targetIndex] = Math.min(deletionCost, insertionCost, substitutionTotal);
+    }
+
+    for (let targetIndex = 0; targetIndex <= target.length; targetIndex += 1) {
+      previousRow[targetIndex] = currentRow[targetIndex];
+    }
+  }
+
+  return previousRow[target.length];
+}
+
+/**
+ * Finds the nearest known local handle suggestion when the typo distance is small enough.
+ * @param {string} handle - Unresolved normalized handle.
+ * @returns {string} Suggested known handle or an empty string.
+ */
+function findComposerMentionSuggestion(handle) {
+  const normalizedHandle = String(handle || "").trim().toLowerCase();
+  if (!normalizedHandle) {
+    return "";
+  }
+
+  const knownHandles = getKnownComposerMentionHandles();
+  let bestHandle = "";
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of knownHandles) {
+    if (candidate === normalizedHandle) {
+      continue;
+    }
+
+    const distance = getLevenshteinDistance(normalizedHandle, candidate);
+    if (distance > 2) {
+      continue;
+    }
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestHandle = candidate;
+    }
+  }
+
+  if (!bestHandle) {
+    return "";
+  }
+
+  return bestHandle;
+}
+
+/**
+ * Renders resolved mention facets below one composer segment.
+ * @param {number} segmentIndex - Zero-based segment index for follow-up actions.
+ * @param {HTMLElement|null} container - Target mention container inside the segment card.
+ * @param {string} text - Current segment text.
+ * @param {number} version - Render/update version guard.
+ * @returns {Promise<void>} Resolves when the UI has been updated.
+ */
+async function updateSegmentMentionDisplay(segmentIndex, container, text, version) {
+  if (!container) {
+    return;
+  }
+
+  const candidates = parseComposerMentionCandidates(text);
+  const uniqueHandles = getUniqueComposerMentionHandles(candidates);
+
+  container.replaceChildren();
+  container.hidden = true;
+
+  if (uniqueHandles.length === 0) {
+    return;
+  }
+
+  const resolutionMap = await resolveComposerMentionHandles(uniqueHandles);
+  if (version !== segmentMentionUpdateVersion) {
+    return;
+  }
+
+  const resolvedEntries = [];
+  const unresolvedEntries = [];
+
+  for (const handle of uniqueHandles) {
+    let did = null;
+    if (resolutionMap.has(handle)) {
+      did = resolutionMap.get(handle);
+    }
+    if (did) {
+      resolvedEntries.push({ handle, did });
+    } else {
+      unresolvedEntries.push({
+        handle,
+        suggestion: findComposerMentionSuggestion(handle),
+      });
+    }
+  }
+
+  if (resolvedEntries.length === 0 && unresolvedEntries.length === 0) {
+    return;
+  }
+
+  const label = document.createElement("span");
+  label.className = "segment-mentions-label";
+  label.textContent = t("segmentMentionsLabel");
+  container.appendChild(label);
+
+  for (const entry of resolvedEntries) {
+    const chip = document.createElement("span");
+    const bodyButton = document.createElement("button");
+    const bodyContent = document.createElement("span");
+    const link = document.createElement("a");
+    const handleText = document.createElement("span");
+    const didText = document.createElement("small");
+
+    chip.className = "segment-mention-chip";
+    bodyButton.type = "button";
+    bodyButton.className = "segment-mention-chip-body-button";
+    bodyContent.className = "segment-mention-chip-body";
+    link.className = "thread-explorer-view-link segment-mention-open-link";
+    link.href = buildComposerMentionProfileUrl(entry.handle, entry.did);
+    link.target = "_blank";
+    link.rel = "noreferrer noopener";
+    link.textContent = "↗";
+    applyTranslatedTitle(link, "mentionOpenAccountButton");
+    link.setAttribute("aria-label", t("mentionOpenAccountButton"));
+    handleText.textContent = `@${entry.handle}`;
+    didText.textContent = entry.did;
+    bodyContent.append(handleText, didText);
+    bodyButton.appendChild(bodyContent);
+    bodyButton.addEventListener("click", () => {
+      openMentionSearchDialog(segmentIndex, entry.handle, "review");
+    });
+    chip.append(bodyButton, link);
+    container.appendChild(chip);
+  }
+
+  if (unresolvedEntries.length > 0) {
+    for (const entry of unresolvedEntries) {
+      const chip = document.createElement("button");
+      const handleText = document.createElement("strong");
+      const messageText = document.createElement("small");
+
+      chip.type = "button";
+      chip.className = "segment-mention-chip segment-mention-chip-warning segment-mention-chip-button";
+      handleText.textContent = `@${entry.handle}`;
+      if (entry.suggestion) {
+        messageText.textContent = t("segmentMentionsUnresolvedWithSuggestion", {
+          handle: `@${entry.handle}`,
+          suggestion: `@${entry.suggestion}`,
+        });
+      } else {
+        messageText.textContent = t("segmentMentionsUnresolvedHandle", {
+          handle: `@${entry.handle}`,
+        });
+      }
+      chip.append(handleText, messageText);
+      chip.addEventListener("click", () => {
+        openMentionSearchDialog(segmentIndex, entry.handle, "repair");
+      });
+      container.appendChild(chip);
+    }
+  }
+
+  const pendingSourceSyncEntries = getPendingMentionSourceSyncEntries(segmentIndex, text);
+  for (const entry of pendingSourceSyncEntries) {
+    const syncBox = document.createElement("div");
+    const syncMessage = document.createElement("small");
+    const syncButton = document.createElement("button");
+
+    syncBox.className = "segment-mention-sync";
+    syncMessage.textContent = t("segmentMentionsSourceSyncMessage", {
+      fromHandle: `@${entry.fromHandle}`,
+      toHandle: `@${entry.toHandle}`,
+    });
+    syncButton.type = "button";
+    syncButton.className = "segment-mention-sync-button";
+    syncButton.textContent = t("segmentMentionsSourceSyncButton");
+    syncButton.addEventListener("click", () => {
+      applyMentionSourceSync(segmentIndex, entry.fromHandle, entry.toHandle);
+    });
+    syncBox.append(syncMessage, syncButton);
+    container.appendChild(syncBox);
+  }
+
+  container.hidden = false;
+}
+
+/**
+ * Debounces mention resolution for one composer segment after edits.
+ * @param {number} segmentIndex - Zero-based segment index.
+ * @param {HTMLElement|null} container - Mention container inside the segment card.
+ * @param {string} text - Current segment text.
+ * @returns {void}
+ */
+function scheduleSegmentMentionDisplayUpdate(segmentIndex, container, text) {
+  const previousTimer = segmentMentionResolveTimerByIndex.get(segmentIndex);
+  if (previousTimer) {
+    window.clearTimeout(previousTimer);
+  }
+
+  const timerId = window.setTimeout(() => {
+    segmentMentionResolveTimerByIndex.delete(segmentIndex);
+    const currentVersion = segmentMentionUpdateVersion;
+    void updateSegmentMentionDisplay(segmentIndex, container, text, currentVersion);
+  }, COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS);
+
+  segmentMentionResolveTimerByIndex.set(segmentIndex, timerId);
 }
 
 function resizeAllSegmentTextareas() {
@@ -28360,6 +32857,7 @@ function getInlineHelpTopic(topicId = "") {
           t("helpTopicThreadExplorerThreadBullet2"),
           t("helpTopicThreadExplorerThreadBullet3"),
           t("helpTopicThreadExplorerThreadBullet4"),
+          t("helpTopicThreadExplorerThreadBullet5"),
         ],
       };
     case "network_stage":
@@ -29420,6 +33918,8 @@ function renderSegments(options = {}) {
     animate = false,
   } = options;
   const previousScrollTop = preserveView && segmentsPane ? segmentsPane.scrollTop : 0;
+  segmentMentionUpdateVersion += 1;
+  const currentMentionVersion = segmentMentionUpdateVersion;
   const text = sourceText.value;
   const useCounters = counterToggle.checked;
   appendThreadIntro = threadIntroToggle.checked;
@@ -29438,6 +33938,9 @@ function renderSegments(options = {}) {
       selectedHashtagText,
     )
     : [];
+  if (!preserveOverrides) {
+    composerMentionSourceSyncBySegment.clear();
+  }
   activeSegments = preserveOverrides ? (normalizeSegmentOverrides(segmentOverrides) || generatedSegments) : generatedSegments;
   segmentOverrides = preserveOverrides ? normalizeSegmentOverrides(activeSegments) : null;
   syncSegmentImages(activeSegments.length);
@@ -29464,6 +33967,7 @@ function renderSegments(options = {}) {
     const lengthLabel = fragment.querySelector(".segment-length");
     const warningLabel = fragment.querySelector(".segment-warning");
     const textarea = fragment.querySelector(".segment-text");
+    const mentionContainer = fragment.querySelector(".segment-mentions");
     const addImagesButton = fragment.querySelector(".segment-add-image-button");
     const linkCardButton = fragment.querySelector(".segment-link-card-button");
     const linkCardContainer = fragment.querySelector(".segment-link-card");
@@ -29494,6 +33998,7 @@ function renderSegments(options = {}) {
       updateSegmentLengthPresentation(lengthLabel, warningLabel, textarea.value);
       updateComposerLengthWarning(activeSegments);
       autoSizeTextarea(textarea);
+      scheduleSegmentMentionDisplayUpdate(index, mentionContainer, textarea.value);
       updatePublishAvailability();
       queueDraftSave();
     });
@@ -29550,24 +34055,51 @@ function renderSegments(options = {}) {
     });
     card.appendChild(input);
     const existingLinkCard = normalizeLinkCard(segmentLinkCards[index]);
+    const otherLinkCardSegmentIndex = findOtherLinkCardSegmentIndex(index);
     const detectedUrl = getFirstHttpUrl(segment);
     const linkCardUrl = detectedUrl || existingLinkCard?.url || "";
     const linkCardAvailable = canCreateLinkCardsWithCurrentProvider();
+    const hasImages = existingImages.length > 0;
     linkCardButton.hidden = false;
-    if (linkCardAvailable) {
-      linkCardButton.textContent = existingLinkCard ? t("linkCardRefreshButton") : t("linkCardSegmentButton");
-      linkCardButton.disabled = !linkCardUrl;
-      linkCardButton.title = !linkCardUrl
-        ? t("linkCardNoUrl")
-        : t("linkCardSegmentButton");
-      linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl));
+    if (existingLinkCard) {
+      linkCardButton.textContent = t("linkCardRefreshButton");
+      linkCardButton.disabled = !linkCardAvailable || !linkCardUrl;
+      if (!linkCardAvailable) {
+        linkCardButton.title = t("linkCardMicrolinkLimitReached");
+      } else if (!linkCardUrl) {
+        linkCardButton.title = t("linkCardNoUrl");
+      } else {
+        linkCardButton.title = t("linkCardRefreshButton");
+      }
+      linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl, "refresh"));
+    } else if (otherLinkCardSegmentIndex >= 0) {
+      linkCardButton.textContent = t("linkCardMoveButton");
+      linkCardButton.disabled = hasImages;
+      linkCardButton.title = hasImages
+        ? t("linkCardBlocksImages")
+        : t("linkCardMoveButton");
+      linkCardButton.addEventListener("click", () => {
+        openLinkCardDialog(index, "", "move", otherLinkCardSegmentIndex);
+      });
+    } else if (linkCardAvailable) {
+      linkCardButton.textContent = t("linkCardSegmentButton");
+      linkCardButton.disabled = !linkCardUrl || hasImages;
+      if (hasImages) {
+        linkCardButton.title = t("linkCardBlocksImages");
+      } else if (!linkCardUrl) {
+        linkCardButton.title = t("linkCardNoUrl");
+      } else {
+        linkCardButton.title = t("linkCardSegmentButton");
+      }
+      linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl, "create"));
     } else {
-      linkCardButton.textContent = existingLinkCard ? t("linkCardRefreshButton") : t("linkCardSegmentButton");
+      linkCardButton.textContent = t("linkCardSegmentButton");
       linkCardButton.disabled = true;
       linkCardButton.title = t("linkCardMicrolinkLimitReached");
     }
     renderSegmentLinkCard(linkCardContainer, index);
     renderSegmentImages(imageContainer, index);
+    void updateSegmentMentionDisplay(index, mentionContainer, segment, currentMentionVersion);
 
     segmentsList.appendChild(fragment);
     autoSizeTextarea(segmentsList.lastElementChild.querySelector(".segment-text"));
@@ -29625,7 +34157,25 @@ async function hydrateAppState() {
     altTextRequired = state.altTextRequired !== false;
     imageAutoResizeMode = normalizeImageAutoResizeMode(state.imageAutoResizeMode);
     archiveExpertMode = state.archiveExpertMode === true;
-    themeMode = state.themeMode === "dark" ? "dark" : "light";
+    const storedAppearancePreferences = getStoredAppearancePreferences();
+    if (storedAppearancePreferences.hasThemeMode) {
+      themeMode = storedAppearancePreferences.themeMode;
+    } else if (state.themeMode === "dark") {
+      themeMode = "dark";
+    } else if (state.themeMode === "light") {
+      themeMode = "light";
+    } else {
+      themeMode = storedAppearancePreferences.themeMode;
+    }
+    if (storedAppearancePreferences.hasCompactMode) {
+      compactMode = storedAppearancePreferences.compactMode;
+    } else if (state.compactMode === true) {
+      compactMode = true;
+    } else if (state.compactMode === false) {
+      compactMode = false;
+    } else {
+      compactMode = storedAppearancePreferences.compactMode;
+    }
     sidebarCollapsedDesktop = state.sidebarCollapsedDesktop === true;
     const needsDesktopLayoutMigration = state.desktopLayoutVersion !== DESKTOP_LAYOUT_STATE_VERSION;
     ({
@@ -29669,6 +34219,7 @@ async function hydrateAppState() {
     setComposerLocked(Boolean(segmentOverrides));
     postingHistory = normalizePostingHistory(state.postingHistory);
     threadExplorerFavorites = normalizeThreadExplorerFavorites(state.threadExplorerFavorites);
+    restorePersistedThreadExplorerState(state.threadExplorerState || {});
     savedSearches = normalizeSavedSearches(state.savedSearches);
     archiveSession = savedArchiveSession || null;
     archiveCatalog = savedArchiveCatalog ? normalizeImportedArchiveCatalog(savedArchiveCatalog) : null;
@@ -29696,6 +34247,7 @@ async function hydrateAppState() {
     applySidebarState();
     applyHashtagPaneContext();
     applyTranslations();
+    persistAppearancePreferences();
     if (segmentImages.some((images) => (images || []).length > 0)) {
       scheduleImageValidation();
     }
@@ -30085,6 +34637,20 @@ markerSpacingToggle.addEventListener("change", () => {
   void persistSettings();
   queueDraftSave();
 });
+enableAutoAccountPicker(searchActorInput, t("searchActorLabel"));
+enableAutoAccountPicker(searchMentionsInput, t("searchMentionsLabel"));
+enableAutoAccountPicker(networkAccountInput, t("networkAccountInputLabel"));
+enableAutoAccountPicker(threadExplorerAccountInput, t("threadExplorerAccountLabel"));
+enableAutoAccountPicker(analysisAccountAInput, t("analysisAccountALabel"));
+enableAutoAccountPicker(analysisAccountBInput, t("analysisAccountBLabel"));
+enableAutoAccountPicker(archiveMediaActorInput, t("archiveMediaActorLabel"));
+enableAutoAccountPicker(archiveSourceInput, t("archiveSourceLabel"), {
+  onSelect: applyArchiveSourcePickerSelection,
+});
+enableAutoAccountPicker(dmContactSearchInput, t("dmContactSearchLabel"), {
+  noteKey: "accountPickerDialogDmNote",
+  onSelect: applyDmContactPickerSelection,
+});
 replyModeInputs.forEach((input) => {
   input.addEventListener("change", async () => {
     if (!input.checked) {
@@ -30188,8 +34754,10 @@ historyButton.addEventListener("click", () => {
   historyDialog.showModal();
 });
 
+publishResultThreadExplorerButton?.addEventListener("click", handlePublishResultThreadExplorerClick);
+
 composerButton.addEventListener("click", () => {
-  showComposerWorkspace();
+  showComposerWorkspace({ redirectPage: true });
 });
 
 archiveButton.addEventListener("click", () => {
@@ -30209,6 +34777,23 @@ threadExplorerUrlButton.addEventListener("click", handleThreadExplorerUrlClick);
 threadExplorerSearchesButton.addEventListener("click", handleThreadExplorerSearchesClick);
 threadExplorerRefreshButton.addEventListener("click", handleThreadExplorerRefreshClick);
 threadExplorerSourceSelect.addEventListener("change", handleThreadExplorerSourceSelectChange);
+threadExplorerAccountInput?.addEventListener("input", () => {
+  threadExplorerAccountError = "";
+  renderThreadExplorerAccountNote();
+  void persistSettings();
+});
+threadExplorerAccountInput?.addEventListener("change", () => {
+  applyThreadExplorerAccountInput({ loadFeed: true });
+});
+threadExplorerAccountInput?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+  event.preventDefault();
+  applyThreadExplorerAccountInput({ loadFeed: true });
+});
+threadExplorerUseOwnAccountButton?.addEventListener("click", handleThreadExplorerUseOwnAccountClick);
+threadExplorerAccountModeSelect?.addEventListener("change", handleThreadExplorerAccountModeChange);
 threadExplorerFeedSelect.addEventListener("change", handleThreadExplorerFeedSelectChange);
 
 searchModeSelect?.addEventListener("change", () => {
@@ -30293,9 +34878,9 @@ searchCopyUrlButton?.addEventListener("click", () => {
   void copyCurrentSearchAsBskyUrl();
 });
 threadExplorerFeedList.addEventListener("scroll", handleThreadExplorerFeedScroll);
+threadExplorerActorFeedList?.addEventListener("scroll", handleThreadExplorerActorFocusScroll);
 threadExplorerActorFocusCloseButton.addEventListener("click", closeThreadExplorerActorFocus);
 threadExplorerActorModeSelect.addEventListener("change", handleThreadExplorerActorModeChange);
-threadExplorerActorMoreButton.addEventListener("click", handleThreadExplorerActorMoreClick);
 threadExplorerRootButton.addEventListener("click", handleThreadExplorerRootClick);
 threadExplorerReloadThreadButton.addEventListener("click", handleThreadExplorerReloadThreadClick);
 threadExplorerSnapshotPngButton.addEventListener("click", handleThreadExplorerSnapshotPngClick);
@@ -30303,10 +34888,16 @@ threadExplorerSaveButton.addEventListener("click", handleThreadExplorerSaveClick
 threadExplorerFavoritesButton.addEventListener("click", handleThreadExplorerFavoritesClick);
 threadExplorerZoomOutButton.addEventListener("click", handleThreadExplorerZoomOutClick);
 threadExplorerZoomResetButton.addEventListener("click", handleThreadExplorerZoomResetClick);
+threadExplorerZoomResetButton.addEventListener("dblclick", handleThreadExplorerZoomResetDoubleClick);
 threadExplorerZoomInButton.addEventListener("click", handleThreadExplorerZoomInClick);
+threadExplorerViewModeButton.addEventListener("click", handleThreadExplorerViewModeClick);
 threadExplorerOrientationButton.addEventListener("click", handleThreadExplorerOrientationClick);
+threadExplorerFullscreenButton.addEventListener("click", handleThreadExplorerFullscreenClick);
 threadExplorerCollapseButton.addEventListener("click", handleThreadExplorerCollapseClick);
 threadExplorerExpandButton.addEventListener("click", handleThreadExplorerExpandClick);
+threadExplorerFullscreenCloseButton?.addEventListener("click", () => {
+  setThreadExplorerFullscreen(false);
+});
 threadExplorerThreadTree.addEventListener("pointerdown", handleThreadExplorerPointerDown);
 threadExplorerThreadTree.addEventListener("pointermove", handleThreadExplorerPointerMove);
 threadExplorerThreadTree.addEventListener("pointerup", handleThreadExplorerPointerUp);
@@ -30396,6 +34987,7 @@ threadExplorerGalleryFullscreenButton.addEventListener("click", async () => {
 });
 window.addEventListener("resize", handleThreadExplorerResize);
 window.visualViewport?.addEventListener("resize", handleThreadExplorerResize);
+window.addEventListener("keydown", handleGlobalKeydown);
 
 analysisButton.addEventListener("click", () => {
   showAnalysisWorkspace();
@@ -30458,6 +35050,7 @@ analysisExportPdfButton?.addEventListener("click", async () => {
   input?.addEventListener("input", () => {
     analysisComparisonResult = null;
     input.setCustomValidity("");
+    setAnalysisAccountFieldNote(input === analysisAccountAInput ? "a" : "b", "");
     if (input === analysisAccountAInput) {
       analysisValidationTokens.a += 1;
     } else if (input === analysisAccountBInput) {
@@ -30513,9 +35106,11 @@ if (networkAccountInput) {
     }
   });
   networkAccountInput.addEventListener("input", () => {
+    setNetworkAccountFieldNote("");
     updateNetworkControls();
   });
 }
+
 
 if (networkSortFieldSelect) {
   networkSortFieldSelect.addEventListener("change", () => {
@@ -31474,9 +36069,24 @@ archiveExpertModeToggle?.addEventListener("change", async () => {
 });
 
 themeToggleButton.addEventListener("click", async () => {
-  themeMode = themeMode === "dark" ? "light" : "dark";
+  if (themeMode === "dark") {
+    themeMode = "light";
+  } else {
+    themeMode = "dark";
+  }
   applyTheme();
   await persistSettings();
+});
+compactModeToggleButtons.forEach((button) => {
+  button.addEventListener("click", async () => {
+    if (compactMode === true) {
+      compactMode = false;
+    } else {
+      compactMode = true;
+    }
+    applyCompactMode();
+    await persistSettings();
+  });
 });
 resetColumnWidthsButton.addEventListener("click", () => {
   void resetDesktopColumnWidths();
@@ -31831,6 +36441,29 @@ linkCardCreateButton?.addEventListener("click", () => {
 linkCardCancelButton?.addEventListener("click", closeLinkCardDialog);
 linkCardCloseTop?.addEventListener("click", closeLinkCardDialog);
 
+mentionSearchCloseTop?.addEventListener("click", closeMentionSearchDialog);
+mentionSearchCloseButton?.addEventListener("click", closeMentionSearchDialog);
+mentionSearchInput?.addEventListener("input", () => {
+  window.clearTimeout(mentionSearchInputTimer);
+  mentionSearchInputTimer = window.setTimeout(() => {
+    mentionSearchInputTimer = 0;
+    void runMentionSearch(mentionSearchInput.value);
+  }, COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS);
+});
+mentionSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void runMentionSearch(mentionSearchInput.value);
+  }
+});
+mentionSearchDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeMentionSearchDialog();
+});
+mentionSearchDialog?.addEventListener("close", () => {
+  resetMentionSearchDialogState();
+});
+
 postLanguagesDialog.addEventListener("close", () => {
   postLanguagesSearch.value = "";
   postLanguagesDisclosure.open = false;
@@ -31885,16 +36518,46 @@ window.matchMedia("(display-mode: standalone)").addEventListener("change", () =>
   updateInstallButtonVisibility();
 });
 
+pageSwitchLinks.forEach((link) => {
+  link.addEventListener("click", () => {
+    persistAppearancePreferences();
+    persistPendingPageSwitchUrl(link.href);
+  });
+});
+
+window.addEventListener("pageshow", () => {
+  syncAppearanceFromLocalStorage();
+});
+
+window.addEventListener("pagehide", () => {
+  syncAppearanceFromLocalStorage();
+});
+
+window.addEventListener("focus", () => {
+  syncAppearanceFromLocalStorage();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    syncAppearanceFromLocalStorage();
+  }
+});
+
 currentLocale = detectBrowserLocale();
 localePreference = "auto";
 currentTipIndex = pickRandomTipIndex();
 tipsVisible = true;
 hashtagPlacement = "first";
+restoreAppearancePreferencesFromLocalStorage();
+applyAppearancePreferencesFromUrl();
+clearMatchingPendingPageSwitchUrl();
 languageSelect.value = localePreference;
 applyLoginServiceSelection(LOGIN_SERVICE_PRESETS["bsky.social"]);
 renderAccountSwitcher();
 applyHashtagPaneContext();
 applyTranslations();
+applyTheme();
+applyCompactMode();
 void applyDmAccessGateFromLocation();
 updateInstallButtonVisibility();
 setStatus(t("statusPreparing"));

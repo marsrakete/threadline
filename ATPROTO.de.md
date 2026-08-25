@@ -32,6 +32,7 @@ Der groesste Teil des AT-Protocol-Verkehrs in Threadline ist normales XRPC:
   - `com.atproto.sync.getBlob`
 - Bluesky-App-Views
   - `app.bsky.actor.getProfile`
+  - `app.bsky.actor.searchActorsTypeahead`
   - `app.bsky.feed.searchPosts`
   - `app.bsky.feed.getAuthorFeed`
   - `app.bsky.feed.getPosts`
@@ -149,7 +150,7 @@ Blob-Behandlung ist in zwei Faelle aufgeteilt:
 Die Workspaces greifen unterschiedlich auf dieselbe AT-Protocol-Schicht zu:
 
 - Composer
-  - schreiblastig, nutzt Handle-Aufloesung, Blob-Upload, `createRecord` und gezielte Post-/Thread-Lookups
+  - schreiblastig, nutzt Handle-Aufloesung, Mention-Typeahead, Blob-Upload, `createRecord` und gezielte Post-/Thread-Lookups
 - Suche
   - kombiniert `searchPosts` fuer globale Suche und `getAuthorFeed` fuer lokale Durchlaeufe ueber Account-Posts oder Reposts
 - Archiv
@@ -297,6 +298,15 @@ Dieser Abschnitt buendelt drei Dinge:
 | Rueckgabe | Profil-View |
 | Was steckt drin | DID, Handle, Anzeigename, Avatar-URL, Beschreibung, Counts, Viewer-Beziehungsinfos |
 | Warum wichtig | Liefert Anzeigedaten fuer Karten, Avatare, Archivkontext und Analyse |
+
+### `app.bsky.actor.searchActorsTypeahead`
+
+| Feld | Beschreibung |
+| --- | --- |
+| Parameter | Suchtext `q`, optional `limit` |
+| Rueckgabe | Kurze, sortierte Actor-Liste |
+| Was steckt drin | Einfache Profilansichten mit DID, Handle, Anzeigename, Avatar und Viewer-Beziehungsinfos |
+| Warum wichtig | Threadline nutzt das fuer Account-Autocomplete im Mention-Reparatur-Popup und spaeter fuer wiederverwendbare Account-Picker |
 
 ### `app.bsky.graph.getFollowers`
 

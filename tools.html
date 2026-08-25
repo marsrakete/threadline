@@ -26,7 +26,7 @@
     <link rel="stylesheet" href="styles.css">
     <title>Threadline</title>
   </head>
-  <body data-page="composer">
+  <body data-page="tools">
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-block">
@@ -52,8 +52,8 @@
         </p>
 
         <div class="page-switch" aria-label="Seitenwechsel">
-          <a class="ghost-button page-switch-link is-current" href="./" aria-current="page" data-page-target="composer" data-i18n="pageSwitchComposer">Schreiben</a>
-          <a class="ghost-button page-switch-link" href="./tools.html" data-page-target="tools" data-i18n="pageSwitchTools">Werkzeuge</a>
+          <a class="ghost-button page-switch-link" href="./" data-page-target="composer" data-i18n="pageSwitchComposer">Schreiben</a>
+          <a class="ghost-button page-switch-link is-current" href="./tools.html" aria-current="page" data-page-target="tools" data-i18n="pageSwitchTools">Werkzeuge</a>
         </div>
 
         <div class="top-actions">
@@ -90,7 +90,7 @@
           <p class="eyebrow" data-i18n="workspaceHubEyebrow">Workspaces</p>
           <div class="workspace-hub-grid">
             <div class="workspace-launch-chip" data-page-scope="composer">
-              <button type="button" class="ghost-button status-history-button workspace-chip-button is-active" id="composer-button" data-i18n="composerLaunchButton" aria-pressed="true">
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="composer-button" data-i18n="composerLaunchButton" aria-pressed="false">
                 Composer
               </button>
               <p id="composer-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="composerLaunchNote">
@@ -126,7 +126,7 @@
             </div>
 
             <div class="workspace-launch-chip" data-page-scope="tools">
-              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="search-button" data-i18n="searchLaunchButton" disabled>
+              <button type="button" class="ghost-button status-history-button workspace-chip-button is-active" id="search-button" data-i18n="searchLaunchButton" aria-pressed="true">
                 Suche
               </button>
               <p id="search-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="searchLaunchDisabledNote">
@@ -183,7 +183,7 @@
       ></div>
 
       <main class="workspace">
-        <div id="composer-workspace" class="workspace-view workspace-view-active" data-page-scope="composer">
+        <div id="composer-workspace" class="workspace-view" data-page-scope="composer" hidden>
           <div class="composer-column">
             <section class="editor-pane">
               <div class="section-heading">
@@ -916,7 +916,7 @@
           </template>
         </section>
 
-        <section id="search-workspace" class="archive-workspace search-workspace workspace-view" data-page-scope="tools" hidden>
+        <section id="search-workspace" class="archive-workspace search-workspace workspace-view workspace-view-active" data-page-scope="tools">
           <div class="archive-header-panel">
             <div>
               <p class="eyebrow" data-i18n="searchHeaderEyebrow">Suche</p>

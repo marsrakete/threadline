@@ -32,6 +32,7 @@ Most AT Protocol traffic in Threadline is plain XRPC:
   - `com.atproto.sync.getBlob`
 - Bluesky app views
   - `app.bsky.actor.getProfile`
+  - `app.bsky.actor.searchActorsTypeahead`
   - `app.bsky.feed.searchPosts`
   - `app.bsky.feed.getAuthorFeed`
   - `app.bsky.feed.getPosts`
@@ -149,7 +150,7 @@ Blob handling is split into two cases:
 The workspaces use the same AT Protocol layer differently:
 
 - Composer
-  - write-heavy, uses handle resolution, blob upload, `createRecord`, and targeted post/thread lookup
+  - write-heavy, uses handle resolution, mention typeahead, blob upload, `createRecord`, and targeted post/thread lookup
 - Search
   - mixes `searchPosts` for global search and `getAuthorFeed` for local account-post / repost scans
 - Archive
@@ -297,6 +298,15 @@ This section groups three things:
 | Return value | Profile view |
 | What is inside | DID, handle, display name, avatar URL, description, counts, viewer relation info |
 | Why it matters | Supplies display data for cards, avatars, archive context, and analysis |
+
+### `app.bsky.actor.searchActorsTypeahead`
+
+| Field | Description |
+| --- | --- |
+| Parameters | query text `q`, optional `limit` |
+| Return value | Short ranked actor list |
+| What is inside | Basic profile views such as DID, handle, display name, avatar, and viewer relation info |
+| Why it matters | Threadline uses this for account autocomplete in mention repair popups and later reusable account pickers |
 
 ### `app.bsky.graph.getFollowers`
 

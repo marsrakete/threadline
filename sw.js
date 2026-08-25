@@ -6,6 +6,7 @@ const REMOTE_MEDIA_CACHE_NAME = "threadline-remote-media-v1";
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./tools.html",
   "./styles.css",
   "./app.js",
   "./sw-atproto.js",
@@ -67,6 +68,11 @@ const POST_WEB_FRONTENDS = {
   "eurosky.social": "https://mu.social",
   "mu.social": "https://mu.social",
 };
+const MENTION_SEARCH_HANDLE_SUFFIXES = [
+  "bsky.social",
+  "mu.social",
+  "eurosky.social",
+];
 const archiveRunControls = new Map();
 const searchRunControls = new Map();
 
@@ -122,6 +128,37 @@ function extractRecordKeyFromAtUri(uri) {
   }
   const parts = raw.split("/");
   return parts[parts.length - 1] || "";
+}
+
+/**
+ * Splits one AT URI into repo, collection, and record key.
+ * @param {string} uri - Full `at://` URI.
+ * @returns {object|null} Parsed AT URI parts, or null when the input is invalid.
+ */
+function parseAtUriParts(uri) {
+  const raw = String(uri || "").trim();
+  if (!raw.startsWith("at://")) {
+    return null;
+  }
+
+  const withoutScheme = raw.slice("at://".length);
+  const parts = withoutScheme.split("/");
+  if (parts.length < 3) {
+    return null;
+  }
+
+  const repo = String(parts[0] || "").trim();
+  const collection = String(parts[1] || "").trim();
+  const rkey = String(parts[2] || "").trim();
+  if (!repo || !collection || !rkey) {
+    return null;
+  }
+
+  return {
+    repo,
+    collection,
+    rkey,
+  };
 }
 
 function buildThreadGateAllowRules(settings) {
@@ -555,7 +592,7 @@ function parseHashtagFacets(text) {
 
 function parseMentionCandidates(text) {
   const candidates = [];
-  const regex = /(^|\s|\()(@)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+)(?=$|[\s).,;:!?])/g;
+  const regex = /(^|[\s([{"'“„«‹])(@)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+)(?=$|[\s)\]}",;:!?'”»›])/gu;
   let match;
 
   while ((match = regex.exec(text))) {
@@ -568,13 +605,26 @@ function parseMentionCandidates(text) {
   return candidates;
 }
 
+/**
+ * Builds mention facets and keeps track of unresolved handles.
+ * @param {string} text - Post text that may contain `@handle` mentions.
+ * @param {object} auth - Authenticated account used for DID resolution.
+ * @param {Map<string, string|null>} cache - Shared DID cache for the publish run.
+ * @returns {Promise<{ facets: object[], unresolvedHandles: string[] }>} Mention facets plus unresolved handles.
+ */
 async function parseMentionFacets(text, auth, cache) {
   const facets = [];
+  const unresolvedHandles = [];
+  const unresolvedSeen = new Set();
   const candidates = parseMentionCandidates(text);
 
   for (const candidate of candidates) {
     const did = await resolveHandleToDid(candidate.handle, auth, cache);
     if (!did) {
+      if (!unresolvedSeen.has(candidate.handle)) {
+        unresolvedSeen.add(candidate.handle);
+        unresolvedHandles.push(candidate.handle);
+      }
       continue;
     }
 
@@ -592,13 +642,24 @@ async function parseMentionFacets(text, auth, cache) {
     });
   }
 
-  return facets;
+  return {
+    facets,
+    unresolvedHandles,
+  };
 }
 
+/**
+ * Builds Bluesky rich-text facets for links, mentions, and hashtags.
+ * @param {string} text - Raw post text.
+ * @param {object} auth - Authenticated account used for mention DID resolution.
+ * @param {Map<string, string|null>} resolveCache - Shared DID cache for the publish run.
+ * @returns {Promise<{ facets: object[]|undefined, unresolvedHandles: string[] }>} Built facets plus unresolved mention handles.
+ */
 async function buildRichTextFacets(text, auth, resolveCache) {
   const linkFacets = parseLinkFacets(text);
   const hashtagFacets = parseHashtagFacets(text);
-  const mentionFacets = await parseMentionFacets(text, auth, resolveCache);
+  const mentionResult = await parseMentionFacets(text, auth, resolveCache);
+  const mentionFacets = mentionResult.facets;
   const combined = [...linkFacets, ...mentionFacets, ...hashtagFacets]
     .sort((left, right) => left.index.byteStart - right.index.byteStart);
 
@@ -610,7 +671,195 @@ async function buildRichTextFacets(text, auth, resolveCache) {
     accepted.push(facet);
   }
 
-  return accepted.length > 0 ? accepted : undefined;
+  if (accepted.length > 0) {
+    return {
+      facets: accepted,
+      unresolvedHandles: mentionResult.unresolvedHandles,
+    };
+  }
+
+  return {
+    facets: undefined,
+    unresolvedHandles: mentionResult.unresolvedHandles,
+  };
+}
+
+/**
+ * Resolves composer mention handles to DIDs for preview rendering in the UI.
+ * @param {object} payload - Message payload with a `handles` array.
+ * @returns {Promise<{mentions: Array<{handle: string, did: string|null}>}>} Resolved handle-to-DID pairs.
+ */
+async function resolveComposerMentions(payload = {}) {
+  const rawHandles = Array.isArray(payload?.handles) ? payload.handles : [];
+  const normalizedHandles = [];
+
+  for (const rawHandle of rawHandles) {
+    const handle = String(rawHandle || "").trim().replace(/^@/, "").toLowerCase();
+    if (!handle) {
+      continue;
+    }
+    if (!normalizedHandles.includes(handle)) {
+      normalizedHandles.push(handle);
+    }
+  }
+
+  let auth = null;
+  try {
+    auth = await ensureSession();
+  } catch {
+    auth = null;
+  }
+
+  const resolveCache = new Map();
+  const mentions = [];
+
+  for (const handle of normalizedHandles) {
+    const did = await resolveHandleToDid(handle, auth, resolveCache);
+    mentions.push({
+      handle,
+      did: did || null,
+    });
+  }
+
+  return { mentions };
+}
+
+/**
+ * Normalizes the raw account search query from the mention picker.
+ * @param {string} rawQuery - User-entered search text.
+ * @returns {string} Lowercased query without leading at sign.
+ */
+function normalizeMentionSearchQuery(rawQuery = "") {
+  return String(rawQuery || "").trim().replace(/^@/, "").toLowerCase();
+}
+
+/**
+ * Builds query variants for account typeahead including common handle suffixes.
+ * @param {string} rawQuery - User-entered search text.
+ * @returns {string[]} Unique query variants ordered from strict to broad.
+ */
+function buildMentionSearchQueries(rawQuery = "") {
+  const normalizedQuery = normalizeMentionSearchQuery(rawQuery);
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const queries = [];
+  const seen = new Set();
+  const pushQuery = (value) => {
+    const normalizedValue = normalizeMentionSearchQuery(value);
+    if (!normalizedValue || seen.has(normalizedValue)) {
+      return;
+    }
+    seen.add(normalizedValue);
+    queries.push(normalizedValue);
+  };
+
+  pushQuery(normalizedQuery);
+
+  let baseName = normalizedQuery;
+  const dotIndex = normalizedQuery.indexOf(".");
+  if (dotIndex > 0) {
+    baseName = normalizedQuery.slice(0, dotIndex);
+    pushQuery(baseName);
+  }
+
+  if (baseName) {
+    for (const suffix of MENTION_SEARCH_HANDLE_SUFFIXES) {
+      pushQuery(`${baseName}.${suffix}`);
+    }
+  }
+
+  return queries;
+}
+
+/**
+ * Computes a lightweight ranking score for mention search results.
+ * @param {object} actor - Normalized actor search hit.
+ * @param {string} rawQuery - Original normalized search query.
+ * @returns {number} Higher scores rank earlier.
+ */
+function scoreMentionSearchActor(actor = {}, rawQuery = "") {
+  const query = normalizeMentionSearchQuery(rawQuery);
+  const handle = String(actor.handle || "").trim().toLowerCase();
+  const displayName = String(actor.displayName || "").trim().toLowerCase();
+  let score = 0;
+
+  if (handle === query) {
+    score += 1000;
+  }
+  if (handle.startsWith(query)) {
+    score += 300;
+  }
+  if (displayName.startsWith(query)) {
+    score += 120;
+  }
+  if (handle.includes(query)) {
+    score += 40;
+  }
+  if (actor.followingViewer === true && actor.followedByViewer === true) {
+    score += 90;
+  } else {
+    if (actor.followingViewer === true) {
+      score += 35;
+    }
+    if (actor.followedByViewer === true) {
+      score += 35;
+    }
+  }
+
+  return score;
+}
+
+/**
+ * Searches Bluesky accounts for the composer mention picker via typeahead.
+ * @param {object} payload - Message payload with a raw `query` string.
+ * @returns {Promise<{actors: object[]}>} Ranked actor matches with avatar and relation info.
+ */
+async function searchMentionActors(payload = {}) {
+  const query = normalizeMentionSearchQuery(payload?.query);
+  if (query.length < 2) {
+    return { actors: [] };
+  }
+
+  const auth = await ensureSession();
+  const queries = buildMentionSearchQueries(query);
+  const byDid = new Map();
+
+  for (const variant of queries) {
+    const response = await bskyGet("app.bsky.actor.searchActorsTypeahead", {
+      q: variant,
+      limit: 8,
+    }, {
+      base: authXrpcBase(auth),
+      headers: {
+        authorization: `Bearer ${auth.session.accessJwt}`,
+      },
+    }).catch(() => ({ actors: [] }));
+
+    const actors = Array.isArray(response?.actors) ? response.actors : [];
+    for (const actor of actors) {
+      const normalizedActor = normalizeNetworkProfile(actor, "");
+      if (!normalizedActor.did || byDid.has(normalizedActor.did)) {
+        continue;
+      }
+      byDid.set(normalizedActor.did, normalizedActor);
+    }
+  }
+
+  const ranked = Array.from(byDid.values())
+    .sort((left, right) => {
+      const scoreDiff = scoreMentionSearchActor(right, query) - scoreMentionSearchActor(left, query);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+      return String(left.handle || left.did || "").localeCompare(String(right.handle || right.did || ""), undefined, {
+        sensitivity: "base",
+      });
+    })
+    .slice(0, 12);
+
+  return { actors: ranked };
 }
 
 self.addEventListener("install", (event) => {
@@ -719,7 +968,9 @@ self.addEventListener("message", (event) => {
   handleMessage(event.data, port)
     .then((result) => port.postMessage({ ok: true, result }))
     .catch((error) => {
-      console.error(error);
+      if (!isExpectedServiceWorkerUiError(error)) {
+        console.error(error);
+      }
       port.postMessage({
         ok: false,
         error: error.message || "Unbekannter Fehler.",
@@ -784,6 +1035,14 @@ async function handleMessage(message, port) {
       return removeAccount(message.payload);
     case "LOGOUT":
       return logout();
+    case "RESOLVE_COMPOSER_MENTIONS":
+      return resolveComposerMentions(message.payload);
+    case "SEARCH_MENTION_ACTORS":
+      return searchMentionActors(message.payload);
+    case "LIKE_POST":
+      return likePost(message.payload);
+    case "UNLIKE_POST":
+      return unlikePost(message.payload);
     case "PUBLISH_THREAD":
       return publishThread(message.payload, (progress) => port.postMessage({ progress }));
     case "EXPORT_ACCOUNT_ARCHIVE_WAVE":
@@ -846,6 +1105,19 @@ function createServiceWorkerError(message, code, details = {}) {
     code,
   };
   return error;
+}
+
+/**
+ * Checks whether a Service Worker error is an expected UI validation outcome.
+ * @param {Error|null} error - Error that would otherwise be logged.
+ * @returns {boolean} True when the error should be shown in UI only.
+ */
+function isExpectedServiceWorkerUiError(error = null) {
+  const code = String(error?.details?.code || "").trim();
+  return code === "ANALYSIS_ACCOUNT_MISSING"
+    || code === "ANALYSIS_ACCOUNT_NOT_FOUND"
+    || code === "THREAD_EXPLORER_ACCOUNT_MISSING"
+    || code === "THREAD_EXPLORER_ACCOUNT_NOT_FOUND";
 }
 
 /**
@@ -1377,6 +1649,17 @@ function extractThreadExplorerImages(embed = {}) {
       fullsize: String(image?.fullsize || image?.thumb || "").trim(),
       alt: String(image?.alt || "").trim(),
     })).filter((image) => image.thumb || image.fullsize);
+  }
+
+  if (Array.isArray(embed.items)) {
+    return embed.items.map((image) => {
+      const imageNode = image?.image && typeof image.image === "object" ? image.image : image;
+      return {
+        thumb: String(imageNode?.thumb || imageNode?.fullsize || "").trim(),
+        fullsize: String(imageNode?.fullsize || imageNode?.thumb || "").trim(),
+        alt: String(image?.alt || imageNode?.alt || "").trim(),
+      };
+    }).filter((image) => image.thumb || image.fullsize);
   }
 
   if (embed.media && typeof embed.media === "object") {
@@ -2217,9 +2500,23 @@ function isThreadExplorerActorFeedPostMatch(post = {}, mode = "posts") {
 async function loadThreadExplorerActorFeed(payload = {}) {
   const auth = await ensureSession();
   const activeAuth = await refreshAuthReference(auth);
-  const actor = String(payload?.actor || "").trim();
-  if (!actor) {
-    throw new Error("Der Account konnte nicht geladen werden.");
+  const requestedActor = String(payload?.actor || "").trim().replace(/^@+/, "");
+  if (!requestedActor) {
+    throw createServiceWorkerError("Bitte zuerst einen Account eingeben.", "THREAD_EXPLORER_ACCOUNT_MISSING");
+  }
+  const headers = {
+    authorization: `Bearer ${activeAuth.session.accessJwt}`,
+  };
+  const resolveCache = new Map();
+  let actor = requestedActor;
+  if (!requestedActor.startsWith("did:")) {
+    const resolvedDid = await resolveHandleToDid(requestedActor, activeAuth, resolveCache);
+    if (!resolvedDid) {
+      throw createServiceWorkerError(`Der Account "${requestedActor}" wurde nicht gefunden.`, "THREAD_EXPLORER_ACCOUNT_NOT_FOUND", {
+        actor: requestedActor,
+      });
+    }
+    actor = resolvedDid;
   }
 
   const mode = normalizeThreadExplorerActorFeedMode(payload?.mode);
@@ -2237,9 +2534,7 @@ async function loadThreadExplorerActorFeed(payload = {}) {
       limit,
       cursor: cursor || undefined,
     }, {
-      headers: {
-        authorization: `Bearer ${activeAuth.session.accessJwt}`,
-      },
+      headers,
       base: authXrpcBase(activeAuth),
     });
 
@@ -5238,6 +5533,7 @@ async function getAppState({ browserLocale } = {}) {
       imageAutoResizeMode: normalizeImageAutoResizeMode(storedSettings?.imageAutoResizeMode),
       archiveExpertMode: normalizeArchiveExpertMode(storedSettings?.archiveExpertMode),
       themeMode: storedSettings?.themeMode === "dark" ? "dark" : "light",
+      compactMode: storedSettings?.compactMode === true,
       sidebarCollapsedDesktop: storedSettings?.sidebarCollapsedDesktop === true,
       desktopLayoutVersion: Number.isFinite(Number(storedSettings?.desktopLayoutVersion))
         ? Number(storedSettings.desktopLayoutVersion)
@@ -5272,6 +5568,7 @@ async function getAppState({ browserLocale } = {}) {
     threadExplorerFavorites: Array.isArray(storedSettings?.threadExplorerFavorites)
       ? storedSettings.threadExplorerFavorites
       : [],
+    threadExplorerState: normalizeStoredThreadExplorerState(storedSettings?.threadExplorerState),
     savedSearches: Array.isArray(storedSettings?.savedSearches)
       ? storedSettings.savedSearches
       : [],
@@ -5290,6 +5587,29 @@ function normalizeStoredReplyTarget(target) {
     ...target,
     mode: target.mode === "thread" ? "thread" : "post",
     sourceUrl: String(target.sourceUrl || ""),
+  };
+}
+
+function normalizeStoredThreadExplorerState(state) {
+  if (!state || typeof state !== "object") {
+    return {
+      actor: "",
+      accountMode: "posts",
+    };
+  }
+
+  const actor = String(state.actor || "").trim().replace(/^@+/, "");
+  const accountMode = String(state.accountMode || "").trim();
+  let normalizedAccountMode = "posts";
+  if (accountMode === "replies") {
+    normalizedAccountMode = "replies";
+  } else if (accountMode === "all") {
+    normalizedAccountMode = "all";
+  }
+
+  return {
+    actor,
+    accountMode: normalizedAccountMode,
   };
 }
 
@@ -5405,6 +5725,7 @@ async function saveSettings(settings = {}) {
       themeMode: settings.themeMode === "dark"
         ? "dark"
         : (settings.themeMode === "light" ? "light" : (existing.themeMode === "dark" ? "dark" : "light")),
+      compactMode: settings.compactMode === true ? true : (existing.compactMode === true),
       sidebarCollapsedDesktop: settings.sidebarCollapsedDesktop === true,
       desktopLayoutVersion: Number.isFinite(Number(settings.desktopLayoutVersion))
         ? Number(settings.desktopLayoutVersion)
@@ -5445,6 +5766,7 @@ async function saveSettings(settings = {}) {
     threadExplorerFavorites: Array.isArray(settings.threadExplorerFavorites)
       ? settings.threadExplorerFavorites
       : (Array.isArray(existing.threadExplorerFavorites) ? existing.threadExplorerFavorites : []),
+    threadExplorerState: normalizeStoredThreadExplorerState(settings.threadExplorerState ?? existing.threadExplorerState),
     savedSearches: Array.isArray(settings.savedSearches)
       ? settings.savedSearches
       : (Array.isArray(existing.savedSearches) ? existing.savedSearches : []),
@@ -9415,6 +9737,92 @@ async function applyPostInteractionGates(auth, postRef, settings) {
   return latestRateLimit;
 }
 
+/**
+ * Deletes one AT Protocol record through `com.atproto.repo.deleteRecord`.
+ * @param {object} auth - Active authenticated account.
+ * @param {string} recordUri - Full AT URI of the record that should be removed.
+ * @returns {Promise<void>} Resolves after the record was deleted.
+ */
+async function deleteRepoRecord(auth, recordUri) {
+  const parsed = parseAtUriParts(recordUri);
+  if (!parsed) {
+    throw new Error("Der zu löschende Datensatz hat keine gültige AT-URI.");
+  }
+
+  await bskyFetch("com.atproto.repo.deleteRecord", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+    base: xrpcBaseForService(auth.pdsUrl || auth.service),
+    body: JSON.stringify({
+      repo: parsed.repo,
+      collection: parsed.collection,
+      rkey: parsed.rkey,
+    }),
+  });
+}
+
+/**
+ * Creates one like record for a post on behalf of the active account.
+ * @param {object} payload - Request payload from the UI.
+ * @param {string} payload.uri - AT URI of the liked post.
+ * @param {string} payload.cid - CID of the liked post.
+ * @returns {Promise<object>} Created like record reference.
+ */
+async function likePost(payload = {}) {
+  const postUri = String(payload.uri || "").trim();
+  const postCid = String(payload.cid || "").trim();
+  if (!postUri || !postCid) {
+    throw new Error("Für den Like fehlen URI oder CID des Posts.");
+  }
+
+  const auth = await ensureSession();
+  const result = await bskyFetch("com.atproto.repo.createRecord", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${auth.session.accessJwt}`,
+    },
+    base: xrpcBaseForService(auth.pdsUrl || auth.service),
+    body: JSON.stringify({
+      repo: auth.session.did,
+      collection: "app.bsky.feed.like",
+      record: {
+        $type: "app.bsky.feed.like",
+        createdAt: new Date().toISOString(),
+        subject: {
+          uri: postUri,
+          cid: postCid,
+        },
+      },
+    }),
+  });
+
+  return {
+    uri: String(result?.uri || "").trim(),
+    cid: String(result?.cid || "").trim(),
+  };
+}
+
+/**
+ * Removes one existing like record for the active account.
+ * @param {object} payload - Request payload from the UI.
+ * @param {string} payload.likeUri - AT URI of the existing like record.
+ * @returns {Promise<object>} Removed like record reference.
+ */
+async function unlikePost(payload = {}) {
+  const likeUri = String(payload.likeUri || "").trim();
+  if (!likeUri) {
+    throw new Error("Für Unlike fehlt die URI des Like-Datensatzes.");
+  }
+
+  const auth = await ensureSession();
+  await deleteRepoRecord(auth, likeUri);
+  return {
+    uri: likeUri,
+  };
+}
+
 async function publishThread({ segments, langs, postInteraction, replyTarget } = {}, notifyProgress = () => {}) {
   if (!Array.isArray(segments) || segments.length === 0) {
     throw new Error("Es gibt keine Segmente zum Posten.");
@@ -9454,9 +9862,15 @@ async function publishThread({ segments, langs, postInteraction, replyTarget } =
       if (normalizedLangs.length > 0) {
         record.langs = normalizedLangs;
       }
-      const facets = await buildRichTextFacets(record.text, auth, resolveCache);
-      if (facets) {
-        record.facets = facets;
+      const richTextResult = await buildRichTextFacets(record.text, auth, resolveCache);
+      if (Array.isArray(richTextResult.unresolvedHandles) && richTextResult.unresolvedHandles.length > 0) {
+        const unresolvedLabel = richTextResult.unresolvedHandles
+          .map((handle) => `@${handle}`)
+          .join(", ");
+        throw new Error(`Diese Erwaehnung konnte nicht aufgeloest werden: ${unresolvedLabel}. Bitte den Handle pruefen.`);
+      }
+      if (richTextResult.facets) {
+        record.facets = richTextResult.facets;
       }
 
       const images = Array.isArray(segment?.images) ? segment.images.slice(0, MAX_IMAGES_PER_SEGMENT) : [];
