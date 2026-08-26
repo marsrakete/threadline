@@ -1,5 +1,12 @@
 ﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./post-languages.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./translations.js";
+import { CURRENT_VERSION_INFO, fetchVersionInfo, versionSignature } from "./js/core/app-bootstrap.js";
+import {
+  THREADLINE_PAGE_COMPOSER,
+  THREADLINE_PAGE_TOOLS,
+  navigateToThreadlinePage,
+  normalizeThreadlinePage,
+} from "./js/core/app-navigation.js";
 
 const MAX_POST_LENGTH = 300;
 const MAX_POST_UTF8_BYTES = 3000;
@@ -48,8 +55,6 @@ const DM_ACCESS_QUERY_PARAM = "DMSECRET";
 const DM_ACCESS_HASH_PARAM = "dmsecret";
 const DM_ACCESS_SESSION_KEY = "threadline:dm-access";
 const DM_ACCESS_GATE_ENABLED = false;
-const THREADLINE_PAGE_COMPOSER = "composer";
-const THREADLINE_PAGE_TOOLS = "tools";
 const LEGACY_WORKSPACE_STORAGE_KEY = "threadline:last-workspace";
 const TOOLS_WORKSPACE_STORAGE_KEY = "threadline:last-tools-workspace";
 const THEME_MODE_STORAGE_KEY = "threadline:theme-mode";
@@ -90,12 +95,6 @@ const DEFAULT_AVATAR_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponen
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
-const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
-  appVersion: "0.4.272",
-  cacheVersion: "v291",
-  label: "Fix Thread Explorer reply handoff to composer",
-});
-
 /**
  * Applies an account avatar URL to an image with the Bluesky-style fallback.
  * @param {HTMLImageElement|null} image - Target image element.
@@ -2661,19 +2660,6 @@ function renderAccountSwitcher() {
 }
 
 /**
- * Normalizes one requested Threadline page identifier.
- * @param {string} page - Raw page identifier from DOM state or navigation.
- * @returns {string} Supported page identifier.
- */
-function normalizeThreadlinePage(page) {
-  const normalizedPage = String(page || "").trim();
-  if (normalizedPage === THREADLINE_PAGE_TOOLS) {
-    return THREADLINE_PAGE_TOOLS;
-  }
-  return THREADLINE_PAGE_COMPOSER;
-}
-
-/**
  * Returns the current Threadline page from the body dataset.
  * @returns {string} Active page identifier.
  */
@@ -2723,27 +2709,6 @@ function normalizeWorkspaceForCurrentPage(workspace) {
     return normalizedWorkspace;
   }
   return getDefaultWorkspaceForCurrentPage();
-}
-
-/**
- * Navigates to the requested Threadline page when the current page does not match.
- * @param {string} page - Desired page identifier.
- * @returns {boolean} True when navigation was started.
- */
-function navigateToThreadlinePage(page) {
-  const targetPage = normalizeThreadlinePage(page);
-  const currentPage = getCurrentThreadlinePage();
-  if (currentPage === targetPage) {
-    return false;
-  }
-
-  if (targetPage === THREADLINE_PAGE_TOOLS) {
-    window.location.href = "./tools.html";
-    return true;
-  }
-
-  window.location.href = "./";
-  return true;
 }
 
 /**
@@ -31144,18 +31109,6 @@ async function importSettingsBackup(file) {
   setBackupStatus(t("backupImported", { count: importedHashtags.length }));
 }
 
-function versionSignature(versionInfo) {
-  return `${versionInfo?.appVersion || ""}|${versionInfo?.cacheVersion || ""}`;
-}
-
-function normalizeVersionInfo(versionInfo) {
-  return {
-    appVersion: String(versionInfo?.appVersion || "").trim(),
-    cacheVersion: String(versionInfo?.cacheVersion || "").trim(),
-    label: String(versionInfo?.label || "").trim(),
-  };
-}
-
 function setUpdateStatus(message, showReload = false, error = false) {
   if (!updateStatus || !reloadAppButton) {
     return;
@@ -31184,18 +31137,6 @@ function renderVersionLabel() {
   }
 
   versionLabel.textContent = parts.join(" · ");
-}
-
-async function fetchVersionInfo() {
-  const response = await fetch("./version.js", { cache: "no-cache" });
-  if (!response.ok) {
-    throw new Error("Version file unavailable");
-  }
-  const source = await response.text();
-  const appVersion = source.match(/appVersion:\s*"([^"]+)"/)?.[1] || "";
-  const cacheVersion = source.match(/cacheVersion:\s*"([^"]+)"/)?.[1] || "";
-  const label = source.match(/label:\s*"([^"]*)"/)?.[1] || "";
-  return normalizeVersionInfo({ appVersion, cacheVersion, label });
 }
 
 async function performAppReload() {

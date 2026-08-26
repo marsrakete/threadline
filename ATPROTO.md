@@ -6,9 +6,11 @@ This document collects the AT Protocol and Bluesky-specific parts that used to l
 
 ## Purpose
 
-Threadline is still a static browser app, but its network layer now lives in a dedicated service-worker helper file:
+Threadline is still a static browser app, but its network layer now lives in a dedicated service-worker helper path:
 
 - `sw-atproto.js`
+  - compatibility wrapper that loads the AT Protocol client from `js/atproto/atproto-client.js`
+- `js/atproto/atproto-client.js`
   - AT Protocol transport, auth/session refresh, DID/PDS resolution, blob access, and URI helpers
 - `sw.js`
   - workspace logic, caching, archive workflows, UI-facing service-worker commands

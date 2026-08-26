@@ -11,7 +11,7 @@
   --shadow: 0 24px 80px rgba(60, 94, 148, 0.16);
   --desktop-sidebar-width: 470px;
   --desktop-composer-width: 360px;
-  --desktop-sidebar-collapsed-width: 96px;
+  --desktop-sidebar-collapsed-width: 112px;
   --desktop-resize-handle-width: 14px;
 }
 
@@ -3935,9 +3935,10 @@ body.thread-explorer-fullscreen-active {
   }
 
   body.desktop-sidebar-collapsed .sidebar {
-    align-items: center;
-    padding-left: 16px;
-    padding-right: 16px;
+    align-items: stretch;
+    padding-left: 8px;
+    padding-right: 8px;
+    overflow-x: hidden;
   }
 
   body.desktop-sidebar-collapsed .brand-block {
@@ -3945,6 +3946,28 @@ body.thread-explorer-fullscreen-active {
     flex-direction: column;
     align-items: center;
     gap: 10px;
+  }
+
+  body.desktop-sidebar-collapsed .page-switch {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+    justify-self: stretch;
+    justify-items: stretch;
+  }
+
+  body.desktop-sidebar-collapsed .page-switch-link {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+    box-sizing: border-box;
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 0;
+    font-size: 14px;
+    line-height: 1.2;
+    text-align: center;
   }
 
   body.desktop-sidebar-collapsed .brand-copy,

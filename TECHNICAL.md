@@ -719,6 +719,12 @@ http://localhost:4173
 .
 ├── app.js
 ├── index.html
+├── js/
+│   ├── atproto/
+│   │   └── atproto-client.js
+│   └── core/
+│       ├── app-bootstrap.js
+│       └── app-navigation.js
 ├── manifest.webmanifest
 ├── styles.css
 ├── sw.js
@@ -734,7 +740,8 @@ http://localhost:4173
 
 Threadline uses visible version checks.
 
-- `version.js` contains the public version metadata used by the app and service worker
+- `version.js` contains the preload metadata used by the app and service worker startup
+- `version.json` is the machine-readable version source used for update checks in the browser app
 - the service worker fetches `version.js` with network priority
 - the app checks for updates on startup
 - users can manually check for updates in settings and apply a waiting update via `Reload`
@@ -742,7 +749,7 @@ Threadline uses visible version checks.
 When shipping changes, keep these files in sync:
 
 - `version.js`
-- `version.json` only if you keep it as an informational mirror
+- `version.json`
 - cache-sensitive shell behavior in `sw.js`
 
 ## Recommended Testing
