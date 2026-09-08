@@ -1,5 +1,5 @@
 ﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./post-languages.js";
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./translations.js";
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./js/core/app-i18n.js";
 import { CURRENT_VERSION_INFO, fetchVersionInfo, versionSignature } from "./js/core/app-bootstrap.js";
 import {
   THREADLINE_PAGE_COMPOSER,
@@ -7,6 +7,49 @@ import {
   navigateToThreadlinePage,
   normalizeThreadlinePage,
 } from "./js/core/app-navigation.js";
+import {
+  getCurrentThreadlinePage,
+  getDefaultWorkspaceForCurrentPage,
+  isWorkspaceAllowedOnCurrentPage,
+  normalizeWorkspaceForCurrentPage,
+} from "./js/core/app-shell.js";
+import { clamp, cloneTemplate, setAttr, setSafeHtml, setSafeText } from "./js/core/app-utils.js";
+import { DEFAULT_AVATAR_URI, setAvatarImage } from "./js/shared/shared-accounts.js";
+import {
+  createDefaultImageEdit,
+  dataUrlToFile,
+  hasExplicitImageUploadTransform as hasExplicitSharedImageUploadTransform,
+  isImageAutoResizeEnabled as isSharedImageAutoResizeEnabled,
+  isImageUsingDefaultEdit,
+  normalizeImageAutoResizeMode,
+  normalizeImageEdit,
+  normalizeSegmentImages as normalizeSharedSegmentImages,
+  normalizeThreadImage as normalizeSharedThreadImage,
+} from "./js/shared/shared-images.js";
+import { getFirstHttpUrl, normalizeLinkCardTargetUrl, validateLinkCardTargetUrl } from "./js/shared/shared-link-cards.js";
+import {
+  applyLikeStateToPost,
+  buildLivePostInteractionModel,
+  buildExternalCardDisplayModel,
+  buildPostCardDisplayModel,
+  buildPostDisplayText,
+  buildPostEditButtonModel,
+  buildPostMetaText,
+  buildPostMetricEntries,
+  buildPostMetricLabels,
+  buildPostViewLinkModel,
+  buildQuoteCardDisplayModel,
+  buildSearchResultMetaText as buildSharedSearchResultMetaText,
+  extractExternalCardFromEmbed,
+  formatPostCount,
+  formatPostDateTime,
+  getPostAuthorFields,
+  getPostActorLabel,
+  getPostPreviewText,
+  getPostMetricCounts,
+  getViewerLikeUri,
+  isPostLikedByViewer,
+} from "./js/shared/shared-post-rendering.js";
 
 const MAX_POST_LENGTH = 300;
 const MAX_POST_UTF8_BYTES = 3000;
@@ -90,96 +133,9 @@ const LINK_CARD_PROVIDER_NONE = "none";
 const LINK_CARD_PROVIDER_MICROLINK = "microlink";
 const LINK_CARD_PROVIDER_PROXY = "proxy";
 const MICROLINK_DAILY_LIMIT = 25;
-const DEFAULT_AVATAR_SVG = '<svg width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="none" xmlns="http://www.w3.org/2000/svg" data-testid="userAvatarFallback"><circle cx="12" cy="12" r="12" fill="#0070ff"></circle><circle cx="12" cy="9.5" r="3.5" fill="#fff"></circle><path stroke-linecap="round" stroke-linejoin="round" fill="#fff" d="M 12.058 22.784 C 9.422 22.784 7.007 21.836 5.137 20.262 C 5.667 17.988 8.534 16.25 11.99 16.25 C 15.494 16.25 18.391 18.036 18.864 20.357 C 17.01 21.874 14.64 22.784 12.058 22.784 Z"></path></svg>';
-const DEFAULT_AVATAR_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(DEFAULT_AVATAR_SVG)}`;
 // Replace this SHA-256 hash with the hash of your private DM secret.
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
-/**
- * Applies an account avatar URL to an image with the Bluesky-style fallback.
- * @param {HTMLImageElement|null} image - Target image element.
- * @param {string} avatarUrl - Optional remote avatar URL.
- * @param {string} altText - Accessible fallback text for the image.
- * @returns {void}
- */
-function setAvatarImage(image, avatarUrl, altText) {
-  if (!image) {
-    return;
-  }
-
-  const normalizedUrl = String(avatarUrl || "").trim();
-  image.alt = String(altText || "").trim();
-  image.onerror = () => {
-    image.onerror = null;
-    image.src = DEFAULT_AVATAR_URI;
-  };
-  if (normalizedUrl) {
-    image.src = normalizedUrl;
-  } else {
-    image.src = DEFAULT_AVATAR_URI;
-  }
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-/**
- * Template helper utilities for DOM-based rendering.
- * These functions help migrate from innerHTML string concatenation to structured DOM creation.
- */
-
-/**
- * Clones a template by ID and returns its content as a DocumentFragment.
- * @param {string} templateId - The ID of the template element.
- * @returns {DocumentFragment|null} The cloned template content, or null if template not found.
- */
-function cloneTemplate(templateId) {
-  const template = document.getElementById(templateId);
-  if (!template) {
-    console.warn(`Template not found: ${templateId}`);
-    return null;
-  }
-  return template.content.cloneNode(true);
-}
-
-/**
- * Sets text content on an element with proper escaping.
- * @param {HTMLElement} element - The target element.
- * @param {string} text - The text content to set.
- * @returns {void}
- */
-function setSafeText(element, text) {
-  if (element) {
-    element.textContent = text;
-  }
-}
-
-/**
- * Sets HTML content on an element with proper escaping.
- * Use sparingly - only when you need to render HTML from trusted sources.
- * @param {HTMLElement} element - The target element.
- * @param {string} html - The HTML content to set.
- * @returns {void}
- */
-function setSafeHtml(element, html) {
-  if (element) {
-    element.innerHTML = html;
-  }
-}
-
-/**
- * Sets an attribute on an element.
- * @param {HTMLElement} element - The target element.
- * @param {string} name - The attribute name.
- * @param {string} value - The attribute value.
- * @returns {void}
- */
-function setAttr(element, name, value) {
-  if (element && value !== undefined && value !== null) {
-    element.setAttribute(name, String(value));
-  }
-}
 
 /**
  * Sets multiple attributes on an element.
@@ -2660,58 +2616,6 @@ function renderAccountSwitcher() {
 }
 
 /**
- * Returns the current Threadline page from the body dataset.
- * @returns {string} Active page identifier.
- */
-function getCurrentThreadlinePage() {
-  if (!document.body) {
-    return THREADLINE_PAGE_COMPOSER;
-  }
-  return normalizeThreadlinePage(document.body.dataset.page);
-}
-
-/**
- * Returns whether one workspace is available on the current page.
- * @param {string} workspace - Workspace identifier such as composer or search.
- * @returns {boolean} True when the workspace belongs to the current page.
- */
-function isWorkspaceAllowedOnCurrentPage(workspace) {
-  const normalizedWorkspace = String(workspace || "").trim();
-  const currentPage = getCurrentThreadlinePage();
-  if (currentPage === THREADLINE_PAGE_TOOLS) {
-    if (normalizedWorkspace === "archive" || normalizedWorkspace === "search" || normalizedWorkspace === "network" || normalizedWorkspace === "threadExplorer" || normalizedWorkspace === "analysis" || normalizedWorkspace === "dm") {
-      return true;
-    }
-    return false;
-  }
-  return normalizedWorkspace === "composer";
-}
-
-/**
- * Returns the default workspace for the active page.
- * @returns {string} Default workspace identifier.
- */
-function getDefaultWorkspaceForCurrentPage() {
-  if (getCurrentThreadlinePage() === THREADLINE_PAGE_TOOLS) {
-    return "search";
-  }
-  return "composer";
-}
-
-/**
- * Maps a workspace identifier to one that exists on the active page.
- * @param {string} workspace - Raw workspace identifier from storage or events.
- * @returns {string} Workspace identifier allowed on the current page.
- */
-function normalizeWorkspaceForCurrentPage(workspace) {
-  const normalizedWorkspace = String(workspace || "").trim();
-  if (isWorkspaceAllowedOnCurrentPage(normalizedWorkspace)) {
-    return normalizedWorkspace;
-  }
-  return getDefaultWorkspaceForCurrentPage();
-}
-
-/**
  * Shows exactly one main workspace and hides the others.
  * @param {string} workspace - Workspace identifier that should stay visible.
  * @returns {void}
@@ -4986,28 +4890,33 @@ function renderSearchWorkspace() {
  * @returns {string} Rendered metadata line.
  */
 function buildSearchResultMetaText(item = {}) {
-  const post = item?.post || null;
-  if (!post) {
-    return "";
-  }
+  return buildSharedSearchResultMetaText(item, {
+    formatDate: formatThreadExplorerDate,
+    translate: t,
+  });
+}
 
-  const metaParts = [];
-  const createdAtText = formatThreadExplorerDate(post.createdAt || post.indexedAt || "");
-  if (createdAtText) {
-    metaParts.push(createdAtText);
-  }
+/**
+ * Returns the localized author fields shown in post-like cards.
+ * @param {object} actor - Normalized actor data.
+ * @returns {{authorLabel: string, handleLabel: string}} Visible author fields.
+ */
+function getLocalizedPostAuthorFields(actor = {}) {
+  return getPostAuthorFields(actor, t("threadExplorerUnknownAuthor"));
+}
 
-  if (item.reasonType === "repost") {
-    const repostBy = String(item.repostBy || "").trim();
-    const repostAt = formatThreadExplorerDate(item.repostAt || "");
-    if (repostBy && repostAt) {
-      metaParts.push(t("searchResultRepostMeta", { account: repostBy, date: repostAt }));
-    } else if (repostBy) {
-      metaParts.push(t("searchResultRepostBy", { account: repostBy }));
-    }
-  }
-
-  return metaParts.join(" · ");
+/**
+ * Returns localized metric entries for one live post card.
+ * @param {object} post - Post-like object with count fields.
+ * @param {string[]} interactiveTypes - Metric types that should open follow-up UI.
+ * @returns {Array<{type: string, count: number, label: string, isInteractive: boolean}>} Ordered metric entry list.
+ */
+function getLocalizedPostMetricEntries(post = {}, interactiveTypes = []) {
+  return buildPostMetricEntries(post, {
+    translate: t,
+    formatCount,
+    interactiveTypes,
+  });
 }
 
 /**
@@ -5085,26 +4994,11 @@ async function openSearchResultInThreadExplorer(item = {}) {
  * Renders interaction counts for one search result card.
  * @param {object} post - Normalized Thread Explorer post.
  * @param {HTMLElement} counts - Count container.
+ * @param {Array<{type: string, count: number, label: string, isInteractive: boolean}>} metricEntries - Prepared metric entries.
  * @returns {void}
  */
-function renderSearchResultCounts(post, counts) {
-  counts.replaceChildren();
-
-  const likeButton = createThreadExplorerCountElement("Likes", post.likeCount, Number(post.likeCount) > 0);
-  const replyLabel = createThreadExplorerCountElement("Replies", post.replyCount, false);
-  const repostButton = createThreadExplorerCountElement("Reposts", post.repostCount, Number(post.repostCount) > 0);
-  const quoteButton = createThreadExplorerCountElement("Quotes", post.quoteCount, Number(post.quoteCount) > 0);
-
-  [likeButton, repostButton, quoteButton].forEach((button) => {
-    if (!button.classList.contains("thread-explorer-count-button")) {
-      return;
-    }
-    button.dataset.uri = post.uri;
-    button.dataset.cid = post.cid || "";
-    button.addEventListener("click", handleThreadExplorerCountClick);
-  });
-
-  counts.append(likeButton, replyLabel, repostButton, quoteButton);
+function renderSearchResultCounts(post, counts, metricEntries = []) {
+  renderThreadExplorerMetricEntries(post, counts, metricEntries);
 }
 
 /**
@@ -5138,6 +5032,7 @@ function applySearchResultImageLayout(card, post) {
  */
 function createSearchResultElement(item = {}, highlightQuery = "") {
   const post = item?.post || null;
+  const postDisplay = getSearchResultPostCardDisplayModel(item);
   if (!post || !threadExplorerNodeTemplate) {
     return null;
   }
@@ -5172,23 +5067,17 @@ function createSearchResultElement(item = {}, highlightQuery = "") {
   children.replaceChildren();
 
   setAvatarImage(avatar, "", getThreadExplorerActorLabel(post.author));
-  author.textContent = getThreadExplorerActorLabel(post.author);
-  if (post.author?.handle) {
-    handle.textContent = `@${post.author.handle}`;
-  } else if (post.author?.did) {
-    handle.textContent = post.author.did;
-  } else {
-    handle.textContent = "";
-  }
-  meta.textContent = buildSearchResultMetaText(item);
+  author.textContent = postDisplay?.authorLabel || "";
+  handle.textContent = postDisplay?.handleLabel || "";
+  meta.textContent = postDisplay?.metaText || "";
   renderThreadExplorerViewLink(post, viewLink);
   viewLink.title = t("searchResultOpenPostInBskyButton");
   viewLink.setAttribute("aria-label", t("searchResultOpenPostInBskyButton"));
   renderThreadExplorerEditButton(post, editButton);
   renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink);
-  text.textContent = getThreadExplorerPostDisplayText(post) || t("threadExplorerNoText");
+  text.textContent = postDisplay?.text || t("threadExplorerNoText");
   highlightSearchQueryInElement(text, highlightQuery);
-  renderSearchResultCounts(post, counts);
+  renderSearchResultCounts(post, counts, postDisplay?.metricEntries || []);
   headButtons.prepend(createSearchResultFavoriteButton(item));
   headButtons.insertBefore(createSearchResultThreadExplorerButton(item), viewLink);
 
@@ -6001,8 +5890,13 @@ function setNetworkStatus(message) {
   }
 }
 
+/**
+ * Formats one interaction count for the active Threadline locale.
+ * @param {number|string} value - Raw numeric value.
+ * @returns {string} Localized number string.
+ */
 function formatCount(value) {
-  return new Intl.NumberFormat(currentLocale).format(Number(value) || 0);
+  return formatPostCount(value, currentLocale);
 }
 
 /**
@@ -6011,22 +5905,7 @@ function formatCount(value) {
  * @returns {string} Display name, handle, DID, or fallback label.
  */
 function getThreadExplorerActorLabel(actor) {
-  const displayName = String(actor?.displayName || "").trim();
-  if (displayName) {
-    return displayName;
-  }
-
-  const handle = String(actor?.handle || "").trim();
-  if (handle) {
-    return `@${handle}`;
-  }
-
-  const did = String(actor?.did || "").trim();
-  if (did) {
-    return did;
-  }
-
-  return t("threadExplorerUnknownAuthor");
+  return getPostActorLabel(actor, t("threadExplorerUnknownAuthor"));
 }
 
 /**
@@ -6035,14 +5914,7 @@ function getThreadExplorerActorLabel(actor) {
  * @returns {string} Short text suitable for feed buttons.
  */
 function getThreadExplorerPreviewText(post) {
-  const text = String(post?.text || "").replace(/\s+/g, " ").trim();
-  if (!text) {
-    return t("threadExplorerNoText");
-  }
-  if (text.length <= 220) {
-    return text;
-  }
-  return `${text.slice(0, 217)}...`;
+  return getPostPreviewText(post, t("threadExplorerNoText"), 220);
 }
 
 /**
@@ -6051,20 +5923,7 @@ function getThreadExplorerPreviewText(post) {
  * @returns {string} Localized date/time text or an empty string.
  */
 function formatThreadExplorerDate(value) {
-  const raw = String(value || "").trim();
-  if (!raw) {
-    return "";
-  }
-
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) {
-    return raw;
-  }
-
-  return new Intl.DateTimeFormat(currentLocale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return formatPostDateTime(value, currentLocale);
 }
 
 /**
@@ -6593,24 +6452,20 @@ function createThreadExplorerCountElement(type, value, isInteractive) {
 }
 
 /**
- * Returns the current viewer like record URI from one normalized live post.
- * @param {object} post - Normalized live post from search or Thread Explorer.
- * @returns {string} Existing like record URI, or an empty string.
+ * Creates one rendered metric element from a normalized metric entry.
+ * @param {{type: string, count: number, label: string, isInteractive: boolean}} entry - Normalized metric entry.
+ * @returns {HTMLElement} Rendered count element.
  */
-function getViewerLikeUri(post = {}) {
-  if (!post?.viewer || typeof post.viewer !== "object") {
-    return "";
+function createThreadExplorerMetricElement(entry) {
+  const type = String(entry?.type || "").trim();
+  const count = Number(entry?.count) || 0;
+  const isInteractive = entry?.isInteractive === true;
+  const element = createThreadExplorerCountElement(type, count, isInteractive);
+  const label = String(entry?.label || "").trim();
+  if (label) {
+    element.textContent = label;
   }
-  return String(post.viewer.like || "").trim();
-}
-
-/**
- * Checks whether the signed-in account currently likes one live post.
- * @param {object} post - Normalized live post from search or Thread Explorer.
- * @returns {boolean} True when the viewer has a like record for this post.
- */
-function isPostLikedByViewer(post = {}) {
-  return Boolean(getViewerLikeUri(post));
+  return element;
 }
 
 /**
@@ -6637,29 +6492,6 @@ function createThreadExplorerInteractionButton(translationKey, options = {}) {
     button.addEventListener("click", options.onClick);
   }
   return button;
-}
-
-/**
- * Applies one local like state update to a normalized live post object.
- * @param {object} post - Normalized live post to mutate in place.
- * @param {string} likeUri - Next like record URI, or an empty string after unlike.
- * @param {number} delta - Count delta that should be applied to the like counter.
- * @returns {void}
- */
-function applyLikeStateToPost(post = {}, likeUri = "", delta = 0) {
-  if (!post || typeof post !== "object") {
-    return;
-  }
-  if (!post.viewer || typeof post.viewer !== "object") {
-    post.viewer = {};
-  }
-
-  post.likeCount = Math.max(0, (Number(post.likeCount) || 0) + delta);
-  if (likeUri) {
-    post.viewer.like = likeUri;
-    return;
-  }
-  delete post.viewer.like;
 }
 
 /**
@@ -6947,25 +6779,28 @@ function renderThreadExplorerInteractionActions(post, actions, headButtons, anch
   });
 
   const editButton = actions.querySelector(".thread-explorer-edit-button");
-  const hasValidPost = Boolean(String(post?.uri || "").trim() && String(post?.cid || "").trim());
+  const interactionModel = buildLivePostInteractionModel(post, {
+    isLiked: isPostLikedByViewer,
+    isLikePending(uri) {
+      return threadExplorerLikePendingUris.has(uri);
+    },
+  });
   const interactionWrap = document.createElement("div");
   interactionWrap.className = "thread-explorer-interaction-actions";
 
-  if (hasValidPost) {
+  if (interactionModel.canReply) {
     const replyButton = createThreadExplorerInteractionButton("threadExplorerReplyAction", {
       onClick: () => {
         openComposerReplyForPost(post);
       },
     });
     interactionWrap.appendChild(replyButton);
+  }
 
-    let likeTranslationKey = "threadExplorerLikeAction";
-    if (isPostLikedByViewer(post)) {
-      likeTranslationKey = "threadExplorerUnlikeAction";
-    }
-    const likeButton = createThreadExplorerInteractionButton(likeTranslationKey, {
-      active: isPostLikedByViewer(post),
-      disabled: threadExplorerLikePendingUris.has(String(post.uri || "").trim()),
+  if (interactionModel.canLike) {
+    const likeButton = createThreadExplorerInteractionButton(interactionModel.likeTranslationKey, {
+      active: interactionModel.isLiked,
+      disabled: interactionModel.isLikePending,
       onClick: () => {
         void toggleLikeForLivePost(post);
       },
@@ -7083,38 +6918,102 @@ function removeThreadExplorerCardUrlFromText(text, url) {
 }
 
 /**
+ * Returns the visible quote-post URLs that should be removed from rendered text.
+ * @param {object|null} quote - Normalized quoted post.
+ * @returns {string[]} Visible quote URL variants.
+ */
+function getThreadExplorerQuoteUrls(quote = null) {
+  const quoteUrls = new Set();
+  const quoteUrl = buildThreadExplorerPostWebUrl(quote);
+  if (quoteUrl) {
+    quoteUrls.add(quoteUrl);
+  }
+
+  const quoteHandle = String(quote?.author?.handle || "").trim();
+  const quoteRecordKey = getThreadExplorerPostRecordKey(quote?.uri);
+  if (quoteHandle && quoteRecordKey) {
+    quoteUrls.add(`${DEFAULT_POST_WEB_APP}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
+    quoteUrls.add(`${LOGIN_SERVICE_PRESETS["mu.social"]}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
+  }
+
+  return Array.from(quoteUrls);
+}
+
+/**
+ * Returns the prepared display model for one Thread Explorer external card.
+ * @param {object|null} externalCard - External card data from a live post.
+ * @returns {{url: string, title: string, description: string, thumb: string, displayUrl: string, footer: string, standardSite: object|null, isPublication: boolean}|null} Prepared card display model.
+ */
+function getThreadExplorerExternalCardDisplayModel(externalCard = null) {
+  return buildExternalCardDisplayModel(externalCard, {
+    normalizeStandardSite: normalizeStandardSiteMetadata,
+    getPublicationFooterLabel: getPublicationCardFooterLabel,
+    shortenUrl: shortenThreadExplorerUrlForDisplay,
+  });
+}
+
+/**
+ * Returns the prepared display model for one visible Thread Explorer post card.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {string[]} interactiveMetricTypes - Metric types that should open follow-up UI.
+ * @returns {{uri: string, isDeletedThreadAnchor: boolean, authorLabel: string, handleLabel: string, metaText: string, text: string, externalCardDisplay: object|null, metricEntries: Array<object>}|null} Prepared post card display model.
+ */
+function getThreadExplorerPostCardDisplayModel(post, interactiveMetricTypes = []) {
+  return buildPostCardDisplayModel(post, {
+    fallbackAuthorLabel: t("threadExplorerUnknownAuthor"),
+    noTextFallback: t("threadExplorerNoText"),
+    deletedTitle: t("threadExplorerDeletedThreadTitle"),
+    deletedText: t("threadExplorerDeletedThreadText"),
+    getAuthorFields: getLocalizedPostAuthorFields,
+    buildMetaText(nextPost) {
+      return buildPostMetaText(nextPost, {
+        formatDate: formatThreadExplorerDate,
+      });
+    },
+    buildDisplayText: getThreadExplorerPostDisplayText,
+    buildExternalCardDisplay: getThreadExplorerExternalCardDisplayModel,
+    buildMetricEntries: getLocalizedPostMetricEntries,
+    interactiveMetricTypes,
+  });
+}
+
+/**
+ * Returns the prepared display model for one visible search-result post card.
+ * @param {object} item - Normalized search result item with nested post.
+ * @returns {{uri: string, isDeletedThreadAnchor: boolean, authorLabel: string, handleLabel: string, metaText: string, text: string, externalCardDisplay: object|null, metricEntries: Array<object>}|null} Prepared post card display model.
+ */
+function getSearchResultPostCardDisplayModel(item = {}) {
+  const post = item?.post || null;
+  return buildPostCardDisplayModel(post, {
+    fallbackAuthorLabel: t("threadExplorerUnknownAuthor"),
+    noTextFallback: t("threadExplorerNoText"),
+    deletedTitle: t("threadExplorerDeletedThreadTitle"),
+    deletedText: t("threadExplorerDeletedThreadText"),
+    getAuthorFields: getLocalizedPostAuthorFields,
+    buildMetaText() {
+      return buildSearchResultMetaText(item);
+    },
+    buildDisplayText: getThreadExplorerPostDisplayText,
+    buildExternalCardDisplay: getThreadExplorerExternalCardDisplayModel,
+    buildMetricEntries: getLocalizedPostMetricEntries,
+    interactiveMetricTypes: [
+      "Likes",
+      "Reposts",
+      "Quotes",
+    ],
+  });
+}
+
+/**
  * Removes the external card URL from post text before rendering the card.
  * @param {object} post - Normalized Thread Explorer post.
  * @returns {string} Display text without a duplicate link-card URL.
  */
 function getThreadExplorerPostDisplayText(post) {
-  let displayText = String(post?.text || "");
-  const cardUri = String(post?.externalCard?.uri || "").trim();
-  if (!displayText) {
-    return displayText;
-  }
-
-  displayText = removeThreadExplorerCardUrlFromText(displayText, cardUri);
-
-  const quoteUrl = buildThreadExplorerPostWebUrl(post?.quoteCard);
-  const quoteUrls = new Set();
-  if (quoteUrl) {
-    quoteUrls.add(quoteUrl);
-  }
-  const quoteHandle = String(post?.quoteCard?.author?.handle || "").trim();
-  const quoteRecordKey = getThreadExplorerPostRecordKey(post?.quoteCard?.uri);
-  if (quoteHandle && quoteRecordKey) {
-    quoteUrls.add(`${DEFAULT_POST_WEB_APP}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
-    quoteUrls.add(`${LOGIN_SERVICE_PRESETS["mu.social"]}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
-  }
-  quoteUrls.forEach((url) => {
-    displayText = removeThreadExplorerCardUrlFromText(displayText, url);
+  return buildPostDisplayText(post, {
+    stripUrlFromText: removeThreadExplorerCardUrlFromText,
+    getQuoteUrls: getThreadExplorerQuoteUrls,
   });
-
-  return displayText
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 /**
@@ -7124,26 +7023,42 @@ function getThreadExplorerPostDisplayText(post) {
  * @returns {void}
  */
 function renderThreadExplorerCounts(post, counts) {
-  counts.replaceChildren();
-  const likeButton = createThreadExplorerCountElement("Likes", post.likeCount, Number(post.likeCount) > 0);
-  const replyButton = createThreadExplorerCountElement("Replies", post.replyCount, Number(post.replyCount) > 0);
-  const repostButton = createThreadExplorerCountElement("Reposts", post.repostCount, Number(post.repostCount) > 0);
-  const quoteButton = createThreadExplorerCountElement("Quotes", post.quoteCount, Number(post.quoteCount) > 0);
+  const metricEntries = getLocalizedPostMetricEntries(post, [
+    "Likes",
+    "Replies",
+    "Reposts",
+    "Quotes",
+  ]);
+  renderThreadExplorerMetricEntries(post, counts, metricEntries);
+}
 
-  [likeButton, repostButton, quoteButton].forEach((button) => {
+/**
+ * Renders interaction counts for a Thread Explorer post from prepared metric entries.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {HTMLElement} counts - Count container.
+ * @param {Array<{type: string, count: number, label: string, isInteractive: boolean}>} metricEntries - Prepared metric entries.
+ * @returns {void}
+ */
+function renderThreadExplorerMetricEntries(post, counts, metricEntries = []) {
+  counts.replaceChildren();
+  const metricElements = metricEntries.map((entry) => {
+    return createThreadExplorerMetricElement(entry);
+  });
+
+  metricElements.forEach((button) => {
     if (!button.classList.contains("thread-explorer-count-button")) {
       return;
     }
     button.dataset.uri = post.uri;
     button.dataset.cid = post.cid || "";
-    button.addEventListener("click", handleThreadExplorerCountClick);
+    if (button.dataset.reactionType === "Replies") {
+      button.addEventListener("click", handleThreadExplorerRepliesCountClick);
+    } else {
+      button.addEventListener("click", handleThreadExplorerCountClick);
+    }
   });
 
-  if (replyButton.classList.contains("thread-explorer-count-button")) {
-    replyButton.dataset.uri = post.uri;
-    replyButton.addEventListener("click", handleThreadExplorerRepliesCountClick);
-  }
-  counts.append(likeButton, replyButton, repostButton, quoteButton);
+  counts.append(...metricElements);
 }
 
 /**
@@ -7157,16 +7072,19 @@ function renderThreadExplorerViewLink(post, link) {
     return;
   }
 
-  const url = buildThreadExplorerPostWebUrl(post);
-  if (!url) {
+  const viewLink = buildPostViewLinkModel(post, {
+    buildPostUrl: buildThreadExplorerPostWebUrl,
+    linkText: "↗",
+  });
+  if (!viewLink) {
     link.hidden = true;
     link.removeAttribute("href");
     return;
   }
 
   link.hidden = false;
-  link.href = url;
-  link.textContent = "↗";
+  link.href = viewLink.url;
+  link.textContent = viewLink.text;
   applyTranslatedTitle(link, "threadExplorerViewInBskyButton");
 }
 
@@ -7181,15 +7099,15 @@ function renderThreadExplorerEditButton(post, button) {
     return false;
   }
 
-  const editInfo = post?.editInfo || null;
-  if (!editInfo?.isEdited) {
+  const editModel = buildPostEditButtonModel(post);
+  if (!editModel.isVisible) {
     button.hidden = true;
     button.removeAttribute("data-uri");
     return false;
   }
 
   button.hidden = false;
-  button.dataset.uri = post.uri || "";
+  button.dataset.uri = editModel.uri;
   applyTranslatedTitle(button, "threadExplorerEditDetailsButton");
   button.addEventListener("click", handleThreadExplorerEditButtonClick);
   return true;
@@ -9651,14 +9569,76 @@ function hydrateThreadExplorerCardContent(card = null) {
     return;
   }
 
+  const postDisplay = getThreadExplorerPostCardDisplayModel(post, [
+    "Likes",
+    "Replies",
+    "Reposts",
+    "Quotes",
+  ]);
+  hydrateThreadExplorerCardAvatar(card, post);
+  hydrateThreadExplorerCardMedia(card, post);
+  hydrateThreadExplorerCardEmbeds(card, post, postDisplay);
+  finalizeThreadExplorerCardHydration(card);
+}
+
+/**
+ * Applies the avatar state for one hydrated Thread Explorer post card.
+ * @param {HTMLElement|null} card - Rendered post card.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @returns {void}
+ */
+function hydrateThreadExplorerCardAvatar(card = null, post = {}) {
+  if (!card || !post) {
+    return;
+  }
+
   const avatar = card.querySelector(".thread-explorer-avatar");
-  const gallery = card.querySelector(".thread-explorer-post-gallery");
   markThreadExplorerAvatarImage(avatar, post.author);
   setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
+}
+
+/**
+ * Applies the image gallery state for one hydrated Thread Explorer post card.
+ * @param {HTMLElement|null} card - Rendered post card.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @returns {void}
+ */
+function hydrateThreadExplorerCardMedia(card = null, post = {}) {
+  if (!card || !post) {
+    return;
+  }
+
+  const gallery = card.querySelector(".thread-explorer-post-gallery");
   renderThreadExplorerImages(post, gallery);
   syncThreadExplorerPostCardImageShape(card, gallery);
-  renderThreadExplorerExternalCard(post, card);
+}
+
+/**
+ * Applies the external-card and quote-card state for one hydrated Thread Explorer post card.
+ * @param {HTMLElement|null} card - Rendered post card.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @param {object|null} postDisplay - Prepared post display model.
+ * @returns {void}
+ */
+function hydrateThreadExplorerCardEmbeds(card = null, post = {}, postDisplay = null) {
+  if (!card || !post) {
+    return;
+  }
+
+  renderThreadExplorerExternalCard(post, postDisplay?.externalCardDisplay || null, card);
   renderThreadExplorerQuoteCard(post, card);
+}
+
+/**
+ * Marks one Thread Explorer post card as hydrated and refreshes dependent layout.
+ * @param {HTMLElement|null} card - Hydrated post card.
+ * @returns {void}
+ */
+function finalizeThreadExplorerCardHydration(card = null) {
+  if (!card) {
+    return;
+  }
+
   card.dataset.hydrated = "true";
   card.classList.remove("is-awaiting-content");
   if (isThreadExplorerReplyClusterModeActive()) {
@@ -9788,6 +9768,12 @@ function createThreadExplorerRenderedItem(node, options = {}) {
   const engagementScore = getThreadExplorerEngagementScore(post);
   const engagementTier = getThreadExplorerEngagementTier(engagementScore);
   const isDeletedThreadAnchor = post.isDeletedThreadAnchor === true;
+  const postDisplay = getThreadExplorerPostCardDisplayModel(post, [
+    "Likes",
+    "Replies",
+    "Reposts",
+    "Quotes",
+  ]);
 
   item.dataset.uri = post.uri;
   item.dataset.engagementScore = String(engagementScore);
@@ -9805,30 +9791,24 @@ function createThreadExplorerRenderedItem(node, options = {}) {
       trigger.disabled = true;
     });
     avatar.hidden = true;
-    author.textContent = t("threadExplorerDeletedThreadTitle");
-    handle.textContent = post.uri.replace(/^at:\/\//, "");
-    meta.textContent = "";
+    author.textContent = postDisplay?.authorLabel || "";
+    handle.textContent = postDisplay?.handleLabel || "";
+    meta.textContent = postDisplay?.metaText || "";
     viewLink.hidden = true;
     editButton.hidden = true;
     actions.hidden = true;
-    text.textContent = t("threadExplorerDeletedThreadText");
+    text.textContent = postDisplay?.text || "";
     counts.replaceChildren();
   } else {
     setAvatarImage(avatar, "", getThreadExplorerActorLabel(post.author));
-    author.textContent = getThreadExplorerActorLabel(post.author);
-    if (post.author?.handle) {
-      handle.textContent = `@${post.author.handle}`;
-    } else if (post.author?.did) {
-      handle.textContent = post.author.did;
-    } else {
-      handle.textContent = "";
-    }
-    meta.textContent = formatThreadExplorerDate(post.createdAt || post.indexedAt);
+    author.textContent = postDisplay?.authorLabel || "";
+    handle.textContent = postDisplay?.handleLabel || "";
+    meta.textContent = postDisplay?.metaText || "";
     renderThreadExplorerViewLink(post, viewLink);
     renderThreadExplorerEditButton(post, editButton);
     renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink);
-    text.textContent = getThreadExplorerPostDisplayText(post) || t("threadExplorerNoText");
-    renderThreadExplorerCounts(post, counts);
+    text.textContent = postDisplay?.text || t("threadExplorerNoText");
+    renderThreadExplorerMetricEntries(post, counts, postDisplay?.metricEntries || []);
     actorTriggers.forEach((trigger) => {
       trigger.dataset.actorDid = post.author?.did || "";
       trigger.dataset.actorHandle = post.author?.handle || "";
@@ -10739,34 +10719,63 @@ function renderThreadExplorerImages(post, gallery) {
   }
   gallery.dataset.imageCount = String(images.length);
   images.forEach((image, imageIndex) => {
-    const fragment = threadExplorerImageTemplate.content.cloneNode(true);
-    const figure = fragment.querySelector(".thread-explorer-image");
-    const button = fragment.querySelector(".thread-explorer-image-button");
-    const img = fragment.querySelector("img");
-    const caption = fragment.querySelector("figcaption");
-    const source = image.fullsize || image.thumb || "";
-    const thumb = image.thumb || source;
-    setThreadExplorerCachedImageSource(img, source, thumb);
-    img.alt = image.alt || "";
-    img.addEventListener("load", () => {
-      applyThreadExplorerPostImagePreviewShape(img, figure, gallery);
-      syncThreadExplorerPostCardImageShape(gallery.closest(".thread-explorer-post-card"), gallery);
-      refreshThreadExplorerRenderedGeometry();
-    }, { once: true });
-    attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerPostImageError);
-    button.addEventListener("click", () => {
-      openThreadExplorerGallery(images, imageIndex);
-    });
-    caption.textContent = image.alt || "";
-    caption.hidden = !image.alt;
+    const figure = createThreadExplorerImageFigure(image, imageIndex, images, gallery);
     gallery.appendChild(figure);
-    if (img.complete) {
-      applyThreadExplorerPostImagePreviewShape(img, figure, gallery);
-      syncThreadExplorerPostCardImageShape(gallery.closest(".thread-explorer-post-card"), gallery);
-      refreshThreadExplorerRenderedGeometry();
-    }
   });
   gallery.hidden = images.length === 0;
+}
+
+/**
+ * Creates one rendered image figure for a Thread Explorer post gallery.
+ * @param {object} image - Normalized post image entry.
+ * @param {number} imageIndex - Index inside the post gallery.
+ * @param {object[]} images - Full gallery image list.
+ * @param {HTMLElement|null} gallery - Gallery container.
+ * @returns {HTMLElement} Rendered figure element.
+ */
+function createThreadExplorerImageFigure(image, imageIndex, images, gallery) {
+  const fragment = threadExplorerImageTemplate.content.cloneNode(true);
+  const figure = fragment.querySelector(".thread-explorer-image");
+  const button = fragment.querySelector(".thread-explorer-image-button");
+  const img = fragment.querySelector("img");
+  const caption = fragment.querySelector("figcaption");
+  const source = image.fullsize || image.thumb || "";
+  const thumb = image.thumb || source;
+
+  setThreadExplorerCachedImageSource(img, source, thumb);
+  img.alt = image.alt || "";
+  img.addEventListener("load", () => {
+    applyThreadExplorerGalleryImageLoadState(img, figure, gallery);
+  }, { once: true });
+  attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerPostImageError);
+  button.addEventListener("click", () => {
+    openThreadExplorerGallery(images, imageIndex);
+  });
+  caption.textContent = image.alt || "";
+  caption.hidden = !image.alt;
+
+  if (img.complete) {
+    applyThreadExplorerGalleryImageLoadState(img, figure, gallery);
+  }
+
+  return figure;
+}
+
+/**
+ * Applies the loaded-image state for one Thread Explorer gallery figure.
+ * @param {HTMLImageElement|null} image - Loaded gallery image.
+ * @param {HTMLElement|null} figure - Surrounding figure element.
+ * @param {HTMLElement|null} gallery - Owning gallery element.
+ * @returns {void}
+ */
+function applyThreadExplorerGalleryImageLoadState(image = null, figure = null, gallery = null) {
+  if (!gallery) {
+    return;
+  }
+
+  applyThreadExplorerPostImagePreviewShape(image, figure, gallery);
+  syncThreadExplorerPostCardImageShape(gallery.closest(".thread-explorer-post-card"), gallery);
+  refreshThreadExplorerRenderedGeometry();
 }
 
 /**
@@ -10820,44 +10829,43 @@ function handleThreadExplorerQuoteLinkImageError(event) {
 /**
  * Renders a post external card into a Thread Explorer node fragment.
  * @param {object} post - Normalized Thread Explorer post.
+ * @param {object|null} display - Prepared external card display model.
  * @param {DocumentFragment} fragment - Node template fragment.
  * @returns {void}
  */
-function renderThreadExplorerExternalCard(post, fragment) {
+function renderThreadExplorerExternalCard(post, display, fragment) {
   const card = fragment.querySelector(".thread-explorer-link-card");
   const image = fragment.querySelector(".thread-explorer-link-card-image");
   const title = fragment.querySelector(".thread-explorer-link-card-title");
   const description = fragment.querySelector(".thread-explorer-link-card-description");
   const url = fragment.querySelector(".thread-explorer-link-card-url");
-  const external = post.externalCard;
 
-  if (!external || !external.uri) {
+  if (!display) {
     card.hidden = true;
     card.classList.remove("is-publication");
     return;
   }
 
-  const standardSite = normalizeStandardSiteMetadata(external.standardSite);
   card.hidden = false;
-  if (standardSite) {
+  if (display.isPublication) {
     card.classList.add("is-publication");
   } else {
     card.classList.remove("is-publication");
   }
-  card.href = external.uri;
+  card.href = display.url;
   image.removeEventListener("error", handleThreadExplorerLinkImageError);
   image.addEventListener("error", handleThreadExplorerLinkImageError);
   image.addEventListener("load", () => {
     cacheThreadExplorerRenderedMediaImage(image);
     refreshThreadExplorerRenderedGeometry();
   }, { once: true });
-  if (external.thumb) {
+  if (display.thumb) {
     card.classList.remove("has-no-thumb");
     card.classList.remove("has-favicon-thumb");
     image.hidden = false;
-    setThreadExplorerCachedImageSource(image, external.thumb);
+    setThreadExplorerCachedImageSource(image, display.thumb);
   } else {
-    const faviconUrl = getThreadExplorerFaviconUrl(external.uri);
+    const faviconUrl = getThreadExplorerFaviconUrl(display.url);
     if (faviconUrl) {
       card.classList.remove("has-no-thumb");
       card.classList.add("has-favicon-thumb");
@@ -10873,75 +10881,94 @@ function renderThreadExplorerExternalCard(post, fragment) {
       image.removeAttribute("src");
     }
   }
-  title.textContent = external.title || external.uri;
-  description.textContent = external.description || "";
-  const publicationFooterLabel = getPublicationCardFooterLabel(standardSite);
-  if (publicationFooterLabel) {
-    url.textContent = `${shortenThreadExplorerUrlForDisplay(external.uri)} - ${publicationFooterLabel}`;
-  } else {
-    url.textContent = shortenThreadExplorerUrlForDisplay(external.uri);
-  }
+  title.textContent = display.title || display.url;
+  description.textContent = display.description || "";
+  url.textContent = display.footer;
 }
 
 /**
  * Renders preview images from a quoted Thread Explorer post.
- * @param {object} quote - Normalized quoted post.
+ * @param {object} quoteDisplay - Prepared quoted post display model.
  * @param {HTMLElement|null} gallery - Target gallery element inside the quote card.
  * @returns {void}
  */
-function renderThreadExplorerQuoteImages(quote, gallery) {
+function renderThreadExplorerQuoteImages(quoteDisplay, gallery) {
   if (!gallery) {
     return;
   }
 
   gallery.replaceChildren();
-  let images = [];
-  if (Array.isArray(quote?.images)) {
-    images = quote.images;
-  }
+  const images = Array.isArray(quoteDisplay?.images) ? quoteDisplay.images : [];
+  const previewEntries = Array.isArray(quoteDisplay?.imagePreviewEntries) ? quoteDisplay.imagePreviewEntries : [];
   gallery.dataset.imageCount = String(images.length);
 
-  images.slice(0, 4).forEach((image, imageIndex) => {
-    const img = document.createElement("img");
-    const source = image.thumb || image.fullsize || "";
-    setThreadExplorerCachedImageSource(img, source);
-    img.alt = image.alt || "";
-    img.loading = "lazy";
-    img.addEventListener("load", () => {
-      applyThreadExplorerPostImagePreviewShape(img, img, gallery);
-      refreshThreadExplorerRenderedGeometry();
-    }, { once: true });
-    attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerQuoteImageError);
-    img.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      openThreadExplorerGallery(images, imageIndex);
-    });
+  previewEntries.forEach((entry) => {
+    const img = createThreadExplorerQuoteImageElement(entry, images, gallery);
     gallery.appendChild(img);
-    if (img.complete) {
-      applyThreadExplorerPostImagePreviewShape(img, img, gallery);
-      refreshThreadExplorerRenderedGeometry();
-    }
   });
 
   gallery.hidden = images.length === 0;
 }
 
 /**
+ * Creates one rendered preview image for a quoted Thread Explorer post.
+ * @param {{source: string, alt: string, imageIndex: number}} entry - Prepared quote image preview entry.
+ * @param {object[]} images - Full quote image list.
+ * @param {HTMLElement|null} gallery - Quote gallery element.
+ * @returns {HTMLImageElement} Rendered preview image element.
+ */
+function createThreadExplorerQuoteImageElement(entry, images, gallery) {
+  const img = document.createElement("img");
+  setThreadExplorerCachedImageSource(img, entry.source);
+  img.alt = entry.alt;
+  img.loading = "lazy";
+  img.addEventListener("load", () => {
+    applyThreadExplorerQuoteImageLoadState(img, gallery);
+  }, { once: true });
+  attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerQuoteImageError);
+  img.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openThreadExplorerGallery(images, entry.imageIndex);
+  });
+
+  if (img.complete) {
+    applyThreadExplorerQuoteImageLoadState(img, gallery);
+  }
+
+  return img;
+}
+
+/**
+ * Applies the loaded-image state for one quoted Thread Explorer preview image.
+ * @param {HTMLImageElement|null} image - Loaded preview image.
+ * @param {HTMLElement|null} gallery - Quote gallery element.
+ * @returns {void}
+ */
+function applyThreadExplorerQuoteImageLoadState(image = null, gallery = null) {
+  if (!image || !gallery) {
+    return;
+  }
+
+  applyThreadExplorerPostImagePreviewShape(image, image, gallery);
+  refreshThreadExplorerRenderedGeometry();
+}
+
+/**
  * Renders a quoted post's external link card preview.
- * @param {object} quote - Normalized quoted post.
+ * @param {object} quoteDisplay - Prepared quoted post display model.
  * @param {DocumentFragment} fragment - Node template fragment.
  * @returns {void}
  */
-function renderThreadExplorerQuoteExternalCard(quote, fragment) {
+function renderThreadExplorerQuoteExternalCard(quoteDisplay, fragment) {
   const card = fragment.querySelector(".thread-explorer-quote-link-card");
   const image = fragment.querySelector(".thread-explorer-quote-link-card-image");
   const title = fragment.querySelector(".thread-explorer-quote-link-card-title");
   const description = fragment.querySelector(".thread-explorer-quote-link-card-description");
   const url = fragment.querySelector(".thread-explorer-quote-link-card-url");
-  const external = quote?.externalCard;
+  const display = quoteDisplay?.externalCardDisplay || null;
 
-  if (!card || !external || !external.uri) {
+  if (!card || !display) {
     if (card) {
       card.hidden = true;
       card.classList.remove("is-publication");
@@ -10949,9 +10976,8 @@ function renderThreadExplorerQuoteExternalCard(quote, fragment) {
     return;
   }
 
-  const standardSite = normalizeStandardSiteMetadata(external.standardSite);
   card.hidden = false;
-  if (standardSite) {
+  if (display.isPublication) {
     card.classList.add("is-publication");
   } else {
     card.classList.remove("is-publication");
@@ -10962,13 +10988,13 @@ function renderThreadExplorerQuoteExternalCard(quote, fragment) {
     cacheThreadExplorerRenderedMediaImage(image);
     refreshThreadExplorerRenderedGeometry();
   }, { once: true });
-  if (external.thumb) {
+  if (display.thumb) {
     card.classList.remove("has-no-thumb");
     card.classList.remove("has-favicon-thumb");
     image.hidden = false;
-    setThreadExplorerCachedImageSource(image, external.thumb);
+    setThreadExplorerCachedImageSource(image, display.thumb);
   } else {
-    const faviconUrl = getThreadExplorerFaviconUrl(external.uri);
+    const faviconUrl = getThreadExplorerFaviconUrl(display.url);
     if (faviconUrl) {
       card.classList.remove("has-no-thumb");
       card.classList.add("has-favicon-thumb");
@@ -10984,14 +11010,9 @@ function renderThreadExplorerQuoteExternalCard(quote, fragment) {
       image.removeAttribute("src");
     }
   }
-  title.textContent = external.title || external.uri;
-  description.textContent = external.description || "";
-  const publicationFooterLabel = getPublicationCardFooterLabel(standardSite);
-  if (publicationFooterLabel) {
-    url.textContent = `${shortenThreadExplorerUrlForDisplay(external.uri)} - ${publicationFooterLabel}`;
-  } else {
-    url.textContent = shortenThreadExplorerUrlForDisplay(external.uri);
-  }
+  title.textContent = display.title || display.url;
+  description.textContent = display.description || "";
+  url.textContent = display.footer;
 }
 
 /**
@@ -11009,42 +11030,42 @@ function renderThreadExplorerQuoteCard(post, fragment) {
   const gallery = fragment.querySelector(".thread-explorer-quote-card-gallery");
   const meta = fragment.querySelector(".thread-explorer-quote-card-meta");
   const quote = post.quoteCard;
+  const display = buildQuoteCardDisplayModel(quote, {
+    fallbackAuthorLabel: t("threadExplorerUnknownAuthor"),
+    noTextFallback: t("threadExplorerNoText"),
+    buildPostUrl: buildThreadExplorerPostWebUrl,
+    getAuthorFields: getLocalizedPostAuthorFields,
+    buildMetaText(quotePost) {
+      return buildPostMetaText(quotePost, {
+        formatDate: formatThreadExplorerDate,
+        translate: t,
+        includeEditedBadge: true,
+      });
+    },
+    buildExternalCardDisplay: getThreadExplorerExternalCardDisplayModel,
+  });
 
-  if (!quote || !quote.uri) {
-    card.hidden = true;
-    return;
-  }
-
-  const url = buildThreadExplorerPostWebUrl(quote);
-  if (!url) {
+  if (!display) {
     card.hidden = true;
     return;
   }
 
   card.hidden = false;
-  card.href = url;
+  card.href = display.url;
   card.title = t("searchResultOpenInThreadExplorerButton");
   card.setAttribute("aria-label", t("searchResultOpenInThreadExplorerButton"));
   card.addEventListener("click", (event) => {
     event.preventDefault();
-    void selectThreadExplorerPost(quote.uri);
+    void selectThreadExplorerPost(display.uri);
   });
   markThreadExplorerAvatarImage(avatar, quote.author);
   setAvatarImage(avatar, getThreadExplorerActorAvatarUri(quote.author), getThreadExplorerActorLabel(quote.author));
-  author.textContent = getThreadExplorerActorLabel(quote.author);
-  if (quote.author?.handle) {
-    handle.textContent = `@${quote.author.handle}`;
-  } else {
-    handle.textContent = quote.author?.did || "";
-  }
-  text.textContent = quote.text || t("threadExplorerNoText");
-  renderThreadExplorerQuoteImages(quote, gallery);
-  renderThreadExplorerQuoteExternalCard(quote, fragment);
-  let metaText = formatThreadExplorerDate(quote.createdAt || quote.indexedAt);
-  if (quote.editInfo?.isEdited === true) {
-    metaText = `${metaText} - ${t("threadExplorerEditedBadge")}`.trim();
-  }
-  meta.textContent = metaText;
+  author.textContent = display.authorLabel;
+  handle.textContent = display.handleLabel;
+  text.textContent = display.text;
+  renderThreadExplorerQuoteImages(display, gallery);
+  renderThreadExplorerQuoteExternalCard(display, fragment);
+  meta.textContent = display.metaText;
 }
 
 /**
@@ -19804,45 +19825,7 @@ function getDmArchiveMessageRange(catalog = dmCatalog) {
 }
 
 function extractDmExternalCardFromEmbed(embed) {
-  if (!embed || typeof embed !== "object") {
-    return null;
-  }
-
-  const external = embed.external && typeof embed.external === "object"
-    ? embed.external
-    : embed.card && typeof embed.card === "object"
-      ? embed.card
-      : embed.link && typeof embed.link === "object"
-        ? embed.link
-        : embed;
-  const url = String(external.uri || external.url || "").trim();
-  const title = String(external.title || "").trim();
-  const description = String(external.description || "").trim();
-  const thumb = String(external.thumb || external.thumbnail || external.image || "").trim();
-
-  if (url) {
-    return {
-      url,
-      title,
-      description,
-      thumb,
-    };
-  }
-
-  if (embed.media) {
-    return extractDmExternalCardFromEmbed(embed.media);
-  }
-
-  if (Array.isArray(embed.embeds)) {
-    for (const nestedEmbed of embed.embeds) {
-      const match = extractDmExternalCardFromEmbed(nestedEmbed);
-      if (match) {
-        return match;
-      }
-    }
-  }
-
-  return null;
+  return extractExternalCardFromEmbed(embed);
 }
 
 function getDmFacetLinkCard(message = {}) {
@@ -23048,96 +23031,38 @@ async function saveEditedHashtag() {
   closeHashtagEditDialog();
 }
 
-function createDefaultImageEdit() {
-  return {
-    zoom: 1,
-    offsetX: 0,
-    offsetY: 0,
-    flipX: false,
-    flipY: false,
-    rotation: 0,
-    fitMode: "contain",
-  };
-}
-
-function isImageUsingDefaultEdit(image) {
-  const edit = normalizeImageEdit(image?.edit);
-  return edit.zoom === 1
-    && edit.offsetX === 0
-    && edit.offsetY === 0
-    && edit.flipX === false
-    && edit.flipY === false
-    && edit.rotation === 0
-    && edit.fitMode === "contain";
-}
-
+/**
+ * Returns whether one image has explicit upload transforms after applying Threadline limits.
+ * @param {object} image - Image record with edit and export settings.
+ * @returns {boolean} True when the image needs a transformed upload.
+ */
 function hasExplicitImageUploadTransform(image) {
-  return !isImageUsingDefaultEdit(image)
-    || Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image?.exportScale) || 1)) !== 1
-    || Math.abs((Number(image?.exportQuality) || 0.88) - 0.88) > 0.001;
+  return hasExplicitSharedImageUploadTransform(image, IMAGE_MIN_EXPORT_SCALE);
 }
 
-function normalizeImageEdit(edit = {}) {
-  const zoom = Math.min(3, Math.max(0.5, Number(edit.zoom) || 1));
-  const offsetX = Number(edit.offsetX) || 0;
-  const offsetY = Number(edit.offsetY) || 0;
-  const flipX = Boolean(edit.flipX);
-  const flipY = Boolean(edit.flipY);
-  const rotation = ((((Number(edit.rotation) || 0) % 360) + 360) % 360);
-  const fitMode = edit.fitMode === "cover"
-    || (
-      !Object.prototype.hasOwnProperty.call(edit, "fitMode")
-      && (zoom !== 1 || offsetX !== 0 || offsetY !== 0 || flipX || flipY || rotation !== 0)
-    )
-    ? "cover"
-    : "contain";
-  return {
-    zoom,
-    offsetX,
-    offsetY,
-    flipX,
-    flipY,
-    rotation,
-    fitMode,
-  };
-}
-
+/**
+ * Normalizes one raw thread image entry into the stored internal Threadline shape.
+ * @param {object} entry - Raw stored image entry.
+ * @returns {object|null} Normalized thread image or `null` when the entry has no data URL.
+ */
 function normalizeThreadImage(entry = {}) {
-  if (!entry?.dataUrl) {
-    return null;
-  }
-
-  return {
-    id: entry.id || crypto.randomUUID(),
-    name: entry.name || "image",
-    type: entry.type || "image/jpeg",
-    dataUrl: entry.dataUrl,
-    alt: String(entry.alt || "").slice(0, MAX_ALT_TEXT_LENGTH),
-    width: Number(entry.width) || 0,
-    height: Number(entry.height) || 0,
-    originalSizeBytes: Math.max(0, Number(entry.originalSizeBytes) || 0),
-    edit: normalizeImageEdit(entry.edit),
-    exportQuality: Math.min(0.92, Math.max(0.45, Number(entry.exportQuality) || 0.88)),
-    exportScale: Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(entry.exportScale) || 1)),
-    validation: entry.validation && typeof entry.validation === "object"
-      ? {
-          sizeBytes: Number(entry.validation.sizeBytes) || 0,
-          width: Number(entry.validation.width) || 0,
-          height: Number(entry.validation.height) || 0,
-          exceedsDimensions: Boolean(entry.validation.exceedsDimensions),
-          tooBig: Boolean(entry.validation.tooBig),
-        }
-      : { sizeBytes: 0, width: 0, height: 0, exceedsDimensions: false, tooBig: false },
-  };
+  return normalizeSharedThreadImage(entry, {
+    maxAltTextLength: MAX_ALT_TEXT_LENGTH,
+    imageMinExportScale: IMAGE_MIN_EXPORT_SCALE,
+  });
 }
 
+/**
+ * Normalizes the full segment-image matrix for the composer state.
+ * @param {Array<Array<object>>} segments - Raw segment image matrix.
+ * @returns {Array<Array<object>>} Normalized segment image matrix.
+ */
 function normalizeSegmentImages(segments) {
-  return (Array.isArray(segments) ? segments : []).map((images) =>
-    (Array.isArray(images) ? images : [])
-      .map((entry) => normalizeThreadImage(entry))
-      .filter(Boolean)
-      .slice(0, MAX_IMAGES_PER_SEGMENT),
-  );
+  return normalizeSharedSegmentImages(segments, {
+    maxAltTextLength: MAX_ALT_TEXT_LENGTH,
+    imageMinExportScale: IMAGE_MIN_EXPORT_SCALE,
+    maxImagesPerSegment: MAX_IMAGES_PER_SEGMENT,
+  });
 }
 
 function normalizeSegmentOverrides(segments) {
@@ -23185,12 +23110,13 @@ function normalizePostingHistory(entries) {
     .slice(0, MAX_POSTING_HISTORY);
 }
 
-function normalizeImageAutoResizeMode(value) {
-  return value === "fit" || value === "lossy" ? value : "off";
-}
-
+/**
+ * Returns whether automatic image resizing is enabled for the current Threadline mode.
+ * @param {string} mode - Raw or normalized resize mode.
+ * @returns {boolean} True when the mode is not `off`.
+ */
 function isImageAutoResizeEnabled(mode = imageAutoResizeMode) {
-  return normalizeImageAutoResizeMode(mode) !== "off";
+  return isSharedImageAutoResizeEnabled(mode);
 }
 
 function mergePostingHistoryEntries(existing, imported) {
@@ -23214,20 +23140,6 @@ function syncSegmentImages(segmentCount) {
     next[index] = Array.isArray(segmentImages[index]) ? segmentImages[index] : [];
   }
   segmentImages = next;
-}
-
-function dataUrlToFile(dataUrl, fileName = "link-card.jpg") {
-  const match = String(dataUrl || "").match(/^data:([^;,]+)?;base64,(.+)$/);
-  if (!match) {
-    return null;
-  }
-  const mimeType = match[1] || "image/jpeg";
-  const binary = atob(match[2]);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return new File([bytes], fileName, { type: mimeType });
 }
 
 /**
@@ -23561,7 +23473,7 @@ async function createLinkCardForPendingSegment() {
   const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
   let url = pendingLinkCardUrl;
   if (action !== "move") {
-    const validation = validateLinkCardTargetUrl(linkCardUrlInput?.value || "");
+    const validation = validateLinkCardTargetUrl(linkCardUrlInput?.value || "", t);
     if (!validation.ok) {
       linkCardStatus.textContent = validation.message;
       linkCardStatus.dataset.tone = "error";
@@ -23702,82 +23614,6 @@ function syncSegmentLinkCards(segmentCount) {
     next[index] = normalizeLinkCard(segmentLinkCards[index]);
   }
   segmentLinkCards = next;
-}
-
-function getFirstHttpUrl(text) {
-  return String(text || "").match(/https?:\/\/[^\s<>"')\]]+/i)?.[0]?.replace(/[.,;:!?]+$/, "") || "";
-}
-
-/**
- * Normalizes one manually entered link-card target URL to a safe absolute http(s) URL.
- * @param {string} rawUrl - Raw URL from the composer text or dialog input.
- * @returns {string} Normalized absolute http(s) URL, or an empty string when invalid.
- */
-function normalizeLinkCardTargetUrl(rawUrl) {
-  const value = String(rawUrl || "").trim();
-  if (!value) {
-    return "";
-  }
-  if (/^ttps:\/\//i.test(value)) {
-    return `h${value}`;
-  }
-  if (/^\/\//.test(value)) {
-    return `https:${value}`;
-  }
-  if (/^https?:\/\//i.test(value)) {
-    return value;
-  }
-  if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:\/|$)/i.test(value)) {
-    return `https://${value}`;
-  }
-  return "";
-}
-
-/**
- * Validates and normalizes the URL currently entered in the link-card dialog.
- * @param {string} rawUrl - Raw URL from the dialog input.
- * @returns {{ok: boolean, url: string, message: string}} Validation state and normalized URL.
- */
-function validateLinkCardTargetUrl(rawUrl) {
-  const originalValue = String(rawUrl || "").trim();
-  const normalizedUrl = normalizeLinkCardTargetUrl(originalValue);
-  if (!originalValue) {
-    return {
-      ok: false,
-      url: "",
-      message: t("linkCardUrlMissing"),
-    };
-  }
-  if (!normalizedUrl) {
-    return {
-      ok: false,
-      url: "",
-      message: t("linkCardUrlInvalid"),
-    };
-  }
-
-  try {
-    const parsedUrl = new URL(normalizedUrl);
-    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-      return {
-        ok: false,
-        url: "",
-        message: t("linkCardUrlInvalid"),
-      };
-    }
-  } catch {
-    return {
-      ok: false,
-      url: "",
-      message: t("linkCardUrlInvalid"),
-    };
-  }
-
-  return {
-    ok: true,
-    url: normalizedUrl,
-    message: "",
-  };
 }
 
 /**
@@ -29492,13 +29328,7 @@ function drawArchivePdfMetricPill(context, label, x, y, scale) {
 }
 
 function buildArchivePostMetricLabels(post) {
-  const counts = post.counts || {};
-  return [
-    `Likes ${counts.likeCount || 0}`,
-    `Replies ${counts.replyCount || 0}`,
-    `Reposts ${counts.repostCount || 0}`,
-    `Quotes ${counts.quoteCount || 0}`,
-  ];
+  return buildPostMetricLabels(post);
 }
 
 function estimateArchivePostCardHeight(context, post, options, scale, cardWidth, layoutMode = "standalone") {

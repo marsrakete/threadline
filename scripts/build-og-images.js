@@ -44,14 +44,30 @@ async function readSourceSvg(rootDir, config) {
  * @returns {{renderWidth: number, renderHeight: number, loadSystemFonts: boolean, background: string}} Render settings.
  */
 function getRenderSettings(config) {
-  const renderConfig = config.render && typeof config.render === "object"
-    ? config.render
-    : {};
+  let renderConfig = {};
+  if (config.render && typeof config.render === "object") {
+    renderConfig = config.render;
+  }
 
-  const renderWidth = Number(renderConfig.width) || DEFAULT_RENDER_WIDTH;
-  const renderHeight = Number(renderConfig.height) || DEFAULT_RENDER_HEIGHT;
-  const loadSystemFonts = renderConfig.loadSystemFonts !== false;
-  const background = renderConfig.background || DEFAULT_BACKGROUND;
+  let renderWidth = Number(renderConfig.width);
+  if (!renderWidth) {
+    renderWidth = DEFAULT_RENDER_WIDTH;
+  }
+
+  let renderHeight = Number(renderConfig.height);
+  if (!renderHeight) {
+    renderHeight = DEFAULT_RENDER_HEIGHT;
+  }
+
+  let loadSystemFonts = true;
+  if (renderConfig.loadSystemFonts === false) {
+    loadSystemFonts = false;
+  }
+
+  let background = renderConfig.background;
+  if (!background) {
+    background = DEFAULT_BACKGROUND;
+  }
 
   return {
     renderWidth,
@@ -73,9 +89,7 @@ function renderSvgToPng(svg, renderSettings) {
     font: { loadSystemFonts: renderSettings.loadSystemFonts },
     background: renderSettings.background,
   });
-
-  const rendered = resvg.render();
-  return rendered.asPng();
+  return resvg.render().asPng();
 }
 
 /**
@@ -165,7 +179,14 @@ async function main() {
   process.stdout.write(`Built OG images from ${config.source}\n`);
 }
 
-main().catch((error) => {
+/**
+ * Reports a failed build and sets the process error code.
+ * @param {Error} error - Error from the asynchronous build.
+ * @returns {void} Does not return a value.
+ */
+function handleBuildError(error) {
   console.error(error);
   process.exitCode = 1;
-});
+}
+
+main().catch(handleBuildError);

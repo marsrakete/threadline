@@ -721,10 +721,20 @@ http://localhost:4173
 ├── index.html
 ├── js/
 │   ├── atproto/
-│   │   └── atproto-client.js
+│   │   ├── atproto-client.js
+│   │   └── atproto-session.js
 │   └── core/
 │       ├── app-bootstrap.js
+│       ├── app-i18n.js
 │       └── app-navigation.js
+│       ├── app-shell.js
+│       └── app-utils.js
+│   └── shared/
+│       ├── shared-accounts.js
+│       ├── shared-images.js
+│       ├── shared-link-cards.js
+│       └── shared-languages.js
+│       └── shared-post-rendering.js
 ├── manifest.webmanifest
 ├── styles.css
 ├── sw.js
@@ -735,6 +745,72 @@ http://localhost:4173
     ├── icon.svg
     └── maskable-icon.svg
 ```
+
+### Shared modules
+
+- `js/shared/shared-accounts.js`
+  Purpose: account-near helpers such as avatar fallbacks and safe avatar assignment.
+  Parameters and returns:
+  `setAvatarImage(img, src, fallbackText) -> void`
+  `DEFAULT_AVATAR_URI -> string`
+
+- `js/shared/shared-images.js`
+  Purpose: neutral image normalization for composer, archive, and post rendering.
+  Parameters and returns:
+  `normalizeThreadImage(entry, options) -> object`
+  `normalizeSegmentImages(segments, options) -> Array<object>`
+  `normalizeImageEdit(edit, options) -> object`
+  `createDefaultImageEdit() -> object`
+  `dataUrlToFile(dataUrl, fileName) -> File|null`
+
+- `js/shared/shared-link-cards.js`
+  Purpose: URL extraction, normalization, and validation for composer link cards.
+  Parameters and returns:
+  `getFirstHttpUrl(text) -> string`
+  `normalizeLinkCardTargetUrl(url) -> string`
+  `validateLinkCardTargetUrl(url) -> { isValid: boolean, normalizedUrl: string, errorKey: string }`
+
+- `js/shared/shared-languages.js`
+  Purpose: shared post-language lists, normalization, and inferred defaults.
+  Parameters and returns:
+  `getPostLanguageOptions(locale) -> Array<object>`
+  `getPostLanguageDisplayName(tag, locale) -> string`
+  `normalizePostLanguageTags(tags, options) -> Array<string>`
+  `inferDefaultPostLanguages(text) -> Array<string>`
+
+- `js/shared/shared-post-rendering.js`
+  Purpose: DOM-neutral post helpers for labels, dates, metrics, embeds, and local like state.
+  Parameters and returns:
+  `getPostAuthorFields(actor, fallbackLabel) -> { authorLabel: string, handleLabel: string }`
+  `getPostActorLabel(actor, fallbackLabel) -> string`
+  `getPostHandleLabel(actor) -> string`
+  `formatPostDateTime(value, locale) -> string`
+  `buildPostMetaText(post, options) -> string`
+  `buildPostMetricEntries(post, options) -> Array<{ type: string, count: number, label: string, isInteractive: boolean }>`
+  `stripPostUrlsFromText(text, urls, options) -> string`
+  `buildPostDisplayText(post, options) -> string`
+  `buildExternalCardDisplayModel(externalCard, options) -> object|null`
+  `buildPostCardDisplayModel(post, options) -> object|null`
+  `buildPostViewLinkModel(post, options) -> object|null`
+  `buildPostEditButtonModel(post) -> object`
+  `buildLivePostInteractionModel(post, options) -> object`
+  `buildQuoteImagePreviewEntries(quote, maxImages) -> Array<object>`
+  `buildQuoteCardDisplayModel(quote, options) -> object|null`
+  `getPostMetricCounts(post) -> { likeCount: number, replyCount: number, repostCount: number, quoteCount: number }`
+  `buildPostMetricLabels(post) -> Array<string>`
+  `buildSearchResultMetaText(item, options) -> string`
+  `extractExternalCardFromEmbed(embed) -> object|null`
+  `applyLikeStateToPost(post, likeUri, delta) -> void`
+
+Current usage:
+- normal live post cards in Thread Explorer use `buildPostCardDisplayModel(...)`
+- search result cards now use the same post-card preparation path with a search-specific meta callback
+- quote cards use `buildQuoteCardDisplayModel(...)`
+
+Thread Explorer application split:
+- `app.js` now keeps data preparation and DOM application more clearly separated
+- card hydration is split into avatar, media, embeds, and finalize steps
+- gallery image application for posts and quotes now follows the same small-helper pattern
 
 ## Update Detection
 
