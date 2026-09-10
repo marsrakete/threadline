@@ -1,9 +1,12 @@
 {
   "name": "threadline",
-  "version": "0.4.273",
+  "version": "0.4.304",
   "private": true,
   "scripts": {
-    "check": "npm run check:encoding && node --check app.js && node --check translations.js && node --check sw.js && node --check sw-atproto.js",
+    "check": "npm run check:encoding && node --check app.js && node --check js/core/app-translations.js && node --check sw.js && node --check js/atproto/atproto-worker.js && npm test",
+    "test": "npm run test:unit && npm run test:browser",
+    "test:unit": "node --test tests/structure.test.cjs tests/module-coverage.test.cjs tests/core-shared-modules.test.cjs tests/composer-main.test.cjs tests/composer-modules.test.cjs tests/tools-modules.test.cjs tests/atproto-adapters.test.cjs tests/worker-contract.test.cjs tests/shared-languages.test.cjs tests/search.test.cjs",
+    "test:browser": "playwright test --config tests/playwright.config.cjs",
     "build:og-image": "node scripts/build-og-images.js",
     "check:encoding": "node scripts/check-encoding.js",
     "fix:encoding": "node scripts/convert-windows1252-to-utf8.js",
@@ -14,5 +17,8 @@
     "@resvg/resvg-js": "^2.6.2",
     "iconv-lite": "^0.7.0",
     "sharp": "^0.35.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }

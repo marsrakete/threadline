@@ -8,8 +8,8 @@ This document collects the AT Protocol and Bluesky-specific parts that used to l
 
 Threadline is still a static browser app, but its network layer now lives in a dedicated service-worker helper path:
 
-- `sw-atproto.js`
-  - compatibility wrapper that loads the split AT Protocol helper files
+- `js/atproto/atproto-worker.js`
+  - service-worker entry that loads the split AT Protocol helper files
 - `js/atproto/atproto-client.js`
   - shared AT Protocol transport, XRPC fetch helpers, blob access, and URI helpers
 - `js/atproto/atproto-session.js`

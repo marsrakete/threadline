@@ -87,6 +87,7 @@ Diese Liste ist nach Arbeitsstand sortiert. Erledigte Punkte bleiben sichtbar, o
 - [ ] Drag-and-Drop fuer Bilder weiter testen: Desktop, Touch, leerer Abschnitt und voller Abschnitt.
 - [ ] Optional bessere Mehrfachauswahl oder Sammel-Drop fuer Bilder pruefen.
 - [ ] Pruefen, ob Bilder zwischen Segmenten noch sichtbarer verschoben werden koennen.
+- [ ] Hochgeladene Bilder optional automatisch mit einem Wasserzeichen versehen.
 
 ## Spaeter / Refactor
 

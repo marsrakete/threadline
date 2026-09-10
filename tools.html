@@ -172,6 +172,11 @@
             </a>
           </div>
         </div>
+        <nav class="legal-links app-legal-footer" aria-label="Rechtliche Hinweise">
+          <a href="./datenschutz.html" data-i18n="privacyLink" data-privacy-language-link data-privacy-page-link>Datenschutz</a>
+          <a href="https://github.com/marsrakete/threadline" target="_blank" rel="noreferrer noopener" data-i18n="sourceCodeLink">GitHub</a>
+          <span class="legal-copyright" data-i18n="footerCopyright">© 2026 Millux</span>
+        </nav>
       </aside>
 
       <div
@@ -186,7 +191,7 @@
         <div id="composer-workspace" class="workspace-view" data-page-scope="composer" hidden>
           <div class="composer-column">
             <section class="editor-pane">
-              <div class="section-heading">
+              <div class="section-heading composer-section-heading">
                 <div>
                   <p class="eyebrow" data-i18n="composerEyebrow">Composer</p>
                   <div class="help-heading">
@@ -2405,6 +2410,30 @@
 
     <input id="thread-import-input" class="is-hidden" type="file" accept="application/json,application/gzip,.json,.gz,.threadline,.threadline.gz">
     <input id="archive-import-input" class="is-hidden" type="file" accept="application/json,application/gzip,application/zip,.json,.gz,.zip,.threadline-archive">
+
+    <template id="dm-summary-item-template">
+      <div class="archive-summary-item">
+        <span class="archive-summary-label"></span>
+        <strong></strong>
+      </div>
+    </template>
+
+    <template id="dm-contact-item-template">
+      <button type="button" class="hashtag-chip dm-contact-chip">
+        <img class="account-chip-avatar dm-contact-avatar" loading="lazy" alt="">
+        <span class="dm-contact-chip-content">
+          <strong class="dm-contact-chip-name"></strong>
+          <span class="dm-contact-chip-handle"></span>
+        </span>
+      </button>
+    </template>
+
+    <template id="dm-result-item-template">
+      <article class="archive-result-card">
+        <h4></h4>
+        <p class="settings-note"></p>
+      </article>
+    </template>
 
     <template id="segment-template">
       <article class="segment-card">

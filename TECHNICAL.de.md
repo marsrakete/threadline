@@ -6,7 +6,7 @@ Diese Datei bündelt die technischeren Hintergrundinformationen, die nicht im sc
 
 ## OpenGraph-Asset-Pipeline
 
-Die maßgebliche Quelle für das OpenGraph-Bild ist `icons/threadline-og-workspaces.svg`. Die abgeleiteten Rasterdateien werden mit `npm run build:og-image` anhand der Einstellungen in `og-image.config.json` erzeugt.
+Die maßgebliche Quelle für das OpenGraph-Bild ist `icons/threadline-og-workspaces.svg`. Die abgeleiteten Rasterdateien werden mit `npm run build:og-image` anhand der Einstellungen in `config/og-image.config.json` erzeugt.
 
 Aktuelle Ausgaben:
 
@@ -727,11 +727,55 @@ http://localhost:4173
 ```text
 .
 ├── app.js
+├── config/
+│   └── og-image.config.json
 ├── index.html
+├── js/
+│   ├── atproto/
+│   │   ├── atproto-client.js
+│   │   ├── atproto-posting.js
+│   │   ├── atproto-search.js
+│   │   ├── atproto-session.js
+│   │   └── atproto-worker.js
+│   ├── core/
+│   │   ├── app-bootstrap.js
+│   │   ├── app-dialogs.js
+│   │   ├── app-i18n.js
+│   │   ├── app-navigation.js
+│   │   ├── app-shell.js
+│   │   ├── app-state.js
+│   │   ├── app-storage.js
+│   │   ├── app-translations.js
+│   │   └── app-utils.js
+│   ├── composer/
+│   │   ├── composer-history.js
+│   │   ├── composer-images.js
+│   │   ├── composer-link-cards.js
+│   │   ├── composer-main.js
+│   │   ├── composer-mentions.js
+│   │   ├── composer-page.js
+│   │   ├── composer-post-settings.js
+│   │   └── composer-splitter.js
+│   ├── shared/
+│       ├── shared-accounts.js
+│       ├── shared-images.js
+│       ├── shared-templates.js
+│       ├── shared-languages.js
+│       ├── shared-link-cards.js
+│       └── shared-post-rendering.js
+│   └── tools/
+│       ├── account-picker.js
+│       ├── analysis.js
+│       ├── archive.js
+│       ├── dm-archive.js
+│       ├── network.js
+│       ├── search.js
+│       ├── thread-explorer.js
+│       ├── tools-layout.js
+│       └── tools-page.js
 ├── manifest.webmanifest
 ├── styles.css
 ├── sw.js
-├── translations.js
 ├── version.js
 ├── version.json
 └── icons/

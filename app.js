@@ -1,6 +1,12 @@
-﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./post-languages.js";
+﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./js/shared/shared-languages.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./js/core/app-i18n.js";
 import { CURRENT_VERSION_INFO, fetchVersionInfo, versionSignature } from "./js/core/app-bootstrap.js";
+import { createAsyncTaskQueue } from "./js/core/app-state.js";
+import {
+  readBrowserStorageValue,
+  removeBrowserStorageValue,
+  writeBrowserStorageValue,
+} from "./js/core/app-storage.js";
 import {
   THREADLINE_PAGE_COMPOSER,
   THREADLINE_PAGE_TOOLS,
@@ -13,8 +19,111 @@ import {
   isWorkspaceAllowedOnCurrentPage,
   normalizeWorkspaceForCurrentPage,
 } from "./js/core/app-shell.js";
-import { clamp, cloneTemplate, setAttr, setSafeHtml, setSafeText } from "./js/core/app-utils.js";
+import {
+  closeModalDialog,
+  createQueuedConfirmDialogController,
+  showErrorModal,
+  showProgressModal,
+} from "./js/core/app-dialogs.js";
+import { getToolsWorkspaceEntries } from "./js/tools/tools-layout.js";
+import {
+  openToolsWorkspace,
+  persistToolsWorkspacePreference,
+  readToolsWorkspacePreference,
+} from "./js/tools/tools-page.js";
+import {
+  escapeSearchHighlightRegex,
+  parseSearchQueryTerms,
+  parseSearchTags,
+  quoteSearchSummaryValue,
+  splitSharedSearchQuery,
+} from "./js/tools/search.js";
+import {
+  buildThreadExplorerFeedSource,
+  buildThreadExplorerPostWebUrl as buildThreadExplorerPostWebUrlFromData,
+  getThreadExplorerActorFocusId,
+  getThreadExplorerFaviconUrl,
+  getThreadExplorerImageSources,
+  getThreadExplorerPostImages,
+  getThreadExplorerPostRecordKey,
+  isThreadExplorerFeedUri,
+  normalizeThreadExplorerAccountMode,
+  normalizeThreadExplorerActor,
+} from "./js/tools/thread-explorer.js";
+import {
+  getNetworkNodeScore,
+  getNetworkRelationType,
+  getNetworkScoreBreakdown,
+} from "./js/tools/network.js";
+import { normalizeAnalysisActor } from "./js/tools/analysis.js";
+import {
+  buildArchiveMediaFileBaseName as buildArchiveMediaFileBaseNameFromData,
+  buildArchiveMediaPartFileName,
+  formatArchiveDatePart,
+} from "./js/tools/archive.js";
+import { createAccountPickerController } from "./js/tools/account-picker.js";
+import {
+  createDmArchiveController,
+  createDmArchiveExportController,
+  createDmArchiveWorkspaceRenderer,
+  retainDmSelectedParticipants,
+} from "./js/tools/dm-archive.js";
+import { clamp, setAttr, setSafeHtml, setSafeText } from "./js/core/app-utils.js";
+import { cloneTemplate, cloneTemplateContent } from "./js/shared/shared-templates.js";
 import { DEFAULT_AVATAR_URI, setAvatarImage } from "./js/shared/shared-accounts.js";
+import {
+  requestPostLike,
+  requestPostUnlike,
+  requestReplyTarget,
+  requestThreadPublish,
+} from "./js/atproto/atproto-posting.js";
+import {
+  requestAccountLogout,
+  requestAccountRemoval,
+  requestAccountSwitch,
+} from "./js/atproto/atproto-actors.js";
+import { requestThreadExplorerMediaHydration } from "./js/atproto/atproto-media.js";
+import { requestSearchResults } from "./js/atproto/atproto-search.js";
+import {
+  clampComposerTextLength,
+  countComposerGraphemes as countGraphemes,
+  countComposerUtf8Bytes as countUtf8Bytes,
+  createComposerPostTextLimit as createPostTextLimit,
+  doesComposerTextFitLimit as fitsPostTextLimit,
+  getComposerPostTextMetrics as getPostTextMetrics,
+  splitComposerGraphemes as splitIntoGraphemes,
+} from "./js/composer/composer-main.js";
+import {
+  normalizeComposerInput as normalizeInput,
+  splitComposerByManualMarkers,
+  subtractComposerPostTextLimit as subtractPostTextLimit,
+  tokenizeComposerText as tokenizeText,
+  trimComposerSegment as trimSegment,
+  splitComposerIntoSegments,
+} from "./js/composer/composer-splitter.js";
+import { moveComposerImage, removeComposerImage } from "./js/composer/composer-images.js";
+import { normalizeComposerSegmentLinkCards } from "./js/composer/composer-link-cards.js";
+import { openComposerWorkspace } from "./js/composer/composer-page.js";
+import {
+  formatComposerHistoryMeta,
+  getComposerHistoryPreviewText,
+  mergeComposerPostingHistory,
+  normalizeComposerPostingHistory,
+} from "./js/composer/composer-history.js";
+import {
+  buildComposerMentionProfileUrl as buildComposerMentionProfileUrlFromData,
+  findComposerMentionSuggestion as findComposerMentionSuggestionFromData,
+  getUniqueComposerMentionHandles as getUniqueComposerMentionHandlesFromData,
+  parseComposerMentionCandidates as parseComposerMentionCandidatesFromData,
+  replaceComposerMentionHandle as replaceComposerMentionHandleFromData,
+  textContainsComposerMentionHandle as textContainsComposerMentionHandleFromData,
+} from "./js/composer/composer-mentions.js";
+import {
+  buildComposerPostSettingsDisclosureMeta,
+  DEFAULT_COMPOSER_POST_INTERACTION_SETTINGS,
+  getComposerReplyModeSummary,
+  normalizeComposerPostInteractionSettings,
+} from "./js/composer/composer-post-settings.js";
 import {
   createDefaultImageEdit,
   dataUrlToFile,
@@ -86,13 +195,6 @@ const POST_WEB_FRONTENDS = {
   "bsky.app": "https://bsky.app",
   "eurosky.social": "https://mu.social",
   "mu.social": "https://mu.social",
-};
-const DEFAULT_POST_INTERACTION_SETTINGS = {
-  replyMode: "everyone",
-  allowFollowers: false,
-  allowFollowing: false,
-  allowMentioned: false,
-  quotePostsAllowed: true,
 };
 const DM_ACCESS_QUERY_PARAM = "DMSECRET";
 const DM_ACCESS_HASH_PARAM = "dmsecret";
@@ -338,6 +440,7 @@ const languageSelect = document.querySelector("#language-select");
 const themeToggleButton = document.querySelector("#theme-toggle-button");
 const compactModeToggleButtons = Array.from(document.querySelectorAll("#compact-mode-toggle-button"));
 const pageSwitchLinks = Array.from(document.querySelectorAll(".page-switch-link"));
+const privacyPageLinks = Array.from(document.querySelectorAll("[data-privacy-page-link]"));
 const resetColumnWidthsButton = document.querySelector("#reset-column-widths-button");
 const themeStatusNote = document.querySelector("#theme-status-note");
 const compactModeStatusNote = document.querySelector("#compact-mode-status-note");
@@ -700,6 +803,9 @@ const dmProgressFill = document.querySelector("#dm-progress-fill");
 const dmProgressDetail = document.querySelector("#dm-progress-detail");
 const dmSummary = document.querySelector("#dm-summary");
 const dmResults = document.querySelector("#dm-results");
+const dmSummaryItemTemplate = document.querySelector("#dm-summary-item-template");
+const dmContactItemTemplate = document.querySelector("#dm-contact-item-template");
+const dmResultItemTemplate = document.querySelector("#dm-result-item-template");
 const archiveStartHint = document.querySelector("#archive-start-hint");
 const archiveProgressTitle = document.querySelector("#archive-progress-title");
 const archiveProgressStep = document.querySelector("#archive-progress-step");
@@ -800,6 +906,7 @@ let draftSaveTimer = null;
 let serviceWorkerRegistration = null;
 let updateInProgress = false;
 let reloadInProgress = false;
+let privacyPageNavigationInProgress = false;
 let sessionCheckTimer = null;
 let lastAutoUpdateCheckAt = 0;
 let deferredInstallPrompt = null;
@@ -816,15 +923,9 @@ let archiveExpertMode = false;
 let themeMode = "light";
 let compactMode = false;
 let composerReplyTarget = null;
-let confirmDialogValues = {
-  confirm: true,
-  cancel: false,
-  dismiss: false,
-};
 let replyTargetRequestToken = 0;
-let confirmDialogQueue = Promise.resolve();
-let settingsSaveQueue = Promise.resolve();
-let draftSaveQueue = Promise.resolve();
+const settingsSaveQueue = createAsyncTaskQueue();
+const draftSaveQueue = createAsyncTaskQueue();
 let sidebarCollapsedDesktop = false;
 let sidebarWidthDesktop = DEFAULT_SIDEBAR_WIDTH_DESKTOP;
 let composerWidthDesktop = DEFAULT_COMPOSER_WIDTH_DESKTOP;
@@ -848,13 +949,12 @@ let activeLanguageDialogContext = "composer";
 let appendThreadIntro = false;
 let appendThreadEmoji = false;
 let addMarkerSpacing = false;
-let graphemeSegmenter = null;
 let lastPublishRateLimit = null;
-let replyMode = DEFAULT_POST_INTERACTION_SETTINGS.replyMode;
-let replyAllowFollowers = DEFAULT_POST_INTERACTION_SETTINGS.allowFollowers;
-let replyAllowFollowing = DEFAULT_POST_INTERACTION_SETTINGS.allowFollowing;
-let replyAllowMentioned = DEFAULT_POST_INTERACTION_SETTINGS.allowMentioned;
-let quotePostsAllowed = DEFAULT_POST_INTERACTION_SETTINGS.quotePostsAllowed;
+let replyMode = DEFAULT_COMPOSER_POST_INTERACTION_SETTINGS.replyMode;
+let replyAllowFollowers = DEFAULT_COMPOSER_POST_INTERACTION_SETTINGS.allowFollowers;
+let replyAllowFollowing = DEFAULT_COMPOSER_POST_INTERACTION_SETTINGS.allowFollowing;
+let replyAllowMentioned = DEFAULT_COMPOSER_POST_INTERACTION_SETTINGS.allowMentioned;
+let quotePostsAllowed = DEFAULT_COMPOSER_POST_INTERACTION_SETTINGS.quotePostsAllowed;
 let segmentOverrides = null;
 let composerLocked = false;
 let composerPosted = false;
@@ -877,15 +977,8 @@ let mentionSearchSegmentIndex = -1;
 let mentionSearchOriginalHandle = "";
 let mentionSearchMode = "repair";
 let mentionSearchContext = "mention";
-let mentionSearchSelectionHandler = null;
-let mentionSearchAccountSourceInput = null;
-let mentionSearchAccountSourceQuery = "";
-let mentionSearchAccountSelectionApplied = false;
 let mentionSearchRequestToken = 0;
 let mentionSearchInputTimer = 0;
-let accountPickerAutoOpenTimers = new WeakMap();
-let accountPickerAutoOpenMutedInputs = new WeakSet();
-let accountPickerAutoOpenDismissedQueries = new WeakMap();
 let pendingLinkCardSegmentIndex = -1;
 let pendingLinkCardSourceSegmentIndex = -1;
 let pendingLinkCardUrl = "";
@@ -903,8 +996,174 @@ let imageEditorDragging = false;
 let imageEditorDragStart = null;
 let imageEditorMetricsTimer = null;
 let imageEditorMetricsRequestId = 0;
-let confirmResolver = null;
-let ignoreNextConfirmClose = false;
+const confirmDialogController = createQueuedConfirmDialogController({
+  dialog: confirmDialog,
+  title: confirmDialogTitle,
+  message: confirmDialogMessage,
+  confirmButton: confirmDialogConfirmButton,
+  cancelButton: confirmDialogCancelButton,
+  previewWrap: confirmDialogPreview,
+}, (preview) => {
+  setAvatarImage(confirmDialogAvatar, preview.avatar, preview.name || preview.handle || "");
+  confirmDialogPreviewName.textContent = preview.name || preview.handle || "";
+  if (preview.handle) {
+    confirmDialogPreviewHandle.textContent = `@${preview.handle}`;
+  } else {
+    confirmDialogPreviewHandle.textContent = "";
+  }
+});
+const accountPickerController = createAccountPickerController({
+  dialog: mentionSearchDialog,
+  eyebrow: mentionSearchDialogEyebrow,
+  title: mentionSearchDialogTitle,
+  note: mentionSearchDialogNote,
+  status: mentionSearchStatus,
+  results: mentionSearchResults,
+  input: mentionSearchInput,
+}, {
+  translate: t,
+  getDialogContext() {
+    return mentionSearchContext;
+  },
+  setDialogContext(context) {
+    mentionSearchContext = context;
+  },
+  clearMentionTarget() {
+    mentionSearchSegmentIndex = -1;
+    mentionSearchOriginalHandle = "";
+    mentionSearchMode = "repair";
+  },
+  resetSearchRequest() {
+    mentionSearchRequestToken += 1;
+    window.clearTimeout(mentionSearchInputTimer);
+    mentionSearchInputTimer = 0;
+  },
+  runSearch(query) {
+    void runMentionSearch(query);
+  },
+  closeDialog: closeMentionSearchDialog,
+  autoOpenDelayMs: COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS,
+  minimumQueryLength: ACCOUNT_PICKER_AUTO_OPEN_MIN_LENGTH,
+});
+const dmArchiveController = createDmArchiveController({
+  getState() {
+    return {
+      accessChecked: dmAccessChecked,
+      catalog: dmCatalog,
+      from: dmFromInput?.value || "",
+      partnerCacheAccountDid: dmPartnerCacheAccountDid,
+      partnerCacheUpdatedAt: dmPartnerCacheUpdatedAt,
+      recentContacts: dmRecentContacts,
+      recentConversations: dmRecentConversations,
+      recentContactAssets: dmRecentContactAssets,
+      selectedParticipantDids: dmSelectedParticipantDids,
+      to: dmToInput?.value || "",
+    };
+  },
+  setState(nextState) {
+    if (Object.hasOwn(nextState, "accessChecked")) {
+      dmAccessChecked = nextState.accessChecked === true;
+    }
+    if (Object.hasOwn(nextState, "catalog")) {
+      dmCatalog = nextState.catalog || null;
+    }
+    if (Object.hasOwn(nextState, "partnerCacheAccountDid")) {
+      dmPartnerCacheAccountDid = String(nextState.partnerCacheAccountDid || "");
+    }
+    if (Object.hasOwn(nextState, "partnerCacheUpdatedAt")) {
+      dmPartnerCacheUpdatedAt = String(nextState.partnerCacheUpdatedAt || "");
+    }
+    if (Object.hasOwn(nextState, "recentContacts")) {
+      dmRecentContacts = Array.isArray(nextState.recentContacts) ? nextState.recentContacts : [];
+    }
+    if (Object.hasOwn(nextState, "recentConversations")) {
+      dmRecentConversations = Array.isArray(nextState.recentConversations) ? nextState.recentConversations : [];
+    }
+    if (Object.hasOwn(nextState, "recentContactAssets")) {
+      dmRecentContactAssets = Array.isArray(nextState.recentContactAssets) ? nextState.recentContactAssets : [];
+    }
+    if (Object.hasOwn(nextState, "selectedParticipantDids")) {
+      dmSelectedParticipantDids = Array.isArray(nextState.selectedParticipantDids) ? nextState.selectedParticipantDids : [];
+    }
+  },
+  translate: t,
+  assertAccess: assertDmAccessUnlocked,
+  getAuthAccount() {
+    return authAccount;
+  },
+  getAuthAccountDid() {
+    return authAccountDid;
+  },
+  sendRequest: sendToServiceWorker,
+  setProgress: setDmProgress,
+  renderWorkspace: renderDmWorkspace,
+  savePartnerCache: saveDmPartnerCache,
+});
+const dmArchiveWorkspaceRenderer = createDmArchiveWorkspaceRenderer({
+  launchPanel: dmLaunchPanel,
+  contactSearchInput: dmContactSearchInput,
+  contactList: dmContactList,
+  contactSearchNote: dmContactSearchNote,
+  contactSelectionNote: dmContactSelectionNote,
+  summary: dmSummary,
+  results: dmResults,
+  checkButton: dmCheckButton,
+  loadPartnersButton: dmLoadPartnersButton,
+  loadButton: dmLoadButton,
+  exportJsonButton: dmExportJsonButton,
+  exportHtmlButton: dmExportHtmlButton,
+  exportPdfButton: dmExportPdfButton,
+  summaryItemTemplate: dmSummaryItemTemplate,
+  contactItemTemplate: dmContactItemTemplate,
+  resultItemTemplate: dmResultItemTemplate,
+}, {
+  getState() {
+    return {
+      catalog: dmCatalog,
+      recentContacts: dmRecentContacts,
+      recentContactAssets: dmRecentContactAssets,
+      selectedParticipantDids: dmSelectedParticipantDids,
+    };
+  },
+  setSelectedParticipantDids(nextSelection) {
+    dmSelectedParticipantDids = Array.isArray(nextSelection) ? nextSelection : [];
+  },
+  renderWorkspace: renderDmWorkspace,
+  translate: t,
+  getLocale() {
+    return currentLocale;
+  },
+  assetToDataUri,
+  setAvatarImage,
+  getConversationTitle: getDmConversationTitle,
+  formatTimestamp: formatHistoryTimestamp,
+  setContactSearchNote: setDmContactSearchFieldNote,
+  setElementVisibility,
+  isAccessAvailable: isDmAccessAvailable,
+  getAuthAccount() {
+    return authAccount;
+  },
+  cloneTemplateContent,
+});
+const dmArchiveExportController = createDmArchiveExportController({
+  assertAccess: assertDmAccessUnlocked,
+  translate: t,
+  setProgress: setDmProgress,
+  createFile(parts, name, type) {
+    return new File(parts, name, { type });
+  },
+  async shareOrDownloadFile(file, name) {
+    await shareOrDownloadFile(file, name, { preferDownload: true });
+  },
+  ensureAvatarAssets: ensureDmAvatarAssets,
+  buildHtmlDocument: buildDmHtmlDocument,
+  getFileBaseName: makeDmArchiveFileBaseName,
+  collectMessages: collectDmMessagesForExport,
+  paginatePdfMessages: paginateDmPdfMessages,
+  renderPdfPage: renderDmPdfCanvasPage,
+  buildPdfFile,
+  getConversationTitle: getDmConversationTitle,
+});
 let imageValidationToken = 0;
 let currentWorkspace = "composer";
 if (document.body && String(document.body.dataset.page || "").trim() === THREADLINE_PAGE_TOOLS) {
@@ -1119,6 +1378,9 @@ async function registerServiceWorker() {
   try {
     let refreshing = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (privacyPageNavigationInProgress) {
+        return;
+      }
       if (refreshing) {
         return;
       }
@@ -1794,19 +2056,6 @@ function ingestNetworkProfiles(profiles = []) {
   });
 }
 
-function getNetworkRelationType(node) {
-  if (node?.followingViewer && node?.followedByViewer) {
-    return "mutual";
-  }
-  if (node?.followedByViewer) {
-    return "followers";
-  }
-  if (node?.followingViewer) {
-    return "following";
-  }
-  return "other";
-}
-
 function getNetworkRelationLabel(node) {
   const relation = getNetworkRelationType(node);
   const account = getNetworkCenterLabel();
@@ -1837,27 +2086,6 @@ function getNetworkCenterProfile() {
 function getNetworkCenterLabel() {
   const profile = getNetworkCenterProfile();
   return profile?.displayName || profile?.handle || authAccount || t("networkViewerFallback");
-}
-
-function getNetworkNodeScore(node) {
-  const relation = getNetworkRelationType(node);
-  const relationScore = relation === "mutual" ? 120 : (relation === "followers" ? 80 : (relation === "following" ? 70 : 30));
-  return relationScore
-    + Math.min(80, Number(node?.followersCount) || 0)
-    + Math.min(40, Math.floor((Number(node?.postsCount) || 0) / 5));
-}
-
-function getNetworkScoreBreakdown(node) {
-  const relation = getNetworkRelationType(node);
-  const relationScore = relation === "mutual" ? 120 : (relation === "followers" ? 80 : (relation === "following" ? 70 : 30));
-  const followersScore = Math.min(80, Number(node?.followersCount) || 0);
-  const postsScore = Math.min(40, Math.floor((Number(node?.postsCount) || 0) / 5));
-  return {
-    relationScore,
-    followersScore,
-    postsScore,
-    total: relationScore + followersScore + postsScore,
-  };
 }
 
 function getStrongNetworkScoreThreshold(nodes = getAllNetworkNodes()) {
@@ -2457,7 +2685,7 @@ function renderAccountSwitcher() {
     button.append(avatar, label);
     button.addEventListener("click", async () => {
       try {
-        const result = await sendToServiceWorker("SWITCH_ACCOUNT", { did: account.did });
+        const result = await requestAccountSwitch(sendToServiceWorker, account.did);
         savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
         await restoreAccountAvatarCache();
         renderAccountSwitcher();
@@ -2520,7 +2748,7 @@ function renderAccountSwitcher() {
       try {
         if (state === "signed-out") {
           if (account.hasStoredPassword) {
-            const result = await sendToServiceWorker("SWITCH_ACCOUNT", { did: account.did });
+            const result = await requestAccountSwitch(sendToServiceWorker, account.did);
             savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
             await restoreAccountAvatarCache();
             renderAccountSwitcher();
@@ -2559,7 +2787,7 @@ function renderAccountSwitcher() {
           return;
         }
 
-        const result = await sendToServiceWorker("LOGOUT", { did: account.did });
+        const result = await requestAccountLogout(sendToServiceWorker, account.did);
         savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
         await restoreAccountAvatarCache();
         authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
@@ -2593,7 +2821,7 @@ function renderAccountSwitcher() {
       }
 
       try {
-        const result = await sendToServiceWorker("REMOVE_ACCOUNT", { did: account.did });
+        const result = await requestAccountRemoval(sendToServiceWorker, account.did);
         savedAccounts = Array.isArray(result.accounts) ? result.accounts : [];
         await restoreAccountAvatarCache();
         authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
@@ -2624,12 +2852,14 @@ function setVisibleWorkspace(workspace) {
   const normalizedWorkspace = normalizeWorkspaceForCurrentPage(workspace);
   const workspaceEntries = [
     ["composer", composerWorkspace],
-    ["archive", archiveWorkspace],
-    ["search", searchWorkspace],
-    ["network", networkWorkspace],
-    ["threadExplorer", threadExplorerWorkspace],
-    ["analysis", analysisWorkspace],
-    ["dm", dmWorkspace],
+    ...getToolsWorkspaceEntries({
+      archive: archiveWorkspace,
+      search: searchWorkspace,
+      network: networkWorkspace,
+      threadExplorer: threadExplorerWorkspace,
+      analysis: analysisWorkspace,
+      dm: dmWorkspace,
+    }),
   ];
 
   workspaceEntries.forEach(([workspaceName, element]) => {
@@ -2669,7 +2899,7 @@ function getStoredAppearancePreferences() {
   let hasCompactMode = false;
 
   try {
-    const rawThemeMode = String(window.localStorage.getItem(THEME_MODE_STORAGE_KEY) || "").trim();
+    const rawThemeMode = readBrowserStorageValue(window.localStorage, THEME_MODE_STORAGE_KEY);
     if (rawThemeMode === "dark" || rawThemeMode === "light") {
       hasThemeMode = true;
     }
@@ -2677,7 +2907,7 @@ function getStoredAppearancePreferences() {
       storedThemeMode = "dark";
     }
 
-    const rawCompactMode = String(window.localStorage.getItem(COMPACT_MODE_STORAGE_KEY) || "").trim();
+    const rawCompactMode = readBrowserStorageValue(window.localStorage, COMPACT_MODE_STORAGE_KEY);
     if (rawCompactMode === "true" || rawCompactMode === "false") {
       hasCompactMode = true;
     }
@@ -2702,11 +2932,11 @@ function getStoredAppearancePreferences() {
  */
 function persistAppearancePreferences() {
   try {
-    window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
+    writeBrowserStorageValue(window.localStorage, THEME_MODE_STORAGE_KEY, themeMode);
     if (compactMode === true) {
-      window.localStorage.setItem(COMPACT_MODE_STORAGE_KEY, "true");
+      writeBrowserStorageValue(window.localStorage, COMPACT_MODE_STORAGE_KEY, "true");
     } else {
-      window.localStorage.setItem(COMPACT_MODE_STORAGE_KEY, "false");
+      writeBrowserStorageValue(window.localStorage, COMPACT_MODE_STORAGE_KEY, "false");
     }
   } catch {
     // Ignore localStorage access errors in restricted contexts.
@@ -2820,7 +3050,7 @@ function buildAppearanceAwarePageSwitchUrl(href) {
  */
 function persistPendingPageSwitchUrl(url) {
   try {
-    window.sessionStorage.setItem(PENDING_PAGE_SWITCH_URL_SESSION_KEY, String(url || "").trim());
+    writeBrowserStorageValue(window.sessionStorage, PENDING_PAGE_SWITCH_URL_SESSION_KEY, url);
   } catch {
     // Ignore sessionStorage access errors in restricted contexts.
   }
@@ -2832,7 +3062,7 @@ function persistPendingPageSwitchUrl(url) {
  */
 function getPendingPageSwitchUrl() {
   try {
-    return String(window.sessionStorage.getItem(PENDING_PAGE_SWITCH_URL_SESSION_KEY) || "").trim();
+    return readBrowserStorageValue(window.sessionStorage, PENDING_PAGE_SWITCH_URL_SESSION_KEY);
   } catch {
     return "";
   }
@@ -2845,11 +3075,23 @@ function getPendingPageSwitchUrl() {
 function consumePendingPageSwitchUrl() {
   const pendingUrl = getPendingPageSwitchUrl();
   try {
-    window.sessionStorage.removeItem(PENDING_PAGE_SWITCH_URL_SESSION_KEY);
+    removeBrowserStorageValue(window.sessionStorage, PENDING_PAGE_SWITCH_URL_SESSION_KEY);
   } catch {
     // Ignore sessionStorage access errors in restricted contexts.
   }
   return pendingUrl;
+}
+
+/**
+ * Removes a queued app-page navigation before leaving the application shell.
+ * @returns {void}
+ */
+function clearPendingPageSwitchUrl() {
+  try {
+    removeBrowserStorageValue(window.sessionStorage, PENDING_PAGE_SWITCH_URL_SESSION_KEY);
+  } catch {
+    // Ignore sessionStorage access errors in restricted contexts.
+  }
 }
 
 /**
@@ -3057,12 +3299,12 @@ function persistWorkspacePreference(workspace) {
   }
 
   const normalizedWorkspace = normalizeWorkspaceForCurrentPage(workspace);
-  try {
-    window.localStorage.setItem(TOOLS_WORKSPACE_STORAGE_KEY, normalizedWorkspace);
-    window.localStorage.setItem(LEGACY_WORKSPACE_STORAGE_KEY, normalizedWorkspace);
-  } catch {
-    // Ignore storage errors in private or restricted contexts.
-  }
+  persistToolsWorkspacePreference(
+    window.localStorage,
+    TOOLS_WORKSPACE_STORAGE_KEY,
+    LEGACY_WORKSPACE_STORAGE_KEY,
+    normalizedWorkspace,
+  );
 }
 
 /**
@@ -3074,15 +3316,12 @@ function getStoredWorkspacePreference() {
     return "composer";
   }
 
-  try {
-    let value = String(window.localStorage.getItem(TOOLS_WORKSPACE_STORAGE_KEY) || "").trim();
-    if (!value) {
-      value = String(window.localStorage.getItem(LEGACY_WORKSPACE_STORAGE_KEY) || "").trim();
-    }
-    return normalizeWorkspaceForCurrentPage(value);
-  } catch {
-    return normalizeWorkspaceForCurrentPage("");
-  }
+  const value = readToolsWorkspacePreference(
+    window.localStorage,
+    TOOLS_WORKSPACE_STORAGE_KEY,
+    LEGACY_WORKSPACE_STORAGE_KEY,
+  );
+  return normalizeWorkspaceForCurrentPage(value);
 }
 
 /**
@@ -3132,31 +3371,6 @@ function normalizeThreadExplorerSource(source) {
     }
   }
   return "follows";
-}
-
-/**
- * Returns a normalized account target mode for the Thread Explorer account field.
- * @param {string} mode - Raw mode value from UI or saved state.
- * @returns {string} One of posts, replies, or all.
- */
-function normalizeThreadExplorerAccountMode(mode) {
-  const normalizedMode = String(mode || "").trim();
-  if (normalizedMode === "replies") {
-    return "replies";
-  }
-  if (normalizedMode === "all") {
-    return "all";
-  }
-  return "posts";
-}
-
-/**
- * Returns a normalized actor value for the Thread Explorer account field.
- * @param {string} value - Raw actor field value.
- * @returns {string} Trimmed handle or DID without leading at signs.
- */
-function normalizeThreadExplorerActor(value = "") {
-  return String(value || "").trim().replace(/^@+/, "");
 }
 
 /**
@@ -3352,42 +3566,6 @@ function normalizeThreadExplorerActorFocusMode(mode) {
     return "all";
   }
   return "posts";
-}
-
-/**
- * Returns the stable actor id used for Thread Explorer actor focus requests.
- * @param {object} actor - Normalized Thread Explorer actor.
- * @returns {string} Actor DID, handle, or an empty string.
- */
-function getThreadExplorerActorFocusId(actor = {}) {
-  const did = String(actor?.did || "").trim();
-  if (did) {
-    return did;
-  }
-
-  return String(actor?.handle || "").trim();
-}
-
-/**
- * Checks whether a value is an AT URI for a Bluesky feed generator.
- * @param {string} value - Raw URI candidate.
- * @returns {boolean} True when the URI looks like a feed generator URI.
- */
-function isThreadExplorerFeedUri(value) {
-  return /^at:\/\/[^/]+\/app\.bsky\.feed\.generator\/[^/]+$/i.test(String(value || "").trim());
-}
-
-/**
- * Converts a feed generator URI into the internal Thread Explorer source value.
- * @param {string} uri - Feed generator AT URI.
- * @returns {string} Source value, or an empty string when invalid.
- */
-function buildThreadExplorerFeedSource(uri) {
-  const feedUri = String(uri || "").trim();
-  if (!isThreadExplorerFeedUri(feedUri)) {
-    return "";
-  }
-  return `feed:${feedUri}`;
 }
 
 /**
@@ -3674,28 +3852,18 @@ function restorePreferredWorkspaceIfPossible() {
   }
 
   workspaceRestorePending = false;
-  if (preferred === "archive") {
-    showArchiveWorkspace();
-    return;
+  const workspaceOpeners = {
+    archive: showArchiveWorkspace,
+    search: showSearchWorkspace,
+    network: showNetworkWorkspace,
+    threadExplorer: showThreadExplorerWorkspace,
+    analysis: showAnalysisWorkspace,
+  };
+  if (isDmAccessAvailable()) {
+    workspaceOpeners.dm = showDmWorkspace;
   }
-  if (preferred === "search") {
-    showSearchWorkspace();
-    return;
-  }
-  if (preferred === "network") {
-    showNetworkWorkspace();
-    return;
-  }
-  if (preferred === "threadExplorer") {
-    showThreadExplorerWorkspace();
-    return;
-  }
-  if (preferred === "analysis") {
-    showAnalysisWorkspace();
-    return;
-  }
-  if (preferred === "dm" && isDmAccessAvailable()) {
-    showDmWorkspace();
+
+  if (openToolsWorkspace(preferred, workspaceOpeners)) {
     return;
   }
   showDefaultWorkspaceForCurrentPage();
@@ -4117,20 +4285,6 @@ function getSearchMode() {
 }
 
 /**
- * Splits raw hashtag input into normalized tag names without leading hash signs.
- * @param {string} value - Raw input from the hashtag field.
- * @returns {string[]} Normalized hashtag names.
- */
-function parseSearchTags(value) {
-  return String(value || "")
-    .split(/[\s,;]+/)
-    .map((entry) => {
-      return String(entry || "").trim().replace(/^#+/, "");
-    })
-    .filter(Boolean);
-}
-
-/**
  * Updates labels, field visibility, and helper text for the active search mode.
  * @returns {void}
  */
@@ -4326,35 +4480,6 @@ function applySearchPreferences(preferences = {}) {
 }
 
 /**
- * Splits one shared Bluesky query string into positive text and excluded terms.
- * @param {string} value - Raw `q` value from a shared search URL.
- * @returns {{query: string, excludeText: string}} Positive query and excluded terms.
- */
-function splitSharedSearchQuery(value = "") {
-  const raw = String(value || "").trim();
-  if (!raw) {
-    return {
-      query: "",
-      excludeText: "",
-    };
-  }
-
-  const excludeValues = [];
-  const query = raw.replace(/(?:^|\s)-(?:"([^"]+)"|(\S+))/g, (match, quotedValue, plainValue) => {
-    const nextValue = String(quotedValue || plainValue || "").trim();
-    if (nextValue) {
-      excludeValues.push(nextValue);
-    }
-    return " ";
-  }).replace(/\s{2,}/g, " ").trim();
-
-  return {
-    query,
-    excludeText: excludeValues.join(", "),
-  };
-}
-
-/**
  * Persists the current search form with a short debounce to avoid excessive writes.
  * @returns {void}
  */
@@ -4476,48 +4601,6 @@ function scheduleSearchUrlImport() {
     searchUrlImportTimer = 0;
     importSearchUrlFromField();
   }, 30);
-}
-
-/**
- * Wraps one search summary value in double quotes for clearer UI text.
- * @param {string} value - Plain text value from the search form.
- * @returns {string} Quoted display value.
- */
-function quoteSearchSummaryValue(value = "") {
-  return `"${String(value || "").trim()}"`;
-}
-
-/**
- * Splits one positive search query into quoted phrases or single terms.
- * @param {string} value - Raw query text from the search form.
- * @returns {string[]} Normalized search terms.
- */
-function parseSearchQueryTerms(value = "") {
-  const rawValue = String(value || "").trim();
-  if (!rawValue) {
-    return [];
-  }
-
-  const terms = [];
-  const matcher = /"([^"]+)"|(\S+)/g;
-  let match = matcher.exec(rawValue);
-  while (match) {
-    const nextValue = String(match[1] || match[2] || "").trim();
-    if (nextValue) {
-      terms.push(nextValue);
-    }
-    match = matcher.exec(rawValue);
-  }
-  return [...new Set(terms)];
-}
-
-/**
- * Escapes one search token for safe regex usage.
- * @param {string} value - Raw token text.
- * @returns {string} Regex-safe token text.
- */
-function escapeSearchHighlightRegex(value = "") {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -5037,7 +5120,7 @@ function createSearchResultElement(item = {}, highlightQuery = "") {
     return null;
   }
 
-  const fragment = threadExplorerNodeTemplate.content.cloneNode(true);
+  const fragment = cloneTemplateContent(threadExplorerNodeTemplate);
   const element = fragment.querySelector(".thread-explorer-node-item");
   const node = fragment.querySelector(".thread-explorer-node");
   const card = fragment.querySelector(".thread-explorer-post-card");
@@ -5152,7 +5235,7 @@ async function loadSearchResults(options = {}) {
   renderSearchWorkspace();
 
   try {
-    const result = await sendToServiceWorker("LOAD_SEARCH_RESULTS", {
+    const result = await requestSearchResults(sendToServiceWorker, {
       ...payload,
       runId,
       cursor: append ? searchCursor : "",
@@ -5865,22 +5948,20 @@ function showDmWorkspace() {
  * @returns {void}
  */
 function showComposerWorkspace(options = {}) {
-  const shouldRedirectPage = options.redirectPage === true;
-  if (getCurrentThreadlinePage() === THREADLINE_PAGE_TOOLS && !shouldRedirectPage) {
-    return;
-  }
-
-  if (navigateToThreadlinePage(THREADLINE_PAGE_COMPOSER)) {
-    return;
-  }
-  currentWorkspace = "composer";
-  applyThreadExplorerFullscreenState();
-  if (options.persist !== false) {
-    persistWorkspacePreference(currentWorkspace);
-  }
-  setVisibleWorkspace(currentWorkspace);
-  applyHashtagPaneContext();
-  updateAuthButtons();
+  openComposerWorkspace(options, {
+    currentPage: getCurrentThreadlinePage(),
+    toolsPage: THREADLINE_PAGE_TOOLS,
+    composerPage: THREADLINE_PAGE_COMPOSER,
+    navigateToPage: navigateToThreadlinePage,
+    setCurrentWorkspace(workspace) {
+      currentWorkspace = workspace;
+    },
+    applyFullscreenState: applyThreadExplorerFullscreenState,
+    persistWorkspace: persistWorkspacePreference,
+    setVisibleWorkspace,
+    applyHashtagPaneContext,
+    updateAuthButtons,
+  });
 }
 
 function setNetworkStatus(message) {
@@ -6294,27 +6375,6 @@ function createSavedSearchFromUrl(sourceUrl) {
 }
 
 /**
- * Extracts the record key from an AT Protocol post URI.
- * @param {string} uri - AT URI of a post.
- * @returns {string} Record key, or an empty string when invalid.
- */
-function getThreadExplorerPostRecordKey(uri) {
-  const raw = String(uri || "").trim();
-  if (!raw.startsWith("at://")) {
-    return "";
-  }
-
-  const parts = raw.slice(5).split("/");
-  if (parts.length < 3) {
-    return "";
-  }
-  if (parts[1] !== "app.bsky.feed.post") {
-    return "";
-  }
-  return String(parts[2] || "").trim();
-}
-
-/**
  * Chooses the best web frontend for a Thread Explorer post author.
  * @param {object} post - Normalized Thread Explorer post.
  * @returns {string} Web app base URL.
@@ -6339,14 +6399,7 @@ function getThreadExplorerPostWebApp(post) {
  * @returns {string} Web URL for the post, or an empty string.
  */
 function buildThreadExplorerPostWebUrl(post) {
-  const handle = String(post?.author?.handle || "").trim();
-  const recordKey = getThreadExplorerPostRecordKey(post?.uri);
-  if (!handle || !recordKey) {
-    return "";
-  }
-
-  const webApp = getThreadExplorerPostWebApp(post);
-  return `${webApp}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordKey)}`;
+  return buildThreadExplorerPostWebUrlFromData(post, getThreadExplorerPostWebApp(post));
 }
 
 /**
@@ -6741,12 +6794,10 @@ async function toggleLikeForLivePost(post = {}) {
 
   try {
     if (wasLiked) {
-      await sendToServiceWorker("UNLIKE_POST", {
-        likeUri: previousLikeUri,
-      });
+      await requestPostUnlike(sendToServiceWorker, previousLikeUri);
       applyLikeStateToKnownPosts(postUri, "", 0);
     } else {
-      const result = await sendToServiceWorker("LIKE_POST", {
+      const result = await requestPostLike(sendToServiceWorker, {
         uri: postUri,
         cid: postCid,
       });
@@ -7186,7 +7237,7 @@ function renderThreadExplorerFavoritesDialog() {
     count: formatCount(threadExplorerFavorites.length),
   });
   threadExplorerFavorites.forEach((favorite) => {
-    const fragment = threadExplorerFavoriteItemTemplate.content.cloneNode(true);
+    const fragment = cloneTemplateContent(threadExplorerFavoriteItemTemplate);
     const item = fragment.querySelector(".thread-explorer-favorite-item");
     const loadButton = fragment.querySelector(".thread-explorer-favorite-load");
     const removeButton = fragment.querySelector(".thread-explorer-favorite-remove");
@@ -7231,7 +7282,7 @@ function renderSavedSearchesDialog() {
     count: formatCount(savedSearches.length),
   });
   savedSearches.forEach((search) => {
-    const fragment = savedSearchItemTemplate.content.cloneNode(true);
+    const fragment = cloneTemplateContent(savedSearchItemTemplate);
     const item = fragment.querySelector(".saved-search-item");
     const loadButton = fragment.querySelector(".saved-search-load");
     const removeButton = fragment.querySelector(".saved-search-remove");
@@ -7493,7 +7544,7 @@ function renderThreadExplorerReactionActors(actors) {
     count: formatCount(actors.length),
   });
   actors.forEach((actor) => {
-    const fragment = threadExplorerActorItemTemplate.content.cloneNode(true);
+    const fragment = cloneTemplateContent(threadExplorerActorItemTemplate);
     const avatar = fragment.querySelector(".thread-explorer-avatar");
     const name = fragment.querySelector(".thread-explorer-actor-name");
     const handle = fragment.querySelector(".thread-explorer-actor-handle");
@@ -7630,7 +7681,7 @@ function renderThreadExplorerRepliesDialog(node) {
   replies.forEach((reply) => {
     const post = reply.post || {};
     const actor = post.author || {};
-    const fragment = threadExplorerActorItemTemplate.content.cloneNode(true);
+    const fragment = cloneTemplateContent(threadExplorerActorItemTemplate);
     const item = fragment.querySelector(".thread-explorer-actor-item");
     const avatar = fragment.querySelector(".thread-explorer-avatar");
     const name = fragment.querySelector(".thread-explorer-actor-name");
@@ -7856,7 +7907,7 @@ function openThreadExplorerGallery(images, startIndex) {
   threadExplorerGalleryThumbs.replaceChildren();
 
   normalizedImages.forEach((image, index) => {
-    const fragment = threadExplorerGalleryThumbTemplate.content.cloneNode(true);
+    const fragment = cloneTemplateContent(threadExplorerGalleryThumbTemplate);
     const button = fragment.querySelector(".thread-explorer-gallery-thumb");
     const img = fragment.querySelector("img");
     img.src = image.thumb;
@@ -8331,7 +8382,7 @@ function renderThreadExplorerFeedSourceSelect() {
     return;
   }
 
-  const placeholder = threadExplorerFeedOptionTemplate.content.cloneNode(true);
+  const placeholder = cloneTemplateContent(threadExplorerFeedOptionTemplate);
   const placeholderOption = placeholder.querySelector("option");
   placeholderOption.value = "";
   placeholderOption.textContent = t("threadExplorerFeedPickerPlaceholder");
@@ -8342,7 +8393,7 @@ function renderThreadExplorerFeedSourceSelect() {
     if (!source) {
       return;
     }
-    const fragment = threadExplorerFeedOptionTemplate.content.cloneNode(true);
+    const fragment = cloneTemplateContent(threadExplorerFeedOptionTemplate);
     const option = fragment.querySelector("option");
     option.value = source;
     option.textContent = feed.displayName || feed.uri;
@@ -8579,9 +8630,7 @@ async function hydrateThreadExplorerSnapshotMedia(root = null, onProgress = asyn
   }
   throwIfThreadExplorerSnapshotAborted(signal);
 
-  const result = await sendToServiceWorker("HYDRATE_THREAD_EXPLORER_MEDIA", {
-    root,
-  }, {
+  const result = await requestThreadExplorerMediaHydration(sendToServiceWorker, root, {
     timeoutMs: 420000,
     signal,
     onProgress(progress) {
@@ -9094,7 +9143,7 @@ function setThreadExplorerZoomAtViewportCenter(nextZoom) {
  */
 function createThreadExplorerFeedItemFragment(item) {
   const post = item.post;
-  const fragment = threadExplorerFeedItemTemplate.content.cloneNode(true);
+  const fragment = cloneTemplateContent(threadExplorerFeedItemTemplate);
   const button = fragment.querySelector(".thread-explorer-feed-item");
   const avatar = fragment.querySelector(".thread-explorer-avatar");
   const author = fragment.querySelector(".thread-explorer-feed-author");
@@ -9746,7 +9795,7 @@ function getChronologicalThreadExplorerReplies(replies) {
 function createThreadExplorerRenderedItem(node, options = {}) {
   const renderReplies = options.renderReplies !== false;
   const showToggle = options.showToggle !== false;
-  const fragment = threadExplorerNodeTemplate.content.cloneNode(true);
+  const fragment = cloneTemplateContent(threadExplorerNodeTemplate);
   const item = fragment.querySelector(".thread-explorer-node-item");
   const toggle = fragment.querySelector(".thread-explorer-node-toggle");
   const card = fragment.querySelector(".thread-explorer-post-card");
@@ -10713,10 +10762,7 @@ function syncThreadExplorerPostCardImageShape(card = null, gallery = null) {
  */
 function renderThreadExplorerImages(post, gallery) {
   gallery.replaceChildren();
-  let images = [];
-  if (Array.isArray(post.images)) {
-    images = post.images;
-  }
+  const images = getThreadExplorerPostImages(post);
   gallery.dataset.imageCount = String(images.length);
   images.forEach((image, imageIndex) => {
     const figure = createThreadExplorerImageFigure(image, imageIndex, images, gallery);
@@ -10734,13 +10780,14 @@ function renderThreadExplorerImages(post, gallery) {
  * @returns {HTMLElement} Rendered figure element.
  */
 function createThreadExplorerImageFigure(image, imageIndex, images, gallery) {
-  const fragment = threadExplorerImageTemplate.content.cloneNode(true);
+  const fragment = cloneTemplateContent(threadExplorerImageTemplate);
   const figure = fragment.querySelector(".thread-explorer-image");
   const button = fragment.querySelector(".thread-explorer-image-button");
   const img = fragment.querySelector("img");
   const caption = fragment.querySelector("figcaption");
-  const source = image.fullsize || image.thumb || "";
-  const thumb = image.thumb || source;
+  const imageSources = getThreadExplorerImageSources(image);
+  const source = imageSources.source;
+  const thumb = imageSources.thumb;
 
   setThreadExplorerCachedImageSource(img, source, thumb);
   img.alt = image.alt || "";
@@ -10783,15 +10830,6 @@ function applyThreadExplorerGalleryImageLoadState(image = null, figure = null, g
  * @param {string} uri - External link URI from a Bluesky embed.
  * @returns {string} Absolute favicon URL, or an empty string when the URI is invalid.
  */
-function getThreadExplorerFaviconUrl(uri) {
-  try {
-    const parsed = new URL(uri);
-    return `${parsed.origin}/favicon.ico`;
-  } catch (error) {
-    return "";
-  }
-}
-
 /**
  * Hides a Thread Explorer link-card image when its fallback asset cannot load.
  * @param {Event} event - Image error event.
@@ -14529,10 +14567,6 @@ function formatNetworkActivityLastPost(value) {
   return new Intl.DateTimeFormat(currentLocale, {
     dateStyle: "medium",
   }).format(new Date(timestamp));
-}
-
-function normalizeAnalysisActor(value = "") {
-  return String(value || "").trim().replace(/^@+/, "");
 }
 
 function getActiveAnalysisActor() {
@@ -19477,14 +19511,6 @@ async function loadNetworkWave(options = {}) {
   }
 }
 
-function getDmFilters() {
-  return {
-    participantDid: dmSelectedParticipantDids[0] || "",
-    from: dmFromInput?.value || "",
-    to: dmToInput?.value || "",
-  };
-}
-
 function setDmProgress({ title, step, percent = 0, detail = "" } = {}) {
   dmJobState = {
     title: title || t("dmProgressIdleTitle"),
@@ -19506,215 +19532,40 @@ function setDmProgress({ title, step, percent = 0, detail = "" } = {}) {
   }
 }
 
+/**
+ * Renders the Direct Message archive summary through the extracted renderer.
+ * @returns {void}
+ */
 function renderDmSummary() {
-  if (!dmSummary) {
-    return;
-  }
-  dmSummary.replaceChildren();
-  const meta = dmCatalog?.manifest || {};
-  const items = [
-    {
-      label: t("dmSummaryConversationsLabel"),
-      value: String(Number(meta.conversationCount) || 0),
-    },
-    {
-      label: t("dmSummaryMessagesLabel"),
-      value: String(Number(meta.messageCount) || 0),
-    },
-    {
-      label: t("dmSummaryParticipantsLabel"),
-      value: String(Number(meta.participantCount) || 0),
-    },
-  ];
-
-  items.forEach((item) => {
-    const node = document.createElement("div");
-    node.className = "archive-summary-item";
-    const label = document.createElement("span");
-    label.className = "archive-summary-label";
-    label.textContent = item.label;
-    const value = document.createElement("strong");
-    value.textContent = item.value;
-    node.append(label, value);
-    dmSummary.appendChild(node);
-  });
+  dmArchiveWorkspaceRenderer.renderSummary();
 }
 
+/**
+ * Renders the filterable Direct Message contact list through the extracted renderer.
+ * @returns {void}
+ */
 function renderDmContacts() {
-  if (!dmContactList || !dmContactSelectionNote) {
-    return;
-  }
-
-  dmContactList.replaceChildren();
-  const query = String(dmContactSearchInput?.value || "").trim().toLowerCase();
-  const contactAssetUris = new Map((Array.isArray(dmRecentContactAssets) ? dmRecentContactAssets : []).map((asset) => [asset.path, assetToDataUri(asset)]));
-  const visibleContacts = (Array.isArray(dmRecentContacts) ? [...dmRecentContacts] : [])
-    .sort((left, right) => {
-      const leftLabel = String(left.displayName || left.handle || left.did || "");
-      const rightLabel = String(right.displayName || right.handle || right.did || "");
-      const nameCompare = leftLabel.localeCompare(rightLabel, currentLocale || undefined, { sensitivity: "base" });
-      if (nameCompare !== 0) {
-        return nameCompare;
-      }
-      return String(left.handle || left.did || "").localeCompare(String(right.handle || right.did || ""), currentLocale || undefined, { sensitivity: "base" });
-    })
-    .filter((contact) => {
-      if (!query) {
-        return true;
-      }
-      const haystack = [
-        contact.handle || "",
-        contact.displayName || "",
-      ].join(" ").toLowerCase();
-      return haystack.includes(query);
-    });
-
-  if (visibleContacts.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "settings-note";
-    if (dmRecentContacts.length > 0) {
-      empty.textContent = t("dmContactSearchEmpty");
-    } else {
-      empty.textContent = t("dmContactSelectionEmpty");
-    }
-    dmContactList.appendChild(empty);
-  } else {
-    visibleContacts.forEach((contact) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "hashtag-chip dm-contact-chip";
-      if (dmSelectedParticipantDids.includes(contact.did)) {
-        button.classList.add("is-selected");
-      }
-      const avatarUri = contact.avatarPath ? (contactAssetUris.get(contact.avatarPath) || "") : "";
-      const avatar = document.createElement("img");
-      avatar.className = "account-chip-avatar dm-contact-avatar";
-      avatar.loading = "lazy";
-      setAvatarImage(avatar, avatarUri, contact.displayName || contact.handle || contact.did || "DM contact");
-      const fullName = String(contact.displayName || "").trim();
-      const fullHandle = contact.handle ? `@${contact.handle}` : "";
-      const tooltip = [fullName, fullHandle].filter(Boolean).join("\n");
-      if (tooltip) {
-        button.title = tooltip;
-      }
-      const content = document.createElement("span");
-      content.className = "dm-contact-chip-content";
-      const name = document.createElement("strong");
-      name.className = "dm-contact-chip-name";
-      name.textContent = contact.displayName || `@${contact.handle || contact.did}`;
-      if (fullName) {
-        name.title = fullName;
-      }
-      const handle = document.createElement("span");
-      handle.className = "dm-contact-chip-handle";
-      handle.textContent = `@${contact.handle || contact.did}`;
-      if (fullHandle) {
-        handle.title = fullHandle;
-      }
-      content.append(name, handle);
-      button.append(avatar, content);
-      button.addEventListener("click", () => {
-        if (dmSelectedParticipantDids.includes(contact.did)) {
-          dmSelectedParticipantDids = [];
-        } else {
-          dmSelectedParticipantDids = [contact.did];
-        }
-        renderDmWorkspace();
-      });
-      dmContactList.appendChild(button);
-    });
-  }
-
-  if (!query) {
-    setDmContactSearchFieldNote("");
-  } else if (dmRecentContacts.length === 0) {
-    setDmContactSearchFieldNote(t("dmContactSelectionEmpty"));
-  } else if (visibleContacts.length === 0) {
-    setDmContactSearchFieldNote(t("dmContactSearchEmpty"));
-  } else {
-    setDmContactSearchFieldNote("");
-  }
-
-  if (dmSelectedParticipantDids.length > 0) {
-    dmContactSelectionNote.textContent = t("dmContactSelectionOne");
-  } else if (dmRecentContacts.length > 0) {
-    dmContactSelectionNote.textContent = t("dmContactSelectionAll");
-  } else {
-    dmContactSelectionNote.textContent = t("dmContactSelectionEmpty");
-  }
+  dmArchiveWorkspaceRenderer.renderContacts();
 }
 
+/**
+ * Renders the compact Direct Message conversation preview through the extracted renderer.
+ * @returns {void}
+ */
 function renderDmResults() {
-  if (!dmResults) {
-    return;
-  }
-  dmResults.replaceChildren();
-  if (!dmCatalog) {
-    const empty = document.createElement("p");
-    empty.className = "settings-note";
-    empty.textContent = t("dmResultsEmpty");
-    dmResults.appendChild(empty);
-    return;
-  }
-
-  const list = document.createElement("div");
-  list.className = "archive-results";
-  const conversations = Array.isArray(dmCatalog.conversations) ? dmCatalog.conversations.slice(0, 8) : [];
-  conversations.forEach((convo) => {
-    const card = document.createElement("article");
-    card.className = "archive-result-card";
-    const title = document.createElement("h4");
-    title.textContent = getDmConversationTitle(convo, dmCatalog);
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t("dmConversationMeta", {
-      messages: convo.messageCount || 0,
-      updatedAt: formatHistoryTimestamp(convo.lastMessageAt || convo.updatedAt || ""),
-    });
-    card.append(title, note);
-    list.appendChild(card);
-  });
-  dmResults.appendChild(list);
+  dmArchiveWorkspaceRenderer.renderResults();
 }
 
+/**
+ * Renders all visible Direct Message workspace sections through the extracted renderer.
+ * @returns {void}
+ */
 function renderDmWorkspace() {
-  setElementVisibility(dmLaunchPanel, isDmAccessAvailable());
-  renderDmContacts();
-  renderDmSummary();
-  renderDmResults();
-  dmCheckButton.disabled = !authAccount || !isDmAccessAvailable();
-  dmLoadPartnersButton.disabled = !authAccount || !isDmAccessAvailable();
-  dmLoadButton.disabled = !authAccount || !isDmAccessAvailable() || dmSelectedParticipantDids.length !== 1;
-  dmExportJsonButton.disabled = !isDmAccessAvailable() || !dmCatalog;
-  if (dmExportHtmlButton) {
-    dmExportHtmlButton.disabled = !isDmAccessAvailable() || !dmCatalog;
-  }
-  if (dmExportPdfButton) {
-    dmExportPdfButton.disabled = !isDmAccessAvailable() || !dmCatalog;
-  }
+  dmArchiveWorkspaceRenderer.renderWorkspace();
 }
 
 async function exportDmArchiveJson(catalog = dmCatalog) {
-  assertDmAccessUnlocked();
-  if (!catalog) {
-    throw new Error(t("dmNeedArchive"));
-  }
-  setDmProgress({
-    title: t("dmProgressExportTitle"),
-    step: t("dmProgressExportStep"),
-    percent: 90,
-    detail: t("dmProgressExportDetail", { count: catalog.manifest?.messageCount || 0 }),
-  });
-  const payload = JSON.stringify(catalog, null, 2);
-  const fileName = `threadline-dm-archive-${new Date().toISOString().slice(0, 10)}.json`;
-  const file = new File([payload], fileName, { type: "application/json" });
-  await shareOrDownloadFile(file, fileName, { preferDownload: true });
-  setDmProgress({
-    title: t("dmProgressDoneTitle"),
-    step: t("dmProgressDoneStep"),
-    percent: 100,
-    detail: t("dmExportDone"),
-  });
+  return dmArchiveExportController.exportJson(catalog);
 }
 
 function getDmPrimaryPartner(catalog = dmCatalog) {
@@ -20310,27 +20161,7 @@ function buildDmHtmlDocument(catalog = dmCatalog) {
 }
 
 async function exportDmHtmlFromCatalog(catalog = dmCatalog) {
-  assertDmAccessUnlocked();
-  if (!catalog) {
-    throw new Error(t("dmNeedArchive"));
-  }
-  await ensureDmAvatarAssets(catalog);
-  setDmProgress({
-    title: t("dmProgressHtmlTitle"),
-    step: t("dmProgressHtmlStep"),
-    percent: 92,
-    detail: t("dmProgressHtmlDetail", { count: catalog?.manifest?.messageCount || 0 }),
-  });
-  const html = buildDmHtmlDocument(catalog);
-  const fileName = `${makeDmArchiveFileBaseName(catalog)}.html`;
-  const file = new File([html], fileName, { type: "text/html" });
-  await shareOrDownloadFile(file, fileName, { preferDownload: true });
-  setDmProgress({
-    title: t("dmProgressDoneTitle"),
-    step: t("dmProgressDoneStep"),
-    percent: 100,
-    detail: t("dmHtmlDone"),
-  });
+  return dmArchiveExportController.exportHtml(catalog);
 }
 
 function estimateDmPdfMessageHeight(context, message, maxWidth, scale) {
@@ -20466,197 +20297,31 @@ async function renderDmPdfCanvasPage(catalog, assetMap, entries, pageIndex, page
 }
 
 async function exportDmPdfFromCatalog(catalog = dmCatalog) {
-  assertDmAccessUnlocked();
-  if (!catalog) {
-    throw new Error(t("dmNeedArchive"));
-  }
-  await ensureDmAvatarAssets(catalog);
-  const messages = collectDmMessagesForExport(catalog);
-  const assetMap = new Map((catalog.assets || []).map((asset) => [asset.path, asset]));
-  const pagesData = paginateDmPdfMessages(messages, catalog);
-  const pages = [];
-
-  for (const [pageIndex, entries] of pagesData.entries()) {
-    setDmProgress({
-      title: t("dmProgressPdfTitle"),
-      step: t("dmProgressPdfStep", { index: pageIndex + 1, count: pagesData.length }),
-      percent: Math.round((pageIndex / Math.max(1, pagesData.length)) * 100),
-      detail: t("dmProgressPdfDetail", { count: messages.length }),
-    });
-    const rendered = await renderDmPdfCanvasPage(catalog, assetMap, entries, pageIndex, pagesData.length);
-    pages.push({
-      content: `q 595 0 0 842 0 0 cm /PageImage${pageIndex + 1} Do Q`,
-      images: [{
-        name: `PageImage${pageIndex + 1}`,
-        width: rendered.width,
-        height: rendered.height,
-        bytes: rendered.bytes,
-      }],
-      annotations: rendered.annotations,
-    });
-  }
-
-  const blob = buildPdfFile(pages, {
-    title: getDmConversationTitle(catalog?.conversations?.[0], catalog),
-  });
-  const fileName = `${makeDmArchiveFileBaseName(catalog)}.pdf`;
-  const file = new File([blob], fileName, { type: "application/pdf" });
-  await shareOrDownloadFile(file, fileName, { preferDownload: true });
-  setDmProgress({
-    title: t("dmProgressDoneTitle"),
-    step: t("dmProgressDoneStep"),
-    percent: 100,
-    detail: t("dmPdfDone"),
-  });
+  return dmArchiveExportController.exportPdf(catalog);
 }
 
+/**
+ * Checks Direct Message access through the extracted DM archive controller.
+ * @returns {Promise<void>} Resolves when the chat API is reachable.
+ */
 async function checkDmAccess() {
-  assertDmAccessUnlocked();
-  if (!authAccount) {
-    throw new Error(t("dmLoadRequiresLogin"));
-  }
-  setDmProgress({
-    title: t("dmCheckTitle"),
-    step: t("dmCheckStep"),
-    percent: 10,
-    detail: "",
-  });
-  const result = await sendToServiceWorker("CHECK_DM_ACCESS", {}, {
-    timeoutMs: 120000,
-  });
-  dmAccessChecked = result?.ok === true;
-  renderDmWorkspace();
-  setDmProgress({
-    title: t("dmCheckDoneTitle"),
-    step: t("dmCheckDoneStep"),
-    percent: 100,
-    detail: t("dmCheckDoneDetail"),
-  });
+  return dmArchiveController.checkAccess();
 }
 
+/**
+ * Loads recent Direct Message partners through the extracted DM archive controller.
+ * @returns {Promise<void>} Resolves after the partner cache has been refreshed.
+ */
 async function loadDmPartners() {
-  assertDmAccessUnlocked();
-  if (!authAccount) {
-    throw new Error(t("dmLoadRequiresLogin"));
-  }
-  setDmProgress({
-    title: t("dmPartnersLoadingTitle"),
-    step: t("dmPartnersLoadingStep"),
-    percent: 12,
-    detail: "",
-  });
-  const result = await sendToServiceWorker("LIST_DM_PARTNERS", {
-    downloadAssets: false,
-  }, {
-    timeoutMs: 600000,
-    onProgress(progress) {
-      setDmProgress({
-        title: progress.title || t("dmPartnersLoadingTitle"),
-        step: progress.step || t("dmPartnersLoadingStep"),
-        percent: Number.isFinite(progress.percent) ? progress.percent : 0,
-        detail: progress.detail || "",
-      });
-    },
-  });
-  dmAccessChecked = true;
-  dmRecentContacts = Array.isArray(result?.recentContacts) ? result.recentContacts : [];
-  dmRecentConversations = Array.isArray(result?.conversations) ? result.conversations : [];
-  dmRecentContactAssets = [];
-  dmPartnerCacheAccountDid = authAccountDid || "";
-  dmPartnerCacheUpdatedAt = "";
-  dmSelectedParticipantDids = dmSelectedParticipantDids.filter((did) => dmRecentContacts.some((contact) => contact.did === did));
-  renderDmWorkspace();
-  await saveDmPartnerCache();
-  setDmProgress({
-    title: t("dmPartnersLoadingTitle"),
-    step: "Partnerliste geladen",
-    percent: 55,
-    detail: `${dmRecentContacts.length} DM-Partner werden angezeigt. Avatar-Bilder werden jetzt gesichert …`,
-  });
-  const hydrated = await sendToServiceWorker("HYDRATE_DM_PARTNER_AVATARS", {
-    recentContacts: dmRecentContacts,
-    conversations: dmRecentConversations,
-  }, {
-    timeoutMs: 600000,
-    onProgress(progress) {
-      setDmProgress({
-        title: progress.title || t("dmPartnersLoadingTitle"),
-        step: progress.step || t("dmPartnersLoadingStep"),
-        percent: Number.isFinite(progress.percent) ? progress.percent : 0,
-        detail: progress.detail || "",
-      });
-    },
-  });
-  dmRecentContacts = Array.isArray(hydrated?.recentContacts) ? hydrated.recentContacts : dmRecentContacts;
-  dmRecentConversations = Array.isArray(hydrated?.conversations) ? hydrated.conversations : dmRecentConversations;
-  dmRecentContactAssets = Array.isArray(hydrated?.assets) ? hydrated.assets : [];
-  dmSelectedParticipantDids = dmSelectedParticipantDids.filter((did) => dmRecentContacts.some((contact) => contact.did === did));
-  renderDmWorkspace();
-  await saveDmPartnerCache();
-  setDmProgress({
-    title: t("dmPartnersDoneTitle"),
-    step: t("dmPartnersDoneStep"),
-    percent: 100,
-    detail: t("dmPartnersDoneDetail", { count: dmRecentContacts.length }),
-  });
+  return dmArchiveController.loadPartners();
 }
 
+/**
+ * Loads the selected Direct Message archive through the extracted DM archive controller.
+ * @returns {Promise<void>} Resolves after the archive catalog has been updated.
+ */
 async function loadDmArchive() {
-  assertDmAccessUnlocked();
-  if (!authAccount) {
-    throw new Error(t("dmLoadRequiresLogin"));
-  }
-  if (dmSelectedParticipantDids.length !== 1) {
-    throw new Error(t("dmNeedPartnerSelection"));
-  }
-  if (!dmAccessChecked) {
-    await checkDmAccess();
-  }
-
-  const filters = getDmFilters();
-  setDmProgress({
-    title: t("dmProgressLoadingTitle"),
-    step: t("dmProgressLoadingStep"),
-    percent: 4,
-    detail: "",
-  });
-
-  const catalog = await sendToServiceWorker("EXPORT_DM_ARCHIVE", {
-    filters,
-    partnerCache: {
-      recentContacts: Array.isArray(dmRecentContacts) ? dmRecentContacts : [],
-      conversations: Array.isArray(dmRecentConversations) ? dmRecentConversations : [],
-      assets: Array.isArray(dmRecentContactAssets) ? dmRecentContactAssets : [],
-    },
-  }, {
-    timeoutMs: 600000,
-    onProgress(progress) {
-      setDmProgress({
-        title: progress.title || t("dmProgressLoadingTitle"),
-        step: progress.step || t("dmProgressLoadingStep"),
-        percent: Number.isFinite(progress.percent) ? progress.percent : 0,
-        detail: progress.detail || "",
-      });
-    },
-  });
-
-  dmCatalog = catalog;
-  dmRecentContacts = Array.isArray(catalog?.recentContacts) ? catalog.recentContacts : [];
-  dmRecentConversations = Array.isArray(catalog?.conversations) ? catalog.conversations : [];
-  dmRecentContactAssets = Array.isArray(catalog?.assets) ? catalog.assets.filter((asset) => String(asset.path || "").startsWith("dm-avatars/")) : [];
-  dmPartnerCacheAccountDid = authAccountDid || "";
-  dmSelectedParticipantDids = dmSelectedParticipantDids.filter((did) => dmRecentContacts.some((contact) => contact.did === did));
-  renderDmWorkspace();
-  await saveDmPartnerCache();
-  setDmProgress({
-    title: t("dmProgressDoneTitle"),
-    step: t("dmProgressDoneStep"),
-    percent: 100,
-    detail: t("dmLoadedNotice", {
-      conversations: catalog?.manifest?.conversationCount || 0,
-      messages: catalog?.manifest?.messageCount || 0,
-    }),
-  });
+  return dmArchiveController.loadArchive(checkDmAccess);
 }
 
 const ARCHIVE_RANGE_MAX_MONTHS = 3;
@@ -21154,7 +20819,7 @@ function applyDmPartnerCache(cache = null) {
   dmRecentContactAssets = Array.isArray(cache.assets) ? cache.assets : [];
   dmPartnerCacheAccountDid = String(cache.accountDid || authAccountDid || "");
   dmPartnerCacheUpdatedAt = String(cache.updatedAt || "");
-  dmSelectedParticipantDids = dmSelectedParticipantDids.filter((did) => dmRecentContacts.some((contact) => contact.did === did));
+  dmSelectedParticipantDids = retainDmSelectedParticipants(dmSelectedParticipantDids, dmRecentContacts);
 }
 
 async function saveDmPartnerCache() {
@@ -21842,17 +21507,7 @@ function getNormalizedPostLanguagesOrDefault() {
 }
 
 function normalizePostInteractionSettings(value = {}) {
-  const normalizedMode = ["everyone", "nobody", "custom"].includes(value.replyMode)
-    ? value.replyMode
-    : DEFAULT_POST_INTERACTION_SETTINGS.replyMode;
-
-  return {
-    replyMode: normalizedMode,
-    allowFollowers: value.allowFollowers === true,
-    allowFollowing: value.allowFollowing === true,
-    allowMentioned: value.allowMentioned === true,
-    quotePostsAllowed: value.quotePostsAllowed !== false,
-  };
+  return normalizeComposerPostInteractionSettings(value);
 }
 
 function getCurrentPostInteractionSettings() {
@@ -21892,37 +21547,17 @@ function renderPostInteractionControls() {
 }
 
 function getReplyModeSummary() {
-  if (replyMode === "nobody") {
-    return t("replyModeNobody");
-  }
-
-  if (replyMode === "custom") {
-    const labels = [];
-    if (replyAllowFollowers) {
-      labels.push(t("replyRuleFollowers"));
-    }
-    if (replyAllowFollowing) {
-      labels.push(t("replyRuleFollowing"));
-    }
-    if (replyAllowMentioned) {
-      labels.push(t("replyRuleMentioned"));
-    }
-    return labels.length > 0
-      ? t("replyModeCustomSummary", { rules: labels.join(", ") })
-      : t("replyModeNobody");
-  }
-
-  return t("replyModeEveryone");
+  return getComposerReplyModeSummary(getCurrentPostInteractionSettings(), t);
 }
 
 function renderPostSettingsDisclosureMeta() {
-  postLanguagesDisclosureMeta.textContent = t("postLanguagesDisclosureSummary", {
-    count: getNormalizedPostLanguagesOrDefault().length,
-  });
-  postInteractionDisclosureMeta.textContent = t("postInteractionDisclosureSummary", {
-    replyMode: getReplyModeSummary(),
-    quotes: quotePostsAllowed ? t("quotesAllowedShort") : t("quotesBlockedShort"),
-  });
+  const metadata = buildComposerPostSettingsDisclosureMeta(
+    getCurrentPostInteractionSettings(),
+    getNormalizedPostLanguagesOrDefault().length,
+    t,
+  );
+  postLanguagesDisclosureMeta.textContent = metadata.languages;
+  postInteractionDisclosureMeta.textContent = metadata.interactions;
 }
 
 function clampDesktopWidth(value, min, max, fallback) {
@@ -22302,8 +21937,38 @@ function applyTranslatedTitle(element, key) {
   element.setAttribute("aria-label", label);
 }
 
+/**
+ * Returns the matching language anchor for the multilingual privacy page.
+ * @returns {string} One of `de`, `en`, or `fr`.
+ */
+function getPrivacyPageLanguageAnchor() {
+  if (currentLocale === "de") {
+    return "de";
+  }
+  if (currentLocale === "fr") {
+    return "fr";
+  }
+  return DEFAULT_LOCALE;
+}
+
+/**
+ * Updates privacy-page links to open the currently active language section.
+ * @returns {void} Does not return a value.
+ */
+function updatePrivacyPageLanguageLinks() {
+  const languageAnchor = getPrivacyPageLanguageAnchor();
+  document.querySelectorAll("[data-privacy-language-link]").forEach((link) => {
+    link.setAttribute("href", `./datenschutz.html#${languageAnchor}`);
+  });
+}
+
+/**
+ * Applies translated text and locale-dependent interface settings.
+ * @returns {void} Does not return a value.
+ */
 function applyTranslations() {
   document.documentElement.lang = currentLocale;
+  updatePrivacyPageLanguageLinks();
   syncArchiveTransientNoticeFromCatalog();
   ensureArchiveWorkspaceLayout();
 
@@ -23074,40 +22739,7 @@ function normalizeSegmentOverrides(segments) {
 }
 
 function normalizePostingHistory(entries) {
-  const seen = new Set();
-  const result = [];
-
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    const url = typeof entry?.url === "string" ? entry.url.trim() : "";
-    const createdAt = typeof entry?.createdAt === "string" ? entry.createdAt : "";
-    const account = typeof entry?.account === "string" ? entry.account.trim() : "";
-    const service = typeof entry?.service === "string" ? entry.service.trim() : "";
-
-    if (!url || !createdAt) {
-      continue;
-    }
-
-    const key = `${url}|${createdAt}`;
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push({
-      id: typeof entry.id === "string" && entry.id ? entry.id : key,
-      url,
-      createdAt,
-      account,
-      service,
-      firstSegmentText: typeof entry?.firstSegmentText === "string" ? entry.firstSegmentText.trim() : "",
-      threadCount: Math.max(1, Number(entry.threadCount) || 1),
-      imageCount: Math.max(0, Number(entry.imageCount) || 0),
-    });
-  }
-
-  return result
-    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
-    .slice(0, MAX_POSTING_HISTORY);
+  return normalizeComposerPostingHistory(entries, MAX_POSTING_HISTORY);
 }
 
 /**
@@ -23120,18 +22752,11 @@ function isImageAutoResizeEnabled(mode = imageAutoResizeMode) {
 }
 
 function mergePostingHistoryEntries(existing, imported) {
-  return normalizePostingHistory([...(Array.isArray(imported) ? imported : []), ...(Array.isArray(existing) ? existing : [])]);
+  return mergeComposerPostingHistory(existing, imported, MAX_POSTING_HISTORY);
 }
 
 function formatHistoryMeta(threadCount, imageCount) {
-  const threadWord = t(threadCount === 1 ? "historySectionSingular" : "historySectionPlural");
-  const imageWord = t(imageCount === 1 ? "historyImageSingular" : "historyImagePlural");
-  return t("historyMeta", {
-    threads: threadCount,
-    threadWord,
-    images: imageCount,
-    imageWord,
-  });
+  return formatComposerHistoryMeta(threadCount, imageCount, t);
 }
 
 function syncSegmentImages(segmentCount) {
@@ -23277,7 +22902,7 @@ function renderLinkCardTargetList(currentSegmentIndex) {
   }
 
   entries.forEach((entry) => {
-    const fragment = linkCardTargetTemplate.content.cloneNode(true);
+    const fragment = cloneTemplateContent(linkCardTargetTemplate);
     const item = fragment.querySelector(".link-card-target-item");
     const title = fragment.querySelector(".link-card-target-title");
     const meta = fragment.querySelector(".link-card-target-meta");
@@ -23605,7 +23230,7 @@ function normalizeLinkCard(card = null) {
 }
 
 function normalizeSegmentLinkCards(cards = []) {
-  return (Array.isArray(cards) ? cards : []).map((card) => normalizeLinkCard(card));
+  return normalizeComposerSegmentLinkCards(cards, normalizeLinkCard);
 }
 
 function syncSegmentLinkCards(segmentCount) {
@@ -24171,7 +23796,7 @@ async function requestLinkCard(url) {
 }
 
 function getHistoryPreviewText(text) {
-  return String(text || "").replace(/\s+/g, " ").trim().slice(0, 220);
+  return getComposerHistoryPreviewText(text);
 }
 
 function normalizeReplyTarget(target = null) {
@@ -24722,17 +24347,15 @@ function scheduleImageValidation() {
 }
 
 function showProgressDialog(title, message) {
-  progressTitle.textContent = title;
-  progressMessage.textContent = message;
-  if (!progressDialog.open) {
-    progressDialog.showModal();
-  }
+  showProgressModal({
+    dialog: progressDialog,
+    title: progressTitle,
+    message: progressMessage,
+  }, title, message);
 }
 
 function hideProgressDialog() {
-  if (progressDialog.open) {
-    progressDialog.close();
-  }
+  closeModalDialog(progressDialog);
 }
 
 /**
@@ -24745,23 +24368,18 @@ function hideProgressDialog() {
  * @returns {void}
  */
 function showErrorDialog(message, title = t("errorTitle"), options = {}) {
-  errorTitle.textContent = title;
-  errorMessage.textContent = message;
-  if (errorLinkWrap && errorLink) {
-    const linkUrl = String(options.linkUrl || "").trim();
-    if (linkUrl) {
-      errorLink.href = linkUrl;
-      errorLink.textContent = String(options.linkLabel || linkUrl).trim();
-      errorLinkWrap.hidden = false;
-    } else {
-      errorLink.href = "#";
-      errorLink.textContent = "";
-      errorLinkWrap.hidden = true;
-    }
-  }
-  if (!errorDialog.open) {
-    errorDialog.showModal();
-  }
+  showErrorModal({
+    dialog: errorDialog,
+    title: errorTitle,
+    message: errorMessage,
+    linkWrap: errorLinkWrap,
+    link: errorLink,
+  }, {
+    title,
+    message,
+    linkUrl: options.linkUrl,
+    linkLabel: options.linkLabel,
+  });
 }
 
 function setAltTextCount() {
@@ -25305,37 +24923,28 @@ function getDroppedImageFiles(event) {
 }
 
 function moveSegmentImageToPosition(fromSegmentIndex, fromImageIndex, toSegmentIndex, toImageIndex) {
-  const sourceImages = Array.isArray(segmentImages[fromSegmentIndex]) ? [...segmentImages[fromSegmentIndex]] : null;
-  const targetImages = Array.isArray(segmentImages[toSegmentIndex]) ? [...segmentImages[toSegmentIndex]] : null;
-  if (!sourceImages || !targetImages) {
-    return false;
-  }
-  if (fromImageIndex < 0 || fromImageIndex >= sourceImages.length) {
-    return false;
-  }
-  if (fromSegmentIndex !== toSegmentIndex && normalizeLinkCard(segmentLinkCards[toSegmentIndex])) {
+  const result = moveComposerImage({
+    segmentImages,
+    fromSegmentIndex,
+    fromImageIndex,
+    toSegmentIndex,
+    toImageIndex,
+    maxImagesPerSegment: MAX_IMAGES_PER_SEGMENT,
+    targetHasLinkCard: Boolean(normalizeLinkCard(segmentLinkCards[toSegmentIndex])),
+  });
+  if (!result.moved && result.reason === "link-card") {
     setStatus(t("linkCardBlocksImages"), "error");
     return false;
   }
-  if (fromSegmentIndex !== toSegmentIndex && targetImages.length >= MAX_IMAGES_PER_SEGMENT) {
+  if (!result.moved && result.reason === "limit") {
     setStatus(t("imagesLimitReached"), "error");
     return false;
   }
-
-  const [image] = sourceImages.splice(fromImageIndex, 1);
-  let insertionIndex = Math.max(0, Math.min(toImageIndex, targetImages.length));
-  if (fromSegmentIndex === toSegmentIndex) {
-    insertionIndex = Math.max(0, Math.min(insertionIndex - (toImageIndex > fromImageIndex ? 1 : 0), sourceImages.length));
-    if (insertionIndex === fromImageIndex) {
-      return false;
-    }
-    sourceImages.splice(insertionIndex, 0, image);
-    segmentImages[fromSegmentIndex] = sourceImages;
-  } else {
-    targetImages.splice(insertionIndex, 0, image);
-    segmentImages[fromSegmentIndex] = sourceImages;
-    segmentImages[toSegmentIndex] = targetImages;
+  if (!result.moved) {
+    return false;
   }
+
+  segmentImages = result.segmentImages;
 
   void persistSettings();
   preserveScrollPosition(() => {
@@ -25346,11 +24955,10 @@ function moveSegmentImageToPosition(fromSegmentIndex, fromImageIndex, toSegmentI
 }
 
 function deleteSegmentImage(segmentIndex, imageIndex) {
-  const images = segmentImages[segmentIndex];
-  if (!Array.isArray(images)) {
+  if (!Array.isArray(segmentImages[segmentIndex])) {
     return;
   }
-  segmentImages[segmentIndex] = images.filter((_, index) => index !== imageIndex);
+  segmentImages = removeComposerImage(segmentImages, segmentIndex, imageIndex);
   void persistSettings();
   preserveScrollPosition(() => {
     renderSegments({ preserveOverrides: true });
@@ -25396,49 +25004,18 @@ async function submitReplyTargetDialog() {
 }
 
 async function openConfirmDialog({ title, message, confirmLabel, cancelLabel, preview = null, confirmValue = true, cancelValue = false, dismissValue = false }) {
-  const queuedOpen = async () => {
-    confirmDialogTitle.textContent = title;
-    confirmDialogMessage.textContent = message;
-    confirmDialogConfirmButton.textContent = confirmLabel || t("confirmYes");
-    confirmDialogCancelButton.textContent = cancelLabel || t("confirmNo");
-    confirmDialogValues = {
-      confirm: confirmValue,
-      cancel: cancelValue,
-      dismiss: dismissValue,
-    };
-    if (confirmDialogPreview) {
-      const hasPreview = preview && typeof preview === "object" && (preview.name || preview.handle || preview.avatar);
-      confirmDialogPreview.hidden = !hasPreview;
-      if (hasPreview) {
-        setAvatarImage(confirmDialogAvatar, preview.avatar, preview.name || preview.handle || "");
-        confirmDialogPreviewName.textContent = preview.name || preview.handle || "";
-        confirmDialogPreviewHandle.textContent = preview.handle ? `@${preview.handle}` : "";
-      }
-    }
-    if (confirmDialog.open) {
-      ignoreNextConfirmClose = true;
-      confirmDialog.close();
-    }
-    return new Promise((resolve) => {
-      confirmResolver = resolve;
-      confirmDialog.showModal();
-    });
-  };
-  const resultPromise = confirmDialogQueue.catch(() => {}).then(queuedOpen);
-  confirmDialogQueue = resultPromise.then(() => {}, () => {});
-  return resultPromise;
-}
-
-function resolveConfirmDialog(value) {
-  const resolver = confirmResolver;
-  confirmResolver = null;
-  if (confirmDialog.open) {
-    ignoreNextConfirmClose = true;
-    confirmDialog.close();
-  }
-  if (resolver) {
-    resolver(value);
-  }
+  return confirmDialogController.open({
+    title,
+    message,
+    confirmLabel,
+    cancelLabel,
+    preview,
+    confirmValue,
+    cancelValue,
+    dismissValue,
+    fallbackConfirmLabel: t("confirmYes"),
+    fallbackCancelLabel: t("confirmNo"),
+  });
 }
 
 function buildThreadExportPayload() {
@@ -25580,10 +25157,6 @@ async function shareOrDownloadFile(file, fallbackName, options = {}) {
   link.download = fallbackName;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function formatArchiveDatePart(value) {
-  return String(value || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
 }
 
 function utf8Bytes(value) {
@@ -26012,28 +25585,7 @@ function buildMediaExportSessionKey(options = {}) {
  * @returns {string} Base file name without the `.zip` suffix.
  */
 function buildArchiveMediaFileBaseName(options = {}) {
-  let targetHandle = String(options.actor || authAccount || "account")
-    .replace(/^@+/, "")
-    .trim()
-    .replace(/[^\w.-]+/g, "-");
-  if (!targetHandle) {
-    targetHandle = "account";
-  }
-  const datePart = new Date().toISOString().slice(0, 10);
-  return `threadline-media-${targetHandle}-${datePart}`;
-}
-
-/**
- * Builds the suggested file name for one media-export part archive.
- * @param {string} baseName - Shared base name of the export.
- * @param {number} batchIndex - Zero-based batch index.
- * @param {number} batchCount - Total number of batches.
- * @returns {string} Suggested ZIP file name for the batch.
- */
-function buildArchiveMediaPartFileName(baseName, batchIndex, batchCount) {
-  const partLabel = String(batchIndex + 1).padStart(3, "0");
-  const totalLabel = String(batchCount).padStart(3, "0");
-  return `${baseName}-part-${partLabel}-of-${totalLabel}.zip`;
+  return buildArchiveMediaFileBaseNameFromData(options.actor, authAccount);
 }
 
 /**
@@ -30638,10 +30190,9 @@ async function persistSettings() {
     analysisState: getPersistableAnalysisState(),
   };
   try {
-    settingsSaveQueue = settingsSaveQueue
-      .catch(() => {})
-      .then(() => sendToServiceWorker("SAVE_SETTINGS", payload, { timeoutMs: 120000 }));
-    await settingsSaveQueue;
+    await settingsSaveQueue.enqueue(() => {
+      return sendToServiceWorker("SAVE_SETTINGS", payload, { timeoutMs: 120000 });
+    });
   } catch (error) {
     console.error(error);
     setStatus(error.message, "error");
@@ -31414,10 +30965,7 @@ function renderHistoryList() {
     continueButton.addEventListener("click", async () => {
       try {
         setBusy(continueButton, true, t("historyContinueThreadBusy"), t("historyContinueThreadButton"));
-        const target = await sendToServiceWorker("CHECK_REPLY_TARGET", {
-          url: entry.url,
-          mode: "thread",
-        });
+        const target = await requestReplyTarget(sendToServiceWorker, entry.url, "thread");
         composerReplyTarget = normalizeReplyTarget(target);
         renderReplyTargetCard();
         publishButton.textContent = getPublishButtonLabel();
@@ -31493,23 +31041,7 @@ function autoSizeTextarea(textarea) {
  * @returns {Array<{ handle: string, raw: string }>} Normalized handles plus the original mention text.
  */
 function parseComposerMentionCandidates(text) {
-  const candidates = [];
-  const value = String(text || "");
-  const regex = /(^|[\s([{"'“„«‹])(@)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+)(?=$|[\s)\]}",;:!?'”»›])/gu;
-  let match;
-
-  while ((match = regex.exec(value))) {
-    const handle = String(match[3] || "").trim().toLowerCase();
-    if (!handle) {
-      continue;
-    }
-    candidates.push({
-      handle,
-      raw: `@${handle}`,
-    });
-  }
-
-  return candidates;
+  return parseComposerMentionCandidatesFromData(text);
 }
 
 /**
@@ -31518,19 +31050,7 @@ function parseComposerMentionCandidates(text) {
  * @returns {string[]} Unique normalized handles.
  */
 function getUniqueComposerMentionHandles(candidates) {
-  const uniqueHandles = [];
-  const seen = new Set();
-
-  for (const candidate of Array.isArray(candidates) ? candidates : []) {
-    const handle = String(candidate?.handle || "").trim().toLowerCase();
-    if (!handle || seen.has(handle)) {
-      continue;
-    }
-    seen.add(handle);
-    uniqueHandles.push(handle);
-  }
-
-  return uniqueHandles;
+  return getUniqueComposerMentionHandlesFromData(candidates);
 }
 
 /**
@@ -31601,33 +31121,7 @@ async function resolveComposerMentionHandles(handles) {
  * @returns {string} Public Bluesky profile URL.
  */
 function buildComposerMentionProfileUrl(handle, did) {
-  const profileIdentifier = String(did || handle || "").trim();
-  if (!profileIdentifier) {
-    return "";
-  }
-  return `${DEFAULT_POST_WEB_APP}/profile/${encodeURIComponent(profileIdentifier)}`;
-}
-
-/**
- * Escapes a string so it can be used inside a regular expression.
- * @param {string} value - Raw string that may contain regex control characters.
- * @returns {string} Escaped regex-safe string.
- */
-function escapeRegex(value) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Builds a regular expression that matches one mention handle with safe boundaries.
- * @param {string} handle - Mention handle without leading at sign.
- * @returns {RegExp|null} Regex for one handle or null when the handle is empty.
- */
-function buildMentionHandlePattern(handle) {
-  const normalizedHandle = String(handle || "").trim().replace(/^@/, "");
-  if (!normalizedHandle) {
-    return null;
-  }
-  return new RegExp(`(^|[\\s([{"'“„«‹])@${escapeRegex(normalizedHandle)}(?=$|[\\s)\\]}",;:!?'”»›])`, "gu");
+  return buildComposerMentionProfileUrlFromData(handle, did, DEFAULT_POST_WEB_APP);
 }
 
 /**
@@ -31637,11 +31131,7 @@ function buildMentionHandlePattern(handle) {
  * @returns {boolean} True when the mention exists with valid boundaries.
  */
 function textContainsMentionHandle(text, handle) {
-  const pattern = buildMentionHandlePattern(handle);
-  if (!pattern) {
-    return false;
-  }
-  return pattern.test(String(text || ""));
+  return textContainsComposerMentionHandleFromData(text, handle);
 }
 
 /**
@@ -31652,17 +31142,7 @@ function textContainsMentionHandle(text, handle) {
  * @returns {string} Updated segment text.
  */
 function replaceMentionHandleInSegmentText(text, fromHandle, toHandle) {
-  const fromValue = String(fromHandle || "").trim().replace(/^@/, "");
-  const toValue = String(toHandle || "").trim().replace(/^@/, "");
-  if (!fromValue || !toValue || fromValue === toValue) {
-    return String(text || "");
-  }
-
-  const pattern = buildMentionHandlePattern(fromValue);
-  if (!pattern) {
-    return String(text || "");
-  }
-  return String(text || "").replace(pattern, (match, prefix) => `${prefix}@${toValue}`);
+  return replaceComposerMentionHandleFromData(text, fromHandle, toHandle);
 }
 
 /**
@@ -31824,32 +31304,13 @@ function getMentionSearchRelationLabel(actor = {}) {
 }
 
 /**
- * Returns the best account identifier to write back into a picker target field.
- * @param {object} actor - Normalized actor search hit.
- * @returns {string} Preferred handle, falling back to DID.
- */
-function getAccountPickerSelectionValue(actor = {}) {
-  const handle = String(actor?.handle || "").trim();
-  if (handle) {
-    return handle;
-  }
-  return String(actor?.did || "").trim();
-}
-
-/**
  * Writes a value into an input field and notifies existing listeners.
  * @param {HTMLInputElement|null} input - Target input element.
  * @param {string} value - Next field value.
  * @returns {void}
  */
 function setPickerInputValue(input, value) {
-  if (!input) {
-    return;
-  }
-  accountPickerAutoOpenMutedInputs.add(input);
-  input.value = String(value || "");
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
+  accountPickerController.setInputValue(input, value);
 }
 
 /**
@@ -31862,45 +31323,7 @@ function setPickerInputValue(input, value) {
  * @returns {void}
  */
 function openAccountPickerDialog(options = {}) {
-  const label = String(options.label || t("accountPickerFallbackLabel")).trim();
-  const initialQuery = String(options.initialQuery || "").trim().replace(/^@/, "");
-  mentionSearchContext = "account";
-  mentionSearchSelectionHandler = typeof options.onSelect === "function" ? options.onSelect : null;
-  mentionSearchAccountSourceInput = options.sourceInput instanceof HTMLInputElement ? options.sourceInput : null;
-  mentionSearchAccountSourceQuery = initialQuery.toLowerCase();
-  mentionSearchAccountSelectionApplied = false;
-  mentionSearchSegmentIndex = -1;
-  mentionSearchOriginalHandle = "";
-  mentionSearchMode = "repair";
-  mentionSearchRequestToken += 1;
-  window.clearTimeout(mentionSearchInputTimer);
-  mentionSearchInputTimer = 0;
-
-  if (mentionSearchDialogEyebrow) {
-    mentionSearchDialogEyebrow.textContent = t("accountPickerDialogEyebrow");
-  }
-  if (mentionSearchDialogTitle) {
-    mentionSearchDialogTitle.textContent = t("accountPickerDialogTitle", { label });
-  }
-  if (mentionSearchDialogNote) {
-    const noteKey = String(options.noteKey || "accountPickerDialogNote");
-    mentionSearchDialogNote.textContent = t(noteKey, { label });
-  }
-  if (mentionSearchStatus) {
-    mentionSearchStatus.textContent = "";
-    delete mentionSearchStatus.dataset.tone;
-  }
-  if (mentionSearchResults) {
-    mentionSearchResults.replaceChildren();
-  }
-  if (mentionSearchInput) {
-    mentionSearchInput.value = initialQuery;
-  }
-
-  mentionSearchDialog?.showModal();
-  mentionSearchInput?.focus();
-  mentionSearchInput?.select();
-  void runMentionSearch(initialQuery);
+  accountPickerController.open(options);
 }
 
 /**
@@ -31909,18 +31332,7 @@ function openAccountPickerDialog(options = {}) {
  * @returns {void}
  */
 function applyAccountPickerSelection(actor = {}) {
-  const selectedValue = getAccountPickerSelectionValue(actor);
-  if (!selectedValue) {
-    return;
-  }
-  mentionSearchAccountSelectionApplied = true;
-  if (mentionSearchAccountSourceInput) {
-    accountPickerAutoOpenDismissedQueries.delete(mentionSearchAccountSourceInput);
-  }
-  if (typeof mentionSearchSelectionHandler === "function") {
-    mentionSearchSelectionHandler(actor, selectedValue);
-  }
-  closeMentionSearchDialog();
+  accountPickerController.select(actor);
 }
 
 /**
@@ -31985,26 +31397,7 @@ function applyDmContactPickerSelection(actor, value) {
  * @returns {void}
  */
 function openInputAccountPicker(input, label, options = {}) {
-  if (!input) {
-    return;
-  }
-
-  let selectionHandler = null;
-  if (typeof options.onSelect === "function") {
-    selectionHandler = options.onSelect;
-  } else {
-    selectionHandler = (actor, value) => {
-      setPickerInputValue(input, value);
-    };
-  }
-
-  openAccountPickerDialog({
-    label,
-    initialQuery: String(input.value || ""),
-    noteKey: String(options.noteKey || "accountPickerDialogNote"),
-    onSelect: selectionHandler,
-    sourceInput: input,
-  });
+  accountPickerController.openInput(input, label, options);
 }
 
 /**
@@ -32017,50 +31410,7 @@ function openInputAccountPicker(input, label, options = {}) {
  * @returns {void}
  */
 function enableAutoAccountPicker(input, label, options = {}) {
-  if (!input) {
-    return;
-  }
-
-  input.addEventListener("input", () => {
-    if (accountPickerAutoOpenMutedInputs.has(input)) {
-      accountPickerAutoOpenMutedInputs.delete(input);
-      return;
-    }
-
-    const previousTimer = accountPickerAutoOpenTimers.get(input);
-    if (previousTimer) {
-      window.clearTimeout(previousTimer);
-      accountPickerAutoOpenTimers.delete(input);
-    }
-
-    const query = String(input.value || "").trim().replace(/^@/, "");
-    if (query.length < ACCOUNT_PICKER_AUTO_OPEN_MIN_LENGTH) {
-      return;
-    }
-
-    const timerId = window.setTimeout(() => {
-      accountPickerAutoOpenTimers.delete(input);
-      const normalizedQuery = String(input.value || "").trim().replace(/^@/, "").toLowerCase();
-      const dismissedQuery = String(accountPickerAutoOpenDismissedQueries.get(input) || "").trim().toLowerCase();
-
-      if (!input.matches(":focus")) {
-        return;
-      }
-      if (mentionSearchDialog?.open) {
-        return;
-      }
-      if (!normalizedQuery || normalizedQuery.length < ACCOUNT_PICKER_AUTO_OPEN_MIN_LENGTH) {
-        return;
-      }
-      if (dismissedQuery && dismissedQuery === normalizedQuery) {
-        return;
-      }
-
-      openInputAccountPicker(input, label, options);
-    }, COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS);
-
-    accountPickerAutoOpenTimers.set(input, timerId);
-  });
+  accountPickerController.enableAutoOpen(input, label, options);
 }
 
 /**
@@ -32068,25 +31418,12 @@ function enableAutoAccountPicker(input, label, options = {}) {
  * @returns {void}
  */
 function resetMentionSearchDialogState() {
-  if (mentionSearchContext === "account" && mentionSearchAccountSourceInput) {
-    if (mentionSearchAccountSelectionApplied) {
-      accountPickerAutoOpenDismissedQueries.delete(mentionSearchAccountSourceInput);
-    } else {
-      accountPickerAutoOpenDismissedQueries.set(
-        mentionSearchAccountSourceInput,
-        mentionSearchAccountSourceQuery,
-      );
-    }
-  }
+  accountPickerController.reset();
   mentionSearchRequestToken += 1;
   mentionSearchSegmentIndex = -1;
   mentionSearchOriginalHandle = "";
   mentionSearchMode = "repair";
   mentionSearchContext = "mention";
-  mentionSearchSelectionHandler = null;
-  mentionSearchAccountSourceInput = null;
-  mentionSearchAccountSourceQuery = "";
-  mentionSearchAccountSelectionApplied = false;
   window.clearTimeout(mentionSearchInputTimer);
   mentionSearchInputTimer = 0;
   if (mentionSearchInput) {
@@ -32165,7 +31502,7 @@ function renderMentionSearchResults(actors) {
 
   mentionSearchResults.replaceChildren();
   for (const actor of Array.isArray(actors) ? actors : []) {
-    const fragment = mentionSearchResultTemplate?.content.cloneNode(true);
+    const fragment = cloneTemplateContent(mentionSearchResultTemplate);
     if (!fragment) {
       continue;
     }
@@ -32253,7 +31590,6 @@ async function runMentionSearch(rawQuery) {
  */
 function openMentionSearchDialog(segmentIndex, handle, mode = "repair") {
   mentionSearchContext = "mention";
-  mentionSearchSelectionHandler = null;
   mentionSearchSegmentIndex = segmentIndex;
   mentionSearchOriginalHandle = String(handle || "").trim().replace(/^@/, "").toLowerCase();
   mentionSearchMode = mode === "review" ? "review" : "repair";
@@ -32317,86 +31653,12 @@ function getKnownComposerMentionHandles() {
 }
 
 /**
- * Calculates the Levenshtein distance between two strings.
- * @param {string} left - First comparison string.
- * @param {string} right - Second comparison string.
- * @returns {number} Edit distance between both strings.
- */
-function getLevenshteinDistance(left, right) {
-  const source = String(left || "");
-  const target = String(right || "");
-
-  if (source === target) {
-    return 0;
-  }
-  if (!source) {
-    return target.length;
-  }
-  if (!target) {
-    return source.length;
-  }
-
-  const previousRow = new Array(target.length + 1).fill(0);
-  const currentRow = new Array(target.length + 1).fill(0);
-
-  for (let index = 0; index <= target.length; index += 1) {
-    previousRow[index] = index;
-  }
-
-  for (let sourceIndex = 1; sourceIndex <= source.length; sourceIndex += 1) {
-    currentRow[0] = sourceIndex;
-
-    for (let targetIndex = 1; targetIndex <= target.length; targetIndex += 1) {
-      const substitutionCost = source[sourceIndex - 1] === target[targetIndex - 1] ? 0 : 1;
-      const deletionCost = previousRow[targetIndex] + 1;
-      const insertionCost = currentRow[targetIndex - 1] + 1;
-      const substitutionTotal = previousRow[targetIndex - 1] + substitutionCost;
-      currentRow[targetIndex] = Math.min(deletionCost, insertionCost, substitutionTotal);
-    }
-
-    for (let targetIndex = 0; targetIndex <= target.length; targetIndex += 1) {
-      previousRow[targetIndex] = currentRow[targetIndex];
-    }
-  }
-
-  return previousRow[target.length];
-}
-
-/**
  * Finds the nearest known local handle suggestion when the typo distance is small enough.
  * @param {string} handle - Unresolved normalized handle.
  * @returns {string} Suggested known handle or an empty string.
  */
 function findComposerMentionSuggestion(handle) {
-  const normalizedHandle = String(handle || "").trim().toLowerCase();
-  if (!normalizedHandle) {
-    return "";
-  }
-
-  const knownHandles = getKnownComposerMentionHandles();
-  let bestHandle = "";
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (const candidate of knownHandles) {
-    if (candidate === normalizedHandle) {
-      continue;
-    }
-
-    const distance = getLevenshteinDistance(normalizedHandle, candidate);
-    if (distance > 2) {
-      continue;
-    }
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestHandle = candidate;
-    }
-  }
-
-  if (!bestHandle) {
-    return "";
-  }
-
-  return bestHandle;
+  return findComposerMentionSuggestionFromData(handle, getKnownComposerMentionHandles());
 }
 
 /**
@@ -33135,119 +32397,12 @@ function openInlineHelpTopic(topicId) {
 }
 
 /**
- * Returns the shared grapheme segmenter used for Bluesky length checks.
- * @param {void} - No parameters.
- * @returns {Intl.Segmenter|null} Segmenter instance or null when unavailable.
- */
-function getGraphemeSegmenter() {
-  if (typeof Intl === "undefined" || typeof Intl.Segmenter !== "function") {
-    return null;
-  }
-
-  if (!graphemeSegmenter) {
-    graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-  }
-
-  return graphemeSegmenter;
-}
-
-/**
- * Splits text into user-visible grapheme clusters for Bluesky-compatible counting.
- * @param {string} text - Source text to segment.
- * @returns {string[]} Array of grapheme clusters.
- */
-function splitIntoGraphemes(text) {
-  const value = String(text || "");
-  const segmenter = getGraphemeSegmenter();
-
-  if (!segmenter) {
-    return Array.from(value);
-  }
-
-  return Array.from(segmenter.segment(value), (entry) => entry.segment);
-}
-
-/**
- * Counts Bluesky-visible characters (Unicode grapheme clusters) for a string.
- * @param {string} text - Source text to count.
- * @returns {number} Grapheme cluster count.
- */
-function countGraphemes(text) {
-  return splitIntoGraphemes(text).length;
-}
-
-/**
- * Counts UTF-8 bytes for a string as used by AT Proto maxLength validation.
- * @param {string} text - Source text to count.
- * @returns {number} UTF-8 byte count.
- */
-function countUtf8Bytes(text) {
-  return utf8Bytes(text).length;
-}
-
-/**
- * Builds shared text metrics for Bluesky post validation.
- * @param {string} text - Source text to measure.
- * @returns {{ graphemeCount: number, utf8ByteCount: number }} Grapheme and byte counts.
- */
-function getPostTextMetrics(text) {
-  return {
-    graphemeCount: countGraphemes(text),
-    utf8ByteCount: countUtf8Bytes(text),
-  };
-}
-
-/**
- * Creates a post text limit object for graphemes and UTF-8 bytes.
- * @param {number} graphemeLimit - Maximum grapheme count.
- * @param {number} utf8ByteLimit - Maximum UTF-8 byte count.
- * @returns {{ graphemeLimit: number, utf8ByteLimit: number }} Normalized limit object.
- */
-function createPostTextLimit(graphemeLimit, utf8ByteLimit) {
-  return {
-    graphemeLimit,
-    utf8ByteLimit,
-  };
-}
-
-/**
- * Returns whether a text fits inside the given Bluesky text limits.
- * @param {string} text - Candidate text.
- * @param {{ graphemeLimit: number, utf8ByteLimit: number }} limit - Allowed grapheme and byte limits.
- * @returns {boolean} True when both limits are satisfied.
- */
-function fitsPostTextLimit(text, limit) {
-  const metrics = getPostTextMetrics(text);
-  return metrics.graphemeCount <= limit.graphemeLimit && metrics.utf8ByteCount <= limit.utf8ByteLimit;
-}
-
-/**
- * Limits composer text to the configured Bluesky-aware grapheme budget.
- * @param {string} text - Candidate composer text.
- * @returns {{ text: string, truncated: boolean }} Clamped text and truncation flag.
- */
-function clampComposerTextLength(text) {
-  const graphemes = splitIntoGraphemes(text);
-  if (graphemes.length <= MAX_COMPOSER_GRAPHEME_LENGTH) {
-    return {
-      text: String(text || ""),
-      truncated: false,
-    };
-  }
-
-  return {
-    text: graphemes.slice(0, MAX_COMPOSER_GRAPHEME_LENGTH).join(""),
-    truncated: true,
-  };
-}
-
-/**
  * Applies shared composer follow-up work after the source text changed.
  * @param {boolean} showTruncationWarning - Whether a truncation message should be shown.
  * @returns {void} No return value.
  */
 function handleComposerTextInput(showTruncationWarning = false) {
-  const clamped = clampComposerTextLength(sourceText.value);
+  const clamped = clampComposerTextLength(sourceText.value, MAX_COMPOSER_GRAPHEME_LENGTH);
   if (clamped.truncated) {
     sourceText.value = clamped.text;
   }
@@ -33597,27 +32752,6 @@ function reserveForRepeatedHashtags(selectedText, placementMode) {
   return getPostTextMetrics(`\n${selectedText}`);
 }
 
-function splitByManualMarkers(text) {
-  return String(text || "")
-    .replace(/\r\n/g, "\n")
-    .split(MANUAL_SPLIT_MARKER)
-    .map((part) => normalizeInput(part))
-    .filter(Boolean);
-}
-
-/**
- * Subtracts already-reserved suffix costs from the full post limits.
- * @param {{ graphemeLimit: number, utf8ByteLimit: number }} limit - Full post limits.
- * @param {{ graphemeCount: number, utf8ByteCount: number }} reserved - Reserved suffix costs.
- * @returns {{ graphemeLimit: number, utf8ByteLimit: number }} Remaining limit budget.
- */
-function subtractPostTextLimit(limit, reserved) {
-  return {
-    graphemeLimit: limit.graphemeLimit - reserved.graphemeCount,
-    utf8ByteLimit: limit.utf8ByteLimit - reserved.utf8ByteCount,
-  };
-}
-
 function splitChunksGreedy(chunks, limitFactory) {
   let globalOffset = 0;
   return chunks.flatMap((chunk) => {
@@ -33664,102 +32798,36 @@ function decorateSegments(segments, withCounters, withThreadIntro, withThreadEmo
 }
 
 function splitIntoSegments(text, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText) {
-  const manualChunks = splitByManualMarkers(text);
-  const fullPostLimit = createPostTextLimit(MAX_POST_LENGTH, MAX_POST_UTF8_BYTES);
-
-  if (manualChunks.length === 0) {
-    return [];
-  }
-
-  const reserveForSuffix = (segmentIndex, segmentCount) => {
-    const reserved = {
-      graphemeCount: 0,
-      utf8ByteCount: 0,
-    };
-    const repeatsHashtag = selectedHashtagText && (repeatedHashtagMode === "all-top" || repeatedHashtagMode === "all-bottom");
-    const hasIntro = segmentCount > 1 && withThreadIntro && segmentIndex === 0;
-    const hasThreadEmoji = segmentCount > 1 && withThreadEmoji && segmentIndex < segmentCount - 1;
-    const hasCounters = segmentCount > 1 && withCounters;
-    const needsMarkerSpacing = segmentCount > 1 && (hasIntro || hasThreadEmoji || hasCounters) && withMarkerSpacing;
-
-    if (repeatsHashtag) {
-      const hashtagReserve = reserveForRepeatedHashtags(selectedHashtagText, repeatedHashtagMode);
-      reserved.graphemeCount += hashtagReserve.graphemeCount;
-      reserved.utf8ByteCount += hashtagReserve.utf8ByteCount;
-    }
-    if (hasIntro) {
-      const introReserve = reserveForThreadIntro();
-      reserved.graphemeCount += introReserve.graphemeCount;
-      reserved.utf8ByteCount += introReserve.utf8ByteCount;
-    }
-    if (hasThreadEmoji) {
-      const emojiReserve = reserveForThreadEmoji();
-      reserved.graphemeCount += emojiReserve.graphemeCount;
-      reserved.utf8ByteCount += emojiReserve.utf8ByteCount;
-    }
-    if (hasCounters) {
-      const counterReserve = reserveForCounters(segmentCount);
-      reserved.graphemeCount += counterReserve.graphemeCount;
-      reserved.utf8ByteCount += counterReserve.utf8ByteCount;
-    }
-    if (needsMarkerSpacing) {
-      const spacingReserve = getPostTextMetrics("\n");
-      reserved.graphemeCount += spacingReserve.graphemeCount;
-      reserved.utf8ByteCount += spacingReserve.utf8ByteCount;
-    }
-
-    return reserved;
-  };
-
-  if (!withCounters && !withThreadIntro && !withThreadEmoji
-    && !(selectedHashtagText && (repeatedHashtagMode === "all-top" || repeatedHashtagMode === "all-bottom"))) {
-    return splitChunksGreedy(manualChunks, () => fullPostLimit);
-  }
-
-  const estimatedMetrics = manualChunks.reduce((sum, chunk) => {
-    const metrics = getPostTextMetrics(chunk);
-    return {
-      graphemeCount: sum.graphemeCount + metrics.graphemeCount,
-      utf8ByteCount: sum.utf8ByteCount + metrics.utf8ByteCount,
-    };
+  return splitComposerIntoSegments(text, {
+    manualMarker: MANUAL_SPLIT_MARKER,
+    maxPostLength: MAX_POST_LENGTH,
+    maxPostUtf8Bytes: MAX_POST_UTF8_BYTES,
+    withCounters,
+    withThreadIntro,
+    withThreadEmoji,
+    withMarkerSpacing,
+    repeatedHashtagMode,
+    selectedHashtagText,
   }, {
-    graphemeCount: 0,
-    utf8ByteCount: 0,
+    createPostTextLimit,
+    getPostTextMetrics,
+    reserveForCounters,
+    reserveForThreadEmoji,
+    reserveForThreadIntro,
+    reserveForRepeatedHashtags,
+    splitChunksGreedy,
+    decorateSegments(segments, options) {
+      return decorateSegments(
+        segments,
+        options.withCounters,
+        options.withThreadIntro,
+        options.withThreadEmoji,
+        options.withMarkerSpacing,
+        options.repeatedHashtagMode,
+        options.selectedHashtagText,
+      );
+    },
   });
-  const estimatedByGraphemes = Math.ceil(estimatedMetrics.graphemeCount / MAX_POST_LENGTH);
-  const estimatedByBytes = Math.ceil(estimatedMetrics.utf8ByteCount / MAX_POST_UTF8_BYTES);
-  let guess = Math.max(1, estimatedByGraphemes, estimatedByBytes, manualChunks.length);
-
-  for (let index = 0; index < 12; index += 1) {
-    const segments = splitChunksGreedy(manualChunks, (segmentIndex) => {
-      const reserved = reserveForSuffix(segmentIndex, guess);
-      return subtractPostTextLimit(fullPostLimit, reserved);
-    });
-
-    if (segments.length === guess) {
-      return decorateSegments(segments, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText);
-    }
-
-    guess = segments.length;
-  }
-
-  const fallbackSegments = splitChunksGreedy(manualChunks, (segmentIndex) => {
-    const reserved = reserveForSuffix(segmentIndex, guess);
-    return subtractPostTextLimit(fullPostLimit, reserved);
-  });
-  return decorateSegments(fallbackSegments, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText);
-}
-
-function normalizeInput(text) {
-  return text
-    .replace(/\r\n/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function tokenizeText(text) {
-  return text.match(/\n|[^\s\n]+|[ \t]+/g) || [];
 }
 
 function greedySplit(text, limitFactory) {
@@ -33822,10 +32890,6 @@ function greedySplit(text, limitFactory) {
   }
 
   return segments;
-}
-
-function trimSegment(segment) {
-  return segment.replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+|[ \t]+$/g, "").trimEnd();
 }
 
 function createIconSvg(path) {
@@ -34118,7 +33182,7 @@ function renderSegments(options = {}) {
   segmentsList.innerHTML = "";
 
   activeSegments.forEach((segment, index) => {
-    const fragment = segmentTemplate.content.cloneNode(true);
+    const fragment = cloneTemplateContent(segmentTemplate);
     const card = fragment.querySelector(".segment-card");
     const indexLabel = fragment.querySelector(".segment-index");
     const lengthLabel = fragment.querySelector(".segment-length");
@@ -34466,10 +33530,9 @@ function queueDraftSave() {
       replyTarget: composerReplyTarget,
     };
     try {
-      draftSaveQueue = draftSaveQueue
-        .catch(() => {})
-        .then(() => sendToServiceWorker("SAVE_DRAFT", payload, { timeoutMs: 120000 }));
-      await draftSaveQueue;
+      await draftSaveQueue.enqueue(() => {
+        return sendToServiceWorker("SAVE_DRAFT", payload, { timeoutMs: 120000 });
+      });
     } catch (error) {
       console.error(error);
       setStatus(error.message, "error");
@@ -34715,7 +33778,7 @@ publishButton.addEventListener("click", async () => {
           : null,
       });
     }
-    const result = await sendToServiceWorker("PUBLISH_THREAD", {
+    const result = await requestThreadPublish(sendToServiceWorker, {
       segments: preparedSegments,
       langs: getNormalizedPostLanguagesOrDefault(),
       postInteraction: getCurrentPostInteractionSettings(),
@@ -35705,10 +34768,7 @@ if (archiveLoadThreadUrlButton) {
 
 async function resolveComposerReplyTarget(url, mode = "post") {
   const requestToken = ++replyTargetRequestToken;
-  const target = normalizeReplyTarget(await sendToServiceWorker("CHECK_REPLY_TARGET", {
-    url,
-    mode,
-  }));
+  const target = normalizeReplyTarget(await requestReplyTarget(sendToServiceWorker, url, mode));
   if (requestToken !== replyTargetRequestToken) {
     return null;
   }
@@ -36574,23 +35634,17 @@ imageEditorCanvas.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 confirmDialogConfirmButton.addEventListener("click", () => {
-  resolveConfirmDialog(confirmDialogValues.confirm);
+  confirmDialogController.confirm();
 });
 confirmDialogCancelButton.addEventListener("click", () => {
-  resolveConfirmDialog(confirmDialogValues.cancel);
+  confirmDialogController.cancel();
 });
 confirmDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
-  resolveConfirmDialog(confirmDialogValues.dismiss);
+  confirmDialogController.dismiss();
 });
 confirmDialog.addEventListener("close", () => {
-  if (ignoreNextConfirmClose) {
-    ignoreNextConfirmClose = false;
-    return;
-  }
-  if (confirmResolver) {
-    resolveConfirmDialog(confirmDialogValues.dismiss);
-  }
+  confirmDialogController.handleNativeClose();
 });
 
 [linkCardEndpointInput, linkCardSecretInput].forEach((input) => {
@@ -36722,6 +35776,15 @@ pageSwitchLinks.forEach((link) => {
   link.addEventListener("click", () => {
     persistAppearancePreferences();
     persistPendingPageSwitchUrl(link.href);
+  });
+});
+
+privacyPageLinks.forEach((link) => {
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    privacyPageNavigationInProgress = true;
+    clearPendingPageSwitchUrl();
+    window.location.assign(link.href);
   });
 });
 

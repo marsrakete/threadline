@@ -6,7 +6,7 @@ This file collects the technical background information that would otherwise ove
 
 ## OpenGraph Asset Pipeline
 
-The OpenGraph source of truth is `icons/threadline-og-workspaces.svg`. Derived raster files are generated with `npm run build:og-image` using the settings in `og-image.config.json`.
+The OpenGraph source of truth is `icons/threadline-og-workspaces.svg`. Derived raster files are generated with `npm run build:og-image` using the settings in `config/og-image.config.json`.
 
 Current outputs:
 
@@ -722,23 +722,51 @@ http://localhost:4173
 ├── js/
 │   ├── atproto/
 │   │   ├── atproto-client.js
-│   │   └── atproto-session.js
-│   └── core/
-│       ├── app-bootstrap.js
-│       ├── app-i18n.js
-│       └── app-navigation.js
-│       ├── app-shell.js
-│       └── app-utils.js
-│   └── shared/
+│   │   ├── atproto-posting.js
+│   │   ├── atproto-search.js
+│   │   ├── atproto-session.js
+│   │   └── atproto-worker.js
+│   ├── core/
+│   │   ├── app-bootstrap.js
+│   │   ├── app-dialogs.js
+│   │   ├── app-i18n.js
+│   │   ├── app-navigation.js
+│   │   ├── app-shell.js
+│   │   ├── app-state.js
+│   │   ├── app-storage.js
+│   │   ├── app-translations.js
+│   │   └── app-utils.js
+│   ├── composer/
+│   │   ├── composer-history.js
+│   │   ├── composer-images.js
+│   │   ├── composer-link-cards.js
+│   │   ├── composer-main.js
+│   │   ├── composer-mentions.js
+│   │   ├── composer-page.js
+│   │   ├── composer-post-settings.js
+│   │   └── composer-splitter.js
+│   ├── shared/
 │       ├── shared-accounts.js
 │       ├── shared-images.js
+│       ├── shared-templates.js
 │       ├── shared-link-cards.js
-│       └── shared-languages.js
+│       ├── shared-languages.js
 │       └── shared-post-rendering.js
+│   └── tools/
+│       ├── account-picker.js
+│       ├── analysis.js
+│       ├── archive.js
+│       ├── dm-archive.js
+│       ├── network.js
+│       ├── search.js
+│       ├── thread-explorer.js
+│       ├── tools-layout.js
+│       └── tools-page.js
+├── config/
+│   └── og-image.config.json
 ├── manifest.webmanifest
 ├── styles.css
 ├── sw.js
-├── translations.js
 ├── version.js
 ├── version.json
 └── icons/
