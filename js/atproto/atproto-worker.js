@@ -1,4 +1,4 @@
 importScripts(
-  "./atproto-client.js",
-  "./atproto-session.js",
+  "./js/atproto/atproto-client.js",
+  "./js/atproto/atproto-session.js",
 );

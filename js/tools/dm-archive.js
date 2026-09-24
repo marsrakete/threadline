@@ -339,6 +339,33 @@ export function createDmArchiveController(actions) {
 }
 
 /**
+ * Binds the Direct Message archive workspace controls to supplied actions.
+ * @param {object} elements - DM search, date, loading and export controls.
+ * @param {object} actions - Event callbacks for the workspace controls.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindDmArchiveEvents(elements = {}, actions = {}) {
+  let boundCount = 0;
+  const bind = (target, type, handler) => {
+    if (!target || typeof handler !== "function") {
+      return;
+    }
+    target.addEventListener(type, handler);
+    boundCount += 1;
+  };
+  bind(elements.contactSearchInput, "input", actions.contactSearchInput);
+  bind(elements.checkButton, "click", actions.checkClick);
+  bind(elements.loadPartnersButton, "click", actions.loadPartnersClick);
+  bind(elements.fromInput, "change", actions.dateChange);
+  bind(elements.toInput, "change", actions.dateChange);
+  bind(elements.loadButton, "click", actions.loadClick);
+  bind(elements.exportJsonButton, "click", actions.exportJsonClick);
+  bind(elements.exportHtmlButton, "click", actions.exportHtmlClick);
+  bind(elements.exportPdfButton, "click", actions.exportPdfClick);
+  return boundCount;
+}
+
+/**
  * Creates the renderer for the Direct Message archive workspace.
  * @param {object} elements - Direct Message workspace elements and templates.
  * @param {HTMLElement|null|undefined} elements.launchPanel - Access-controlled workspace launcher.
@@ -445,6 +472,9 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
         const name = fragment.querySelector(".dm-contact-chip-name");
         const handle = fragment.querySelector(".dm-contact-chip-handle");
         const did = String(contact?.did || "");
+        button.removeAttribute("title");
+        name.removeAttribute("title");
+        handle.removeAttribute("title");
         if (selectedParticipantDids.includes(did)) {
           button.classList.add("is-selected");
         }
@@ -452,21 +482,18 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
         if (contact?.avatarPath) {
           avatarUri = contactAssetUris.get(contact.avatarPath) || "";
         }
+        if (!avatarUri) {
+          avatarUri = String(contact?.avatar || "").trim();
+        }
         actions.setAvatarImage(avatar, avatarUri, contact?.displayName || contact?.handle || did || "DM contact");
         const fullName = String(contact?.displayName || "").trim();
         const fullHandle = contact?.handle ? `@${contact.handle}` : "";
-        const tooltip = [fullName, fullHandle].filter(Boolean).join("\n");
-        if (tooltip) {
-          button.title = tooltip;
+        const accessibleLabel = [fullName, fullHandle].filter(Boolean).join(" ");
+        if (accessibleLabel) {
+          button.setAttribute("aria-label", accessibleLabel);
         }
         name.textContent = contact?.displayName || `@${contact?.handle || did}`;
-        if (fullName) {
-          name.title = fullName;
-        }
         handle.textContent = `@${contact?.handle || did}`;
-        if (fullHandle) {
-          handle.title = fullHandle;
-        }
         button.addEventListener("click", () => {
           actions.setSelectedParticipantDids(toggleDmSelectedParticipant(selectedParticipantDids, did));
           actions.renderWorkspace();

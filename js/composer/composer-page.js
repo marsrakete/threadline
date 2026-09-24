@@ -36,3 +36,35 @@ export function openComposerWorkspace(options = {}, actions = {}) {
   actions.updateAuthButtons();
   return { opened: true, navigated: false };
 }
+
+/**
+ * Binds the Composer text, formatting, and reply-setting controls.
+ * @param {object} elements - Composer input and option controls.
+ * @param {object} handlers - Event callbacks supplied by the page entry point.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindComposerCoreEvents(elements = {}, handlers = {}) {
+  let boundCount = 0;
+  const bind = (target, type, handler) => {
+    if (!target || typeof handler !== "function") {
+      return;
+    }
+    target.addEventListener(type, handler);
+    boundCount += 1;
+  };
+  bind(elements.sourceText, "input", handlers.sourceInput);
+  bind(elements.sourceText, "beforeinput", handlers.sourceBeforeInput);
+  bind(elements.sourceText, "paste", handlers.sourcePaste);
+  bind(elements.counterToggle, "change", handlers.counterChange);
+  bind(elements.threadIntroToggle, "change", handlers.threadIntroChange);
+  bind(elements.threadEmojiToggle, "change", handlers.threadEmojiChange);
+  bind(elements.markerSpacingToggle, "change", handlers.markerSpacingChange);
+  if (Array.isArray(elements.replyModeInputs)) {
+    elements.replyModeInputs.forEach((input) => bind(input, "change", handlers.replyModeChange));
+  }
+  bind(elements.replyAllowFollowersInput, "change", handlers.replyAllowFollowersChange);
+  bind(elements.replyAllowFollowingInput, "change", handlers.replyAllowFollowingChange);
+  bind(elements.replyAllowMentionedInput, "change", handlers.replyAllowMentionedChange);
+  bind(elements.quotePostsToggle, "change", handlers.quotePostsChange);
+  return boundCount;
+}

@@ -1,0 +1,219 @@
+/**
+ * Hydrates one rendered Thread Explorer card through injected render callbacks.
+ * @param {HTMLElement|null} card - Rendered post card.
+ * @param {object|null} post - Normalized post represented by the card.
+ * @param {object} options - Rendering callbacks and display-model factory.
+ * @returns {boolean} True when hydration completed or was intentionally skipped.
+ */
+export function hydrateThreadExplorerCard(card = null, post = null, options = {}) {
+  if (!card || card.dataset.hydrated === "true") {
+    return false;
+  }
+  if (!post || post.isDeletedThreadAnchor === true) {
+    card.dataset.hydrated = "true";
+    return true;
+  }
+
+  const getDisplayModel = options.getDisplayModel;
+  const postDisplay = typeof getDisplayModel === "function" ? getDisplayModel(post) : null;
+  if (typeof options.renderAvatar === "function") {
+    options.renderAvatar(card, post);
+  }
+  if (typeof options.renderMedia === "function") {
+    options.renderMedia(card, post);
+  }
+  if (typeof options.renderEmbeds === "function") {
+    options.renderEmbeds(card, post, postDisplay);
+  }
+  card.dataset.hydrated = "true";
+  if (typeof options.finalize === "function") {
+    options.finalize(card);
+  }
+  return true;
+}
+
+/**
+ * Applies an actor avatar to a hydrated Thread Explorer card.
+ * @param {HTMLElement|null} card - Rendered post card.
+ * @param {object|null} post - Post whose author supplies the avatar.
+ * @param {object} options - Avatar selector and actor/image callbacks.
+ * @param {Function} options.markAvatar - Marks the image for lazy hydration.
+ * @param {Function} options.getAvatarUri - Resolves the author's avatar URI.
+ * @param {Function} options.getActorLabel - Resolves the author's accessible label.
+ * @param {Function} options.setAvatar - Applies source and accessible label to the image.
+ * @returns {void} No return value.
+ */
+export function renderThreadExplorerCardAvatar(card = null, post = null, options = {}) {
+  if (!card || !post || typeof card.querySelector !== "function") {
+    return;
+  }
+  const avatar = card.querySelector(options.avatarSelector || ".thread-explorer-avatar");
+  if (typeof options.markAvatar === "function") {
+    options.markAvatar(avatar, post.author);
+  }
+  if (typeof options.setAvatar === "function") {
+    let avatarUri = "";
+    if (typeof options.getAvatarUri === "function") {
+      avatarUri = options.getAvatarUri(post.author);
+    }
+    let actorLabel = "";
+    if (typeof options.getActorLabel === "function") {
+      actorLabel = options.getActorLabel(post.author);
+    }
+    options.setAvatar(avatar, avatarUri, actorLabel);
+  }
+}
+
+/**
+ * Renders a post's image gallery and synchronizes card image-shape classes.
+ * @param {HTMLElement|null} card - Rendered post card.
+ * @param {object|null} post - Post containing gallery images.
+ * @param {object} options - Gallery selector and rendering callbacks.
+ * @param {Function} options.renderImages - Renders the post images into a gallery.
+ * @param {Function} options.syncShape - Copies gallery shape classes to card and node.
+ * @returns {void} No return value.
+ */
+export function renderThreadExplorerCardMedia(card = null, post = null, options = {}) {
+  if (!card || !post || typeof card.querySelector !== "function") {
+    return;
+  }
+  const gallery = card.querySelector(options.gallerySelector || ".thread-explorer-post-gallery");
+  if (typeof options.renderImages === "function") {
+    options.renderImages(post, gallery);
+  }
+  if (typeof options.syncShape === "function") {
+    options.syncShape(card, gallery);
+  }
+}
+
+/**
+ * Renders the external and quoted-post embeds on a hydrated card.
+ * @param {HTMLElement|null} card - Rendered post card.
+ * @param {object|null} post - Post containing embed data.
+ * @param {object|null} display - Prepared post display model.
+ * @param {object} options - External-card and quote-card render callbacks.
+ * @param {Function} options.renderExternalCard - Renders the external card using its display model.
+ * @param {Function} options.renderQuoteCard - Renders the quoted post card.
+ * @returns {void} No return value.
+ */
+export function renderThreadExplorerCardEmbeds(card = null, post = null, display = null, options = {}) {
+  if (!card || !post) {
+    return;
+  }
+  if (typeof options.renderExternalCard === "function") {
+    let externalDisplay = null;
+    if (display && display.externalCardDisplay) {
+      externalDisplay = display.externalCardDisplay;
+    }
+    options.renderExternalCard(post, externalDisplay, card);
+  }
+  if (typeof options.renderQuoteCard === "function") {
+    options.renderQuoteCard(post, card);
+  }
+}
+
+/**
+ * Resolves the best displayable avatar URI for one Thread Explorer actor.
+ * @param {object|null} actor - Normalized actor.
+ * @returns {string} Cached data URI, remote avatar URI, or an empty string.
+ */
+export function getThreadExplorerActorAvatarUri(actor = null) {
+  const cachedAvatar = String(actor?.avatarDataUri || "").trim();
+  if (cachedAvatar) {
+    return cachedAvatar;
+  }
+  return String(actor?.avatar || "").trim();
+}
+
+/**
+ * Finds a locally cached avatar asset matching an actor DID and avatar URL.
+ * @param {object|null} actor - Normalized actor.
+ * @param {Array<object>} assets - Cached avatar assets.
+ * @returns {object|null} Matching cache asset, or null when none exists.
+ */
+export function findThreadExplorerActorAvatarAsset(actor = null, assets = []) {
+  const did = String(actor?.did || "").trim();
+  const avatarUrl = String(actor?.avatar || "").trim();
+  if (!did || !avatarUrl || !Array.isArray(assets)) {
+    return null;
+  }
+  const asset = assets.find((entry) => entry?.did === did && entry?.url === avatarUrl);
+  if (!asset) {
+    return null;
+  }
+  return asset;
+}
+
+/**
+ * Applies a cached data URI to one actor when a matching asset is available.
+ * @param {object|null} actor - Actor object to update.
+ * @param {Array<object>} assets - Cached avatar assets.
+ * @param {Function} assetToDataUri - Converts a cached asset into a data URI.
+ * @returns {boolean} True when the actor received cached avatar data.
+ */
+export function applyThreadExplorerActorAvatarFromCache(actor = null, assets = [], assetToDataUri = null) {
+  if (!actor || typeof actor !== "object" || typeof assetToDataUri !== "function") {
+    return false;
+  }
+  const asset = findThreadExplorerActorAvatarAsset(actor, assets);
+  if (!asset) {
+    return false;
+  }
+  actor.avatarDataUri = assetToDataUri(asset);
+  return true;
+}
+
+/**
+ * Adds the actor identity needed to resolve a cached avatar for an image.
+ * @param {HTMLImageElement|null} image - Avatar image element.
+ * @param {object|null} actor - Normalized actor.
+ * @returns {void} No return value.
+ */
+export function markThreadExplorerAvatarImage(image = null, actor = null) {
+  if (!image) {
+    return;
+  }
+  image.dataset.avatarDid = String(actor?.did || "").trim();
+  image.dataset.avatarUrl = String(actor?.avatar || "").trim();
+}
+
+/**
+ * Applies service-worker avatar results to authors and quoted authors recursively.
+ * @param {object|null} node - Thread tree node to update.
+ * @param {object} avatars - Avatar result map keyed by actor DID.
+ * @returns {void} No return value.
+ */
+export function applyThreadExplorerAvatarHydration(node = null, avatars = {}) {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+  const author = node.post?.author || null;
+  if (author?.did && avatars[author.did]?.dataUri) {
+    author.avatarDataUri = avatars[author.did].dataUri;
+  }
+  const quoteAuthor = node.post?.quoteCard?.author || null;
+  if (quoteAuthor?.did && avatars[quoteAuthor.did]?.dataUri) {
+    quoteAuthor.avatarDataUri = avatars[quoteAuthor.did].dataUri;
+  }
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => applyThreadExplorerAvatarHydration(reply, avatars));
+  }
+}
+
+/**
+ * Applies locally cached avatars to authors and quoted authors throughout a tree.
+ * @param {object|null} node - Thread tree node to update.
+ * @param {Array<object>} assets - Cached avatar assets.
+ * @param {Function} assetToDataUri - Converts a cached asset into a data URI.
+ * @returns {void} No return value.
+ */
+export function applyThreadExplorerAvatarCacheToTree(node = null, assets = [], assetToDataUri = null) {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+  applyThreadExplorerActorAvatarFromCache(node.post?.author || null, assets, assetToDataUri);
+  applyThreadExplorerActorAvatarFromCache(node.post?.quoteCard?.author || null, assets, assetToDataUri);
+  if (Array.isArray(node.replies)) {
+    node.replies.forEach((reply) => applyThreadExplorerAvatarCacheToTree(reply, assets, assetToDataUri));
+  }
+}

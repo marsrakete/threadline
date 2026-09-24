@@ -1,5 +1,13 @@
 ﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./js/shared/shared-languages.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./js/core/app-i18n.js";
+import {
+  bindApplicationEvents,
+  bindOptionalApplicationEvent,
+  bindThreadExplorerApplicationEvents,
+  bindGlobalApplicationEvents,
+  bindApplicationNavigationEvents,
+  bindAuthenticationEvents,
+} from "./js/core/app-initialization.js";
 import { CURRENT_VERSION_INFO, fetchVersionInfo, versionSignature } from "./js/core/app-bootstrap.js";
 import { createAsyncTaskQueue } from "./js/core/app-state.js";
 import {
@@ -25,7 +33,7 @@ import {
   showErrorModal,
   showProgressModal,
 } from "./js/core/app-dialogs.js";
-import { getToolsWorkspaceEntries } from "./js/tools/tools-layout.js";
+import { getToolsWorkspaceEntries, bindToolsWorkspaceNavigationEvents } from "./js/tools/tools-layout.js";
 import {
   openToolsWorkspace,
   persistToolsWorkspacePreference,
@@ -37,17 +45,68 @@ import {
   parseSearchTags,
   quoteSearchSummaryValue,
   splitSharedSearchQuery,
+  normalizePersistedSearchResultItems as normalizePersistedSearchResultItemsFromSearch,
+  areSearchPreferencesEqual as areSearchPreferencesEqualFromSearch,
+  buildPersistableSearchResultState,
+  doesSearchResultStateMatch,
+  getSavedSearchStringParam as getSavedSearchStringParamFromSearch,
+  normalizeSavedSearchSort as normalizeSavedSearchSortFromSearch,
+  parseExcludedSearchTerms as parseExcludedSearchTermsFromSearch,
+  buildSharedSearchQuery as buildSharedSearchQueryFromSearch,
+  bindSearchWorkspaceEvents,
+  bindSearchDialogEvents,
 } from "./js/tools/search.js";
+import { createSearchResultCardRenderer } from "./js/tools/search-results.js";
 import {
   buildThreadExplorerFeedSource,
+  buildThreadExplorerGalleryState,
   buildThreadExplorerPostWebUrl as buildThreadExplorerPostWebUrlFromData,
+  advanceThreadExplorerGalleryIndex,
+  createThreadExplorerCardInteractionController,
+  createThreadExplorerCardPresentationController,
   getThreadExplorerActorFocusId,
   getThreadExplorerFaviconUrl,
+  getThreadExplorerGalleryFallbackDecision,
+  renderThreadExplorerGalleryThumbnails,
+  renderThreadExplorerGalleryView,
+  normalizeThreadExplorerHydratedMedia,
   getThreadExplorerImageSources,
   getThreadExplorerPostImages,
   getThreadExplorerPostRecordKey,
   isThreadExplorerFeedUri,
   normalizeThreadExplorerAccountMode,
+  normalizeThreadExplorerActorFocusMode as normalizeThreadExplorerActorFocusModeFromTools,
+  createThreadExplorerActorStub as createThreadExplorerActorStubFromTools,
+  isThreadExplorerOwnActor as isThreadExplorerOwnActorFromTools,
+  getThreadExplorerOwnActor as getThreadExplorerOwnActorFromTools,
+  isThreadExplorerOwnAccountTarget as isThreadExplorerOwnAccountTargetFromTools,
+  isThreadExplorerForeignAccountMode as isThreadExplorerForeignAccountModeFromTools,
+  isThreadExplorerForeignActorFocusMode as isThreadExplorerForeignActorFocusModeFromTools,
+  getThreadExplorerRequestedActor as getThreadExplorerRequestedActorFromTools,
+  renderThreadExplorerFeedPanel,
+  renderThreadExplorerActorFocusPanel,
+  renderThreadExplorerTreeEdges as renderThreadExplorerTreeEdgesFromTools,
+  createThreadExplorerFeedItemFragment as createThreadExplorerFeedItemFragmentFromTools,
+  getThreadExplorerReplySortTimestamp as getThreadExplorerReplySortTimestampFromTools,
+  getChronologicalThreadExplorerReplies as getChronologicalThreadExplorerRepliesFromTools,
+  prepareThreadExplorerRenderedNode,
+  renderThreadExplorerTreePanel,
+  configureThreadExplorerNodeToggle,
+  createThreadExplorerRenderedItem as createThreadExplorerRenderedItemFromTools,
+  createThreadExplorerReplyClusterRenderNode as createThreadExplorerReplyClusterRenderNodeFromTools,
+  appendThreadExplorerReplyClusterNodes,
+  createThreadExplorerReplyClusterWorkspace,
+  renderThreadExplorerPostGallery,
+  applyThreadExplorerPostImagePreviewShape as applyThreadExplorerPostImagePreviewShapeFromTools,
+  syncThreadExplorerPostCardImageShape as syncThreadExplorerPostCardImageShapeFromTools,
+  createThreadExplorerPostImageFigure,
+  renderThreadExplorerQuoteGallery,
+  createThreadExplorerQuotePreviewImage,
+  renderThreadExplorerQuotePostCard,
+  renderThreadExplorerExternalLinkCard,
+  hideThreadExplorerExternalCardImage,
+  getThreadExplorerFeedUriFromSource as getThreadExplorerFeedUriFromSourceModule,
+  getThreadExplorerSearchIdFromSource as getThreadExplorerSearchIdFromSourceModule,
   normalizeThreadExplorerActor,
 } from "./js/tools/thread-explorer.js";
 import {
@@ -55,17 +114,134 @@ import {
   getNetworkRelationType,
   getNetworkScoreBreakdown,
 } from "./js/tools/network.js";
-import { normalizeAnalysisActor } from "./js/tools/analysis.js";
+import { normalizeAnalysisActor, bindAnalysisWorkspaceEvents } from "./js/tools/analysis.js";
 import {
   buildArchiveMediaFileBaseName as buildArchiveMediaFileBaseNameFromData,
   buildArchiveMediaPartFileName,
   formatArchiveDatePart,
+  bindArchivePreferenceEvents,
+  bindArchiveActionEvents,
 } from "./js/tools/archive.js";
-import { createAccountPickerController } from "./js/tools/account-picker.js";
+import { createAccountPickerController, bindAccountSwitcherItemEvents } from "./js/tools/account-picker.js";
+import { bindNetworkViewportControls, bindNetworkWorkspaceEvents, bindNetworkStageModeEvents, bindNetworkInsightEvents, bindNetworkStageInteractionEvents, bindNetworkLifecycleEvents } from "./js/tools/network-ui.js";
+import {
+  normalizeThreadExplorerOrientation as normalizeThreadExplorerOrientationFromTools,
+  normalizeThreadExplorerSource as normalizeThreadExplorerSourceFromTools,
+  normalizeThreadExplorerViewMode as normalizeThreadExplorerViewModeFromTools,
+  handleThreadExplorerFeedSelectChange as handleThreadExplorerFeedSelectChangeFromTools,
+  handleThreadExplorerSourceSelectChange as handleThreadExplorerSourceSelectChangeFromTools,
+  handleThreadExplorerFeedScroll as handleThreadExplorerFeedScrollFromTools,
+  handleThreadExplorerActorFocusScroll as handleThreadExplorerActorFocusScrollFromTools,
+  handleThreadExplorerActorModeChange as handleThreadExplorerActorModeChangeFromTools,
+  handleThreadExplorerZoomOutClick as handleThreadExplorerZoomOutClickFromTools,
+  handleThreadExplorerZoomInClick as handleThreadExplorerZoomInClickFromTools,
+  handleThreadExplorerOrientationClick as handleThreadExplorerOrientationClickFromTools,
+  handleThreadExplorerCountClick as handleThreadExplorerCountClickFromTools,
+  handleThreadExplorerRepliesCountClick as handleThreadExplorerRepliesCountClickFromTools,
+  toggleThreadExplorerReplyClusterNode as toggleThreadExplorerReplyClusterNodeFromTools,
+  handleThreadExplorerWheel as handleThreadExplorerWheelFromTools,
+  handleThreadExplorerPointerDown as handleThreadExplorerPointerDownFromTools,
+  handleThreadExplorerPointerMove as handleThreadExplorerPointerMoveFromTools,
+  handleThreadExplorerPointerUp as handleThreadExplorerPointerUpFromTools,
+  updateThreadExplorerPanVelocity as updateThreadExplorerPanVelocityFromTools,
+  applyThreadExplorerPanDelta as applyThreadExplorerPanDeltaFromTools,
+  setThreadExplorerPanningMode as setThreadExplorerPanningModeFromTools,
+  advanceThreadExplorerPanInertia as advanceThreadExplorerPanInertiaFromTools,
+} from "./js/tools/thread-explorer.js";
+import { normalizeStoredDesktopLayout as normalizeStoredDesktopLayoutFromState } from "./js/core/app-layout-state.js";
+import { createThreadExplorerController, loadThreadExplorerActorFocusWorkflow, loadThreadExplorerFeedWorkflow, loadThreadExplorerThreadWorkflow, renderThreadExplorerWorkspace as renderThreadExplorerWorkspaceFromController, bindThreadExplorerWorkspaceEvents, bindThreadExplorerGlobalEvents, bindThreadExplorerDialogEvents, bindThreadExplorerSnapshotEvents } from "./js/tools/thread-explorer-controller.js";
+import {
+  hydrateThreadExplorerCard,
+  renderThreadExplorerCardAvatar,
+  renderThreadExplorerCardMedia,
+  renderThreadExplorerCardEmbeds,
+  getThreadExplorerActorAvatarUri as getThreadExplorerActorAvatarUriFromHydration,
+  markThreadExplorerAvatarImage as markThreadExplorerAvatarImageFromHydration,
+  applyThreadExplorerAvatarHydration as applyThreadExplorerAvatarHydrationToTree,
+  applyThreadExplorerAvatarCacheToTree as applyThreadExplorerAvatarCacheToTreeFromHydration,
+} from "./js/tools/thread-explorer-hydration.js";
+import { hydrateThreadExplorerMedia } from "./js/tools/thread-explorer-media-hydration.js";
+import {
+  countThreadExplorerPosts as countThreadExplorerPostsFromRendering,
+  formatThreadExplorerDate as formatThreadExplorerDateFromRendering,
+  getThreadExplorerActorLabel as getThreadExplorerActorLabelFromRendering,
+  getThreadExplorerPreviewText as getThreadExplorerPreviewTextFromRendering,
+  loadThreadExplorerReactionsDialog as loadThreadExplorerReactionsDialogFromRendering,
+  renderThreadExplorerReactionActors as renderThreadExplorerReactionActorsFromRendering,
+} from "./js/tools/thread-explorer-rendering.js";
+import {
+  buildThreadExplorerSnapshotFileName as buildThreadExplorerSnapshotFileNameFromData,
+  clampThreadExplorerSnapshotProgress,
+  countThreadExplorerSnapshotMediaAssets as countThreadExplorerSnapshotMediaAssetsFromData,
+  createThreadExplorerSnapshotAbortError,
+  getThreadExplorerSnapshotScale as getThreadExplorerSnapshotScaleFromData,
+  throwIfThreadExplorerSnapshotAborted,
+  getThreadExplorerSnapshotAvatarCacheKey as getSnapshotAvatarCacheKeyFromData,
+  getThreadExplorerSnapshotCachedAvatarUri as getSnapshotCachedAvatarUriFromData,
+  isThreadExplorerSnapshotMediaImage as isSnapshotMediaImageFromData,
+  getThreadExplorerSnapshotMediaImageKeys as getSnapshotMediaImageKeysFromData,
+  getThreadExplorerSnapshotMediaImageKey as getSnapshotMediaImageKeyFromData,
+  getThreadExplorerSnapshotDrawableMediaImage as getSnapshotDrawableMediaImageFromData,
+  getThreadExplorerSnapshotMediaDataUri as getSnapshotMediaDataUriFromData,
+  setThreadExplorerSnapshotCachedImageSource as setSnapshotCachedImageSourceFromData,
+  preloadThreadExplorerSnapshotAvatarImages as preloadSnapshotAvatarImagesFromData,
+  preloadThreadExplorerSnapshotMediaImages as preloadSnapshotMediaImagesFromData,
+  applyThreadExplorerSnapshotMediaCache as applySnapshotMediaCacheFromData,
+  storeThreadExplorerSnapshotMediaDataUri as storeSnapshotMediaDataUriFromData,
+  cacheThreadExplorerSnapshotMediaImage as cacheSnapshotMediaImageFromData,
+  cacheLoadedThreadExplorerSnapshotMediaImages as cacheLoadedSnapshotMediaImagesFromData,
+  inlineThreadExplorerSnapshotImages as inlineSnapshotImagesFromData,
+  applyThreadExplorerSnapshotMediaDataUris as applySnapshotMediaDataUrisFromData,
+  writeThreadExplorerPngUint32 as writePngUint32FromSnapshot,
+  createThreadExplorerPngCrcTable as createPngCrcTableFromSnapshot,
+  calculateThreadExplorerPngCrc as calculatePngCrcFromSnapshot,
+  createThreadExplorerPngChunk as createPngChunkFromSnapshot,
+  createThreadExplorerPngTextChunk as createPngTextChunkFromSnapshot,
+  escapeThreadExplorerPngXmpText as escapePngXmpTextFromSnapshot,
+  createThreadExplorerPngXmpPacket as createPngXmpPacketFromSnapshot,
+  createThreadExplorerPngXmpChunk as createPngXmpChunkFromSnapshot,
+  createThreadExplorerPngMetadataChunks as createPngMetadataChunksFromSnapshot,
+  addThreadExplorerPngMetadata as addPngMetadataFromSnapshot,
+  createThreadExplorerPngHeaderData as createPngHeaderDataFromSnapshot,
+  drawThreadExplorerSnapshotRoundRect as drawSnapshotRoundRectFromModule,
+  strokeThreadExplorerSnapshotRoundRect as strokeSnapshotRoundRectFromModule,
+  wrapThreadExplorerSnapshotText as wrapSnapshotTextFromModule,
+  drawThreadExplorerSnapshotTextBlock as drawSnapshotTextBlockFromModule,
+  getThreadExplorerSnapshotCountsText as getSnapshotCountsTextFromModule,
+  drawThreadExplorerSnapshotEdges as drawSnapshotEdgesFromModule,
+  drawThreadExplorerSnapshotCard as drawSnapshotCardFromModule,
+  renderThreadExplorerSnapshot as renderSnapshotFromModule,
+  renderThreadExplorerTiledPngSnapshot as renderTiledPngFromModule,
+  renderThreadExplorerForeignObjectSnapshot as renderForeignObjectFromModule,
+  renderThreadExplorerCanvasSnapshot as renderCanvasSnapshotFromModule,
+  renderThreadExplorerSnapshotTile as renderSnapshotTileFromModule,
+  drawThreadExplorerSnapshotFallbackAvatar as drawSnapshotFallbackAvatarFromModule,
+  canDrawThreadExplorerSnapshotImage as canDrawSnapshotImageFromModule,
+  drawThreadExplorerSnapshotAvatarImage as drawSnapshotAvatarFromModule,
+  drawThreadExplorerSnapshotCoverImage as drawSnapshotCoverImageFromModule,
+  drawThreadExplorerSnapshotImageAltText as drawSnapshotAltTextFromModule,
+  drawThreadExplorerSnapshotMediaImages as drawSnapshotMediaImagesFromModule,
+  drawThreadExplorerSnapshotMediaPlaceholder as drawSnapshotMediaPlaceholderFromModule,
+  createThreadExplorerSnapshotCanvas as createSnapshotCanvasFromModule,
+  encodeThreadExplorerSnapshotCanvas as encodeSnapshotCanvasFromModule,
+  getThreadExplorerSnapshotBackgroundColor as getSnapshotBackgroundColorFromModule,
+} from "./js/tools/thread-explorer-snapshot.js";
+import {
+  setThreadExplorerReplyClusterItemPosition as setReplyClusterItemPositionFromLayout,
+  getThreadExplorerReplyClusterItemSize as getReplyClusterItemSizeFromLayout,
+  setThreadExplorerReplyClusterNodePosition as setReplyClusterNodePositionFromLayout,
+  renderThreadExplorerReplyClusterEdges as renderReplyClusterEdgesFromLayout,
+  applyThreadExplorerReplyClusterBounds as applyReplyClusterBoundsFromLayout,
+  layoutThreadExplorerReplyCluster as layoutReplyClusterFromLayout,
+  ensureThreadExplorerReplyClusterRootExpanded as ensureReplyClusterRootExpandedFromLayout,
+  configureThreadExplorerReplyClusterItem,
+  mountThreadExplorerReplyClusterWorkspace,
+} from "./js/tools/thread-explorer-layout.js";
 import {
   createDmArchiveController,
   createDmArchiveExportController,
   createDmArchiveWorkspaceRenderer,
+  bindDmArchiveEvents,
   retainDmSelectedParticipants,
 } from "./js/tools/dm-archive.js";
 import { clamp, setAttr, setSafeHtml, setSafeText } from "./js/core/app-utils.js";
@@ -94,6 +270,26 @@ import {
   splitComposerGraphemes as splitIntoGraphemes,
 } from "./js/composer/composer-main.js";
 import {
+  formatComposerSegmentLengthLabel,
+  getComposerSegmentLengthDiagnostics,
+} from "./js/composer/composer-validation.js";
+import {
+  normalizeComposerSegmentOverrides as normalizeComposerSegmentOverridesFromModule,
+  syncComposerSegmentImages as syncComposerSegmentImagesFromModule,
+} from "./js/composer/composer-segments.js";
+import {
+  getComposerContainedPreviewBox,
+  getComposerOrientedSourceDimensions,
+  getComposerSourceDimensions,
+} from "./js/composer/composer-image-geometry.js";
+import { prepareComposerPublishSegments, runComposerPublishWorkflow } from "./js/composer/composer-publishing.js";
+import { renderComposerImageToCanvas, bindComposerImageEditorEvents } from "./js/composer/composer-image-renderer.js";
+import {
+  normalizeComposerLinkCardProvider,
+  normalizeComposerLinkCardProxyEndpoint,
+  normalizeComposerProviderUsage,
+} from "./js/composer/composer-link-card-providers.js";
+import {
   normalizeComposerInput as normalizeInput,
   splitComposerByManualMarkers,
   subtractComposerPostTextLimit as subtractPostTextLimit,
@@ -102,8 +298,11 @@ import {
   splitComposerIntoSegments,
 } from "./js/composer/composer-splitter.js";
 import { moveComposerImage, removeComposerImage } from "./js/composer/composer-images.js";
-import { normalizeComposerSegmentLinkCards } from "./js/composer/composer-link-cards.js";
-import { openComposerWorkspace } from "./js/composer/composer-page.js";
+import { normalizeComposerLinkCard, normalizeComposerSegmentLinkCards } from "./js/composer/composer-link-cards.js";
+import { buildComposerThreadContinuationTarget, normalizeComposerReplyTarget } from "./js/composer/composer-dialogs.js";
+import { buildComposerSegmentRenderState, bindComposerSegmentInteractions, bindComposerSegmentLinkCardInteractions, createComposerSegmentRenderContext } from "./js/composer/composer-segment-rendering.js";
+import { openComposerWorkspace, bindComposerCoreEvents } from "./js/composer/composer-page.js";
+import { bindComposerDialogEvents } from "./js/composer/composer-dialogs.js";
 import {
   formatComposerHistoryMeta,
   getComposerHistoryPreviewText,
@@ -308,37 +507,17 @@ function appendChildren(parent, ...children) {
 }
 
 function normalizeStoredDesktopLayout(rawSidebarWidth, rawComposerWidth, rawLayoutVersion) {
-  const parsedSidebarWidth = Number.isFinite(Number(rawSidebarWidth)) ? Number(rawSidebarWidth) : null;
-  const parsedComposerWidth = Number.isFinite(Number(rawComposerWidth)) ? Number(rawComposerWidth) : null;
-  const parsedLayoutVersion = Number.isFinite(Number(rawLayoutVersion)) ? Number(rawLayoutVersion) : null;
-  const signature = `${parsedSidebarWidth ?? ""}|${parsedComposerWidth ?? ""}`;
-  const shouldMigrateLegacyDefaults =
-    parsedLayoutVersion == null &&
-    LEGACY_DESKTOP_LAYOUT_SIGNATURES.has(signature);
-
-  if (shouldMigrateLegacyDefaults) {
-    return {
-      sidebarWidthDesktop: DEFAULT_SIDEBAR_WIDTH_DESKTOP,
-      composerWidthDesktop: DEFAULT_COMPOSER_WIDTH_DESKTOP,
-      desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
-    };
-  }
-
-  return {
-    sidebarWidthDesktop: clampDesktopWidth(
-      parsedSidebarWidth,
-      MIN_SIDEBAR_WIDTH_DESKTOP,
-      MAX_SIDEBAR_WIDTH_DESKTOP,
-      DEFAULT_SIDEBAR_WIDTH_DESKTOP,
-    ),
-    composerWidthDesktop: clampDesktopWidth(
-      parsedComposerWidth,
-      MIN_COMPOSER_WIDTH_DESKTOP,
-      MAX_COMPOSER_WIDTH_DESKTOP,
-      DEFAULT_COMPOSER_WIDTH_DESKTOP,
-    ),
-    desktopLayoutVersion: parsedLayoutVersion ?? DESKTOP_LAYOUT_STATE_VERSION,
-  };
+  return normalizeStoredDesktopLayoutFromState(rawSidebarWidth, rawComposerWidth, rawLayoutVersion, {
+    defaultSidebarWidth: DEFAULT_SIDEBAR_WIDTH_DESKTOP,
+    defaultComposerWidth: DEFAULT_COMPOSER_WIDTH_DESKTOP,
+    minSidebarWidth: MIN_SIDEBAR_WIDTH_DESKTOP,
+    maxSidebarWidth: MAX_SIDEBAR_WIDTH_DESKTOP,
+    minComposerWidth: MIN_COMPOSER_WIDTH_DESKTOP,
+    maxComposerWidth: MAX_COMPOSER_WIDTH_DESKTOP,
+    layoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
+    legacySignatures: LEGACY_DESKTOP_LAYOUT_SIGNATURES,
+    clamp: clampDesktopWidth,
+  });
 }
 const statusText = document.querySelector("#status-text");
 const loginForm = document.querySelector("#login-form");
@@ -1275,6 +1454,14 @@ let threadExplorerFeedError = "";
 let threadExplorerThreadError = "";
 let threadExplorerZoom = 1;
 let threadExplorerDragState = null;
+const threadExplorerDragStateHolder = {
+  get value() {
+    return threadExplorerDragState;
+  },
+  set value(nextState) {
+    threadExplorerDragState = nextState;
+  },
+};
 let threadExplorerPanInertiaFrame = 0;
 let threadExplorerPanVelocityX = 0;
 let threadExplorerPanVelocityY = 0;
@@ -1298,9 +1485,56 @@ let threadExplorerMediaCachePrewarmController = null;
 let threadExplorerCardObserver = null;
 let threadExplorerReplyClusterLayoutState = null;
 let threadExplorerReplyClusterExpandedUris = new Set();
+const threadExplorerController = createThreadExplorerController({
+  source: threadExplorerSource,
+  orientation: threadExplorerOrientation,
+  viewMode: threadExplorerViewMode,
+});
 let threadExplorerForceHydrateCards = false;
 let threadExplorerSnapshotAbortController = null;
 let threadExplorerLikePendingUris = new Set();
+const { renderInteractionActions: renderThreadExplorerInteractionActions } = createThreadExplorerCardInteractionController({
+  buildInteractionModel: buildLivePostInteractionModel,
+  createButton: createThreadExplorerInteractionButton,
+  isLikePending(uri) {
+    return threadExplorerLikePendingUris.has(uri);
+  },
+  isLiked(post) {
+    return isPostLikedByViewer(post);
+  },
+  openComposerReply(post) {
+    openComposerReplyForPost(post);
+  },
+  toggleLike(post) {
+    return toggleLikeForLivePost(post);
+  },
+});
+const {
+  renderCounts: renderThreadExplorerCounts,
+  renderMetricEntries: renderThreadExplorerMetricEntries,
+  renderViewLink: renderThreadExplorerViewLink,
+  renderEditButton: renderThreadExplorerEditButton,
+} = createThreadExplorerCardPresentationController({
+  translate(key, values = {}) {
+    const translatedValues = { ...values };
+    if (Object.hasOwn(translatedValues, "count")) {
+      translatedValues.count = formatCount(translatedValues.count);
+    }
+    return t(key, translatedValues);
+  },
+  createMetricEntries: getLocalizedPostMetricEntries,
+  buildViewLinkModel(post) {
+    return buildPostViewLinkModel(post, {
+      buildPostUrl: buildThreadExplorerPostWebUrl,
+      linkText: "↗",
+    });
+  },
+  buildEditButtonModel: buildPostEditButtonModel,
+  applyTranslatedTitle,
+  handleRepliesCountClick: handleThreadExplorerRepliesCountClick,
+  handleCountClick: handleThreadExplorerCountClick,
+  handleEditButtonClick: handleThreadExplorerEditButtonClick,
+});
 let threadExplorerCardZoomState = null;
 let threadExplorerLastTouchZoomTarget = {
   uri: "",
@@ -2683,7 +2917,7 @@ function renderAccountSwitcher() {
     ].filter(Boolean).join(" · ");
 
     button.append(avatar, label);
-    button.addEventListener("click", async () => {
+    const handleAccountClick = async () => {
       try {
         const result = await requestAccountSwitch(sendToServiceWorker, account.did);
         savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
@@ -2732,6 +2966,8 @@ function renderAccountSwitcher() {
       }
     });
 
+    };
+
     const authActionButton = document.createElement("button");
     authActionButton.type = "button";
     authActionButton.className = `account-chip-action${state === "signed-out" ? " is-login" : " is-logout"}`;
@@ -2744,7 +2980,7 @@ function renderAccountSwitcher() {
     authActionButton.innerHTML = state === "signed-out"
       ? createIconSvg("M10 17l1.4-1.4L8.8 13H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zm-6 7h8v-2H4V2h8V0H4C2.9 0 2 .9 2 2v20c0 1.1.9 2 2 2z")
       : createIconSvg("M14 17l-1.4-1.4 2.6-2.6H4v-2h11.2l-2.6-2.6L14 7l5 5-5 5zM20 24h-8v-2h8V2h-8V0h8c1.1 0 2 .9 2 2v20c0 1.1-.9 2-2 2z");
-    authActionButton.addEventListener("click", async () => {
+    const handleAuthActionClick = async () => {
       try {
         if (state === "signed-out") {
           if (account.hasStoredPassword) {
@@ -2802,13 +3038,15 @@ function renderAccountSwitcher() {
       }
     });
 
+    };
+
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "account-chip-remove";
     removeButton.setAttribute("aria-label", t("removeAccountButton", { account: account.handle || account.identifier || "account" }));
     removeButton.title = t("removeAccountButton", { account: account.handle || account.identifier || "account" });
     removeButton.innerHTML = createIconSvg("M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z");
-    removeButton.addEventListener("click", async () => {
+    const handleRemoveClick = async () => {
       const confirmed = await openConfirmDialog({
         title: t("removeAccountConfirmTitle"),
         message: t("removeAccountConfirmText", { account: account.handle || account.identifier || "account" }),
@@ -2836,6 +3074,18 @@ function renderAccountSwitcher() {
         console.error(error);
         setStatus(error.message, "error");
       }
+    });
+
+    };
+
+    bindAccountSwitcherItemEvents({
+      accountButton: button,
+      authActionButton,
+      removeButton,
+    }, {
+      accountClick: handleAccountClick,
+      authActionClick: handleAuthActionClick,
+      removeClick: handleRemoveClick,
     });
 
     item.append(button, authActionButton, removeButton);
@@ -3351,26 +3601,10 @@ function renderArchiveSavedSearchNote() {
  * @returns {string} A timeline, feed, or saved-search source.
  */
 function normalizeThreadExplorerSource(source) {
-  const normalizedSource = String(source || "").trim();
-  if (normalizedSource === "mutuals") {
-    return "mutuals";
-  }
-  if (normalizedSource === "followers") {
-    return "followers";
-  }
-  if (normalizedSource.startsWith("feed:")) {
-    const feedUri = normalizedSource.slice(5).trim();
-    if (isThreadExplorerFeedUri(feedUri)) {
-      return `feed:${feedUri}`;
-    }
-  }
-  if (normalizedSource.startsWith("search:")) {
-    const searchId = normalizedSource.slice(7).trim();
-    if (getSavedSearchById(searchId)) {
-      return `search:${searchId}`;
-    }
-  }
-  return "follows";
+  return normalizeThreadExplorerSourceFromTools(source, {
+    isFeedUri: isThreadExplorerFeedUri,
+    hasSavedSearch: (searchId) => Boolean(getSavedSearchById(searchId)),
+  });
 }
 
 /**
@@ -3378,17 +3612,7 @@ function normalizeThreadExplorerSource(source) {
  * @returns {string} Handle, identifier, DID, or an empty string when unavailable.
  */
 function getThreadExplorerOwnActor() {
-  const activeAccount = savedAccounts.find((account) => {
-    return account?.did && account.did === authAccountDid;
-  }) || null;
-  const actor = String(
-    activeAccount?.handle
-    || activeAccount?.identifier
-    || authAccount
-    || authAccountDid
-    || "",
-  ).trim();
-  return actor.replace(/^@+/, "");
+  return getThreadExplorerOwnActorFromTools(savedAccounts, authAccountDid, authAccount);
 }
 
 /**
@@ -3396,20 +3620,12 @@ function getThreadExplorerOwnActor() {
  * @returns {boolean} True when no foreign-account mode should be used.
  */
 function isThreadExplorerOwnAccountTarget() {
-  const normalizedTarget = normalizeThreadExplorerActor(threadExplorerAccountActor);
-  if (!normalizedTarget) {
-    return true;
-  }
-
-  const ownHandle = normalizeThreadExplorerActor(authAccount || "");
-  const ownDid = normalizeThreadExplorerActor(authAccountDid || "");
-  if (ownHandle && normalizedTarget.toLowerCase() === ownHandle.toLowerCase()) {
-    return true;
-  }
-  if (ownDid && normalizedTarget.toLowerCase() === ownDid.toLowerCase()) {
-    return true;
-  }
-  return false;
+  return isThreadExplorerOwnAccountTargetFromTools(
+    threadExplorerAccountActor,
+    authAccount,
+    authAccountDid,
+    normalizeThreadExplorerActor,
+  );
 }
 
 /**
@@ -3417,7 +3633,12 @@ function isThreadExplorerOwnAccountTarget() {
  * @returns {boolean} True when the account field points to another account.
  */
 function isThreadExplorerForeignAccountMode() {
-  return !isThreadExplorerOwnAccountTarget();
+  return isThreadExplorerForeignAccountModeFromTools(
+    threadExplorerAccountActor,
+    authAccount,
+    authAccountDid,
+    normalizeThreadExplorerActor,
+  );
 }
 
 /**
@@ -3426,18 +3647,7 @@ function isThreadExplorerForeignAccountMode() {
  * @returns {boolean} True when the actor is the signed-in account.
  */
 function isThreadExplorerOwnActor(actor = null) {
-  const actorHandle = normalizeThreadExplorerActor(actor?.handle || "");
-  const actorDid = normalizeThreadExplorerActor(actor?.did || "");
-  const ownHandle = normalizeThreadExplorerActor(authAccount || "");
-  const ownDid = normalizeThreadExplorerActor(authAccountDid || "");
-
-  if (actorDid && ownDid && actorDid.toLowerCase() === ownDid.toLowerCase()) {
-    return true;
-  }
-  if (actorHandle && ownHandle && actorHandle.toLowerCase() === ownHandle.toLowerCase()) {
-    return true;
-  }
-  return false;
+  return isThreadExplorerOwnActorFromTools(actor, authAccount, authAccountDid, normalizeThreadExplorerActor);
 }
 
 /**
@@ -3445,10 +3655,12 @@ function isThreadExplorerOwnActor(actor = null) {
  * @returns {boolean} True when the top source controls should be hidden.
  */
 function isThreadExplorerForeignActorFocusMode() {
-  if (!threadExplorerActorFocusActor) {
-    return false;
-  }
-  return !isThreadExplorerOwnActor(threadExplorerActorFocusActor);
+  return isThreadExplorerForeignActorFocusModeFromTools(
+    threadExplorerActorFocusActor,
+    authAccount,
+    authAccountDid,
+    normalizeThreadExplorerActor,
+  );
 }
 
 /**
@@ -3457,24 +3669,7 @@ function isThreadExplorerForeignActorFocusMode() {
  * @returns {object} Actor stub with either handle or DID filled.
  */
 function createThreadExplorerActorStub(actorValue = "") {
-  const normalizedActor = normalizeThreadExplorerActor(actorValue);
-  if (!normalizedActor) {
-    return {};
-  }
-
-  if (normalizedActor.startsWith("did:")) {
-    return {
-      did: normalizedActor,
-      handle: "",
-      displayName: normalizedActor,
-    };
-  }
-
-  return {
-    did: "",
-    handle: normalizedActor,
-    displayName: normalizedActor,
-  };
+  return createThreadExplorerActorStubFromTools(actorValue, normalizeThreadExplorerActor);
 }
 
 /**
@@ -3482,10 +3677,12 @@ function createThreadExplorerActorStub(actorValue = "") {
  * @returns {string} Normalized handle or DID, or an empty string.
  */
 function getThreadExplorerRequestedActor() {
-  if (isThreadExplorerForeignAccountMode()) {
-    return normalizeThreadExplorerActor(threadExplorerAccountActor);
-  }
-  return getThreadExplorerOwnActor();
+  return getThreadExplorerRequestedActorFromTools(
+    threadExplorerAccountActor,
+    authAccount,
+    authAccountDid,
+    normalizeThreadExplorerActor,
+  );
 }
 
 /**
@@ -3558,14 +3755,7 @@ function restorePersistedThreadExplorerState(state = {}) {
  * @returns {string} One of posts, replies, or all.
  */
 function normalizeThreadExplorerActorFocusMode(mode) {
-  const normalizedMode = String(mode || "").trim();
-  if (normalizedMode === "replies") {
-    return "replies";
-  }
-  if (normalizedMode === "all") {
-    return "all";
-  }
-  return "posts";
+  return normalizeThreadExplorerActorFocusModeFromTools(mode);
 }
 
 /**
@@ -3574,11 +3764,7 @@ function normalizeThreadExplorerActorFocusMode(mode) {
  * @returns {string} Feed generator AT URI, or an empty string.
  */
 function getThreadExplorerFeedUriFromSource(source) {
-  const normalizedSource = normalizeThreadExplorerSource(source);
-  if (!normalizedSource.startsWith("feed:")) {
-    return "";
-  }
-  return normalizedSource.slice(5);
+  return getThreadExplorerFeedUriFromSourceModule(normalizeThreadExplorerSource(source));
 }
 
 /**
@@ -3587,11 +3773,7 @@ function getThreadExplorerFeedUriFromSource(source) {
  * @returns {string} Saved search id or an empty string.
  */
 function getThreadExplorerSearchIdFromSource(source) {
-  const normalizedSource = normalizeThreadExplorerSource(source);
-  if (!normalizedSource.startsWith("search:")) {
-    return "";
-  }
-  return normalizedSource.slice(7);
+  return getThreadExplorerSearchIdFromSourceModule(normalizeThreadExplorerSource(source));
 }
 
 /**
@@ -3680,10 +3862,7 @@ function restoreThreadExplorerSelectionPreference() {
  * @returns {string} Either "vertical" or "horizontal".
  */
 function normalizeThreadExplorerOrientation(orientation) {
-  if (orientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
-    return THREAD_EXPLORER_ORIENTATION_HORIZONTAL;
-  }
-  return THREAD_EXPLORER_ORIENTATION_VERTICAL;
+  return normalizeThreadExplorerOrientationFromTools(orientation, THREAD_EXPLORER_ORIENTATION_HORIZONTAL);
 }
 
 /**
@@ -3730,10 +3909,7 @@ function restoreThreadExplorerOrientationPreference() {
  * @returns {string} Either "tree" or "reply-cluster".
  */
 function normalizeThreadExplorerViewMode(mode) {
-  if (mode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
-    return THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER;
-  }
-  return THREAD_EXPLORER_VIEW_MODE_TREE;
+  return normalizeThreadExplorerViewModeFromTools(mode, THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER);
 }
 
 /**
@@ -5003,61 +5179,6 @@ function getLocalizedPostMetricEntries(post = {}, interactiveTypes = []) {
 }
 
 /**
- * Creates the save button shown in one search result card header.
- * @param {object} item - Normalized search result item.
- * @returns {HTMLButtonElement} Ready-to-use favorite button.
- */
-function createSearchResultFavoriteButton(item = {}) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "ghost-button thread-explorer-icon-action search-result-favorite";
-  const star = document.createElement("span");
-  const bookmark = document.createElement("span");
-  star.setAttribute("aria-hidden", "true");
-  bookmark.setAttribute("aria-hidden", "true");
-  star.textContent = "★";
-  bookmark.textContent = "▣";
-  button.append(star, bookmark);
-  applyTranslatedTitle(button, "threadExplorerSaveButton");
-
-  const post = item?.post || null;
-  const isSaved = threadExplorerFavorites.some((favorite) => {
-    return favorite.rootUri === post?.uri;
-  });
-  button.classList.toggle("is-active", isSaved);
-  if (isSaved) {
-    button.title = t("searchFavoriteSavedButton");
-    button.setAttribute("aria-label", t("searchFavoriteSavedButton"));
-  } else {
-    button.title = t("searchFavoriteSaveButton");
-    button.setAttribute("aria-label", t("searchFavoriteSaveButton"));
-  }
-
-  button.addEventListener("click", () => {
-    void saveSearchResultAsFavorite(item);
-  });
-  return button;
-}
-
-/**
- * Creates the button that opens one search result inside the Thread Explorer.
- * @param {object} item - Normalized search result item.
- * @returns {HTMLButtonElement} Ready-to-use action button.
- */
-function createSearchResultThreadExplorerButton(item = {}) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "ghost-button thread-explorer-view-link search-result-thread-explorer-button";
-  button.textContent = "🧵";
-  button.title = t("searchResultOpenInThreadExplorerButton");
-  button.setAttribute("aria-label", t("searchResultOpenInThreadExplorerButton"));
-  button.addEventListener("click", () => {
-    void openSearchResultInThreadExplorer(item);
-  });
-  return button;
-}
-
-/**
  * Opens one search result directly in the Thread Explorer.
  * @param {object} item - Normalized search result item.
  * @returns {Promise<void>} Resolves after the Thread Explorer load was started.
@@ -5084,100 +5205,27 @@ function renderSearchResultCounts(post, counts, metricEntries = []) {
   renderThreadExplorerMetricEntries(post, counts, metricEntries);
 }
 
-/**
- * Applies a narrower single-image gallery layout to search result cards.
- * @param {HTMLElement} card - Search result card based on the Thread Explorer template.
- * @param {object} post - Normalized Thread Explorer post for the card.
- * @returns {void}
- */
-function applySearchResultImageLayout(card, post) {
-  if (!card) {
-    return;
-  }
-
-  let imageCount = 0;
-  if (Array.isArray(post?.images)) {
-    imageCount = post.images.length;
-  }
-
-  if (imageCount === 1) {
-    card.classList.add("has-single-search-image");
-  } else {
-    card.classList.remove("has-single-search-image");
-  }
-}
-
-/**
- * Creates one search result card with the same template as the Thread Explorer.
- * @param {object} item - Normalized search result item.
- * @param {string} highlightQuery - Active query highlight string.
- * @returns {HTMLElement|null} Rendered search result list item.
- */
-function createSearchResultElement(item = {}, highlightQuery = "") {
-  const post = item?.post || null;
-  const postDisplay = getSearchResultPostCardDisplayModel(item);
-  if (!post || !threadExplorerNodeTemplate) {
-    return null;
-  }
-
-  const fragment = cloneTemplateContent(threadExplorerNodeTemplate);
-  const element = fragment.querySelector(".thread-explorer-node-item");
-  const node = fragment.querySelector(".thread-explorer-node");
-  const card = fragment.querySelector(".thread-explorer-post-card");
-  const toggle = fragment.querySelector(".thread-explorer-node-toggle");
-  const actorTriggers = Array.from(fragment.querySelectorAll(".thread-explorer-actor-trigger"));
-  const avatar = fragment.querySelector(".thread-explorer-avatar");
-  const author = fragment.querySelector(".thread-explorer-post-author");
-  const handle = fragment.querySelector(".thread-explorer-post-handle");
-  const meta = fragment.querySelector(".thread-explorer-post-meta");
-  const viewLink = fragment.querySelector(".thread-explorer-view-link");
-  const headButtons = fragment.querySelector(".thread-explorer-post-head-buttons");
-  const editButton = fragment.querySelector(".thread-explorer-edit-button");
-  const actions = fragment.querySelector(".thread-explorer-post-actions");
-  const text = fragment.querySelector(".thread-explorer-post-text");
-  const counts = fragment.querySelector(".thread-explorer-post-counts");
-  const children = fragment.querySelector(".thread-explorer-children");
-  if (!element || !node || !card || !toggle || !avatar || !author || !handle || !meta || !viewLink || !headButtons || !editButton || !actions || !text || !counts || !children) {
-    return null;
-  }
-
-  element.classList.add("search-result-item");
-  element.dataset.uri = post.uri || "";
-  node.classList.add("search-result-node");
-  toggle.classList.add("is-hidden");
-  toggle.disabled = true;
-  children.hidden = true;
-  children.replaceChildren();
-
-  setAvatarImage(avatar, "", getThreadExplorerActorLabel(post.author));
-  author.textContent = postDisplay?.authorLabel || "";
-  handle.textContent = postDisplay?.handleLabel || "";
-  meta.textContent = postDisplay?.metaText || "";
-  renderThreadExplorerViewLink(post, viewLink);
-  viewLink.title = t("searchResultOpenPostInBskyButton");
-  viewLink.setAttribute("aria-label", t("searchResultOpenPostInBskyButton"));
-  renderThreadExplorerEditButton(post, editButton);
-  renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink);
-  text.textContent = postDisplay?.text || t("threadExplorerNoText");
-  highlightSearchQueryInElement(text, highlightQuery);
-  renderSearchResultCounts(post, counts, postDisplay?.metricEntries || []);
-  headButtons.prepend(createSearchResultFavoriteButton(item));
-  headButtons.insertBefore(createSearchResultThreadExplorerButton(item), viewLink);
-
-  actorTriggers.forEach((trigger) => {
-    applyTranslatedTitle(trigger, "searchResultOpenInThreadExplorerButton");
-    trigger.addEventListener("click", () => {
-      void openSearchResultInThreadExplorer(item);
-    });
-  });
-
-  card._threadExplorerPost = post;
-  hydrateThreadExplorerCardContent(card);
-  applySearchResultImageLayout(card, post);
-  highlightSearchQueryInElement(card.querySelector(".thread-explorer-quote-card-text"), highlightQuery);
-
-  return element;
-}
+const createSearchResultElement = createSearchResultCardRenderer({
+  nodeTemplate: threadExplorerNodeTemplate,
+  cloneTemplateContent,
+  getDisplayModel: getSearchResultPostCardDisplayModel,
+  get favorites() {
+    return threadExplorerFavorites;
+  },
+  translate: t,
+  applyTranslatedTitle,
+  setAvatarImage,
+  getActorLabel: getThreadExplorerActorLabel,
+  renderViewLink: renderThreadExplorerViewLink,
+  renderEditButton: renderThreadExplorerEditButton,
+  renderInteractionActions: renderThreadExplorerInteractionActions,
+  renderMetricEntries: renderSearchResultCounts,
+  highlightSearchQuery: highlightSearchQueryInElement,
+  hydrateCard: hydrateThreadExplorerCardContent,
+  openInThreadExplorer: openSearchResultInThreadExplorer,
+  saveAsFavorite: saveSearchResultAsFavorite,
+  noTextLabel: t("threadExplorerNoText"),
+});
 
 /**
  * Renders the current search result list from the Thread Explorer template.
@@ -5579,7 +5627,7 @@ function normalizeSearchPreferencesForStorage(preferences = {}) {
  * @returns {boolean} True when both snapshots describe the same search.
  */
 function areSearchPreferencesEqual(left = {}, right = {}) {
-  return JSON.stringify(normalizeSearchPreferencesForStorage(left)) === JSON.stringify(normalizeSearchPreferencesForStorage(right));
+  return areSearchPreferencesEqualFromSearch(left, right, normalizeSearchPreferencesForStorage);
 }
 
 /**
@@ -5588,9 +5636,7 @@ function areSearchPreferencesEqual(left = {}, right = {}) {
  * @returns {Array<object>} Clamped array of persisted search result items.
  */
 function normalizePersistedSearchResultItems(items = []) {
-  return (Array.isArray(items) ? items : [])
-    .filter((item) => item && typeof item === "object" && item.post && typeof item.post === "object")
-    .slice(0, MAX_PERSISTED_SEARCH_RESULTS);
+  return normalizePersistedSearchResultItemsFromSearch(items, MAX_PERSISTED_SEARCH_RESULTS);
 }
 
 /**
@@ -5598,21 +5644,14 @@ function normalizePersistedSearchResultItems(items = []) {
  * @returns {object|null} Persistable search result state or null when nothing should be kept.
  */
 function getPersistableSearchResultState() {
-  if (!searchResultPreferences) {
-    return null;
-  }
-
-  const items = normalizePersistedSearchResultItems(searchResults);
-  const cursor = String(searchCursor || "").trim();
-  if (items.length === 0 && !cursor) {
-    return null;
-  }
-
-  return {
-    preferences: normalizeSearchPreferencesForStorage(searchResultPreferences),
-    items,
-    cursor,
-  };
+  return buildPersistableSearchResultState(
+    searchResultPreferences,
+    searchResults,
+    searchCursor,
+    MAX_PERSISTED_SEARCH_RESULTS,
+    normalizePersistedSearchResultItems,
+    normalizeSearchPreferencesForStorage,
+  );
 }
 
 /**
@@ -5620,11 +5659,11 @@ function getPersistableSearchResultState() {
  * @returns {boolean} True when `Mehr laden` can safely continue the current result set.
  */
 function doesCurrentSearchMatchResultState() {
-  if (!searchResultPreferences) {
-    return false;
-  }
-
-  return areSearchPreferencesEqual(getSearchPreferences(), searchResultPreferences);
+  return doesSearchResultStateMatch(
+    getSearchPreferences(),
+    searchResultPreferences,
+    normalizeSearchPreferencesForStorage,
+  );
 }
 
 /**
@@ -5986,7 +6025,7 @@ function formatCount(value) {
  * @returns {string} Display name, handle, DID, or fallback label.
  */
 function getThreadExplorerActorLabel(actor) {
-  return getPostActorLabel(actor, t("threadExplorerUnknownAuthor"));
+  return getThreadExplorerActorLabelFromRendering(actor, t("threadExplorerUnknownAuthor"), getPostActorLabel);
 }
 
 /**
@@ -5995,7 +6034,7 @@ function getThreadExplorerActorLabel(actor) {
  * @returns {string} Short text suitable for feed buttons.
  */
 function getThreadExplorerPreviewText(post) {
-  return getPostPreviewText(post, t("threadExplorerNoText"), 220);
+  return getThreadExplorerPreviewTextFromRendering(post, t("threadExplorerNoText"), 220, getPostPreviewText);
 }
 
 /**
@@ -6004,7 +6043,7 @@ function getThreadExplorerPreviewText(post) {
  * @returns {string} Localized date/time text or an empty string.
  */
 function formatThreadExplorerDate(value) {
-  return formatPostDateTime(value, currentLocale);
+  return formatThreadExplorerDateFromRendering(value, currentLocale, formatPostDateTime);
 }
 
 /**
@@ -6013,20 +6052,7 @@ function formatThreadExplorerDate(value) {
  * @returns {number} Number of posts contained in the tree.
  */
 function countThreadExplorerPosts(node) {
-  if (!node) {
-    return 0;
-  }
-
-  let count = 0;
-  if (node.post?.isDeletedThreadAnchor !== true) {
-    count = 1;
-  }
-  if (Array.isArray(node.replies)) {
-    node.replies.forEach((reply) => {
-      count += countThreadExplorerPosts(reply);
-    });
-  }
-  return count;
+  return countThreadExplorerPostsFromRendering(node);
 }
 
 /**
@@ -6068,7 +6094,7 @@ function normalizeThreadExplorerFavorites(favorites) {
  * @returns {string} Trimmed parameter value.
  */
 function getSavedSearchStringParam(params, name) {
-  return String(params.get(name) || "").trim();
+  return getSavedSearchStringParamFromSearch(params, name);
 }
 
 /**
@@ -6077,10 +6103,7 @@ function getSavedSearchStringParam(params, name) {
  * @returns {string} Either "latest" or "top".
  */
 function normalizeSavedSearchSort(value) {
-  if (String(value || "").trim() === "top") {
-    return "top";
-  }
-  return "latest";
+  return normalizeSavedSearchSortFromSearch(value);
 }
 
 /**
@@ -6141,21 +6164,7 @@ function parseSavedSearchUrl(sourceUrl) {
  * @returns {string} Combined query string for `searchPosts`.
  */
 function buildSharedSearchQuery(query = "", excludeText = "") {
-  const includeValue = String(query || "").trim();
-  const excludeParts = parseExcludedSearchTerms(excludeText);
-
-  const tokens = [];
-  if (includeValue) {
-    tokens.push(includeValue);
-  }
-  excludeParts.forEach((entry) => {
-    if (/\s/.test(entry)) {
-      tokens.push(`-"${entry}"`);
-    } else {
-      tokens.push(`-${entry}`);
-    }
-  });
-  return tokens.join(" ").trim();
+  return buildSharedSearchQueryFromSearch(query, excludeText);
 }
 
 /**
@@ -6164,22 +6173,7 @@ function buildSharedSearchQuery(query = "", excludeText = "") {
  * @returns {string[]} Clean excluded terms.
  */
 function parseExcludedSearchTerms(value = "") {
-  const rawValue = String(value || "").trim();
-  if (!rawValue) {
-    return [];
-  }
-
-  const terms = [];
-  const matcher = /"([^"]+)"|[^,\n;]+/g;
-  let match = matcher.exec(rawValue);
-  while (match) {
-    const nextValue = String(match[1] || match[0] || "").trim();
-    if (nextValue) {
-      terms.push(nextValue);
-    }
-    match = matcher.exec(rawValue);
-  }
-  return terms;
+  return parseExcludedSearchTermsFromSearch(value);
 }
 
 /**
@@ -6486,41 +6480,6 @@ async function removeThreadExplorerFavorite(rootUri) {
  * @param {boolean} isInteractive - Whether the count opens a popup.
  * @returns {HTMLElement} Rendered count element.
  */
-function createThreadExplorerCountElement(type, value, isInteractive) {
-  let element = null;
-  if (isInteractive) {
-    element = document.createElement("button");
-    element.type = "button";
-    element.className = "thread-explorer-count-button";
-    element.dataset.reactionType = type;
-  } else {
-    element = document.createElement("span");
-    element.className = "thread-explorer-count-label";
-  }
-
-  element.textContent = t(`threadExplorerCount${type}`, {
-    count: formatCount(value),
-  });
-  return element;
-}
-
-/**
- * Creates one rendered metric element from a normalized metric entry.
- * @param {{type: string, count: number, label: string, isInteractive: boolean}} entry - Normalized metric entry.
- * @returns {HTMLElement} Rendered count element.
- */
-function createThreadExplorerMetricElement(entry) {
-  const type = String(entry?.type || "").trim();
-  const count = Number(entry?.count) || 0;
-  const isInteractive = entry?.isInteractive === true;
-  const element = createThreadExplorerCountElement(type, count, isInteractive);
-  const label = String(entry?.label || "").trim();
-  if (label) {
-    element.textContent = label;
-  }
-  return element;
-}
-
 /**
  * Creates one compact interaction button for a live post card.
  * @param {string} translationKey - Translation key for the visible label.
@@ -6738,7 +6697,9 @@ function refreshRenderedLivePostCard(card = null) {
   } else {
     renderThreadExplorerCounts(post, counts);
   }
-  renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink);
+  renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink, {
+    renderInHeader: inSearchResult,
+  });
 }
 
 /**
@@ -6810,67 +6771,6 @@ async function toggleLikeForLivePost(post = {}) {
     threadExplorerLikePendingUris.delete(postUri);
     refreshRenderedLivePostCards(postUri);
   }
-}
-
-/**
- * Renders reply and like controls into one live post header row.
- * @param {object} post - Normalized live post from search or Thread Explorer.
- * @param {HTMLElement|null} actions - Existing action-row container from the card template.
- * @param {HTMLElement|null} headButtons - Existing header button row from the card template.
- * @param {HTMLElement|null} anchor - Existing view-link element used as insertion anchor.
- * @returns {void}
- */
-function renderThreadExplorerInteractionActions(post, actions, headButtons, anchor) {
-  if (!actions || !headButtons || !anchor) {
-    return;
-  }
-
-  headButtons.querySelectorAll(".thread-explorer-interaction-actions").forEach((node) => {
-    node.remove();
-  });
-
-  const editButton = actions.querySelector(".thread-explorer-edit-button");
-  const interactionModel = buildLivePostInteractionModel(post, {
-    isLiked: isPostLikedByViewer,
-    isLikePending(uri) {
-      return threadExplorerLikePendingUris.has(uri);
-    },
-  });
-  const interactionWrap = document.createElement("div");
-  interactionWrap.className = "thread-explorer-interaction-actions";
-
-  if (interactionModel.canReply) {
-    const replyButton = createThreadExplorerInteractionButton("threadExplorerReplyAction", {
-      onClick: () => {
-        openComposerReplyForPost(post);
-      },
-    });
-    interactionWrap.appendChild(replyButton);
-  }
-
-  if (interactionModel.canLike) {
-    const likeButton = createThreadExplorerInteractionButton(interactionModel.likeTranslationKey, {
-      active: interactionModel.isLiked,
-      disabled: interactionModel.isLikePending,
-      onClick: () => {
-        void toggleLikeForLivePost(post);
-      },
-    });
-    interactionWrap.appendChild(likeButton);
-  }
-
-  if (interactionWrap.childElementCount > 0) {
-    headButtons.insertBefore(interactionWrap, anchor);
-  }
-
-  let shouldShowActions = false;
-  if (editButton && editButton.hidden !== true) {
-    shouldShowActions = true;
-  }
-  if (interactionWrap.childElementCount > 0) {
-    shouldShowActions = true;
-  }
-  actions.hidden = !shouldShowActions;
 }
 
 /**
@@ -7065,103 +6965,6 @@ function getThreadExplorerPostDisplayText(post) {
     stripUrlFromText: removeThreadExplorerCardUrlFromText,
     getQuoteUrls: getThreadExplorerQuoteUrls,
   });
-}
-
-/**
- * Renders interaction counts for a Thread Explorer post.
- * @param {object} post - Normalized Thread Explorer post.
- * @param {HTMLElement} counts - Count container.
- * @returns {void}
- */
-function renderThreadExplorerCounts(post, counts) {
-  const metricEntries = getLocalizedPostMetricEntries(post, [
-    "Likes",
-    "Replies",
-    "Reposts",
-    "Quotes",
-  ]);
-  renderThreadExplorerMetricEntries(post, counts, metricEntries);
-}
-
-/**
- * Renders interaction counts for a Thread Explorer post from prepared metric entries.
- * @param {object} post - Normalized Thread Explorer post.
- * @param {HTMLElement} counts - Count container.
- * @param {Array<{type: string, count: number, label: string, isInteractive: boolean}>} metricEntries - Prepared metric entries.
- * @returns {void}
- */
-function renderThreadExplorerMetricEntries(post, counts, metricEntries = []) {
-  counts.replaceChildren();
-  const metricElements = metricEntries.map((entry) => {
-    return createThreadExplorerMetricElement(entry);
-  });
-
-  metricElements.forEach((button) => {
-    if (!button.classList.contains("thread-explorer-count-button")) {
-      return;
-    }
-    button.dataset.uri = post.uri;
-    button.dataset.cid = post.cid || "";
-    if (button.dataset.reactionType === "Replies") {
-      button.addEventListener("click", handleThreadExplorerRepliesCountClick);
-    } else {
-      button.addEventListener("click", handleThreadExplorerCountClick);
-    }
-  });
-
-  counts.append(...metricElements);
-}
-
-/**
- * Applies the external view URL to a Thread Explorer post card link.
- * @param {object} post - Normalized Thread Explorer post.
- * @param {HTMLAnchorElement|null} link - Link element from the node template.
- * @returns {void}
- */
-function renderThreadExplorerViewLink(post, link) {
-  if (!link) {
-    return;
-  }
-
-  const viewLink = buildPostViewLinkModel(post, {
-    buildPostUrl: buildThreadExplorerPostWebUrl,
-    linkText: "↗",
-  });
-  if (!viewLink) {
-    link.hidden = true;
-    link.removeAttribute("href");
-    return;
-  }
-
-  link.hidden = false;
-  link.href = viewLink.url;
-  link.textContent = viewLink.text;
-  applyTranslatedTitle(link, "threadExplorerViewInBskyButton");
-}
-
-/**
- * Renders the Thread Explorer edit marker button for a Mu-edited post.
- * @param {object} post - Normalized Thread Explorer post.
- * @param {HTMLButtonElement|null} button - Edit marker button from the node template.
- * @returns {boolean} True when the edit marker should be visible.
- */
-function renderThreadExplorerEditButton(post, button) {
-  if (!button) {
-    return false;
-  }
-
-  const editModel = buildPostEditButtonModel(post);
-  if (!editModel.isVisible) {
-    button.hidden = true;
-    button.removeAttribute("data-uri");
-    return false;
-  }
-
-  button.hidden = false;
-  button.dataset.uri = editModel.uri;
-  applyTranslatedTitle(button, "threadExplorerEditDetailsButton");
-  button.addEventListener("click", handleThreadExplorerEditButtonClick);
-  return true;
 }
 
 /**
@@ -7534,28 +7337,14 @@ async function loadSavedSearchInSearchWorkspace(id) {
  * @returns {void}
  */
 function renderThreadExplorerReactionActors(actors) {
-  threadExplorerReactionsList.replaceChildren();
-  if (!Array.isArray(actors) || actors.length === 0) {
-    threadExplorerReactionsStatus.textContent = t("threadExplorerReactionsEmpty");
-    return;
-  }
-
-  threadExplorerReactionsStatus.textContent = t("threadExplorerReactionsLoaded", {
-    count: formatCount(actors.length),
-  });
-  actors.forEach((actor) => {
-    const fragment = cloneTemplateContent(threadExplorerActorItemTemplate);
-    const avatar = fragment.querySelector(".thread-explorer-avatar");
-    const name = fragment.querySelector(".thread-explorer-actor-name");
-    const handle = fragment.querySelector(".thread-explorer-actor-handle");
-    setAvatarImage(avatar, actor.avatar, actor.displayName || actor.handle || actor.did || "account");
-    name.textContent = actor.displayName || actor.handle || actor.did || t("threadExplorerUnknownAuthor");
-    if (actor.handle) {
-      handle.textContent = `@${actor.handle}`;
-    } else {
-      handle.textContent = actor.did || "";
-    }
-    threadExplorerReactionsList.appendChild(fragment);
+  renderThreadExplorerReactionActorsFromRendering(actors, {
+    list: threadExplorerReactionsList,
+    status: threadExplorerReactionsStatus,
+    template: threadExplorerActorItemTemplate,
+    translate: t,
+    formatCount,
+    cloneTemplate: cloneTemplateContent,
+    setAvatar: setAvatarImage,
   });
 }
 
@@ -7577,26 +7366,21 @@ async function openThreadExplorerReactionsDialog(type, uri, cid) {
     return;
   }
 
-  threadExplorerReactionsLoading = true;
-  threadExplorerReactionsTitle.textContent = t(`threadExplorer${normalizedType}Title`);
-  threadExplorerReactionsStatus.textContent = t("threadExplorerReactionsLoading");
-  threadExplorerReactionsList.replaceChildren();
-  threadExplorerReactionsDialog.showModal();
-  try {
-    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_REACTIONS", {
-      type: normalizedType.toLowerCase(),
-      uri: normalizedUri,
-      cid: String(cid || "").trim(),
-      limit: 100,
-    }, {
-      timeoutMs: 120000,
-    });
-    renderThreadExplorerReactionActors(result?.actors || []);
-  } catch (error) {
-    threadExplorerReactionsStatus.textContent = error.message || t("threadExplorerReactionsFailed");
-  } finally {
-    threadExplorerReactionsLoading = false;
-  }
+  await loadThreadExplorerReactionsDialogFromRendering(normalizedType, normalizedUri, cid, {
+    title: threadExplorerReactionsTitle,
+    status: threadExplorerReactionsStatus,
+    list: threadExplorerReactionsList,
+    dialog: threadExplorerReactionsDialog,
+    translate: t,
+    request: sendToServiceWorker,
+    template: threadExplorerActorItemTemplate,
+    formatCount,
+    cloneTemplate: cloneTemplateContent,
+    setAvatar: setAvatarImage,
+    setLoading: (value) => {
+      threadExplorerReactionsLoading = value;
+    },
+  });
 }
 
 /**
@@ -7730,32 +7514,6 @@ function openThreadExplorerRepliesDialog(uri) {
 }
 
 /**
- * Normalizes a Thread Explorer image entry for gallery display.
- * @param {object} image - Raw normalized image object from a post.
- * @returns {object|null} Gallery image entry, or null when no URL exists.
- */
-function normalizeThreadExplorerGalleryImage(image) {
-  const fullsize = String(image?.fullsize || "").trim();
-  const thumb = String(image?.thumb || "").trim();
-  let src = "";
-  if (fullsize) {
-    src = fullsize;
-  } else if (thumb) {
-    src = thumb;
-  }
-
-  if (!src) {
-    return null;
-  }
-
-  return {
-    src,
-    thumb: thumb || src,
-    alt: String(image?.alt || "").trim(),
-  };
-}
-
-/**
  * Updates the visible image and selected thumbnail in the Thread Explorer gallery.
  * @returns {void}
  */
@@ -7764,57 +7522,23 @@ function renderThreadExplorerGalleryImage() {
   if (!image) {
     return;
   }
-
-  if (threadExplorerGalleryOverlayCloseButton) {
-    threadExplorerGalleryOverlayCloseButton.textContent = "×";
-  }
-  if (threadExplorerGalleryOverlayPrevButton) {
-    threadExplorerGalleryOverlayPrevButton.textContent = "‹";
-  }
-  if (threadExplorerGalleryOverlayNextButton) {
-    threadExplorerGalleryOverlayNextButton.textContent = "›";
-  }
-  applyTranslatedTitle(threadExplorerGalleryOverlayCloseButton, "closeButton");
-  applyTranslatedTitle(threadExplorerGalleryOverlayPrevButton, "threadExplorerGalleryPrevButton");
-  applyTranslatedTitle(threadExplorerGalleryOverlayNextButton, "threadExplorerGalleryNextButton");
-  applyTranslatedTitle(threadExplorerGalleryPrevButton, "threadExplorerGalleryPrevButton");
-  applyTranslatedTitle(threadExplorerGalleryNextButton, "threadExplorerGalleryNextButton");
-
-  threadExplorerGalleryImage.hidden = false;
-  threadExplorerGalleryImage.dataset.fallbackAttempted = "false";
-  threadExplorerGalleryImage.src = image.src;
-  threadExplorerGalleryImage.alt = image.alt;
-  threadExplorerGalleryImage.title = t("threadExplorerGalleryFullscreenHint");
-  threadExplorerGalleryCaption.textContent = image.alt;
-  threadExplorerGalleryCaption.hidden = !image.alt;
-  threadExplorerGalleryTitle.textContent = t("threadExplorerGalleryTitle");
-  threadExplorerGalleryThumbs.hidden = threadExplorerGalleryImages.length <= 1;
-
-  if (threadExplorerGalleryPrevButton) {
-    threadExplorerGalleryPrevButton.hidden = threadExplorerGalleryImages.length <= 1;
-  }
-  if (threadExplorerGalleryNextButton) {
-    threadExplorerGalleryNextButton.hidden = threadExplorerGalleryImages.length <= 1;
-  }
-  if (threadExplorerGalleryOverlayPrevButton) {
-    threadExplorerGalleryOverlayPrevButton.hidden = threadExplorerGalleryImages.length <= 1;
-  }
-  if (threadExplorerGalleryOverlayNextButton) {
-    threadExplorerGalleryOverlayNextButton.hidden = threadExplorerGalleryImages.length <= 1;
-  }
-
-  const thumbs = threadExplorerGalleryThumbs.querySelectorAll(".thread-explorer-gallery-thumb");
-  thumbs.forEach((thumb, index) => {
-    let isSelected = false;
-    if (index === threadExplorerGalleryIndex) {
-      isSelected = true;
-    }
-    thumb.classList.toggle("is-selected", isSelected);
-    if (isSelected) {
-      thumb.setAttribute("aria-pressed", "true");
-    } else {
-      thumb.setAttribute("aria-pressed", "false");
-    }
+  renderThreadExplorerGalleryView({
+    image,
+    imageCount: threadExplorerGalleryImages.length,
+    selectedIndex: threadExplorerGalleryIndex,
+    elements: {
+      image: threadExplorerGalleryImage,
+      caption: threadExplorerGalleryCaption,
+      title: threadExplorerGalleryTitle,
+      thumbs: threadExplorerGalleryThumbs,
+      previousButton: threadExplorerGalleryPrevButton,
+      nextButton: threadExplorerGalleryNextButton,
+      overlayPreviousButton: threadExplorerGalleryOverlayPrevButton,
+      overlayNextButton: threadExplorerGalleryOverlayNextButton,
+      overlayCloseButton: threadExplorerGalleryOverlayCloseButton,
+    },
+    translate: t,
+    applyTranslatedTitle,
   });
 }
 
@@ -7867,18 +7591,16 @@ function handleThreadExplorerGalleryThumbError(event) {
 function handleThreadExplorerGalleryImageError(event) {
   const imageElement = event.currentTarget;
   const image = threadExplorerGalleryImages[threadExplorerGalleryIndex];
-  if (!image) {
+  const fallbackDecision = getThreadExplorerGalleryFallbackDecision(
+    image,
+    imageElement.dataset.fallbackAttempted === "true",
+  );
+  imageElement.dataset.fallbackAttempted = String(fallbackDecision.fallbackAttempted);
+  if (fallbackDecision.shouldHide) {
     imageElement.hidden = true;
     return;
   }
-
-  if (image.thumb && imageElement.dataset.fallbackAttempted !== "true") {
-    imageElement.dataset.fallbackAttempted = "true";
-    imageElement.src = image.thumb;
-    return;
-  }
-
-  imageElement.hidden = true;
+  imageElement.src = fallbackDecision.source;
 }
 
 /**
@@ -7888,38 +7610,23 @@ function handleThreadExplorerGalleryImageError(event) {
  * @returns {void}
  */
 function openThreadExplorerGallery(images, startIndex) {
-  const normalizedImages = [];
-  if (Array.isArray(images)) {
-    images.forEach((image) => {
-      const normalizedImage = normalizeThreadExplorerGalleryImage(image);
-      if (normalizedImage) {
-        normalizedImages.push(normalizedImage);
-      }
-    });
-  }
-
-  if (!normalizedImages.length) {
+  const galleryState = buildThreadExplorerGalleryState(images, startIndex);
+  if (!galleryState) {
     return;
   }
 
-  threadExplorerGalleryImages = normalizedImages;
-  threadExplorerGalleryIndex = Math.min(normalizedImages.length - 1, Math.max(0, Number(startIndex) || 0));
-  threadExplorerGalleryThumbs.replaceChildren();
-
-  normalizedImages.forEach((image, index) => {
-    const fragment = cloneTemplateContent(threadExplorerGalleryThumbTemplate);
-    const button = fragment.querySelector(".thread-explorer-gallery-thumb");
-    const img = fragment.querySelector("img");
-    img.src = image.thumb;
-    img.alt = image.alt;
-    img.addEventListener("error", handleThreadExplorerGalleryThumbError);
-    button.dataset.index = String(index);
-    button.addEventListener("click", () => {
+  threadExplorerGalleryImages = galleryState.images;
+  threadExplorerGalleryIndex = galleryState.index;
+  renderThreadExplorerGalleryThumbnails(
+    threadExplorerGalleryThumbs,
+    threadExplorerGalleryThumbTemplate.content,
+    galleryState.images,
+    (index) => {
       threadExplorerGalleryIndex = index;
       renderThreadExplorerGalleryImage();
-    });
-    threadExplorerGalleryThumbs.appendChild(fragment);
-  });
+    },
+    handleThreadExplorerGalleryThumbError,
+  );
 
   renderThreadExplorerGalleryImage();
   threadExplorerGalleryDialog.showModal();
@@ -8169,12 +7876,10 @@ function clearThreadExplorerEdges() {
  * @returns {void}
  */
 function setThreadExplorerPanningMode(active) {
-  const isActive = active === true;
-  threadExplorerThreadTree.classList.toggle("is-dragging", isActive);
-  threadExplorerThreadStage.classList.toggle("is-panning", isActive);
-  if (!isActive) {
-    threadExplorerThreadTree.classList.remove("is-pan-armed");
-  }
+  setThreadExplorerPanningModeFromTools({
+    tree: threadExplorerThreadTree,
+    stage: threadExplorerThreadStage,
+  }, active);
 }
 
 /**
@@ -8203,8 +7908,10 @@ function applyThreadExplorerScrollDelta(deltaX, deltaY) {
   if (!threadExplorerThreadTree) {
     return;
   }
-  threadExplorerPanX += deltaX;
-  threadExplorerPanY += deltaY;
+  const panState = applyThreadExplorerPanDeltaFromTools({ panX: threadExplorerPanX, panY: threadExplorerPanY }, deltaX, deltaY);
+  threadExplorerPanX = panState.panX;
+  threadExplorerPanY = panState.panY;
+  threadExplorerController.setViewport(threadExplorerZoom, threadExplorerPanX, threadExplorerPanY);
   applyThreadExplorerStageTransform();
 }
 
@@ -8215,20 +7922,7 @@ function applyThreadExplorerScrollDelta(deltaX, deltaY) {
  * @returns {void}
  */
 function updateThreadExplorerPanVelocity(state, event) {
-  if (!state) {
-    return;
-  }
-
-  const lastSampleTime = Number(state.lastSampleTime) || 0;
-  const elapsedMs = Math.max(1, event.timeStamp - lastSampleTime);
-  const moveX = event.clientX - state.lastSampleX;
-  const moveY = event.clientY - state.lastSampleY;
-
-  state.velocityX = moveX / elapsedMs;
-  state.velocityY = moveY / elapsedMs;
-  state.lastSampleX = event.clientX;
-  state.lastSampleY = event.clientY;
-  state.lastSampleTime = event.timeStamp;
+  updateThreadExplorerPanVelocityFromTools(state, event);
 }
 
 /**
@@ -8261,12 +7955,19 @@ function startThreadExplorerPanInertia() {
     const moveY = threadExplorerPanVelocityY * elapsedMs;
     applyThreadExplorerScrollDelta(moveX, moveY);
 
-    const frameFriction = Math.pow(THREAD_EXPLORER_INERTIA_FRICTION, elapsedMs / 16.67);
-    threadExplorerPanVelocityX *= frameFriction;
-    threadExplorerPanVelocityY *= frameFriction;
-
-    const nextMagnitude = Math.max(Math.abs(threadExplorerPanVelocityX), Math.abs(threadExplorerPanVelocityY));
-    if (nextMagnitude <= THREAD_EXPLORER_INERTIA_STOP_VELOCITY) {
+    const inertiaState = {
+      velocityX: threadExplorerPanVelocityX,
+      velocityY: threadExplorerPanVelocityY,
+    };
+    const shouldContinue = advanceThreadExplorerPanInertiaFromTools(
+      inertiaState,
+      elapsedMs,
+      THREAD_EXPLORER_INERTIA_FRICTION,
+      THREAD_EXPLORER_INERTIA_STOP_VELOCITY,
+    );
+    threadExplorerPanVelocityX = inertiaState.velocityX;
+    threadExplorerPanVelocityY = inertiaState.velocityY;
+    if (!shouldContinue) {
       threadExplorerPanInertiaFrame = 0;
       threadExplorerPanVelocityX = 0;
       threadExplorerPanVelocityY = 0;
@@ -8286,71 +7987,19 @@ function startThreadExplorerPanInertia() {
  * @returns {void}
  */
 function renderThreadExplorerEdges() {
-  clearThreadExplorerEdges();
-  if (!threadExplorerTree) {
-    threadExplorerThreadStage.classList.remove("has-svg-edges");
-    return;
-  }
-  if (isThreadExplorerReplyClusterModeActive()) {
-    threadExplorerThreadStage.classList.remove("has-svg-edges");
-    return;
-  }
-
-  const stageRect = threadExplorerThreadStage.getBoundingClientRect();
   const rootItem = threadExplorerThreadStage.querySelector(":scope > ul > .thread-explorer-node-item");
-  if (!rootItem) {
-    threadExplorerThreadStage.classList.remove("has-svg-edges");
-    return;
-  }
-
-  const stageWidth = Math.max(threadExplorerThreadStage.scrollWidth, threadExplorerThreadStage.offsetWidth);
-  const stageHeight = Math.max(threadExplorerThreadStage.scrollHeight, threadExplorerThreadStage.offsetHeight);
-  const svg = createSvgNode("svg", {
-    class: "thread-explorer-edge-layer",
-    width: stageWidth,
-    height: stageHeight,
-    viewBox: `0 0 ${stageWidth} ${stageHeight}`,
-    "aria-hidden": "true",
-    focusable: "false",
+  renderThreadExplorerTreeEdgesFromTools({
+    stage: threadExplorerThreadStage,
+    tree: threadExplorerTree,
+    clusterMode: isThreadExplorerReplyClusterModeActive(),
+    rootItem,
+    clearEdges: clearThreadExplorerEdges,
+    getCard: getRenderedThreadExplorerCard,
+    getChildren: getRenderedThreadExplorerChildItems,
+    getStageRect: getThreadExplorerStageRect,
+    createEdgePath: createThreadExplorerEdgePath,
+    createSvgNode,
   });
-
-  /**
-   * Walks rendered Thread Explorer nodes and draws edges to direct children.
-   * @param {HTMLElement} item - Current rendered node item.
-   * @returns {void}
-   */
-  function visitRenderedThreadExplorerItem(item) {
-    if (item.classList.contains("is-collapsed")) {
-      return;
-    }
-
-    const parentCard = getRenderedThreadExplorerCard(item);
-    if (!parentCard) {
-      return;
-    }
-
-    const parentRect = getThreadExplorerStageRect(parentCard, stageRect);
-    const childItems = getRenderedThreadExplorerChildItems(item);
-    childItems.forEach((childItem) => {
-      const childCard = getRenderedThreadExplorerCard(childItem);
-      if (!childCard) {
-        return;
-      }
-
-      const childRect = getThreadExplorerStageRect(childCard, stageRect);
-      const tier = childItem.dataset.engagementTier || "quiet";
-      const path = createSvgNode("path", {
-        class: `thread-explorer-edge thread-explorer-edge-${tier}`,
-        d: createThreadExplorerEdgePath(parentRect, childRect),
-      });
-      svg.appendChild(path);
-      visitRenderedThreadExplorerItem(childItem);
-    });
-  }
-
-  visitRenderedThreadExplorerItem(rootItem);
-  threadExplorerThreadStage.prepend(svg);
-  threadExplorerThreadStage.classList.add("has-svg-edges");
 }
 
 /**
@@ -8360,6 +8009,7 @@ function renderThreadExplorerEdges() {
  */
 function setThreadExplorerSource(source) {
   threadExplorerSource = normalizeThreadExplorerSource(source);
+  threadExplorerController.setSource(threadExplorerSource);
   threadExplorerCursor = "";
   threadExplorerHasMore = true;
   threadExplorerItems = [];
@@ -8452,50 +8102,7 @@ function threadExplorerFeedContainsUri(uri) {
  * @returns {string} Cached data URI, remote avatar URL, or an empty string.
  */
 function getThreadExplorerActorAvatarUri(actor = {}) {
-  const cachedAvatar = String(actor?.avatarDataUri || "").trim();
-  if (cachedAvatar) {
-    return cachedAvatar;
-  }
-  return String(actor?.avatar || "").trim();
-}
-
-/**
- * Finds a cached avatar asset for a Thread Explorer actor.
- * @param {object} actor - Normalized Thread Explorer actor.
- * @returns {object|null} Cached avatar asset or null.
- */
-function findThreadExplorerActorAvatarAsset(actor = {}) {
-  const did = String(actor?.did || "").trim();
-  const avatarUrl = String(actor?.avatar || "").trim();
-  if (!did || !avatarUrl) {
-    return null;
-  }
-
-  let assets = [];
-  if (Array.isArray(accountAvatarAssets)) {
-    assets = accountAvatarAssets;
-  }
-  const asset = assets.find((entry) => entry.did === did && entry.url === avatarUrl);
-  if (!asset) {
-    return null;
-  }
-  return asset;
-}
-
-/**
- * Applies cached avatar data from the local avatar cache to one actor.
- * @param {object|null} actor - Normalized Thread Explorer actor.
- * @returns {void}
- */
-function applyThreadExplorerActorAvatarFromCache(actor = null) {
-  if (!actor || typeof actor !== "object") {
-    return;
-  }
-
-  const asset = findThreadExplorerActorAvatarAsset(actor);
-  if (asset) {
-    actor.avatarDataUri = assetToDataUri(asset);
-  }
+  return getThreadExplorerActorAvatarUriFromHydration(actor);
 }
 
 /**
@@ -8505,12 +8112,7 @@ function applyThreadExplorerActorAvatarFromCache(actor = null) {
  * @returns {void}
  */
 function markThreadExplorerAvatarImage(image, actor = {}) {
-  if (!image) {
-    return;
-  }
-
-  image.dataset.avatarDid = String(actor?.did || "").trim();
-  image.dataset.avatarUrl = String(actor?.avatar || "").trim();
+  markThreadExplorerAvatarImageFromHydration(image, actor);
 }
 
 /**
@@ -8520,25 +8122,7 @@ function markThreadExplorerAvatarImage(image, actor = {}) {
  * @returns {void}
  */
 function applyThreadExplorerAvatarHydration(node = null, avatars = {}) {
-  if (!node || typeof node !== "object") {
-    return;
-  }
-
-  const author = node.post?.author || null;
-  if (author?.did && avatars[author.did]?.dataUri) {
-    author.avatarDataUri = avatars[author.did].dataUri;
-  }
-
-  const quoteAuthor = node.post?.quoteCard?.author || null;
-  if (quoteAuthor?.did && avatars[quoteAuthor.did]?.dataUri) {
-    quoteAuthor.avatarDataUri = avatars[quoteAuthor.did].dataUri;
-  }
-
-  if (Array.isArray(node.replies)) {
-    node.replies.forEach((reply) => {
-      applyThreadExplorerAvatarHydration(reply, avatars);
-    });
-  }
+  applyThreadExplorerAvatarHydrationToTree(node, avatars);
 }
 
 /**
@@ -8547,18 +8131,7 @@ function applyThreadExplorerAvatarHydration(node = null, avatars = {}) {
  * @returns {void}
  */
 function applyThreadExplorerAvatarCacheToTree(node = null) {
-  if (!node || typeof node !== "object") {
-    return;
-  }
-
-  applyThreadExplorerActorAvatarFromCache(node.post?.author || null);
-  applyThreadExplorerActorAvatarFromCache(node.post?.quoteCard?.author || null);
-
-  if (Array.isArray(node.replies)) {
-    node.replies.forEach((reply) => {
-      applyThreadExplorerAvatarCacheToTree(reply);
-    });
-  }
+  applyThreadExplorerAvatarCacheToTreeFromHydration(node, accountAvatarAssets, assetToDataUri);
 }
 
 /**
@@ -8625,14 +8198,12 @@ async function hydrateThreadExplorerTreeAvatars(root = null, onProgress = async 
  */
 async function hydrateThreadExplorerSnapshotMedia(root = null, onProgress = async () => {}, signal = null) {
   threadExplorerSnapshotMediaDataUris = new Map();
-  if (!root) {
-    return;
-  }
-  throwIfThreadExplorerSnapshotAborted(signal);
-
-  const result = await requestThreadExplorerMediaHydration(sendToServiceWorker, root, {
-    timeoutMs: 420000,
+  await hydrateThreadExplorerMedia(root, {
     signal,
+    request(currentRoot, requestOptions) {
+      return requestThreadExplorerMediaHydration(sendToServiceWorker, currentRoot, requestOptions);
+    },
+    throwIfAborted: throwIfThreadExplorerSnapshotAborted,
     onProgress(progress) {
       if (progress?.phase !== "thread_explorer_media") {
         return;
@@ -8660,19 +8231,13 @@ async function hydrateThreadExplorerSnapshotMedia(root = null, onProgress = asyn
         }),
       });
     },
-  }).catch((error) => {
-    if (error?.name === "AbortError") {
-      throw error;
-    }
-    console.warn("Thread Explorer media hydration failed.", error);
-    return null;
+    onError(error) {
+      console.warn("Thread Explorer media hydration failed.", error);
+    },
+    onMedia(media) {
+      storeThreadExplorerHydratedMedia(media);
+    },
   });
-
-  if (!result?.media || typeof result.media !== "object") {
-    return;
-  }
-
-  storeThreadExplorerHydratedMedia(result.media);
 }
 
 /**
@@ -8681,20 +8246,10 @@ async function hydrateThreadExplorerSnapshotMedia(root = null, onProgress = asyn
  * @returns {number} Number of cached media entries.
  */
 function storeThreadExplorerHydratedMedia(media = null) {
-  if (!media || typeof media !== "object") {
-    return 0;
-  }
-
   let storedCount = 0;
-  Object.entries(media).forEach(([source, dataUri]) => {
-    const key = String(source || "").trim();
-    const value = String(dataUri || "").trim();
-    if (!key || !value) {
-      return;
-    }
-
-    threadExplorerSnapshotMediaDataUris.set(key, value);
-    storeThreadExplorerRenderedMediaDataUri([key], value);
+  normalizeThreadExplorerHydratedMedia(media).forEach((entry) => {
+    threadExplorerSnapshotMediaDataUris.set(entry.source, entry.dataUri);
+    storeThreadExplorerRenderedMediaDataUri([entry.source], entry.dataUri);
     storedCount += 1;
   });
   return storedCount;
@@ -8984,11 +8539,13 @@ function updateThreadExplorerControls() {
  * @returns {void}
  */
 function renderThreadExplorerWorkspace() {
-  applyThreadExplorerFullscreenState();
-  applyThreadExplorerOrientation();
-  updateThreadExplorerControls();
-  renderThreadExplorerFeed();
-  renderThreadExplorerTree();
+  renderThreadExplorerWorkspaceFromController({
+    applyFullscreen: applyThreadExplorerFullscreenState,
+    applyOrientation: applyThreadExplorerOrientation,
+    updateControls: updateThreadExplorerControls,
+    renderFeed: renderThreadExplorerFeed,
+    renderTree: renderThreadExplorerTree,
+  });
 }
 
 /**
@@ -9076,6 +8633,7 @@ function setThreadExplorerZoom(nextZoom) {
     return;
   }
   threadExplorerZoom = Math.min(2, Math.max(0.01, numericZoom));
+  threadExplorerController.setViewport(threadExplorerZoom, threadExplorerPanX, threadExplorerPanY);
   if (Math.abs(threadExplorerZoom - 1) > 0.01) {
     threadExplorerLastManualZoomBeforeReset = threadExplorerZoom;
   }
@@ -9119,6 +8677,7 @@ function zoomThreadExplorerAtPoint(factor, clientX, clientY) {
   setThreadExplorerZoom(previousZoom * factor);
   threadExplorerPanX = localX - (stageX * threadExplorerZoom);
   threadExplorerPanY = localY - (stageY * threadExplorerZoom);
+  threadExplorerController.setViewport(threadExplorerZoom, threadExplorerPanX, threadExplorerPanY);
   applyThreadExplorerStageTransform();
   scheduleThreadExplorerEdgeRender();
 }
@@ -9142,23 +8701,18 @@ function setThreadExplorerZoomAtViewportCenter(nextZoom) {
  * @returns {DocumentFragment} Rendered feed item fragment.
  */
 function createThreadExplorerFeedItemFragment(item) {
-  const post = item.post;
-  const fragment = cloneTemplateContent(threadExplorerFeedItemTemplate);
-  const button = fragment.querySelector(".thread-explorer-feed-item");
-  const avatar = fragment.querySelector(".thread-explorer-avatar");
-  const author = fragment.querySelector(".thread-explorer-feed-author");
-  const meta = fragment.querySelector(".thread-explorer-feed-meta");
-  const text = fragment.querySelector(".thread-explorer-feed-text");
-
-  button.classList.toggle("is-active", post.uri === threadExplorerSelectedUri);
-  markThreadExplorerAvatarImage(avatar, post.author);
-  setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
-  author.textContent = getThreadExplorerActorLabel(post.author);
-  meta.textContent = formatThreadExplorerDate(post.createdAt || post.indexedAt);
-  text.textContent = getThreadExplorerPreviewText(post);
-  button.dataset.uri = post.uri;
-  button.addEventListener("click", handleThreadExplorerFeedItemClick);
-  return fragment;
+  return createThreadExplorerFeedItemFragmentFromTools(item, {
+    template: threadExplorerFeedItemTemplate,
+    selectedUri: threadExplorerSelectedUri,
+    cloneTemplate: cloneTemplateContent,
+    markAvatar: markThreadExplorerAvatarImage,
+    getAvatarUri: getThreadExplorerActorAvatarUri,
+    getActorLabel: getThreadExplorerActorLabel,
+    setAvatar: setAvatarImage,
+    formatDate: formatThreadExplorerDate,
+    getPreviewText: getThreadExplorerPreviewText,
+    onClick: handleThreadExplorerFeedItemClick,
+  });
 }
 
 /**
@@ -9166,47 +8720,27 @@ function createThreadExplorerFeedItemFragment(item) {
  * @returns {void}
  */
 function renderThreadExplorerActorFocus() {
-  if (!threadExplorerActorFocus || !threadExplorerActorFeedList) {
-    return;
-  }
-
-  threadExplorerActorFeedList.replaceChildren();
-  if (!threadExplorerActorFocusActor) {
-    threadExplorerActorFocus.hidden = true;
-    return;
-  }
-
-  threadExplorerActorFocus.hidden = false;
-  const actor = threadExplorerActorFocusActor;
-  setAvatarImage(threadExplorerActorFocusAvatar, getThreadExplorerActorAvatarUri(actor), getThreadExplorerActorLabel(actor));
-  threadExplorerActorFocusTitle.textContent = t("threadExplorerActorFocusTitle", {
-    account: getThreadExplorerActorLabel(actor),
-  });
-  if (actor.handle) {
-    threadExplorerActorFocusHandle.textContent = `@${actor.handle}`;
-  } else {
-    threadExplorerActorFocusHandle.textContent = actor.did || "";
-  }
-
-  if (threadExplorerActorModeSelect) {
-    threadExplorerActorModeSelect.value = threadExplorerActorFocusMode;
-    threadExplorerActorModeSelect.disabled = threadExplorerActorFocusLoading;
-  }
-
-  if (threadExplorerActorFocusError) {
-    threadExplorerActorFocusStatus.textContent = threadExplorerActorFocusError;
-  } else if (threadExplorerActorFocusLoading) {
-    threadExplorerActorFocusStatus.textContent = t("threadExplorerActorFocusLoading");
-  } else if (!threadExplorerActorFocusItems.length) {
-    threadExplorerActorFocusStatus.textContent = t("threadExplorerActorFocusEmpty");
-  } else {
-    threadExplorerActorFocusStatus.textContent = t("threadExplorerActorFocusLoaded", {
-      count: formatCount(threadExplorerActorFocusItems.length),
-    });
-  }
-
-  threadExplorerActorFocusItems.forEach((item) => {
-    threadExplorerActorFeedList.appendChild(createThreadExplorerFeedItemFragment(item));
+  threadExplorerController.setOrientation(threadExplorerOrientation);
+  renderThreadExplorerActorFocusPanel({
+    panel: threadExplorerActorFocus,
+    list: threadExplorerActorFeedList,
+    avatar: threadExplorerActorFocusAvatar,
+    title: threadExplorerActorFocusTitle,
+    handle: threadExplorerActorFocusHandle,
+    modeSelect: threadExplorerActorModeSelect,
+    status: threadExplorerActorFocusStatus,
+    actor: threadExplorerActorFocusActor,
+    items: threadExplorerActorFocusItems,
+    mode: threadExplorerActorFocusMode,
+    loading: threadExplorerActorFocusLoading,
+    error: threadExplorerActorFocusError,
+    translate: t,
+    formatCount,
+    getLabel: getThreadExplorerActorLabel,
+    setAvatar: (actor, label) => {
+      setAvatarImage(threadExplorerActorFocusAvatar, getThreadExplorerActorAvatarUri(actor), label);
+    },
+    renderItem: createThreadExplorerFeedItemFragment,
   });
 }
 
@@ -9215,46 +8749,18 @@ function renderThreadExplorerActorFocus() {
  * @returns {void}
  */
 function renderThreadExplorerFeed() {
-  threadExplorerFeedList.replaceChildren();
-  renderThreadExplorerActorFocus();
-  const isForeignAccountMode = isThreadExplorerForeignAccountMode();
-
-  if (threadExplorerFeedError) {
-    threadExplorerFeedStatus.textContent = threadExplorerFeedError;
-  } else if (threadExplorerLoadingFeed) {
-    if (isForeignAccountMode) {
-      threadExplorerFeedStatus.textContent = t("threadExplorerActorFocusLoading");
-    } else if (threadExplorerItems.length > 0) {
-      threadExplorerFeedStatus.textContent = t("threadExplorerFeedLoadingMore", {
-        count: formatCount(threadExplorerItems.length),
-      });
-    } else {
-      threadExplorerFeedStatus.textContent = t("threadExplorerFeedLoading");
-    }
-  } else if (!threadExplorerItems.length) {
-    if (isForeignAccountMode) {
-      threadExplorerFeedStatus.textContent = t("threadExplorerActorFocusEmpty");
-    } else {
-      threadExplorerFeedStatus.textContent = t("threadExplorerFeedEmpty");
-    }
-  } else {
-    if (isForeignAccountMode) {
-      threadExplorerFeedStatus.textContent = t("threadExplorerActorFocusLoaded", {
-        count: formatCount(threadExplorerItems.length),
-      });
-    } else if (getThreadExplorerSearchIdFromSource(threadExplorerSource)) {
-      threadExplorerFeedStatus.textContent = t("threadExplorerSearchLoaded", {
-        count: formatCount(threadExplorerItems.length),
-      });
-    } else {
-      threadExplorerFeedStatus.textContent = t("threadExplorerFeedLoaded", {
-        count: formatCount(threadExplorerItems.length),
-      });
-    }
-  }
-
-  threadExplorerItems.forEach((item) => {
-    threadExplorerFeedList.appendChild(createThreadExplorerFeedItemFragment(item));
+  renderThreadExplorerFeedPanel({
+    list: threadExplorerFeedList,
+    status: threadExplorerFeedStatus,
+    items: threadExplorerItems,
+    loading: threadExplorerLoadingFeed,
+    error: threadExplorerFeedError,
+    foreignAccountMode: isThreadExplorerForeignAccountMode(),
+    searchMode: Boolean(getThreadExplorerSearchIdFromSource(threadExplorerSource)),
+    translate: t,
+    formatCount,
+    renderActorFocus: renderThreadExplorerActorFocus,
+    renderItem: createThreadExplorerFeedItemFragment,
   });
 }
 
@@ -9274,7 +8780,11 @@ function stepThreadExplorerGallery(step) {
     return;
   }
 
-  threadExplorerGalleryIndex = (threadExplorerGalleryIndex + normalizedStep + imageCount) % imageCount;
+  threadExplorerGalleryIndex = advanceThreadExplorerGalleryIndex(
+    threadExplorerGalleryIndex,
+    normalizedStep,
+    imageCount,
+  );
   renderThreadExplorerGalleryImage();
 }
 
@@ -9294,14 +8804,10 @@ function handleThreadExplorerFeedItemClick(event) {
  * @returns {void}
  */
 function handleThreadExplorerFeedScroll() {
-  if (!threadExplorerHasMore || threadExplorerLoadingFeed) {
-    return;
-  }
-  const remaining = threadExplorerFeedList.scrollHeight - threadExplorerFeedList.scrollTop - threadExplorerFeedList.clientHeight;
-  if (remaining > 240) {
-    return;
-  }
-  void loadThreadExplorerFeed({ append: true });
+  handleThreadExplorerFeedScrollFromTools(threadExplorerFeedList, {
+    hasMore: threadExplorerHasMore,
+    loading: threadExplorerLoadingFeed,
+  }, loadThreadExplorerFeed);
 }
 
 /**
@@ -9309,14 +8815,10 @@ function handleThreadExplorerFeedScroll() {
  * @returns {void}
  */
 function handleThreadExplorerActorFocusScroll() {
-  if (!threadExplorerActorFocusHasMore || threadExplorerActorFocusLoading || !threadExplorerActorFeedList) {
-    return;
-  }
-  const remaining = threadExplorerActorFeedList.scrollHeight - threadExplorerActorFeedList.scrollTop - threadExplorerActorFeedList.clientHeight;
-  if (remaining > 240) {
-    return;
-  }
-  void loadThreadExplorerActorFocusFeed({ append: true });
+  handleThreadExplorerActorFocusScrollFromTools(threadExplorerActorFeedList, {
+    hasMore: threadExplorerActorFocusHasMore,
+    loading: threadExplorerActorFocusLoading,
+  }, loadThreadExplorerActorFocusFeed);
 }
 
 /**
@@ -9324,11 +8826,10 @@ function handleThreadExplorerActorFocusScroll() {
  * @returns {void}
  */
 function handleThreadExplorerFeedSelectChange() {
-  const source = normalizeThreadExplorerSource(threadExplorerFeedSelect.value);
-  if (!source.startsWith("feed:")) {
-    return;
-  }
-  setThreadExplorerSource(source);
+  handleThreadExplorerFeedSelectChangeFromTools({ currentTarget: threadExplorerFeedSelect }, {
+    normalizeSource: normalizeThreadExplorerSource,
+    setSource: setThreadExplorerSource,
+  });
 }
 
 /**
@@ -9337,8 +8838,10 @@ function handleThreadExplorerFeedSelectChange() {
  * @returns {void}
  */
 function handleThreadExplorerSourceSelectChange(event) {
-  const source = normalizeThreadExplorerSource(event.currentTarget?.value || "");
-  setThreadExplorerSource(source);
+  handleThreadExplorerSourceSelectChangeFromTools(event, {
+    normalizeSource: normalizeThreadExplorerSource,
+    setSource: setThreadExplorerSource,
+  });
 }
 
 /**
@@ -9348,49 +8851,30 @@ function handleThreadExplorerSourceSelectChange(event) {
  * @returns {Promise<void>} Resolves after the Actor-Fokus list is rendered.
  */
 async function loadThreadExplorerActorFocusFeed(options = {}) {
-  if (!authAccount || !threadExplorerActorFocusActor || threadExplorerActorFocusLoading) {
-    return;
-  }
-
-  const append = options.append === true;
-  if (append && !threadExplorerActorFocusHasMore) {
-    return;
-  }
-
-  if (!append) {
-    threadExplorerActorFocusItems = [];
-    threadExplorerActorFocusCursor = "";
-    threadExplorerActorFocusHasMore = false;
-  }
-
-  threadExplorerActorFocusLoading = true;
-  threadExplorerActorFocusError = "";
-  renderThreadExplorerWorkspace();
-  try {
-    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_ACTOR_FEED", {
-      actor: getThreadExplorerActorFocusId(threadExplorerActorFocusActor),
-      cursor: threadExplorerActorFocusCursor,
-      mode: threadExplorerActorFocusMode,
-      limit: 30,
-    }, {
-      timeoutMs: 120000,
-    });
-    threadExplorerActorFocusCursor = String(result?.cursor || "");
-    threadExplorerActorFocusHasMore = Boolean(threadExplorerActorFocusCursor);
-    if (Array.isArray(result?.items)) {
-      if (append) {
-        threadExplorerActorFocusItems = appendThreadExplorerFeedItems(threadExplorerActorFocusItems, result.items);
-      } else {
-        threadExplorerActorFocusItems = result.items;
-      }
-      threadExplorerActorFocusItems = sortThreadExplorerFeedItemsByDate(threadExplorerActorFocusItems);
-    }
-  } catch (error) {
-    threadExplorerActorFocusError = error.message || t("threadExplorerActorFocusFailed");
-  } finally {
-    threadExplorerActorFocusLoading = false;
-    renderThreadExplorerWorkspace();
-  }
+  await loadThreadExplorerActorFocusWorkflow({
+    authAccount,
+    actor: threadExplorerActorFocusActor,
+    actorId: getThreadExplorerActorFocusId(threadExplorerActorFocusActor),
+    mode: threadExplorerActorFocusMode,
+    append: options.append,
+    state: {
+      get items() { return threadExplorerActorFocusItems; },
+      set items(value) { threadExplorerActorFocusItems = value; },
+      get cursor() { return threadExplorerActorFocusCursor; },
+      set cursor(value) { threadExplorerActorFocusCursor = value; },
+      get hasMore() { return threadExplorerActorFocusHasMore; },
+      set hasMore(value) { threadExplorerActorFocusHasMore = value; },
+      get loading() { return threadExplorerActorFocusLoading; },
+      set loading(value) { threadExplorerActorFocusLoading = value; },
+      get error() { return threadExplorerActorFocusError; },
+      set error(value) { threadExplorerActorFocusError = value; },
+    },
+    request: sendToServiceWorker,
+    appendItems: appendThreadExplorerFeedItems,
+    sortItems: sortThreadExplorerFeedItemsByDate,
+    render: renderThreadExplorerWorkspace,
+    errorMessage: t("threadExplorerActorFocusFailed"),
+  });
 }
 
 /**
@@ -9468,8 +8952,13 @@ function closeThreadExplorerActorFocus() {
  * @returns {void}
  */
 function handleThreadExplorerActorModeChange(event) {
-  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(event.currentTarget?.value || "");
-  void loadThreadExplorerActorFocusFeed({ append: false });
+  handleThreadExplorerActorModeChangeFromTools(event, {
+    normalizeMode: normalizeThreadExplorerActorFocusMode,
+    setMode: (mode) => {
+      threadExplorerActorFocusMode = mode;
+    },
+    loadFeed: loadThreadExplorerActorFocusFeed,
+  });
 }
 
 /**
@@ -9486,11 +8975,7 @@ function handleThreadExplorerActorMoreClick() {
  * @returns {void}
  */
 function handleThreadExplorerCountClick(event) {
-  const button = event.currentTarget;
-  const type = String(button?.dataset?.reactionType || "").trim();
-  const uri = String(button?.dataset?.uri || "").trim();
-  const cid = String(button?.dataset?.cid || "").trim();
-  void openThreadExplorerReactionsDialog(type, uri, cid);
+  handleThreadExplorerCountClickFromTools(event, openThreadExplorerReactionsDialog);
 }
 
 /**
@@ -9499,9 +8984,7 @@ function handleThreadExplorerCountClick(event) {
  * @returns {void}
  */
 function handleThreadExplorerRepliesCountClick(event) {
-  const button = event.currentTarget;
-  const uri = String(button?.dataset?.uri || "").trim();
-  openThreadExplorerRepliesDialog(uri);
+  handleThreadExplorerRepliesCountClickFromTools(event, openThreadExplorerRepliesDialog);
 }
 
 /**
@@ -9511,52 +8994,27 @@ function handleThreadExplorerRepliesCountClick(event) {
 function renderThreadExplorerTree() {
   resetThreadExplorerLazyCardObserver();
   threadExplorerReplyClusterLayoutState = null;
-  threadExplorerThreadStage.replaceChildren();
-  threadExplorerThreadStage.classList.remove("has-svg-edges");
-  threadExplorerThreadStage.classList.remove("is-reply-cluster-mode");
   applyThreadExplorerStageTransform();
-
-  if (threadExplorerThreadError) {
-    threadExplorerThreadTitle.textContent = t("threadExplorerThreadLoadedTitle", {
-      count: formatCount(0),
-    });
-    threadExplorerThreadStatus.textContent = threadExplorerThreadError;
-    return;
-  }
-
-  if (threadExplorerLoadingThread) {
-    threadExplorerThreadTitle.textContent = t("threadExplorerThreadLoadedTitle", {
-      count: formatCount(0),
-    });
-    threadExplorerThreadStatus.textContent = t("threadExplorerThreadLoading");
-    return;
-  }
-
-  if (!threadExplorerTree) {
-    threadExplorerThreadTitle.textContent = t("threadExplorerThreadTitle");
-    threadExplorerThreadStatus.textContent = t("threadExplorerThreadIdle");
-    return;
-  }
-
-  const count = countThreadExplorerPosts(threadExplorerTree);
-  threadExplorerThreadTitle.textContent = t("threadExplorerThreadLoadedTitle", {
-    count: formatCount(count),
+  renderThreadExplorerTreePanel({
+    stage: threadExplorerThreadStage,
+    title: threadExplorerThreadTitle,
+    status: threadExplorerThreadStatus,
+    tree: threadExplorerTree,
+    loading: threadExplorerLoadingThread,
+    error: threadExplorerThreadError,
+    clusterMode: threadExplorerViewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER,
+    translate: t,
+    formatCount,
+    countPosts: countThreadExplorerPosts,
+    createRootNode: createThreadExplorerNode,
+    renderCluster: renderThreadExplorerReplyCluster,
+    afterRender: () => {
+      hydrateVisibleThreadExplorerCards();
+      if (threadExplorerViewMode !== THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
+        scheduleThreadExplorerEdgeRender();
+      }
+    },
   });
-  threadExplorerThreadStatus.textContent = t("threadExplorerThreadLoaded", {
-    count: formatCount(count),
-  });
-
-  if (threadExplorerViewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
-    renderThreadExplorerReplyCluster();
-  } else {
-    const rootList = document.createElement("ul");
-    rootList.appendChild(createThreadExplorerNode(threadExplorerTree));
-    threadExplorerThreadStage.appendChild(rootList);
-  }
-  hydrateVisibleThreadExplorerCards();
-  if (threadExplorerViewMode !== THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
-    scheduleThreadExplorerEdgeRender();
-  }
 }
 
 /**
@@ -9608,26 +9066,24 @@ function getThreadExplorerLazyCardObserver() {
  * @returns {void}
  */
 function hydrateThreadExplorerCardContent(card = null) {
-  if (!card || card.dataset.hydrated === "true") {
+  if (!card) {
     return;
   }
-
   const post = card._threadExplorerPost || null;
-  if (!post || post.isDeletedThreadAnchor === true) {
-    card.dataset.hydrated = "true";
-    return;
-  }
-
-  const postDisplay = getThreadExplorerPostCardDisplayModel(post, [
-    "Likes",
-    "Replies",
-    "Reposts",
-    "Quotes",
-  ]);
-  hydrateThreadExplorerCardAvatar(card, post);
-  hydrateThreadExplorerCardMedia(card, post);
-  hydrateThreadExplorerCardEmbeds(card, post, postDisplay);
-  finalizeThreadExplorerCardHydration(card);
+  hydrateThreadExplorerCard(card, post, {
+    getDisplayModel(currentPost) {
+      return getThreadExplorerPostCardDisplayModel(currentPost, [
+        "Likes",
+        "Replies",
+        "Reposts",
+        "Quotes",
+      ]);
+    },
+    renderAvatar: hydrateThreadExplorerCardAvatar,
+    renderMedia: hydrateThreadExplorerCardMedia,
+    renderEmbeds: hydrateThreadExplorerCardEmbeds,
+    finalize: finalizeThreadExplorerCardHydration,
+  });
 }
 
 /**
@@ -9637,13 +9093,12 @@ function hydrateThreadExplorerCardContent(card = null) {
  * @returns {void}
  */
 function hydrateThreadExplorerCardAvatar(card = null, post = {}) {
-  if (!card || !post) {
-    return;
-  }
-
-  const avatar = card.querySelector(".thread-explorer-avatar");
-  markThreadExplorerAvatarImage(avatar, post.author);
-  setAvatarImage(avatar, getThreadExplorerActorAvatarUri(post.author), getThreadExplorerActorLabel(post.author));
+  renderThreadExplorerCardAvatar(card, post, {
+    markAvatar: markThreadExplorerAvatarImage,
+    getAvatarUri: getThreadExplorerActorAvatarUri,
+    getActorLabel: getThreadExplorerActorLabel,
+    setAvatar: setAvatarImage,
+  });
 }
 
 /**
@@ -9653,13 +9108,10 @@ function hydrateThreadExplorerCardAvatar(card = null, post = {}) {
  * @returns {void}
  */
 function hydrateThreadExplorerCardMedia(card = null, post = {}) {
-  if (!card || !post) {
-    return;
-  }
-
-  const gallery = card.querySelector(".thread-explorer-post-gallery");
-  renderThreadExplorerImages(post, gallery);
-  syncThreadExplorerPostCardImageShape(card, gallery);
+  renderThreadExplorerCardMedia(card, post, {
+    renderImages: renderThreadExplorerImages,
+    syncShape: syncThreadExplorerPostCardImageShape,
+  });
 }
 
 /**
@@ -9670,12 +9122,10 @@ function hydrateThreadExplorerCardMedia(card = null, post = {}) {
  * @returns {void}
  */
 function hydrateThreadExplorerCardEmbeds(card = null, post = {}, postDisplay = null) {
-  if (!card || !post) {
-    return;
-  }
-
-  renderThreadExplorerExternalCard(post, postDisplay?.externalCardDisplay || null, card);
-  renderThreadExplorerQuoteCard(post, card);
+  renderThreadExplorerCardEmbeds(card, post, postDisplay, {
+    renderExternalCard: renderThreadExplorerExternalCard,
+    renderQuoteCard: renderThreadExplorerQuoteCard,
+  });
 }
 
 /**
@@ -9741,17 +9191,7 @@ function hydrateVisibleThreadExplorerCards() {
  * @returns {number} Epoch milliseconds or a large fallback value.
  */
 function getThreadExplorerReplySortTimestamp(node = null) {
-  const createdAt = Date.parse(String(node?.post?.createdAt || "").trim());
-  if (Number.isFinite(createdAt)) {
-    return createdAt;
-  }
-
-  const indexedAt = Date.parse(String(node?.post?.indexedAt || "").trim());
-  if (Number.isFinite(indexedAt)) {
-    return indexedAt;
-  }
-
-  return Number.POSITIVE_INFINITY;
+  return getThreadExplorerReplySortTimestampFromTools(node);
 }
 
 /**
@@ -9760,28 +9200,7 @@ function getThreadExplorerReplySortTimestamp(node = null) {
  * @returns {Array<object>} Replies sorted oldest first within the sibling group.
  */
 function getChronologicalThreadExplorerReplies(replies) {
-  if (!Array.isArray(replies)) {
-    return [];
-  }
-
-  return replies
-    .map((reply, index) => {
-      return {
-        reply,
-        index,
-      };
-    })
-    .sort((left, right) => {
-      const leftTime = getThreadExplorerReplySortTimestamp(left.reply);
-      const rightTime = getThreadExplorerReplySortTimestamp(right.reply);
-      if (leftTime !== rightTime) {
-        return leftTime - rightTime;
-      }
-      return left.index - right.index;
-    })
-    .map((entry) => {
-      return entry.reply;
-    });
+  return getChronologicalThreadExplorerRepliesFromTools(replies);
 }
 
 /**
@@ -9793,122 +9212,40 @@ function getChronologicalThreadExplorerReplies(replies) {
  * @returns {{item:HTMLElement, card:HTMLElement, children:HTMLElement, post:object, replies:Array<object>}} Rendered node parts.
  */
 function createThreadExplorerRenderedItem(node, options = {}) {
-  const renderReplies = options.renderReplies !== false;
-  const showToggle = options.showToggle !== false;
-  const fragment = cloneTemplateContent(threadExplorerNodeTemplate);
-  const item = fragment.querySelector(".thread-explorer-node-item");
-  const toggle = fragment.querySelector(".thread-explorer-node-toggle");
-  const card = fragment.querySelector(".thread-explorer-post-card");
-  const actorTriggers = Array.from(fragment.querySelectorAll(".thread-explorer-actor-trigger"));
-  const avatar = fragment.querySelector(".thread-explorer-avatar");
-  const author = fragment.querySelector(".thread-explorer-post-author");
-  const handle = fragment.querySelector(".thread-explorer-post-handle");
-  const meta = fragment.querySelector(".thread-explorer-post-meta");
-  const viewLink = fragment.querySelector(".thread-explorer-view-link");
-  const headButtons = fragment.querySelector(".thread-explorer-post-head-buttons");
-  const editButton = fragment.querySelector(".thread-explorer-edit-button");
-  const actions = fragment.querySelector(".thread-explorer-post-actions");
-  const text = fragment.querySelector(".thread-explorer-post-text");
-  const gallery = fragment.querySelector(".thread-explorer-post-gallery");
-  const counts = fragment.querySelector(".thread-explorer-post-counts");
-  const children = fragment.querySelector(".thread-explorer-children");
-  const post = node.post;
-  const replies = getChronologicalThreadExplorerReplies(node.replies);
-  const engagementScore = getThreadExplorerEngagementScore(post);
-  const engagementTier = getThreadExplorerEngagementTier(engagementScore);
-  const isDeletedThreadAnchor = post.isDeletedThreadAnchor === true;
-  const postDisplay = getThreadExplorerPostCardDisplayModel(post, [
-    "Likes",
-    "Replies",
-    "Reposts",
-    "Quotes",
-  ]);
-
-  item.dataset.uri = post.uri;
-  item.dataset.engagementScore = String(engagementScore);
-  item.dataset.engagementTier = engagementTier;
-  item.classList.toggle("is-collapsed", threadExplorerCollapsedUris.has(post.uri));
-  card.classList.toggle("is-selected", post.uri === threadExplorerSelectedUri);
-  card.classList.toggle("is-deleted-thread-anchor", isDeletedThreadAnchor);
-  if (!isDeletedThreadAnchor) {
-    card.classList.add(`is-engagement-${engagementTier}`);
-  }
-
-  if (isDeletedThreadAnchor) {
-    actorTriggers.forEach((trigger) => {
-      trigger.hidden = true;
-      trigger.disabled = true;
-    });
-    avatar.hidden = true;
-    author.textContent = postDisplay?.authorLabel || "";
-    handle.textContent = postDisplay?.handleLabel || "";
-    meta.textContent = postDisplay?.metaText || "";
-    viewLink.hidden = true;
-    editButton.hidden = true;
-    actions.hidden = true;
-    text.textContent = postDisplay?.text || "";
-    counts.replaceChildren();
-  } else {
-    setAvatarImage(avatar, "", getThreadExplorerActorLabel(post.author));
-    author.textContent = postDisplay?.authorLabel || "";
-    handle.textContent = postDisplay?.handleLabel || "";
-    meta.textContent = postDisplay?.metaText || "";
-    renderThreadExplorerViewLink(post, viewLink);
-    renderThreadExplorerEditButton(post, editButton);
-    renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink);
-    text.textContent = postDisplay?.text || t("threadExplorerNoText");
-    renderThreadExplorerMetricEntries(post, counts, postDisplay?.metricEntries || []);
-    actorTriggers.forEach((trigger) => {
-      trigger.dataset.actorDid = post.author?.did || "";
-      trigger.dataset.actorHandle = post.author?.handle || "";
-      applyTranslatedTitle(trigger, "threadExplorerActorFocusTriggerTitle");
-      trigger.addEventListener("click", () => {
-        openThreadExplorerActorFocus(post.author || {});
-      });
-    });
-    prepareThreadExplorerCardHydration(card, post);
-  }
-
-  card.addEventListener("click", handleThreadExplorerCardClick);
-  card.addEventListener("dblclick", handleThreadExplorerCardDoubleClick);
-  card.addEventListener("pointerup", handleThreadExplorerCardPointerUp);
-
-  if (!showToggle || !replies.length) {
-    toggle.classList.add("is-hidden");
-    toggle.disabled = true;
-  } else {
-    if (isThreadExplorerReplyClusterModeActive()) {
-      if (isThreadExplorerReplyClusterExpanded(post.uri)) {
-        toggle.textContent = "-";
-      } else {
-        toggle.textContent = "+";
-      }
-    } else {
-      if (threadExplorerCollapsedUris.has(post.uri)) {
-        toggle.textContent = "+";
-      } else {
-        toggle.textContent = "-";
-      }
-    }
-    toggle.dataset.uri = post.uri;
-    toggle.addEventListener("click", handleThreadExplorerNodeToggleClick);
-  }
-
-  if (renderReplies) {
-    replies.forEach((reply) => {
-      children.appendChild(createThreadExplorerNode(reply));
-    });
-  } else {
-    children.remove();
-  }
-
-  return {
-    item,
-    card,
-    children,
-    post,
-    replies,
-  };
+  return createThreadExplorerRenderedItemFromTools(node, {
+    cloneTemplate: () => cloneTemplateContent(threadExplorerNodeTemplate),
+    prepareNode: (currentNode) => prepareThreadExplorerRenderedNode(currentNode, {
+      getEngagementScore: getThreadExplorerEngagementScore,
+      getEngagementTier: getThreadExplorerEngagementTier,
+      getDisplayModel: (post) => getThreadExplorerPostCardDisplayModel(post, ["Likes", "Replies", "Reposts", "Quotes"]),
+    }),
+    selectedUri: threadExplorerSelectedUri,
+    isCollapsed: threadExplorerCollapsedUris.has(node?.post?.uri),
+    getActorLabel: getThreadExplorerActorLabel,
+    setAvatar: setAvatarImage,
+    translate: t,
+    renderViewLink: renderThreadExplorerViewLink,
+    renderEditButton: renderThreadExplorerEditButton,
+    renderActions: renderThreadExplorerInteractionActions,
+    renderMetrics: renderThreadExplorerMetricEntries,
+    applyTranslatedTitle,
+    openActorFocus: openThreadExplorerActorFocus,
+    prepareHydration: prepareThreadExplorerCardHydration,
+    cardHandlers: {
+      click: handleThreadExplorerCardClick,
+      dblclick: handleThreadExplorerCardDoubleClick,
+      pointerup: handleThreadExplorerCardPointerUp,
+    },
+    toggleState: {
+      clusterMode: isThreadExplorerReplyClusterModeActive(),
+      isExpanded: isThreadExplorerReplyClusterExpanded(node?.post?.uri),
+      isCollapsed: threadExplorerCollapsedUris.has(node?.post?.uri),
+      onClick: handleThreadExplorerNodeToggleClick,
+    },
+    createNode: createThreadExplorerNode,
+    renderReplies: options.renderReplies,
+    showToggle: options.showToggle,
+  });
 }
 
 /**
@@ -9936,12 +9273,7 @@ function isThreadExplorerReplyClusterModeActive() {
  * @returns {void}
  */
 function ensureThreadExplorerReplyClusterRootExpanded() {
-  const rootUri = String(threadExplorerTree?.post?.uri || "").trim();
-  if (!rootUri) {
-    return;
-  }
-
-  threadExplorerReplyClusterExpandedUris.add(rootUri);
+  ensureReplyClusterRootExpandedFromLayout(threadExplorerTree?.post?.uri || "", threadExplorerReplyClusterExpandedUris);
 }
 
 /**
@@ -9982,16 +9314,8 @@ function isThreadExplorerReplyClusterExpanded(uri) {
  * @returns {void}
  */
 function toggleThreadExplorerReplyClusterNode(uri) {
-  const normalizedUri = String(uri || "").trim();
-  if (!normalizedUri) {
-    return;
-  }
-
-  if (threadExplorerReplyClusterExpandedUris.has(normalizedUri)) {
-    threadExplorerReplyClusterExpandedUris.delete(normalizedUri);
-  } else {
-    threadExplorerReplyClusterExpandedUris.add(normalizedUri);
-  }
+  threadExplorerController.toggleExpanded(uri);
+  threadExplorerReplyClusterExpandedUris = threadExplorerController.state.expandedUris;
   renderThreadExplorerTree();
 }
 
@@ -10015,358 +9339,15 @@ function refreshThreadExplorerRenderedGeometry() {
  * @param {number} centerY - Vertical stage-space center.
  * @returns {void}
  */
-function setThreadExplorerReplyClusterItemPosition(item, centerX, centerY) {
-  if (!item) {
-    return;
-  }
-
-  item.style.setProperty("--thread-explorer-cluster-x", `${Math.round(centerX)}px`);
-  item.style.setProperty("--thread-explorer-cluster-y", `${Math.round(centerY)}px`);
-}
-
-/**
- * Returns the edge anchor point where a reply-cluster line should leave one card.
- * @param {{x:number, y:number}} center - Card center in stage space.
- * @param {{width:number, height:number}} size - Rendered card size.
- * @param {{x:number, y:number}} target - Opposing card center that defines the direction.
- * @returns {{x:number, y:number}} Anchor point on the card edge.
- */
-function getThreadExplorerReplyClusterEdgeAnchor(center, size, target) {
-  const deltaX = Number(target?.x) - Number(center?.x);
-  const deltaY = Number(target?.y) - Number(center?.y);
-  const distance = Math.hypot(deltaX, deltaY);
-  if (!distance || !size) {
-    return {
-      x: Number(center?.x) || 0,
-      y: Number(center?.y) || 0,
-    };
-  }
-
-  const directionX = deltaX / distance;
-  const directionY = deltaY / distance;
-  const halfWidth = Math.max(1, Number(size.width) || 0) / 2;
-  const halfHeight = Math.max(1, Number(size.height) || 0) / 2;
-  let scaleX = Number.POSITIVE_INFINITY;
-  let scaleY = Number.POSITIVE_INFINITY;
-  if (Math.abs(directionX) > 0.0001) {
-    scaleX = halfWidth / Math.abs(directionX);
-  }
-  if (Math.abs(directionY) > 0.0001) {
-    scaleY = halfHeight / Math.abs(directionY);
-  }
-  const edgeDistance = Math.min(scaleX, scaleY);
-  return {
-    x: center.x + (directionX * edgeDistance),
-    y: center.y + (directionY * edgeDistance),
-  };
-}
-
-/**
- * Measures one rendered reply-cluster card.
- * @param {HTMLElement|null} item - Cluster item element to measure.
- * @returns {{width:number, height:number}} Rendered size in CSS pixels.
- */
-function getThreadExplorerReplyClusterItemSize(item) {
-  if (!item) {
-    return {
-      width: 0,
-      height: 0,
-    };
-  }
-
-  return {
-    width: Math.max(0, item.offsetWidth),
-    height: Math.max(0, item.offsetHeight),
-  };
-}
-
-/**
- * Returns the current rectangle of one positioned reply-cluster item.
- * @param {object|null} renderNode - Positioned reply-cluster render node.
- * @returns {{left:number, top:number, right:number, bottom:number, width:number, height:number}} Rectangle in stage space.
- */
-function getThreadExplorerReplyClusterNodeRect(renderNode) {
-  const itemSize = renderNode?.itemSize || getThreadExplorerReplyClusterItemSize(renderNode?.item || null);
-  const centerX = Number(renderNode?.position?.x) || 0;
-  const centerY = Number(renderNode?.position?.y) || 0;
-  return {
-    left: centerX - (itemSize.width / 2),
-    top: centerY - (itemSize.height / 2),
-    right: centerX + (itemSize.width / 2),
-    bottom: centerY + (itemSize.height / 2),
-    width: itemSize.width,
-    height: itemSize.height,
-  };
-}
-
-/**
- * Applies one new reply-cluster center position to a positioned render node.
- * @param {object|null} renderNode - Positioned reply-cluster render node.
- * @param {number} nextX - New center X position in stage space.
- * @param {number} nextY - New center Y position in stage space.
- * @returns {void}
- */
-function setThreadExplorerReplyClusterNodePosition(renderNode, nextX, nextY) {
-  if (!renderNode) {
-    return;
-  }
-
-  renderNode.position = {
-    x: nextX,
-    y: nextY,
-  };
-  setThreadExplorerReplyClusterItemPosition(renderNode.item, nextX, nextY);
-}
-
-/**
- * Pushes overlapping reply-cluster cards apart after media growth changed their size.
- * @param {object|null} layoutState - Current reply-cluster render state.
- * @returns {void}
- */
-function resolveThreadExplorerReplyClusterOverlaps(layoutState) {
-  if (!layoutState?.rootRenderNode || !Array.isArray(layoutState.positionedItems) || layoutState.positionedItems.length < 2) {
-    return;
-  }
-
-  const rootNode = layoutState.rootRenderNode;
-  const collisionPadding = 24;
-  const maxIterations = 18;
-
-  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
-    let hasMoved = false;
-
-    for (let indexA = 0; indexA < layoutState.positionedItems.length; indexA += 1) {
-      const nodeA = layoutState.positionedItems[indexA];
-      const rectA = getThreadExplorerReplyClusterNodeRect(nodeA);
-
-      for (let indexB = indexA + 1; indexB < layoutState.positionedItems.length; indexB += 1) {
-        const nodeB = layoutState.positionedItems[indexB];
-        const rectB = getThreadExplorerReplyClusterNodeRect(nodeB);
-        const overlapX = Math.min(rectA.right, rectB.right) - Math.max(rectA.left, rectB.left);
-        const overlapY = Math.min(rectA.bottom, rectB.bottom) - Math.max(rectA.top, rectB.top);
-        if (overlapX <= 0 || overlapY <= 0) {
-          continue;
-        }
-
-        let deltaX = (Number(nodeB.position?.x) || 0) - (Number(nodeA.position?.x) || 0);
-        let deltaY = (Number(nodeB.position?.y) || 0) - (Number(nodeA.position?.y) || 0);
-        if (!deltaX && !deltaY) {
-          deltaX = (Number(nodeB.position?.x) || 0) - (Number(rootNode.position?.x) || 0);
-          deltaY = (Number(nodeB.position?.y) || 0) - (Number(rootNode.position?.y) || 0);
-        }
-        if (!deltaX && !deltaY) {
-          deltaY = 1;
-        }
-
-        const distance = Math.hypot(deltaX, deltaY) || 1;
-        const directionX = deltaX / distance;
-        const directionY = deltaY / distance;
-        const pushDistance = Math.max(overlapX, overlapY) + collisionPadding;
-
-        if (nodeA === rootNode) {
-          setThreadExplorerReplyClusterNodePosition(
-            nodeB,
-            (Number(nodeB.position?.x) || 0) + (directionX * pushDistance),
-            (Number(nodeB.position?.y) || 0) + (directionY * pushDistance),
-          );
-        } else if (nodeB === rootNode) {
-          setThreadExplorerReplyClusterNodePosition(
-            nodeA,
-            (Number(nodeA.position?.x) || 0) - (directionX * pushDistance),
-            (Number(nodeA.position?.y) || 0) - (directionY * pushDistance),
-          );
-        } else {
-          const halfPush = pushDistance / 2;
-          setThreadExplorerReplyClusterNodePosition(
-            nodeA,
-            (Number(nodeA.position?.x) || 0) - (directionX * halfPush),
-            (Number(nodeA.position?.y) || 0) - (directionY * halfPush),
-          );
-          setThreadExplorerReplyClusterNodePosition(
-            nodeB,
-            (Number(nodeB.position?.x) || 0) + (directionX * halfPush),
-            (Number(nodeB.position?.y) || 0) + (directionY * halfPush),
-          );
-        }
-
-        hasMoved = true;
-      }
-    }
-
-    if (!hasMoved) {
-      break;
-    }
-  }
-}
-
-/**
- * Measures one recursive reply-cluster subtree and returns its required bounds.
- * @param {object|null} renderNode - Recursive reply-cluster render node.
- * @returns {{width:number, height:number}} Required subtree bounds.
- */
-function measureThreadExplorerReplyClusterSubtree(renderNode) {
-  if (!renderNode) {
-    return {
-      width: 0,
-      height: 0,
-    };
-  }
-
-  const itemSize = getThreadExplorerReplyClusterItemSize(renderNode.item);
-  renderNode.itemSize = itemSize;
-  if (!Array.isArray(renderNode.children) || renderNode.children.length === 0) {
-    renderNode.subtreeWidth = Math.max(220, itemSize.width);
-    renderNode.subtreeHeight = Math.max(120, itemSize.height);
-    return {
-      width: renderNode.subtreeWidth,
-      height: renderNode.subtreeHeight,
-    };
-  }
-
-  const childGap = 48;
-  let totalChildWidth = 0;
-  let maxChildHeight = 0;
-  renderNode.children.forEach((childNode, childIndex) => {
-    const childBounds = measureThreadExplorerReplyClusterSubtree(childNode);
-    totalChildWidth += childBounds.width;
-    if (childIndex > 0) {
-      totalChildWidth += childGap;
-    }
-    maxChildHeight = Math.max(maxChildHeight, childBounds.height);
-  });
-
-  renderNode.subtreeWidth = Math.max(itemSize.width, totalChildWidth);
-  renderNode.subtreeHeight = itemSize.height + 84 + maxChildHeight;
-  return {
-    width: renderNode.subtreeWidth,
-    height: renderNode.subtreeHeight,
-  };
-}
-
-/**
- * Returns the combined breadth of all direct child subtrees including gaps.
- * @param {object|null} renderNode - Recursive reply-cluster render node.
- * @param {number} childGap - Gap between sibling subtrees in local layout space.
- * @returns {number} Total local breadth for the child row.
- */
-function getThreadExplorerReplyClusterChildrenBreadth(renderNode, childGap) {
-  if (!renderNode || !Array.isArray(renderNode.children) || renderNode.children.length === 0) {
-    return 0;
-  }
-
-  let totalBreadth = 0;
-  renderNode.children.forEach((childNode, childIndex) => {
-    totalBreadth += childNode.subtreeWidth;
-    if (childIndex > 0) {
-      totalBreadth += childGap;
-    }
-  });
-  return totalBreadth;
-}
-
-/**
- * Places one reply-cluster branch so that children continue away from the root direction.
- * @param {object|null} renderNode - Recursive reply-cluster render node.
- * @param {number} centerX - Branch center X in stage space.
- * @param {number} centerY - Branch center Y in stage space.
- * @param {number} angle - Outward branch angle in radians.
- * @param {Array<object>} positionedItems - Flat array that receives positioned cards.
- * @returns {void}
- */
-function placeThreadExplorerReplyClusterSubtree(renderNode, centerX, centerY, angle, positionedItems) {
-  if (!renderNode) {
-    return;
-  }
-
-  renderNode.position = {
-    x: centerX,
-    y: centerY,
-  };
-  setThreadExplorerReplyClusterItemPosition(renderNode.item, centerX, centerY);
-  positionedItems.push(renderNode);
-
-  if (!Array.isArray(renderNode.children) || renderNode.children.length === 0) {
-    return;
-  }
-
-  const childGap = 48;
-  const childrenBreadth = getThreadExplorerReplyClusterChildrenBreadth(renderNode, childGap);
-  const radialX = Math.cos(angle);
-  const radialY = Math.sin(angle);
-  const tangentX = -Math.sin(angle);
-  const tangentY = Math.cos(angle);
-  let childOffset = -childrenBreadth / 2;
-  const outwardDistance = (renderNode.itemSize.height / 2) + 84;
-  renderNode.children.forEach((childNode) => {
-    const childCenterOffset = childOffset + (childNode.subtreeWidth / 2);
-    const childCenterDistance = outwardDistance + (childNode.itemSize.height / 2);
-    const childCenterX = centerX + (tangentX * childCenterOffset) + (radialX * childCenterDistance);
-    const childCenterY = centerY + (tangentY * childCenterOffset) + (radialY * childCenterDistance);
-    placeThreadExplorerReplyClusterSubtree(childNode, childCenterX, childCenterY, angle, positionedItems);
-    childOffset += childNode.subtreeWidth + childGap;
-  });
-}
-
-/**
- * Returns stable star angles for the direct replies around the cluster root.
- * @param {Array<object>} directReplies - Direct reply subtrees around the root.
- * @param {number} clusterRadius - Radius used for the first reply ring.
- * @returns {number[]} One outward angle per direct reply in radians.
- */
-function getThreadExplorerReplyClusterRootChildAngles(directReplies, clusterRadius) {
-  if (!Array.isArray(directReplies) || directReplies.length === 0) {
-    return [];
-  }
-
-  if (directReplies.length === 1) {
-    return [Math.PI / 2];
-  }
-
-  const arcPadding = 56;
-  let totalAngularSpan = 0;
-  directReplies.forEach((childNode) => {
-    totalAngularSpan += (childNode.subtreeWidth + arcPadding) / Math.max(1, clusterRadius);
-  });
-
-  if (totalAngularSpan <= 0) {
-    return [];
-  }
-
-  const normalizedSpan = Math.min(Math.PI * 2, totalAngularSpan);
-  let currentAngle = (-Math.PI / 2) - (normalizedSpan / 2);
-  const angles = [];
-  directReplies.forEach((childNode) => {
-    const childSpan = (childNode.subtreeWidth + arcPadding) / Math.max(1, clusterRadius);
-    const centeredSpan = Math.min(childSpan, Math.PI * 2);
-    angles.push(currentAngle + (centeredSpan / 2));
-    currentAngle += centeredSpan;
-  });
-  return angles;
-}
-
 /**
  * Renders every visible reply-cluster edge for the positioned recursive tree.
  * @param {object|null} layoutState - Current reply-cluster render state.
  * @returns {void}
  */
 function renderThreadExplorerReplyClusterEdges(layoutState) {
-  if (!layoutState?.edgeLayer || !Array.isArray(layoutState.positionedItems)) {
-    return;
-  }
-
-  layoutState.edgeLayer.replaceChildren();
-  layoutState.positionedItems.forEach((renderNode) => {
-    if (!Array.isArray(renderNode.children) || renderNode.children.length === 0) {
-      return;
-    }
-
-    const parentSize = getThreadExplorerReplyClusterItemSize(renderNode.item);
-    renderNode.children.forEach((childNode) => {
-      const childSize = getThreadExplorerReplyClusterItemSize(childNode.item);
-      const start = getThreadExplorerReplyClusterEdgeAnchor(renderNode.position, parentSize, childNode.position);
-      const end = getThreadExplorerReplyClusterEdgeAnchor(childNode.position, childSize, renderNode.position);
-      appendThreadExplorerReplyClusterEdge(layoutState.edgeLayer, start, end, "thread-explorer-edge-reply");
-    });
+  renderReplyClusterEdgesFromLayout(layoutState, {
+    getItemSize: getReplyClusterItemSizeFromLayout,
+    createSvgNode,
   });
 }
 
@@ -10376,42 +9357,11 @@ function renderThreadExplorerReplyClusterEdges(layoutState) {
  * @returns {void}
  */
 function applyThreadExplorerReplyClusterBounds(layoutState) {
-  if (!layoutState?.cluster || !Array.isArray(layoutState.positionedItems)) {
-    return;
-  }
-
-  let minLeft = Number.POSITIVE_INFINITY;
-  let minTop = Number.POSITIVE_INFINITY;
-  let maxRight = Number.NEGATIVE_INFINITY;
-  let maxBottom = Number.NEGATIVE_INFINITY;
-  layoutState.positionedItems.forEach((renderNode) => {
-    const itemSize = getThreadExplorerReplyClusterItemSize(renderNode.item);
-    minLeft = Math.min(minLeft, renderNode.position.x - (itemSize.width / 2));
-    minTop = Math.min(minTop, renderNode.position.y - (itemSize.height / 2));
-    maxRight = Math.max(maxRight, renderNode.position.x + (itemSize.width / 2));
-    maxBottom = Math.max(maxBottom, renderNode.position.y + (itemSize.height / 2));
+  applyReplyClusterBoundsFromLayout(layoutState, {
+    getItemSize: getReplyClusterItemSizeFromLayout,
+    setItemPosition: setReplyClusterItemPositionFromLayout,
+    renderEdges: renderThreadExplorerReplyClusterEdges,
   });
-
-  const shiftX = Math.max(0, 80 - minLeft);
-  const shiftY = Math.max(0, 80 - minTop);
-  if (shiftX || shiftY) {
-    layoutState.positionedItems.forEach((renderNode) => {
-      renderNode.position.x += shiftX;
-      renderNode.position.y += shiftY;
-      setThreadExplorerReplyClusterItemPosition(renderNode.item, renderNode.position.x, renderNode.position.y);
-    });
-    maxRight += shiftX;
-    maxBottom += shiftY;
-  }
-
-  const stageWidth = Math.max(1120, Math.ceil(maxRight + 80));
-  const stageHeight = Math.max(860, Math.ceil(maxBottom + 80));
-  layoutState.cluster.style.width = `${stageWidth}px`;
-  layoutState.cluster.style.height = `${stageHeight}px`;
-  layoutState.edgeLayer.setAttribute("width", String(stageWidth));
-  layoutState.edgeLayer.setAttribute("height", String(stageHeight));
-  layoutState.edgeLayer.setAttribute("viewBox", `0 0 ${stageWidth} ${stageHeight}`);
-  renderThreadExplorerReplyClusterEdges(layoutState);
 }
 
 /**
@@ -10420,47 +9370,12 @@ function applyThreadExplorerReplyClusterBounds(layoutState) {
  * @returns {void}
  */
 function layoutThreadExplorerReplyCluster(layoutState) {
-  if (!layoutState?.rootRenderNode) {
-    return;
-  }
-
-  measureThreadExplorerReplyClusterSubtree(layoutState.rootRenderNode);
-  layoutState.positionedItems = [];
-  const rootNode = layoutState.rootRenderNode;
-  const rootSize = rootNode.itemSize || getThreadExplorerReplyClusterItemSize(rootNode.item);
-  const rootCenterX = 720;
-  const rootCenterY = 540;
-
-  rootNode.position = {
-    x: rootCenterX,
-    y: rootCenterY,
-  };
-  setThreadExplorerReplyClusterItemPosition(rootNode.item, rootCenterX, rootCenterY);
-  layoutState.positionedItems.push(rootNode);
-
-  const directReplies = Array.isArray(rootNode.children) ? rootNode.children : [];
-  if (directReplies.length > 0) {
-    const maxChildWidth = directReplies.reduce((maximumWidth, childNode) => {
-      return Math.max(maximumWidth, childNode.itemSize?.width || 0);
-    }, 0);
-    const totalBreadth = directReplies.reduce((breadthSum, childNode) => {
-      return breadthSum + childNode.subtreeWidth;
-    }, 0);
-    const rootClearanceRadius = (Math.max(rootSize.width, rootSize.height) / 2) + (maxChildWidth / 2) + 120;
-    const circumferenceRadius = totalBreadth / (Math.PI * 1.75);
-    const clusterRadius = Math.max(320, rootClearanceRadius, circumferenceRadius);
-    const directReplyAngles = getThreadExplorerReplyClusterRootChildAngles(directReplies, clusterRadius);
-
-    directReplies.forEach((childNode, childIndex) => {
-      const angle = directReplyAngles[childIndex];
-      const childCenterX = rootCenterX + (Math.cos(angle) * clusterRadius);
-      const childCenterY = rootCenterY + (Math.sin(angle) * clusterRadius);
-      placeThreadExplorerReplyClusterSubtree(childNode, childCenterX, childCenterY, angle, layoutState.positionedItems);
-    });
-  }
-
-  resolveThreadExplorerReplyClusterOverlaps(layoutState);
-  applyThreadExplorerReplyClusterBounds(layoutState);
+  layoutReplyClusterFromLayout(layoutState, {
+    getItemSize: getReplyClusterItemSizeFromLayout,
+    setItemPosition: setReplyClusterItemPositionFromLayout,
+    setNodePosition: setReplyClusterNodePositionFromLayout,
+    applyBounds: applyThreadExplorerReplyClusterBounds,
+  });
 }
 
 /**
@@ -10494,11 +9409,7 @@ function createThreadExplorerReplyClusterItem(node, centerX, centerY, role) {
     showToggle: true,
   });
   const item = renderedItem.item;
-  item.classList.add("thread-explorer-cluster-node-item");
-  item.classList.add(`is-cluster-${role}`);
-  item.style.setProperty("--thread-explorer-cluster-x", `${Math.round(centerX)}px`);
-  item.style.setProperty("--thread-explorer-cluster-y", `${Math.round(centerY)}px`);
-  return item;
+  return configureThreadExplorerReplyClusterItem(item, centerX, centerY, role);
 }
 
 /**
@@ -10507,39 +9418,11 @@ function createThreadExplorerReplyClusterItem(node, centerX, centerY, role) {
  * @returns {object|null} Recursive render node with rendered item and expanded children.
  */
 function createThreadExplorerReplyClusterRenderNode(node) {
-  if (!node || !node.post?.uri) {
-    return null;
-  }
-
-  let role = "reply";
-  if (node.post?.uri === threadExplorerTree?.post?.uri) {
-    role = "center";
-  }
-  const item = createThreadExplorerReplyClusterItem(node, 0, 0, role);
-  const renderNode = {
-    node,
-    item,
-    children: [],
-    subtreeWidth: 0,
-    subtreeHeight: 0,
-    position: {
-      x: 0,
-      y: 0,
-    },
-  };
-
-  if (!isThreadExplorerReplyClusterExpanded(node.post.uri)) {
-    return renderNode;
-  }
-
-  const replies = getChronologicalThreadExplorerReplies(node.replies);
-  replies.forEach((reply) => {
-    const childRenderNode = createThreadExplorerReplyClusterRenderNode(reply);
-    if (childRenderNode) {
-      renderNode.children.push(childRenderNode);
-    }
+  return createThreadExplorerReplyClusterRenderNodeFromTools(node, {
+    rootUri: threadExplorerTree?.post?.uri || "",
+    isExpanded: isThreadExplorerReplyClusterExpanded,
+    createItem: createThreadExplorerReplyClusterItem,
   });
-  return renderNode;
 }
 
 /**
@@ -10550,18 +9433,6 @@ function createThreadExplorerReplyClusterRenderNode(node) {
  * @param {string} edgeClassName - Additional CSS class for this edge.
  * @returns {void}
  */
-function appendThreadExplorerReplyClusterEdge(svg, start, end, edgeClassName) {
-  if (!svg) {
-    return;
-  }
-
-  const path = createSvgNode("path", {
-    class: `thread-explorer-edge ${edgeClassName}`.trim(),
-    d: `M ${start.x} ${start.y} C ${start.x} ${start.y + ((end.y - start.y) * 0.35)}, ${end.x} ${end.y - ((end.y - start.y) * 0.35)}, ${end.x} ${end.y}`,
-  });
-  svg.appendChild(path);
-}
-
 /**
  * Renders the reply-cluster layout around the currently selected or contextual post.
  * @returns {void}
@@ -10577,44 +9448,15 @@ function renderThreadExplorerReplyCluster() {
     return;
   }
 
-  const cluster = document.createElement("div");
-  cluster.className = "thread-explorer-reply-cluster";
-  cluster.style.width = "1120px";
-  cluster.style.height = "860px";
-
-  const edgeLayer = createSvgNode("svg", {
-    class: "thread-explorer-reply-cluster-edge-layer",
-    width: 1120,
-    height: 860,
-    viewBox: "0 0 1120 860",
-    "aria-hidden": "true",
-    focusable: "false",
-  });
-  cluster.appendChild(edgeLayer);
-
-  const pendingNodes = [rootRenderNode];
-  while (pendingNodes.length > 0) {
-    const currentNode = pendingNodes.shift();
-    if (!currentNode) {
-      continue;
-    }
-
-    cluster.appendChild(currentNode.item);
-    if (Array.isArray(currentNode.children) && currentNode.children.length > 0) {
-      currentNode.children.forEach((childNode) => {
-        pendingNodes.push(childNode);
-      });
-    }
-  }
-
-  threadExplorerReplyClusterLayoutState = {
-    cluster,
-    edgeLayer,
+  threadExplorerReplyClusterLayoutState = createThreadExplorerReplyClusterWorkspace(
     rootRenderNode,
-    positionedItems: [],
-  };
-  threadExplorerThreadStage.classList.add("is-reply-cluster-mode");
-  threadExplorerThreadStage.appendChild(cluster);
+    createSvgNode,
+    appendThreadExplorerReplyClusterNodes,
+  );
+  if (!threadExplorerReplyClusterLayoutState) {
+    return;
+  }
+  mountThreadExplorerReplyClusterWorkspace(threadExplorerThreadStage, threadExplorerReplyClusterLayoutState);
   layoutThreadExplorerReplyCluster(threadExplorerReplyClusterLayoutState);
 }
 
@@ -10641,52 +9483,7 @@ function handleThreadExplorerNodeToggleClick(event) {
  * @returns {void}
  */
 function applyThreadExplorerPostImagePreviewShape(image = null, figure = null, gallery = null) {
-  if (!image || !figure || !gallery) {
-    return;
-  }
-
-  figure.classList.remove("is-portrait", "is-landscape", "is-square");
-  gallery.classList.remove(
-    "has-single-thread-image",
-    "has-single-thread-image-portrait",
-    "has-single-thread-image-landscape",
-    "has-single-thread-image-square",
-    "has-multiple-thread-images",
-  );
-
-  const imageCount = Math.max(0, Number(gallery.dataset.imageCount) || 0);
-  if (imageCount === 1) {
-    gallery.classList.add("has-single-thread-image");
-  } else if (imageCount > 1) {
-    gallery.classList.add("has-multiple-thread-images");
-  }
-
-  const naturalWidth = Math.max(0, Number(image.naturalWidth) || 0);
-  const naturalHeight = Math.max(0, Number(image.naturalHeight) || 0);
-  if (!naturalWidth || !naturalHeight) {
-    return;
-  }
-
-  if (naturalHeight > naturalWidth * 1.08) {
-    figure.classList.add("is-portrait");
-    if (imageCount === 1) {
-      gallery.classList.add("has-single-thread-image-portrait");
-    }
-    return;
-  }
-
-  if (naturalWidth > naturalHeight * 1.08) {
-    figure.classList.add("is-landscape");
-    if (imageCount === 1) {
-      gallery.classList.add("has-single-thread-image-landscape");
-    }
-    return;
-  }
-
-  figure.classList.add("is-square");
-  if (imageCount === 1) {
-    gallery.classList.add("has-single-thread-image-square");
-  }
+  applyThreadExplorerPostImagePreviewShapeFromTools(image, figure, gallery);
 }
 
 /**
@@ -10696,62 +9493,7 @@ function applyThreadExplorerPostImagePreviewShape(image = null, figure = null, g
  * @returns {void}
  */
 function syncThreadExplorerPostCardImageShape(card = null, gallery = null) {
-  if (!card || !gallery) {
-    return;
-  }
-
-  card.classList.remove(
-    "has-single-thread-image",
-    "has-single-thread-image-portrait",
-    "has-single-thread-image-landscape",
-    "has-single-thread-image-square",
-    "has-multiple-thread-images",
-  );
-
-  if (gallery.classList.contains("has-single-thread-image")) {
-    card.classList.add("has-single-thread-image");
-  }
-  if (gallery.classList.contains("has-single-thread-image-portrait")) {
-    card.classList.add("has-single-thread-image-portrait");
-  }
-  if (gallery.classList.contains("has-single-thread-image-landscape")) {
-    card.classList.add("has-single-thread-image-landscape");
-  }
-  if (gallery.classList.contains("has-single-thread-image-square")) {
-    card.classList.add("has-single-thread-image-square");
-  }
-  if (gallery.classList.contains("has-multiple-thread-images")) {
-    card.classList.add("has-multiple-thread-images");
-  }
-
-  const node = card.closest(".thread-explorer-node");
-  if (!node) {
-    return;
-  }
-
-  node.classList.remove(
-    "has-single-thread-image",
-    "has-single-thread-image-portrait",
-    "has-single-thread-image-landscape",
-    "has-single-thread-image-square",
-    "has-multiple-thread-images",
-  );
-
-  if (gallery.classList.contains("has-single-thread-image")) {
-    node.classList.add("has-single-thread-image");
-  }
-  if (gallery.classList.contains("has-single-thread-image-portrait")) {
-    node.classList.add("has-single-thread-image-portrait");
-  }
-  if (gallery.classList.contains("has-single-thread-image-landscape")) {
-    node.classList.add("has-single-thread-image-landscape");
-  }
-  if (gallery.classList.contains("has-single-thread-image-square")) {
-    node.classList.add("has-single-thread-image-square");
-  }
-  if (gallery.classList.contains("has-multiple-thread-images")) {
-    node.classList.add("has-multiple-thread-images");
-  }
+  syncThreadExplorerPostCardImageShapeFromTools(card, gallery);
 }
 
 /**
@@ -10761,14 +9503,8 @@ function syncThreadExplorerPostCardImageShape(card = null, gallery = null) {
  * @returns {void}
  */
 function renderThreadExplorerImages(post, gallery) {
-  gallery.replaceChildren();
   const images = getThreadExplorerPostImages(post);
-  gallery.dataset.imageCount = String(images.length);
-  images.forEach((image, imageIndex) => {
-    const figure = createThreadExplorerImageFigure(image, imageIndex, images, gallery);
-    gallery.appendChild(figure);
-  });
-  gallery.hidden = images.length === 0;
+  renderThreadExplorerPostGallery(gallery, images, createThreadExplorerImageFigure);
 }
 
 /**
@@ -10780,32 +9516,14 @@ function renderThreadExplorerImages(post, gallery) {
  * @returns {HTMLElement} Rendered figure element.
  */
 function createThreadExplorerImageFigure(image, imageIndex, images, gallery) {
-  const fragment = cloneTemplateContent(threadExplorerImageTemplate);
-  const figure = fragment.querySelector(".thread-explorer-image");
-  const button = fragment.querySelector(".thread-explorer-image-button");
-  const img = fragment.querySelector("img");
-  const caption = fragment.querySelector("figcaption");
-  const imageSources = getThreadExplorerImageSources(image);
-  const source = imageSources.source;
-  const thumb = imageSources.thumb;
-
-  setThreadExplorerCachedImageSource(img, source, thumb);
-  img.alt = image.alt || "";
-  img.addEventListener("load", () => {
-    applyThreadExplorerGalleryImageLoadState(img, figure, gallery);
-  }, { once: true });
-  attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerPostImageError);
-  button.addEventListener("click", () => {
-    openThreadExplorerGallery(images, imageIndex);
+  return createThreadExplorerPostImageFigure(image, imageIndex, images, gallery, {
+    cloneTemplate: () => cloneTemplateContent(threadExplorerImageTemplate),
+    getImageSources: getThreadExplorerImageSources,
+    setImageSource: setThreadExplorerCachedImageSource,
+    onLoad: applyThreadExplorerGalleryImageLoadState,
+    onError: (imageElement) => attachThreadExplorerRenderedMediaCacheHandlers(imageElement, handleThreadExplorerPostImageError),
+    openGallery: openThreadExplorerGallery,
   });
-  caption.textContent = image.alt || "";
-  caption.hidden = !image.alt;
-
-  if (img.complete) {
-    applyThreadExplorerGalleryImageLoadState(img, figure, gallery);
-  }
-
-  return figure;
 }
 
 /**
@@ -10836,15 +9554,10 @@ function applyThreadExplorerGalleryImageLoadState(image = null, figure = null, g
  * @returns {void}
  */
 function handleThreadExplorerLinkImageError(event) {
-  const image = event.currentTarget;
-  const card = image.closest(".thread-explorer-link-card");
-  image.hidden = true;
-  image.removeAttribute("src");
-  if (card) {
-    card.classList.add("has-no-thumb");
-    card.classList.remove("has-favicon-thumb");
-  }
-  refreshThreadExplorerRenderedGeometry();
+  hideThreadExplorerExternalCardImage(event, {
+    cardSelector: ".thread-explorer-link-card",
+    onError: refreshThreadExplorerRenderedGeometry,
+  });
 }
 
 /**
@@ -10853,15 +9566,10 @@ function handleThreadExplorerLinkImageError(event) {
  * @returns {void}
  */
 function handleThreadExplorerQuoteLinkImageError(event) {
-  const image = event.currentTarget;
-  const card = image.closest(".thread-explorer-quote-link-card");
-  image.hidden = true;
-  image.removeAttribute("src");
-  if (card) {
-    card.classList.add("has-no-thumb");
-    card.classList.remove("has-favicon-thumb");
-  }
-  refreshThreadExplorerRenderedGeometry();
+  hideThreadExplorerExternalCardImage(event, {
+    cardSelector: ".thread-explorer-quote-link-card",
+    onError: refreshThreadExplorerRenderedGeometry,
+  });
 }
 
 /**
@@ -10872,56 +9580,20 @@ function handleThreadExplorerQuoteLinkImageError(event) {
  * @returns {void}
  */
 function renderThreadExplorerExternalCard(post, display, fragment) {
-  const card = fragment.querySelector(".thread-explorer-link-card");
-  const image = fragment.querySelector(".thread-explorer-link-card-image");
-  const title = fragment.querySelector(".thread-explorer-link-card-title");
-  const description = fragment.querySelector(".thread-explorer-link-card-description");
-  const url = fragment.querySelector(".thread-explorer-link-card-url");
-
-  if (!display) {
-    card.hidden = true;
-    card.classList.remove("is-publication");
-    return;
-  }
-
-  card.hidden = false;
-  if (display.isPublication) {
-    card.classList.add("is-publication");
-  } else {
-    card.classList.remove("is-publication");
-  }
-  card.href = display.url;
-  image.removeEventListener("error", handleThreadExplorerLinkImageError);
-  image.addEventListener("error", handleThreadExplorerLinkImageError);
-  image.addEventListener("load", () => {
-    cacheThreadExplorerRenderedMediaImage(image);
-    refreshThreadExplorerRenderedGeometry();
-  }, { once: true });
-  if (display.thumb) {
-    card.classList.remove("has-no-thumb");
-    card.classList.remove("has-favicon-thumb");
-    image.hidden = false;
-    setThreadExplorerCachedImageSource(image, display.thumb);
-  } else {
-    const faviconUrl = getThreadExplorerFaviconUrl(display.url);
-    if (faviconUrl) {
-      card.classList.remove("has-no-thumb");
-      card.classList.add("has-favicon-thumb");
-      image.hidden = false;
-      setThreadExplorerCachedImageSource(image, faviconUrl);
-    } else {
-      card.classList.add("has-no-thumb");
-      card.classList.remove("has-favicon-thumb");
-      image.hidden = true;
-      delete image.dataset.snapshotSource;
-      delete image.dataset.snapshotThumb;
-      delete image.dataset.snapshotHydrated;
-      image.removeAttribute("src");
-    }
-  }
-  title.textContent = display.title || display.url;
-  description.textContent = display.description || "";
-  url.textContent = display.footer;
+  renderThreadExplorerExternalLinkCard(display, fragment, {
+    cardSelector: ".thread-explorer-link-card",
+    imageSelector: ".thread-explorer-link-card-image",
+    titleSelector: ".thread-explorer-link-card-title",
+    descriptionSelector: ".thread-explorer-link-card-description",
+    urlSelector: ".thread-explorer-link-card-url",
+    onImageError: handleThreadExplorerLinkImageError,
+    onImageLoad: (event) => {
+      cacheThreadExplorerRenderedMediaImage(event.currentTarget);
+      refreshThreadExplorerRenderedGeometry();
+    },
+    setImageSource: setThreadExplorerCachedImageSource,
+    getFaviconUrl: getThreadExplorerFaviconUrl,
+  });
 }
 
 /**
@@ -10931,21 +9603,7 @@ function renderThreadExplorerExternalCard(post, display, fragment) {
  * @returns {void}
  */
 function renderThreadExplorerQuoteImages(quoteDisplay, gallery) {
-  if (!gallery) {
-    return;
-  }
-
-  gallery.replaceChildren();
-  const images = Array.isArray(quoteDisplay?.images) ? quoteDisplay.images : [];
-  const previewEntries = Array.isArray(quoteDisplay?.imagePreviewEntries) ? quoteDisplay.imagePreviewEntries : [];
-  gallery.dataset.imageCount = String(images.length);
-
-  previewEntries.forEach((entry) => {
-    const img = createThreadExplorerQuoteImageElement(entry, images, gallery);
-    gallery.appendChild(img);
-  });
-
-  gallery.hidden = images.length === 0;
+  renderThreadExplorerQuoteGallery(gallery, quoteDisplay, createThreadExplorerQuoteImageElement);
 }
 
 /**
@@ -10956,25 +9614,13 @@ function renderThreadExplorerQuoteImages(quoteDisplay, gallery) {
  * @returns {HTMLImageElement} Rendered preview image element.
  */
 function createThreadExplorerQuoteImageElement(entry, images, gallery) {
-  const img = document.createElement("img");
-  setThreadExplorerCachedImageSource(img, entry.source);
-  img.alt = entry.alt;
-  img.loading = "lazy";
-  img.addEventListener("load", () => {
-    applyThreadExplorerQuoteImageLoadState(img, gallery);
-  }, { once: true });
-  attachThreadExplorerRenderedMediaCacheHandlers(img, handleThreadExplorerQuoteImageError);
-  img.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openThreadExplorerGallery(images, entry.imageIndex);
+  return createThreadExplorerQuotePreviewImage(entry, images, gallery, {
+    createImage: () => document.createElement("img"),
+    setImageSource: setThreadExplorerCachedImageSource,
+    onLoad: applyThreadExplorerQuoteImageLoadState,
+    onError: (image) => attachThreadExplorerRenderedMediaCacheHandlers(image, handleThreadExplorerQuoteImageError),
+    openGallery: openThreadExplorerGallery,
   });
-
-  if (img.complete) {
-    applyThreadExplorerQuoteImageLoadState(img, gallery);
-  }
-
-  return img;
 }
 
 /**
@@ -10999,58 +9645,21 @@ function applyThreadExplorerQuoteImageLoadState(image = null, gallery = null) {
  * @returns {void}
  */
 function renderThreadExplorerQuoteExternalCard(quoteDisplay, fragment) {
-  const card = fragment.querySelector(".thread-explorer-quote-link-card");
-  const image = fragment.querySelector(".thread-explorer-quote-link-card-image");
-  const title = fragment.querySelector(".thread-explorer-quote-link-card-title");
-  const description = fragment.querySelector(".thread-explorer-quote-link-card-description");
-  const url = fragment.querySelector(".thread-explorer-quote-link-card-url");
   const display = quoteDisplay?.externalCardDisplay || null;
-
-  if (!card || !display) {
-    if (card) {
-      card.hidden = true;
-      card.classList.remove("is-publication");
-    }
-    return;
-  }
-
-  card.hidden = false;
-  if (display.isPublication) {
-    card.classList.add("is-publication");
-  } else {
-    card.classList.remove("is-publication");
-  }
-  image.removeEventListener("error", handleThreadExplorerQuoteLinkImageError);
-  image.addEventListener("error", handleThreadExplorerQuoteLinkImageError);
-  image.addEventListener("load", () => {
-    cacheThreadExplorerRenderedMediaImage(image);
-    refreshThreadExplorerRenderedGeometry();
-  }, { once: true });
-  if (display.thumb) {
-    card.classList.remove("has-no-thumb");
-    card.classList.remove("has-favicon-thumb");
-    image.hidden = false;
-    setThreadExplorerCachedImageSource(image, display.thumb);
-  } else {
-    const faviconUrl = getThreadExplorerFaviconUrl(display.url);
-    if (faviconUrl) {
-      card.classList.remove("has-no-thumb");
-      card.classList.add("has-favicon-thumb");
-      image.hidden = false;
-      setThreadExplorerCachedImageSource(image, faviconUrl);
-    } else {
-      card.classList.add("has-no-thumb");
-      card.classList.remove("has-favicon-thumb");
-      image.hidden = true;
-      delete image.dataset.snapshotSource;
-      delete image.dataset.snapshotThumb;
-      delete image.dataset.snapshotHydrated;
-      image.removeAttribute("src");
-    }
-  }
-  title.textContent = display.title || display.url;
-  description.textContent = display.description || "";
-  url.textContent = display.footer;
+  renderThreadExplorerExternalLinkCard(display, fragment, {
+    cardSelector: ".thread-explorer-quote-link-card",
+    imageSelector: ".thread-explorer-quote-link-card-image",
+    titleSelector: ".thread-explorer-quote-link-card-title",
+    descriptionSelector: ".thread-explorer-quote-link-card-description",
+    urlSelector: ".thread-explorer-quote-link-card-url",
+    onImageError: handleThreadExplorerQuoteLinkImageError,
+    onImageLoad: (event) => {
+      cacheThreadExplorerRenderedMediaImage(event.currentTarget);
+      refreshThreadExplorerRenderedGeometry();
+    },
+    setImageSource: setThreadExplorerCachedImageSource,
+    getFaviconUrl: getThreadExplorerFaviconUrl,
+  });
 }
 
 /**
@@ -11060,50 +9669,34 @@ function renderThreadExplorerQuoteExternalCard(quoteDisplay, fragment) {
  * @returns {void}
  */
 function renderThreadExplorerQuoteCard(post, fragment) {
-  const card = fragment.querySelector(".thread-explorer-quote-card");
-  const avatar = fragment.querySelector(".thread-explorer-quote-card-avatar");
-  const author = fragment.querySelector(".thread-explorer-quote-card-author");
-  const handle = fragment.querySelector(".thread-explorer-quote-card-handle");
-  const text = fragment.querySelector(".thread-explorer-quote-card-text");
-  const gallery = fragment.querySelector(".thread-explorer-quote-card-gallery");
-  const meta = fragment.querySelector(".thread-explorer-quote-card-meta");
-  const quote = post.quoteCard;
-  const display = buildQuoteCardDisplayModel(quote, {
-    fallbackAuthorLabel: t("threadExplorerUnknownAuthor"),
-    noTextFallback: t("threadExplorerNoText"),
-    buildPostUrl: buildThreadExplorerPostWebUrl,
-    getAuthorFields: getLocalizedPostAuthorFields,
-    buildMetaText(quotePost) {
-      return buildPostMetaText(quotePost, {
-        formatDate: formatThreadExplorerDate,
-        translate: t,
-        includeEditedBadge: true,
+  renderThreadExplorerQuotePostCard(post, fragment, {
+    buildDisplay(quote) {
+      return buildQuoteCardDisplayModel(quote, {
+        fallbackAuthorLabel: t("threadExplorerUnknownAuthor"),
+        noTextFallback: t("threadExplorerNoText"),
+        buildPostUrl: buildThreadExplorerPostWebUrl,
+        getAuthorFields: getLocalizedPostAuthorFields,
+        buildMetaText(quotePost) {
+          return buildPostMetaText(quotePost, {
+            formatDate: formatThreadExplorerDate,
+            translate: t,
+            includeEditedBadge: true,
+          });
+        },
+        buildExternalCardDisplay: getThreadExplorerExternalCardDisplayModel,
       });
     },
-    buildExternalCardDisplay: getThreadExplorerExternalCardDisplayModel,
+    markAvatar: markThreadExplorerAvatarImage,
+    getAvatarUri: getThreadExplorerActorAvatarUri,
+    getActorLabel: getThreadExplorerActorLabel,
+    setAvatar: setAvatarImage,
+    translate: t,
+    renderImages: renderThreadExplorerQuoteImages,
+    renderExternalCard: renderThreadExplorerQuoteExternalCard,
+    openPost(uri) {
+      void selectThreadExplorerPost(uri);
+    },
   });
-
-  if (!display) {
-    card.hidden = true;
-    return;
-  }
-
-  card.hidden = false;
-  card.href = display.url;
-  card.title = t("searchResultOpenInThreadExplorerButton");
-  card.setAttribute("aria-label", t("searchResultOpenInThreadExplorerButton"));
-  card.addEventListener("click", (event) => {
-    event.preventDefault();
-    void selectThreadExplorerPost(display.uri);
-  });
-  markThreadExplorerAvatarImage(avatar, quote.author);
-  setAvatarImage(avatar, getThreadExplorerActorAvatarUri(quote.author), getThreadExplorerActorLabel(quote.author));
-  author.textContent = display.authorLabel;
-  handle.textContent = display.handleLabel;
-  text.textContent = display.text;
-  renderThreadExplorerQuoteImages(display, gallery);
-  renderThreadExplorerQuoteExternalCard(display, fragment);
-  meta.textContent = display.metaText;
 }
 
 /**
@@ -11112,90 +9705,58 @@ function renderThreadExplorerQuoteCard(post, fragment) {
  * @returns {Promise<void>} Resolves when the feed is rendered.
  */
 async function loadThreadExplorerFeed(options = {}) {
-  if (!authAccount || threadExplorerLoadingFeed) {
-    return;
-  }
-  const isForeignAccountMode = isThreadExplorerForeignAccountMode();
-  const append = options.append === true;
-  if (append && !threadExplorerHasMore) {
-    return;
-  }
-
-  if (options.reset === true) {
-    threadExplorerCursor = "";
-    threadExplorerHasMore = true;
-    threadExplorerItems = [];
-  }
-  if (options.clearSelection === true) {
-    threadExplorerSelectedUri = "";
-    threadExplorerTree = null;
-    clearThreadExplorerRenderedMediaCache();
-    threadExplorerCollapsedUris.clear();
-    clearThreadExplorerSelectionPreference();
-  }
-  threadExplorerFeedError = "";
-  threadExplorerThreadError = "";
-  threadExplorerAccountError = "";
-
-  threadExplorerLoadingFeed = true;
-  renderThreadExplorerWorkspace();
-  try {
-    let result = null;
-    if (isForeignAccountMode) {
-      result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_ACTOR_FEED", {
-        actor: getThreadExplorerRequestedActor(),
-        cursor: threadExplorerCursor,
-        mode: normalizeThreadExplorerAccountMode(threadExplorerAccountMode),
-        limit: 50,
-      }, {
-        timeoutMs: 120000,
-      });
-    } else {
-      const searchId = getThreadExplorerSearchIdFromSource(threadExplorerSource);
-      const savedSearch = getSavedSearchById(searchId);
-      result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_FEED", {
-        source: threadExplorerSource,
-        cursor: threadExplorerCursor,
-        limit: 50,
-        search: savedSearch?.params || null,
-      }, {
-        timeoutMs: 120000,
-      });
-    }
-    threadExplorerCursor = String(result?.cursor || "");
-    threadExplorerHasMore = Boolean(threadExplorerCursor);
-    if (Array.isArray(result?.items)) {
-      if (append) {
-        threadExplorerItems = appendThreadExplorerFeedItems(threadExplorerItems, result.items, {
-          groupByRoot: !isForeignAccountMode && Boolean(getThreadExplorerSearchIdFromSource(threadExplorerSource)),
-        });
-        threadExplorerItems = sortThreadExplorerFeedItemsByDate(threadExplorerItems);
-      } else {
-        threadExplorerItems = sortThreadExplorerFeedItemsByDate(result.items);
-      }
-    } else {
-      if (!append) {
-        threadExplorerItems = [];
-      }
-    }
-    if (!append) {
-      const selectionUri = getThreadExplorerPreferredSelectionUri({
-        allowStoredOutsideFeed: options.clearSelection !== true,
-      });
+  await loadThreadExplorerFeedWorkflow({
+    authAccount,
+    state: {
+      get cursor() { return threadExplorerCursor; },
+      set cursor(value) { threadExplorerCursor = value; },
+      get hasMore() { return threadExplorerHasMore; },
+      set hasMore(value) { threadExplorerHasMore = value; },
+      get items() { return threadExplorerItems; },
+      set items(value) { threadExplorerItems = value; },
+      get loading() { return threadExplorerLoadingFeed; },
+      set loading(value) { threadExplorerLoadingFeed = value; },
+    },
+    append: options.append,
+    reset: options.reset,
+    clearSelection: options.clearSelection,
+    isForeignAccount: isThreadExplorerForeignAccountMode,
+    accountMode: normalizeThreadExplorerAccountMode(threadExplorerAccountMode),
+    source: threadExplorerSource,
+    savedSearch: getSavedSearchById(getThreadExplorerSearchIdFromSource(threadExplorerSource))?.params || null,
+    getRequestedActor: getThreadExplorerRequestedActor,
+    request: sendToServiceWorker,
+    clearSelectionState: () => {
+      threadExplorerSelectedUri = "";
+      threadExplorerTree = null;
+      clearThreadExplorerRenderedMediaCache();
+      threadExplorerCollapsedUris.clear();
+      clearThreadExplorerSelectionPreference();
+    },
+    clearErrors: () => {
+      threadExplorerFeedError = "";
+      threadExplorerThreadError = "";
+      threadExplorerAccountError = "";
+    },
+    render: renderThreadExplorerWorkspace,
+    appendItems: (currentItems, nextItems, foreignAccount) => sortThreadExplorerFeedItemsByDate(appendThreadExplorerFeedItems(currentItems, nextItems, {
+      groupByRoot: !foreignAccount && Boolean(getThreadExplorerSearchIdFromSource(threadExplorerSource)),
+    })),
+    sortItems: sortThreadExplorerFeedItemsByDate,
+    restoreSelection: async (allowStoredOutsideFeed) => {
+      const selectionUri = getThreadExplorerPreferredSelectionUri({ allowStoredOutsideFeed });
       if (selectionUri) {
         await selectThreadExplorerPost(selectionUri);
       }
-    }
-  } catch (error) {
-    const message = error?.message || t("threadExplorerFeedFailed");
-    threadExplorerFeedError = message;
-    if (isForeignAccountMode) {
-      threadExplorerAccountError = message;
-    }
-  } finally {
-    threadExplorerLoadingFeed = false;
-    renderThreadExplorerWorkspace();
-  }
+    },
+    setError: (message, foreignAccount) => {
+      threadExplorerFeedError = message;
+      if (foreignAccount) {
+        threadExplorerAccountError = message;
+      }
+    },
+    feedErrorMessage: t("threadExplorerFeedFailed"),
+  });
 }
 
 /**
@@ -11204,39 +9765,29 @@ async function loadThreadExplorerFeed(options = {}) {
  * @returns {Promise<void>} Resolves when the thread tree is rendered.
  */
 async function selectThreadExplorerPost(uri) {
-  const selectedUri = String(uri || "").trim();
-  if (!selectedUri || threadExplorerLoadingThread) {
-    return;
-  }
-
-  threadExplorerSelectedUri = selectedUri;
-  persistThreadExplorerSelectionPreference(selectedUri);
-  threadExplorerLoadingThread = true;
-  threadExplorerCardZoomState = null;
-  threadExplorerTree = null;
-  clearThreadExplorerRenderedMediaCache();
-  threadExplorerThreadError = "";
-  renderThreadExplorerWorkspace();
-  try {
-    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_THREAD", {
-      uri: selectedUri,
-    }, {
-      timeoutMs: 120000,
-    });
-    threadExplorerTree = result?.root || null;
-    if (threadExplorerTree && isThreadExplorerReplyClusterModeActive()) {
-      threadExplorerReplyClusterExpandedUris.clear();
-      expandAllThreadExplorerReplyClusterNodes(threadExplorerTree);
-    }
-  } catch (error) {
-    threadExplorerThreadError = error.message || t("threadExplorerThreadFailed");
-  } finally {
-    threadExplorerLoadingThread = false;
-    renderThreadExplorerWorkspace();
-    if (threadExplorerTree) {
-      scheduleThreadExplorerSelectedFocus();
-    }
-  }
+  await loadThreadExplorerThreadWorkflow(uri, {
+    state: {
+      get selectedUri() { return threadExplorerSelectedUri; },
+      set selectedUri(value) { threadExplorerSelectedUri = value; },
+      get loading() { return threadExplorerLoadingThread; },
+      set loading(value) { threadExplorerLoadingThread = value; },
+      get cardZoom() { return threadExplorerCardZoomState; },
+      set cardZoom(value) { threadExplorerCardZoomState = value; },
+      get tree() { return threadExplorerTree; },
+      set tree(value) { threadExplorerTree = value; },
+      get error() { return threadExplorerThreadError; },
+      set error(value) { threadExplorerThreadError = value; },
+    },
+    persistSelection: persistThreadExplorerSelectionPreference,
+    clearMediaCache: clearThreadExplorerRenderedMediaCache,
+    request: sendToServiceWorker,
+    isClusterMode: isThreadExplorerReplyClusterModeActive,
+    resetClusterState: () => threadExplorerReplyClusterExpandedUris.clear(),
+    expandClusterTree: expandAllThreadExplorerReplyClusterNodes,
+    render: renderThreadExplorerWorkspace,
+    scheduleFocus: scheduleThreadExplorerSelectedFocus,
+    errorMessage: t("threadExplorerThreadFailed"),
+  });
 }
 
 /**
@@ -11486,6 +10037,7 @@ function fitThreadExplorerStageToBounds(bounds, options = {}) {
   threadExplorerZoom = nextZoom;
   threadExplorerPanX = ((viewportWidth - (bounds.width * nextZoom)) / 2) - (bounds.left * nextZoom);
   threadExplorerPanY = ((viewportHeight - (bounds.height * nextZoom)) / 2) - (bounds.top * nextZoom);
+  threadExplorerController.setViewport(threadExplorerZoom, threadExplorerPanX, threadExplorerPanY);
   applyThreadExplorerStageTransform();
   scheduleThreadExplorerEdgeRender();
 }
@@ -11829,26 +10381,14 @@ function isThreadExplorerInteractiveTarget(target) {
  * @returns {void}
  */
 function handleThreadExplorerPointerDown(event) {
-  if (event.button !== 0 || isThreadExplorerInteractiveTarget(event.target)) {
-    return;
-  }
-  cancelThreadExplorerPanInertia();
-  threadExplorerThreadTree.classList.add("is-pan-armed");
-  threadExplorerDragState = {
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    panX: threadExplorerPanX,
-    panY: threadExplorerPanY,
-    started: false,
-    lastSampleX: event.clientX,
-    lastSampleY: event.clientY,
-    lastSampleTime: event.timeStamp,
-    velocityX: 0,
-    velocityY: 0,
-  };
-  threadExplorerThreadTree.setPointerCapture(event.pointerId);
-  event.preventDefault();
+  handleThreadExplorerPointerDownFromTools(event, threadExplorerDragStateHolder, {
+    isInteractiveTarget: isThreadExplorerInteractiveTarget,
+    cancelInertia: cancelThreadExplorerPanInertia,
+    setPanArmed: (active) => threadExplorerThreadTree.classList.toggle("is-pan-armed", active),
+    getPanX: () => threadExplorerPanX,
+    getPanY: () => threadExplorerPanY,
+    capturePointer: (pointerId) => threadExplorerThreadTree.setPointerCapture(pointerId),
+  });
 }
 
 /**
@@ -11857,26 +10397,16 @@ function handleThreadExplorerPointerDown(event) {
  * @returns {void}
  */
 function handleThreadExplorerPointerMove(event) {
-  if (!threadExplorerDragState || threadExplorerDragState.pointerId !== event.pointerId) {
-    return;
-  }
-
-  const deltaX = event.clientX - threadExplorerDragState.startX;
-  const deltaY = event.clientY - threadExplorerDragState.startY;
-  if (threadExplorerDragState.started !== true) {
-    const movement = Math.max(Math.abs(deltaX), Math.abs(deltaY));
-    if (movement < THREAD_EXPLORER_DRAG_THRESHOLD_PX) {
-      return;
-    }
-    threadExplorerDragState.started = true;
-    setThreadExplorerPanningMode(true);
-  }
-
-  updateThreadExplorerPanVelocity(threadExplorerDragState, event);
-  threadExplorerPanX = threadExplorerDragState.panX + deltaX;
-  threadExplorerPanY = threadExplorerDragState.panY + deltaY;
-  applyThreadExplorerStageTransform();
-  event.preventDefault();
+  handleThreadExplorerPointerMoveFromTools(event, threadExplorerDragStateHolder, {
+    dragThreshold: THREAD_EXPLORER_DRAG_THRESHOLD_PX,
+    updateVelocity: updateThreadExplorerPanVelocity,
+    setPanning: setThreadExplorerPanningMode,
+    setPan: (panX, panY) => {
+      threadExplorerPanX = panX;
+      threadExplorerPanY = panY;
+    },
+    applyTransform: applyThreadExplorerStageTransform,
+  });
 }
 
 /**
@@ -11885,21 +10415,19 @@ function handleThreadExplorerPointerMove(event) {
  * @returns {void}
  */
 function handleThreadExplorerPointerUp(event) {
-  if (!threadExplorerDragState || threadExplorerDragState.pointerId !== event.pointerId) {
-    return;
-  }
-  const completedDragState = threadExplorerDragState;
-  threadExplorerDragState = null;
-  if (threadExplorerThreadTree.hasPointerCapture(event.pointerId)) {
-    threadExplorerThreadTree.releasePointerCapture(event.pointerId);
-  }
-  if (completedDragState.started === true) {
-    threadExplorerPanVelocityX = completedDragState.velocityX;
-    threadExplorerPanVelocityY = completedDragState.velocityY;
-    startThreadExplorerPanInertia();
-    return;
-  }
-  setThreadExplorerPanningMode(false);
+  handleThreadExplorerPointerUpFromTools(event, threadExplorerDragStateHolder, {
+    releasePointer: (pointerId) => {
+      if (threadExplorerThreadTree.hasPointerCapture(pointerId)) {
+        threadExplorerThreadTree.releasePointerCapture(pointerId);
+      }
+    },
+    setVelocity: (velocityX, velocityY) => {
+      threadExplorerPanVelocityX = velocityX;
+      threadExplorerPanVelocityY = velocityY;
+    },
+    startInertia: startThreadExplorerPanInertia,
+    setPanning: setThreadExplorerPanningMode,
+  });
 }
 
 /**
@@ -11908,19 +10436,11 @@ function handleThreadExplorerPointerUp(event) {
  * @returns {void}
  */
 function handleThreadExplorerWheel(event) {
-  event.preventDefault();
-
-  if (event.altKey || event.shiftKey) {
-    applyThreadExplorerScrollDelta(-event.deltaX, -event.deltaY);
-    scheduleThreadExplorerEdgeRender();
-    return;
-  }
-
-  if (event.deltaY < 0) {
-    zoomThreadExplorerAtPoint(1.14, event.clientX, event.clientY);
-  } else {
-    zoomThreadExplorerAtPoint(1 / 1.14, event.clientX, event.clientY);
-  }
+  handleThreadExplorerWheelFromTools(event, {
+    scrollDelta: applyThreadExplorerScrollDelta,
+    renderEdges: scheduleThreadExplorerEdgeRender,
+    zoomAtPoint: zoomThreadExplorerAtPoint,
+  });
 }
 
 /**
@@ -11983,68 +10503,6 @@ function sanitizeThreadExplorerFileNamePart(value) {
 }
 
 /**
- * Builds the Thread Explorer snapshot filename from the root post.
- * @param {string} extension - File extension without leading dot.
- * @returns {string} Snapshot filename.
- */
-function buildThreadExplorerSnapshotFileName(extension = "png") {
-  const rootPost = threadExplorerTree?.post || {};
-  let handle = String(rootPost.author?.handle || rootPost.author?.displayName || rootPost.author?.did || "").trim();
-  if (!handle) {
-    handle = "thread";
-  }
-
-  let datePart = "";
-  const timestamp = Date.parse(String(rootPost.createdAt || rootPost.indexedAt || "").trim());
-  if (Number.isFinite(timestamp)) {
-    datePart = new Date(timestamp).toISOString().slice(0, 10);
-  } else {
-    datePart = new Date().toISOString().slice(0, 10);
-  }
-
-  const safeExtension = sanitizeThreadExplorerFileNamePart(extension || "png").toLowerCase();
-  return `threadline-thread-${sanitizeThreadExplorerFileNamePart(handle)}-${datePart}.${safeExtension}`;
-}
-
-/**
- * Counts media assets that make a Thread Explorer PNG snapshot expensive.
- * @param {object|null} node - Thread Explorer tree node.
- * @returns {number} Count of post images, quote images and external-card thumbnails.
- */
-function countThreadExplorerSnapshotMediaAssets(node = null) {
-  if (!node || typeof node !== "object") {
-    return 0;
-  }
-
-  let count = 0;
-  const post = node.post || {};
-  if (Array.isArray(post.images)) {
-    count += post.images.length;
-  }
-  if (post.externalCard?.thumb) {
-    count += 1;
-  }
-
-  const quote = post.quoteCard || null;
-  if (quote && typeof quote === "object") {
-    if (Array.isArray(quote.images)) {
-      count += quote.images.length;
-    }
-    if (quote.externalCard?.thumb) {
-      count += 1;
-    }
-  }
-
-  if (Array.isArray(node.replies)) {
-    node.replies.forEach((reply) => {
-      count += countThreadExplorerSnapshotMediaAssets(reply);
-    });
-  }
-
-  return count;
-}
-
-/**
  * Encodes an already loaded image element as a data URL when the browser allows it.
  * @param {HTMLImageElement} image - Source image from the rendered Thread Explorer.
  * @returns {string} Data URL, original data URL, or an empty string when unavailable.
@@ -12079,22 +10537,7 @@ function encodeThreadExplorerImageElement(image) {
  * @returns {string} Cached avatar data URI or an empty string.
  */
 function getThreadExplorerSnapshotCachedAvatarUri(image = null) {
-  const did = String(image?.dataset?.avatarDid || "").trim();
-  const avatarUrl = String(image?.dataset?.avatarUrl || "").trim();
-  if (!did || !avatarUrl) {
-    return "";
-  }
-
-  let assets = [];
-  if (Array.isArray(accountAvatarAssets)) {
-    assets = accountAvatarAssets;
-  }
-  const asset = assets.find((entry) => entry.did === did && entry.url === avatarUrl);
-  if (!asset) {
-    return "";
-  }
-
-  return assetToDataUri(asset);
+  return getSnapshotCachedAvatarUriFromData(image, accountAvatarAssets, assetToDataUri);
 }
 
 /**
@@ -12103,13 +10546,7 @@ function getThreadExplorerSnapshotCachedAvatarUri(image = null) {
  * @returns {string} Stable avatar cache key or an empty string.
  */
 function getThreadExplorerSnapshotAvatarCacheKey(image = null) {
-  const did = String(image?.dataset?.avatarDid || "").trim();
-  const avatarUrl = String(image?.dataset?.avatarUrl || "").trim();
-  if (!did || !avatarUrl) {
-    return "";
-  }
-
-  return `${did}|${avatarUrl}`;
+  return getSnapshotAvatarCacheKeyFromData(image);
 }
 
 /**
@@ -12164,29 +10601,12 @@ function loadThreadExplorerSnapshotCanvasImage(source) {
  * @returns {Promise<Map<string, HTMLImageElement>>} Loaded avatar image map keyed by DID and URL.
  */
 async function preloadThreadExplorerSnapshotAvatarImages(cards) {
-  const avatarEntries = new Map();
-  cards.forEach((card) => {
-    const avatar = card.querySelector(".thread-explorer-avatar");
-    const key = getThreadExplorerSnapshotAvatarCacheKey(avatar);
-    if (!key || avatarEntries.has(key)) {
-      return;
-    }
-
-    const dataUri = getThreadExplorerSnapshotCachedAvatarUri(avatar);
-    if (!dataUri) {
-      return;
-    }
-    avatarEntries.set(key, dataUri);
+  return preloadSnapshotAvatarImagesFromData(cards, {
+    getAvatar: (card) => card.querySelector(".thread-explorer-avatar"),
+    getCacheKey: getThreadExplorerSnapshotAvatarCacheKey,
+    getCachedAvatarUri: getThreadExplorerSnapshotCachedAvatarUri,
+    loadImage: loadThreadExplorerSnapshotAvatarImage,
   });
-
-  const loaded = new Map();
-  for (const [key, dataUri] of avatarEntries.entries()) {
-    const image = await loadThreadExplorerSnapshotAvatarImage(dataUri);
-    if (image) {
-      loaded.set(key, image);
-    }
-  }
-  return loaded;
 }
 
 /**
@@ -12195,16 +10615,7 @@ async function preloadThreadExplorerSnapshotAvatarImages(cards) {
  * @returns {boolean} True when the image should be painted as card media.
  */
 function isThreadExplorerSnapshotMediaImage(image = null) {
-  if (!image || image.hidden) {
-    return false;
-  }
-  if (image.classList.contains("thread-explorer-avatar")) {
-    return false;
-  }
-  if (image.classList.contains("thread-explorer-quote-card-avatar")) {
-    return false;
-  }
-  return Boolean(image.closest(".thread-explorer-post-gallery, .thread-explorer-link-card, .thread-explorer-quote-card-gallery, .thread-explorer-quote-link-card"));
+  return isSnapshotMediaImageFromData(image);
 }
 
 /**
@@ -12213,21 +10624,7 @@ function isThreadExplorerSnapshotMediaImage(image = null) {
  * @returns {string[]} Stable media image keys ordered by preference.
  */
 function getThreadExplorerSnapshotMediaImageKeys(image = null) {
-  const candidates = [
-    image?.dataset?.snapshotSource,
-    image?.dataset?.snapshotThumb,
-    image?.currentSrc,
-    image?.src,
-  ];
-  const keys = [];
-  candidates.forEach((candidate) => {
-    const source = String(candidate || "").trim();
-    if (!source || keys.includes(source)) {
-      return;
-    }
-    keys.push(source);
-  });
-  return keys;
+  return getSnapshotMediaImageKeysFromData(image);
 }
 
 /**
@@ -12236,11 +10633,7 @@ function getThreadExplorerSnapshotMediaImageKeys(image = null) {
  * @returns {string} Stable media image key or an empty string.
  */
 function getThreadExplorerSnapshotMediaImageKey(image = null) {
-  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
-  if (keys.length === 0) {
-    return "";
-  }
-  return keys[0];
+  return getSnapshotMediaImageKeyFromData(image);
 }
 
 /**
@@ -12250,13 +10643,7 @@ function getThreadExplorerSnapshotMediaImageKey(image = null) {
  * @returns {HTMLImageElement|null} Loaded image or null when no key matches.
  */
 function getThreadExplorerSnapshotDrawableMediaImage(image = null, mediaImages = new Map()) {
-  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
-  for (const key of keys) {
-    if (mediaImages.has(key)) {
-      return mediaImages.get(key);
-    }
-  }
-  return null;
+  return getSnapshotDrawableMediaImageFromData(image, mediaImages);
 }
 
 /**
@@ -12279,19 +10666,7 @@ function clearThreadExplorerRenderedMediaCache() {
  * @returns {string} Cached data URI, or an empty string.
  */
 function getThreadExplorerRenderedMediaCacheDataUri(keys = []) {
-  for (const key of keys) {
-    const normalizedKey = String(key || "").trim();
-    if (!normalizedKey) {
-      continue;
-    }
-    if (threadExplorerRenderedMediaCache.has(normalizedKey)) {
-      return threadExplorerRenderedMediaCache.get(normalizedKey);
-    }
-    if (threadExplorerSnapshotMediaDataUris.has(normalizedKey)) {
-      return threadExplorerSnapshotMediaDataUris.get(normalizedKey);
-    }
-  }
-  return "";
+  return getSnapshotMediaDataUriFromData(keys, [threadExplorerRenderedMediaCache, threadExplorerSnapshotMediaDataUris]);
 }
 
 /**
@@ -12302,39 +10677,7 @@ function getThreadExplorerRenderedMediaCacheDataUri(keys = []) {
  * @returns {void}
  */
 function setThreadExplorerCachedImageSource(image = null, primarySource = "", secondarySource = "") {
-  if (!image) {
-    return;
-  }
-
-  const normalizedPrimary = String(primarySource || "").trim();
-  const normalizedSecondary = String(secondarySource || "").trim();
-  if (normalizedPrimary) {
-    image.dataset.snapshotSource = normalizedPrimary;
-  } else {
-    delete image.dataset.snapshotSource;
-  }
-  if (normalizedSecondary && normalizedSecondary !== normalizedPrimary) {
-    image.dataset.snapshotThumb = normalizedSecondary;
-  } else {
-    delete image.dataset.snapshotThumb;
-  }
-
-  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
-  const dataUri = getThreadExplorerRenderedMediaCacheDataUri(keys);
-  if (dataUri) {
-    image.dataset.snapshotHydrated = "true";
-    image.src = dataUri;
-    return;
-  }
-
-  delete image.dataset.snapshotHydrated;
-  if (normalizedPrimary) {
-    image.src = normalizedPrimary;
-  } else if (normalizedSecondary) {
-    image.src = normalizedSecondary;
-  } else {
-    image.removeAttribute("src");
-  }
+  setSnapshotCachedImageSourceFromData(image, primarySource, secondarySource, getThreadExplorerRenderedMediaCacheDataUri);
 }
 
 /**
@@ -12345,22 +10688,12 @@ function applyThreadExplorerRenderedMediaCacheToDom() {
   if (!threadExplorerThreadStage) {
     return 0;
   }
-
-  let appliedCount = 0;
   const images = Array.from(threadExplorerThreadStage.querySelectorAll("img"));
-  images.forEach((image) => {
-    if (!isThreadExplorerSnapshotMediaImage(image)) {
-      return;
-    }
-    const dataUri = getThreadExplorerRenderedMediaCacheDataUri(getThreadExplorerSnapshotMediaImageKeys(image));
-    if (!dataUri || image.src === dataUri) {
-      return;
-    }
-    image.dataset.snapshotHydrated = "true";
-    image.src = dataUri;
-    appliedCount += 1;
+  const appliedCount = applySnapshotMediaCacheFromData(images, {
+    isMediaImage: isThreadExplorerSnapshotMediaImage,
+    getImageKeys: getThreadExplorerSnapshotMediaImageKeys,
+    getCachedDataUri: getThreadExplorerRenderedMediaCacheDataUri,
   });
-
   if (appliedCount > 0) {
     scheduleThreadExplorerEdgeRender();
   }
@@ -12374,17 +10707,7 @@ function applyThreadExplorerRenderedMediaCacheToDom() {
  * @returns {void}
  */
 function storeThreadExplorerRenderedMediaDataUri(keys = [], dataUri = "") {
-  const normalizedDataUri = String(dataUri || "").trim();
-  if (!normalizedDataUri) {
-    return;
-  }
-
-  keys.forEach((key) => {
-    const normalizedKey = String(key || "").trim();
-    if (normalizedKey) {
-      threadExplorerRenderedMediaCache.set(normalizedKey, normalizedDataUri);
-    }
-  });
+  storeSnapshotMediaDataUriFromData(threadExplorerRenderedMediaCache, keys, dataUri);
 }
 
 /**
@@ -12393,21 +10716,12 @@ function storeThreadExplorerRenderedMediaDataUri(keys = [], dataUri = "") {
  * @returns {void}
  */
 function cacheThreadExplorerRenderedMediaImage(image = null) {
-  if (!image || !image.complete || !image.naturalWidth || !image.naturalHeight) {
-    return;
-  }
-
-  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
-  if (keys.length === 0) {
-    return;
-  }
-
-  const dataUri = encodeThreadExplorerImageElement(image);
-  if (!dataUri) {
-    return;
-  }
-
-  storeThreadExplorerRenderedMediaDataUri(keys, dataUri);
+  cacheSnapshotMediaImageFromData(image, {
+    isMediaImage: isThreadExplorerSnapshotMediaImage,
+    getImageKeys: getThreadExplorerSnapshotMediaImageKeys,
+    encodeImage: encodeThreadExplorerImageElement,
+    cache: threadExplorerRenderedMediaCache,
+  });
 }
 
 /**
@@ -12435,12 +10749,10 @@ function attachThreadExplorerRenderedMediaCacheHandlers(image = null, errorHandl
  * @returns {number} Number of media elements inspected.
  */
 function cacheLoadedThreadExplorerRenderedMediaImages() {
-  const images = Array.from(threadExplorerThreadStage.querySelectorAll("img"))
-    .filter((image) => isThreadExplorerSnapshotMediaImage(image));
-  images.forEach((image) => {
-    cacheThreadExplorerRenderedMediaImage(image);
+  return cacheLoadedSnapshotMediaImagesFromData(threadExplorerThreadStage, {
+    isMediaImage: isThreadExplorerSnapshotMediaImage,
+    cacheImage: cacheThreadExplorerRenderedMediaImage,
   });
-  return images.length;
 }
 
 /**
@@ -12449,54 +10761,15 @@ function cacheLoadedThreadExplorerRenderedMediaImages() {
  * @returns {Promise<Map<string, HTMLImageElement>>} Loaded media image map keyed by image source.
  */
 async function preloadThreadExplorerSnapshotMediaImages(cards) {
-  const sourceEntries = new Map();
-  cards.forEach((card) => {
-    const images = Array.from(card.querySelectorAll("img"));
-    images.forEach((image) => {
-      if (!isThreadExplorerSnapshotMediaImage(image)) {
-        return;
-      }
-
-      const keys = getThreadExplorerSnapshotMediaImageKeys(image);
-      if (keys.length === 0) {
-        return;
-      }
-
-      let source = "";
-      for (const key of keys) {
-        if (threadExplorerRenderedMediaCache.has(key)) {
-          source = threadExplorerRenderedMediaCache.get(key);
-          break;
-        }
-        if (threadExplorerSnapshotMediaDataUris.has(key)) {
-          source = threadExplorerSnapshotMediaDataUris.get(key);
-          break;
-        }
-      }
-      if (!source) {
-        source = encodeThreadExplorerImageElement(image);
-      }
-      if (!source && canDrawThreadExplorerSnapshotImage(image)) {
-        source = String(image.currentSrc || image.src || "").trim();
-      }
-      if (source) {
-        keys.forEach((key) => {
-          if (!sourceEntries.has(key)) {
-            sourceEntries.set(key, source);
-          }
-        });
-      }
-    });
+  return preloadSnapshotMediaImagesFromData(cards, {
+    getImages: (card) => card.querySelectorAll("img"),
+    isMediaImage: isThreadExplorerSnapshotMediaImage,
+    getImageKeys: getThreadExplorerSnapshotMediaImageKeys,
+    getCachedDataUri: getThreadExplorerRenderedMediaCacheDataUri,
+    encodeImage: encodeThreadExplorerImageElement,
+    canDrawImage: canDrawThreadExplorerSnapshotImage,
+    loadImage: loadThreadExplorerSnapshotCanvasImage,
   });
-
-  const loaded = new Map();
-  for (const [key, source] of sourceEntries.entries()) {
-    const image = await loadThreadExplorerSnapshotCanvasImage(source);
-    if (image) {
-      loaded.set(key, image);
-    }
-  }
-  return loaded;
 }
 
 /**
@@ -12505,16 +10778,7 @@ async function preloadThreadExplorerSnapshotMediaImages(cards) {
  * @returns {string} Hydrated data URI or an empty string.
  */
 function getThreadExplorerSnapshotHydratedMediaUri(image = null) {
-  const keys = getThreadExplorerSnapshotMediaImageKeys(image);
-  for (const key of keys) {
-    if (threadExplorerRenderedMediaCache.has(key)) {
-      return threadExplorerRenderedMediaCache.get(key);
-    }
-    if (threadExplorerSnapshotMediaDataUris.has(key)) {
-      return threadExplorerSnapshotMediaDataUris.get(key);
-    }
-  }
-  return "";
+  return getThreadExplorerRenderedMediaCacheDataUri(getThreadExplorerSnapshotMediaImageKeys(image));
 }
 
 /**
@@ -12525,42 +10789,28 @@ function getThreadExplorerSnapshotHydratedMediaUri(image = null) {
  */
 async function applyThreadExplorerSnapshotMediaDataUrisToRenderedTree(onProgress = async () => {}, signal = null) {
   const images = Array.from(threadExplorerThreadStage.querySelectorAll("img"));
-  const mediaImages = images.filter((image) => isThreadExplorerSnapshotMediaImage(image));
-  const total = mediaImages.length;
-  let appliedCount = 0;
-  let skippedCount = 0;
-
-  for (let index = 0; index < mediaImages.length; index += 1) {
-    throwIfThreadExplorerSnapshotAborted(signal);
-    const image = mediaImages[index];
-
-    const dataUri = getThreadExplorerSnapshotHydratedMediaUri(image);
-    if (!dataUri) {
-      skippedCount += 1;
-    } else {
-      image.dataset.snapshotHydrated = "true";
-      image.src = dataUri;
-      storeThreadExplorerRenderedMediaDataUri(getThreadExplorerSnapshotMediaImageKeys(image), dataUri);
-      appliedCount += 1;
-    }
-
-    await onProgress({
-      percent: 38 + ((index + 1) / Math.max(1, total) * 2),
-      step: t("threadExplorerSnapshotProgressMedia"),
-      detail: t("threadExplorerSnapshotProgressMediaEmbedDetail", {
-        current: index + 1,
-        total,
-        remaining: Math.max(0, total - index - 1),
-        embedded: appliedCount,
-        skipped: skippedCount,
-      }),
-    });
-  }
-  return {
-    total,
-    embedded: appliedCount,
-    missing: skippedCount,
-  };
+  return applySnapshotMediaDataUrisFromData(images, {
+    isMediaImage: isThreadExplorerSnapshotMediaImage,
+    getHydratedMediaUri: getThreadExplorerSnapshotHydratedMediaUri,
+    getImageKeys: getThreadExplorerSnapshotMediaImageKeys,
+    storeDataUri: storeThreadExplorerRenderedMediaDataUri,
+    throwIfAborted: throwIfThreadExplorerSnapshotAborted,
+    signal,
+    buildProgress({ index, total, embedded, skipped }) {
+      return {
+        percent: 38 + ((index + 1) / Math.max(1, total) * 2),
+        step: t("threadExplorerSnapshotProgressMedia"),
+        detail: t("threadExplorerSnapshotProgressMediaEmbedDetail", {
+          current: index + 1,
+          total,
+          remaining: Math.max(0, total - index - 1),
+          embedded,
+          skipped,
+        }),
+      };
+    },
+    onProgress,
+  });
 }
 
 /**
@@ -12570,30 +10820,11 @@ async function applyThreadExplorerSnapshotMediaDataUrisToRenderedTree(onProgress
  * @returns {void}
  */
 function inlineThreadExplorerSnapshotImages(source, clone) {
-  const sourceImages = Array.from(source.querySelectorAll("img"));
-  const cloneImages = Array.from(clone.querySelectorAll("img"));
-  cloneImages.forEach((cloneImage, index) => {
-    const cachedAvatarUri = getThreadExplorerSnapshotCachedAvatarUri(cloneImage)
-      || getThreadExplorerSnapshotCachedAvatarUri(sourceImages[index]);
-    if (cachedAvatarUri) {
-      cloneImage.setAttribute("src", cachedAvatarUri);
-      return;
-    }
-
-    const hydratedMediaUri = getThreadExplorerSnapshotHydratedMediaUri(sourceImages[index])
-      || getThreadExplorerSnapshotHydratedMediaUri(cloneImage);
-    if (hydratedMediaUri) {
-      cloneImage.setAttribute("src", hydratedMediaUri);
-      return;
-    }
-
-    const dataUrl = encodeThreadExplorerImageElement(sourceImages[index]);
-    if (dataUrl) {
-      cloneImage.setAttribute("src", dataUrl);
-      return;
-    }
-    cloneImage.setAttribute("src", DEFAULT_AVATAR_URI);
-    cloneImage.classList.add("is-snapshot-fallback-image");
+  inlineSnapshotImagesFromData(source, clone, {
+    getCachedAvatarUri: getThreadExplorerSnapshotCachedAvatarUri,
+    getHydratedMediaUri: getThreadExplorerSnapshotHydratedMediaUri,
+    encodeImage: encodeThreadExplorerImageElement,
+    fallbackAvatarUri: DEFAULT_AVATAR_URI,
   });
 }
 
@@ -12643,18 +10874,7 @@ function downloadThreadExplorerBlob(blob, fileName) {
  * @returns {void}
  */
 function drawThreadExplorerSnapshotRoundRect(context, x, y, width, height, radius) {
-  const safeRadius = Math.min(radius, width / 2, height / 2);
-  context.beginPath();
-  context.moveTo(x + safeRadius, y);
-  context.lineTo(x + width - safeRadius, y);
-  context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
-  context.lineTo(x + width, y + height - safeRadius);
-  context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
-  context.lineTo(x + safeRadius, y + height);
-  context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
-  context.lineTo(x, y + safeRadius);
-  context.quadraticCurveTo(x, y, x + safeRadius, y);
-  context.closePath();
+  drawSnapshotRoundRectFromModule(context, x, y, width, height, radius);
 }
 
 /**
@@ -12670,12 +10890,7 @@ function drawThreadExplorerSnapshotRoundRect(context, x, y, width, height, radiu
  * @returns {void}
  */
 function strokeThreadExplorerSnapshotRoundRect(context, x, y, width, height, radius, color, lineWidth = 1) {
-  context.save();
-  drawThreadExplorerSnapshotRoundRect(context, x, y, width, height, radius);
-  context.strokeStyle = color;
-  context.lineWidth = lineWidth;
-  context.stroke();
-  context.restore();
+  strokeSnapshotRoundRectFromModule(context, x, y, width, height, radius, color, lineWidth);
 }
 
 /**
@@ -12687,35 +10902,7 @@ function strokeThreadExplorerSnapshotRoundRect(context, x, y, width, height, rad
  * @returns {string[]} Wrapped lines.
  */
 function wrapThreadExplorerSnapshotText(context, text, maxWidth, maxLines = 8) {
-  const normalized = String(text || "").replace(/\s+/g, " ").trim();
-  if (!normalized) {
-    return [];
-  }
-
-  const words = normalized.split(" ");
-  const lines = [];
-  let current = "";
-  words.forEach((word) => {
-    const candidate = current ? `${current} ${word}` : word;
-    if (context.measureText(candidate).width <= maxWidth) {
-      current = candidate;
-      return;
-    }
-    if (current) {
-      lines.push(current);
-    }
-    current = word;
-  });
-  if (current) {
-    lines.push(current);
-  }
-
-  if (lines.length <= maxLines) {
-    return lines;
-  }
-  const clipped = lines.slice(0, maxLines);
-  clipped[clipped.length - 1] = `${clipped[clipped.length - 1].replace(/\.+$/, "")}...`;
-  return clipped;
+  return wrapSnapshotTextFromModule(context, text, maxWidth, maxLines);
 }
 
 /**
@@ -12728,38 +10915,7 @@ function wrapThreadExplorerSnapshotText(context, text, maxWidth, maxLines = 8) {
  * @returns {number} Next baseline coordinate after the block.
  */
 function drawThreadExplorerSnapshotTextBlock(context, lines, x, y, lineHeight) {
-  let cursorY = y;
-  lines.forEach((line) => {
-    context.fillText(line, x, cursorY);
-    cursorY += lineHeight;
-  });
-  return cursorY;
-}
-
-/**
- * Calculates a browser-safe scale for Thread Explorer snapshot canvases.
- * @param {number} width - Snapshot layout width in CSS pixels.
- * @param {number} height - Snapshot layout height in CSS pixels.
- * @returns {number} Canvas scale factor.
- */
-function getThreadExplorerSnapshotScale(width, height) {
-  let scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-  const longestSide = Math.max(width, height, 1);
-  const pixelCount = Math.max(width * height, 1);
-  const dimensionScale = THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION / longestSide;
-  const pixelScale = Math.sqrt(THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS / pixelCount);
-
-  if (dimensionScale < scale) {
-    scale = dimensionScale;
-  }
-  if (pixelScale < scale) {
-    scale = pixelScale;
-  }
-  if (!Number.isFinite(scale) || scale <= 0) {
-    scale = 0.1;
-  }
-
-  return Math.max(0.01, Math.min(2, scale));
+  return drawSnapshotTextBlockFromModule(context, lines, x, y, lineHeight);
 }
 
 /**
@@ -12769,21 +10925,12 @@ function getThreadExplorerSnapshotScale(width, height) {
  * @returns {object} Canvas, context, scale, width, and height.
  */
 function createThreadExplorerSnapshotCanvas(width, height) {
-  const canvas = document.createElement("canvas");
-  const scale = getThreadExplorerSnapshotScale(width, height);
-  canvas.width = Math.max(1, Math.floor(width * scale));
-  canvas.height = Math.max(1, Math.floor(height * scale));
-  const context = canvas.getContext("2d");
-  context.setTransform(scale, 0, 0, scale, 0, 0);
-  context.fillStyle = getComputedStyle(document.body).backgroundColor || "#ffffff";
-  context.fillRect(0, 0, width, height);
-  return {
-    canvas,
-    context,
-    scale,
-    width,
-    height,
-  };
+  return createSnapshotCanvasFromModule(width, height, {
+    devicePixelRatio: window.devicePixelRatio,
+    maxDimension: THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION,
+    maxPixels: THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS,
+    backgroundColor: getComputedStyle(document.body).backgroundColor || "#ffffff",
+  });
 }
 
 /**
@@ -12793,18 +10940,10 @@ function createThreadExplorerSnapshotCanvas(width, height) {
  * @returns {Promise<Blob>} Encoded image blob.
  */
 async function encodeThreadExplorerSnapshotCanvas(canvas, mimeType) {
-  let quality = undefined;
-  if (mimeType === "image/jpeg") {
-    quality = 0.92;
-  }
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, mimeType, quality));
-  if (!blob) {
-    throw new Error(t("threadExplorerSnapshotFailed"));
-  }
-  if (mimeType === "image/png") {
-    return addThreadExplorerPngMetadata(blob);
-  }
-  return blob;
+  return encodeSnapshotCanvasFromModule(canvas, mimeType, {
+    failureMessage: t("threadExplorerSnapshotFailed"),
+    addMetadata: (blob) => addPngMetadataFromSnapshot(blob, { applicationLabel: getExportMetadataApplicationLabel() }),
+  });
 }
 
 /**
@@ -12815,10 +10954,7 @@ async function encodeThreadExplorerSnapshotCanvas(canvas, mimeType) {
  * @returns {void}
  */
 function writeThreadExplorerPngUint32(target, offset, value) {
-  target[offset] = (value >>> 24) & 255;
-  target[offset + 1] = (value >>> 16) & 255;
-  target[offset + 2] = (value >>> 8) & 255;
-  target[offset + 3] = value & 255;
+  writePngUint32FromSnapshot(target, offset, value);
 }
 
 /**
@@ -12826,19 +10962,7 @@ function writeThreadExplorerPngUint32(target, offset, value) {
  * @returns {Uint32Array} CRC lookup table.
  */
 function createThreadExplorerPngCrcTable() {
-  const table = new Uint32Array(256);
-  for (let index = 0; index < 256; index += 1) {
-    let value = index;
-    for (let bit = 0; bit < 8; bit += 1) {
-      if ((value & 1) !== 0) {
-        value = 0xedb88320 ^ (value >>> 1);
-      } else {
-        value >>>= 1;
-      }
-    }
-    table[index] = value >>> 0;
-  }
-  return table;
+  return createPngCrcTableFromSnapshot();
 }
 
 /**
@@ -12849,14 +10973,7 @@ function createThreadExplorerPngCrcTable() {
  * @returns {number} Unsigned CRC value.
  */
 function calculateThreadExplorerPngCrc(type, data, table) {
-  let crc = 0xffffffff;
-  for (let index = 0; index < type.length; index += 1) {
-    crc = table[(crc ^ type.charCodeAt(index)) & 255] ^ (crc >>> 8);
-  }
-  for (let index = 0; index < data.length; index += 1) {
-    crc = table[(crc ^ data[index]) & 255] ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
+  return calculatePngCrcFromSnapshot(type, data, table);
 }
 
 /**
@@ -12867,14 +10984,7 @@ function calculateThreadExplorerPngCrc(type, data, table) {
  * @returns {Uint8Array} Encoded PNG chunk.
  */
 function createThreadExplorerPngChunk(type, data, crcTable) {
-  const chunk = new Uint8Array(data.length + 12);
-  writeThreadExplorerPngUint32(chunk, 0, data.length);
-  for (let index = 0; index < type.length; index += 1) {
-    chunk[4 + index] = type.charCodeAt(index);
-  }
-  chunk.set(data, 8);
-  writeThreadExplorerPngUint32(chunk, data.length + 8, calculateThreadExplorerPngCrc(type, data, crcTable));
-  return chunk;
+  return createPngChunkFromSnapshot(type, data, crcTable);
 }
 
 /**
@@ -12885,16 +10995,7 @@ function createThreadExplorerPngChunk(type, data, crcTable) {
  * @returns {Uint8Array} Encoded PNG tEXt chunk.
  */
 function createThreadExplorerPngTextChunk(keyword, value, crcTable) {
-  const encoder = new TextEncoder();
-  const safeKeyword = String(keyword || "").replace(/[^\x20-\x7e]+/g, "").slice(0, 79);
-  const safeValue = String(value || "").replace(/[^\x20-\x7e]+/g, "");
-  const keywordBytes = encoder.encode(safeKeyword);
-  const valueBytes = encoder.encode(safeValue);
-  const data = new Uint8Array(keywordBytes.length + 1 + valueBytes.length);
-  data.set(keywordBytes, 0);
-  data[keywordBytes.length] = 0;
-  data.set(valueBytes, keywordBytes.length + 1);
-  return createThreadExplorerPngChunk("tEXt", data, crcTable);
+  return createPngTextChunkFromSnapshot(keyword, value, crcTable);
 }
 
 /**
@@ -12903,12 +11004,7 @@ function createThreadExplorerPngTextChunk(keyword, value, crcTable) {
  * @returns {string} XML-safe text value.
  */
 function escapeThreadExplorerPngXmpText(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+  return escapePngXmpTextFromSnapshot(value);
 }
 
 /**
@@ -12917,22 +11013,7 @@ function escapeThreadExplorerPngXmpText(value) {
  * @returns {string} XMP metadata packet.
  */
 function createThreadExplorerPngXmpPacket(applicationLabel) {
-  const safeLabel = escapeThreadExplorerPngXmpText(applicationLabel);
-  const metadataDate = escapeThreadExplorerPngXmpText(new Date().toISOString());
-  return [
-    '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>',
-    '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
-    '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
-    '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xmp="http://ns.adobe.com/xap/1.0/">',
-    '<dc:creator><rdf:Seq><rdf:li>Threadline</rdf:li></rdf:Seq></dc:creator>',
-    `<xmp:CreatorTool>${safeLabel}</xmp:CreatorTool>`,
-    `<xmp:MetadataDate>${metadataDate}</xmp:MetadataDate>`,
-    `<xmp:ModifyDate>${metadataDate}</xmp:ModifyDate>`,
-    '</rdf:Description>',
-    '</rdf:RDF>',
-    '</x:xmpmeta>',
-    '<?xpacket end="w"?>',
-  ].join("");
+  return createPngXmpPacketFromSnapshot(applicationLabel);
 }
 
 /**
@@ -12942,18 +11023,7 @@ function createThreadExplorerPngXmpPacket(applicationLabel) {
  * @returns {Uint8Array} Encoded PNG iTXt chunk.
  */
 function createThreadExplorerPngXmpChunk(value, crcTable) {
-  const encoder = new TextEncoder();
-  const keywordBytes = encoder.encode("XML:com.adobe.xmp");
-  const textBytes = encoder.encode(value);
-  const data = new Uint8Array(keywordBytes.length + 5 + textBytes.length);
-  data.set(keywordBytes, 0);
-  data[keywordBytes.length] = 0;
-  data[keywordBytes.length + 1] = 0;
-  data[keywordBytes.length + 2] = 0;
-  data[keywordBytes.length + 3] = 0;
-  data[keywordBytes.length + 4] = 0;
-  data.set(textBytes, keywordBytes.length + 5);
-  return createThreadExplorerPngChunk("iTXt", data, crcTable);
+  return createPngXmpChunkFromSnapshot(value, crcTable);
 }
 
 /**
@@ -12963,12 +11033,7 @@ function createThreadExplorerPngXmpChunk(value, crcTable) {
  */
 function createThreadExplorerPngMetadataChunks(crcTable) {
   const applicationLabel = getExportMetadataApplicationLabel();
-  return [
-    createThreadExplorerPngTextChunk("Software", applicationLabel, crcTable),
-    createThreadExplorerPngTextChunk("Author", applicationLabel, crcTable),
-    createThreadExplorerPngTextChunk("Creator", applicationLabel, crcTable),
-    createThreadExplorerPngXmpChunk(createThreadExplorerPngXmpPacket(applicationLabel), crcTable),
-  ];
+  return createPngMetadataChunksFromSnapshot(crcTable, applicationLabel);
 }
 
 /**
@@ -12977,26 +11042,7 @@ function createThreadExplorerPngMetadataChunks(crcTable) {
  * @returns {Promise<Blob>} PNG blob with metadata chunks when possible.
  */
 async function addThreadExplorerPngMetadata(blob) {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
-  for (let index = 0; index < signature.length; index += 1) {
-    if (bytes[index] !== signature[index]) {
-      return blob;
-    }
-  }
-
-  const crcTable = createThreadExplorerPngCrcTable();
-  const insertionOffset = 8 + 4 + 4 + 13 + 4;
-  if (bytes.length <= insertionOffset) {
-    return blob;
-  }
-
-  const parts = [
-    bytes.slice(0, insertionOffset),
-    ...createThreadExplorerPngMetadataChunks(crcTable),
-    bytes.slice(insertionOffset),
-  ];
-  return new Blob(parts, { type: "image/png" });
+  return addPngMetadataFromSnapshot(blob, { applicationLabel: getExportMetadataApplicationLabel() });
 }
 
 /**
@@ -13006,69 +11052,13 @@ async function addThreadExplorerPngMetadata(blob) {
  * @returns {Uint8Array} IHDR payload.
  */
 function createThreadExplorerPngHeaderData(width, height) {
-  const data = new Uint8Array(13);
-  writeThreadExplorerPngUint32(data, 0, width);
-  writeThreadExplorerPngUint32(data, 4, height);
-  data[8] = 8;
-  data[9] = 6;
-  data[10] = 0;
-  data[11] = 0;
-  data[12] = 0;
-  return data;
+  return createPngHeaderDataFromSnapshot(width, height);
 }
 
 /**
  * Returns the Thread Explorer snapshot background color.
  * @returns {string} CSS color string.
  */
-function getThreadExplorerSnapshotBackgroundColor() {
-  const stageColor = getComputedStyle(threadExplorerThreadStage).backgroundColor;
-  if (stageColor && stageColor !== "rgba(0, 0, 0, 0)") {
-    return stageColor;
-  }
-
-  const treeColor = getComputedStyle(threadExplorerThreadTree).backgroundColor;
-  if (treeColor && treeColor !== "rgba(0, 0, 0, 0)") {
-    return treeColor;
-  }
-
-  const bodyColor = getComputedStyle(document.body).backgroundColor;
-  if (bodyColor && bodyColor !== "rgba(0, 0, 0, 0)") {
-    return bodyColor;
-  }
-
-  return "#f2f7ff";
-}
-
-/**
- * Renders one full-resolution Thread Explorer snapshot tile.
- * @param {number} tileX - Tile left coordinate in snapshot pixels.
- * @param {number} tileY - Tile top coordinate in snapshot pixels.
- * @param {number} tileWidth - Tile width in pixels.
- * @param {number} tileHeight - Tile height in pixels.
- * @param {DOMRect} stageRect - Thread Explorer stage rectangle.
- * @param {HTMLElement[]} cards - Rendered post card elements.
- * @param {Map<string, HTMLImageElement>} avatarImages - Preloaded cached avatars for canvas drawing.
- * @param {Map<string, HTMLImageElement>} mediaImages - Preloaded canvas-safe media images.
- * @returns {HTMLCanvasElement} Rendered tile canvas.
- */
-function renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, stageRect, cards, avatarImages = new Map(), mediaImages = new Map()) {
-  const canvas = document.createElement("canvas");
-  canvas.width = tileWidth;
-  canvas.height = tileHeight;
-  const context = canvas.getContext("2d");
-  context.fillStyle = getThreadExplorerSnapshotBackgroundColor();
-  context.fillRect(0, 0, tileWidth, tileHeight);
-  context.save();
-  context.translate(-tileX, -tileY);
-  drawThreadExplorerSnapshotEdges(context);
-  cards.forEach((card) => {
-    drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages, mediaImages);
-  });
-  context.restore();
-  return canvas;
-}
-
 /**
  * Draws a circular fallback avatar into a snapshot canvas.
  * @param {CanvasRenderingContext2D} context - Target canvas context.
@@ -13078,18 +11068,7 @@ function renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, s
  * @returns {void}
  */
 function drawThreadExplorerSnapshotFallbackAvatar(context, x, y, size) {
-  const center = size / 2;
-  context.fillStyle = "#0070ff";
-  context.beginPath();
-  context.arc(x + center, y + center, center, 0, Math.PI * 2);
-  context.fill();
-  context.fillStyle = "#ffffff";
-  context.beginPath();
-  context.arc(x + center, y + (size * 0.4), size * 0.18, 0, Math.PI * 2);
-  context.fill();
-  context.beginPath();
-  context.arc(x + center, y + (size * 0.78), size * 0.28, Math.PI, 0, true);
-  context.fill();
+  drawSnapshotFallbackAvatarFromModule(context, x, y, size);
 }
 
 /**
@@ -13098,18 +11077,7 @@ function drawThreadExplorerSnapshotFallbackAvatar(context, x, y, size) {
  * @returns {boolean} True when the image source is same-origin or local data.
  */
 function canDrawThreadExplorerSnapshotImage(image) {
-  const source = String(image?.currentSrc || image?.src || "").trim();
-  if (!source) {
-    return false;
-  }
-  if (source.startsWith("data:") || source.startsWith("blob:")) {
-    return true;
-  }
-  try {
-    return new URL(source, window.location.href).origin === window.location.origin;
-  } catch {
-    return false;
-  }
+  return canDrawSnapshotImageFromModule(image, window.location.href, window.location.origin);
 }
 
 /**
@@ -13122,29 +11090,7 @@ function canDrawThreadExplorerSnapshotImage(image) {
  * @returns {boolean} True when a real avatar was drawn.
  */
 function drawThreadExplorerSnapshotAvatarImage(context, image, x, y, size) {
-  if (!canDrawThreadExplorerSnapshotImage(image)) {
-    return false;
-  }
-  if (!image || !image.complete || !image.naturalWidth || !image.naturalHeight) {
-    return false;
-  }
-
-  try {
-    const scale = Math.max(size / image.naturalWidth, size / image.naturalHeight);
-    const drawWidth = image.naturalWidth * scale;
-    const drawHeight = image.naturalHeight * scale;
-    const offsetX = x + ((size - drawWidth) / 2);
-    const offsetY = y + ((size - drawHeight) / 2);
-    context.save();
-    context.beginPath();
-    context.arc(x + (size / 2), y + (size / 2), size / 2, 0, Math.PI * 2);
-    context.clip();
-    context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
-    context.restore();
-    return true;
-  } catch {
-    return false;
-  }
+  return drawSnapshotAvatarFromModule(context, image, x, y, size, canDrawThreadExplorerSnapshotImage);
 }
 
 /**
@@ -13159,25 +11105,7 @@ function drawThreadExplorerSnapshotAvatarImage(context, image, x, y, size) {
  * @returns {boolean} True when an image was drawn.
  */
 function drawThreadExplorerSnapshotCoverImage(context, image, x, y, width, height, radius = 6) {
-  if (!image || !image.complete || !image.naturalWidth || !image.naturalHeight) {
-    return false;
-  }
-
-  try {
-    const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
-    const drawWidth = image.naturalWidth * scale;
-    const drawHeight = image.naturalHeight * scale;
-    const offsetX = x + ((width - drawWidth) / 2);
-    const offsetY = y + ((height - drawHeight) / 2);
-    context.save();
-    drawThreadExplorerSnapshotRoundRect(context, x, y, width, height, radius);
-    context.clip();
-    context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
-    context.restore();
-    return true;
-  } catch {
-    return false;
-  }
+  return drawSnapshotCoverImageFromModule(context, image, x, y, width, height, radius, drawThreadExplorerSnapshotRoundRect);
 }
 
 /**
@@ -13187,14 +11115,7 @@ function drawThreadExplorerSnapshotCoverImage(context, image, x, y, width, heigh
  * @returns {void}
  */
 function drawThreadExplorerSnapshotMediaPlaceholder(context, rect) {
-  context.save();
-  drawThreadExplorerSnapshotRoundRect(context, rect.left, rect.top, rect.width, rect.height, 6);
-  context.fillStyle = "#dfe8f7";
-  context.fill();
-  context.strokeStyle = "#c9d8ee";
-  context.lineWidth = 1;
-  context.stroke();
-  context.restore();
+  drawSnapshotMediaPlaceholderFromModule(context, rect, drawThreadExplorerSnapshotRoundRect);
 }
 
 /**
@@ -13206,48 +11127,7 @@ function drawThreadExplorerSnapshotMediaPlaceholder(context, rect) {
  * @returns {void}
  */
 function drawThreadExplorerSnapshotImageAltText(context, altText, rect, maxBottom = 0) {
-  const normalizedAlt = String(altText || "").replace(/\s+/g, " ").trim();
-  if (!normalizedAlt) {
-    return;
-  }
-
-  const paddingX = 8;
-  const paddingY = 6;
-  const lineHeight = 13;
-  const labelTop = rect.bottom + 4;
-  let maxLines = 3;
-  if (maxBottom > labelTop) {
-    const availableHeight = Math.max(0, maxBottom - labelTop);
-    maxLines = Math.floor((availableHeight - (paddingY * 2)) / lineHeight);
-    maxLines = Math.min(12, Math.max(1, maxLines));
-  } else {
-    if (rect.height < 96) {
-      maxLines = 2;
-    }
-    if (rect.height < 52) {
-      maxLines = 1;
-    }
-  }
-
-  const label = `${t("archivePdfAltPrefix")} ${normalizedAlt}`;
-  context.save();
-  context.font = "11px Segoe UI, Arial, sans-serif";
-  const lines = wrapThreadExplorerSnapshotText(context, label, Math.max(40, rect.width - (paddingX * 2)), maxLines);
-  if (lines.length === 0) {
-    context.restore();
-    return;
-  }
-
-  const labelHeight = (paddingY * 2) + (lines.length * lineHeight);
-  drawThreadExplorerSnapshotRoundRect(context, rect.left, labelTop, rect.width, labelHeight, 6);
-  context.fillStyle = "#eef5ff";
-  context.fill();
-  context.strokeStyle = "#c9d8ee";
-  context.lineWidth = 1;
-  context.stroke();
-  context.fillStyle = "#345070";
-  drawThreadExplorerSnapshotTextBlock(context, lines, rect.left + paddingX, labelTop + paddingY + 9, lineHeight);
-  context.restore();
+  drawSnapshotAltTextFromModule(context, altText, rect, maxBottom, t);
 }
 
 /**
@@ -13260,25 +11140,14 @@ function drawThreadExplorerSnapshotImageAltText(context, altText, rect, maxBotto
  * @returns {void}
  */
 function drawThreadExplorerSnapshotMediaImages(context, card, stageRect, mediaImages = new Map(), altTextMaxBottom = 0) {
-  const images = Array.from(card.querySelectorAll("img"));
-  images.forEach((image) => {
-    if (!isThreadExplorerSnapshotMediaImage(image)) {
-      return;
-    }
-
-    const imageRect = getThreadExplorerStageRect(image, stageRect);
-    if (imageRect.width <= 0 || imageRect.height <= 0) {
-      return;
-    }
-
-    const drawableImage = getThreadExplorerSnapshotDrawableMediaImage(image, mediaImages);
-
-    const wasDrawn = drawThreadExplorerSnapshotCoverImage(context, drawableImage, imageRect.left, imageRect.top, imageRect.width, imageRect.height, 6);
-    if (!wasDrawn) {
-      drawThreadExplorerSnapshotMediaPlaceholder(context, imageRect);
-    }
-    strokeThreadExplorerSnapshotRoundRect(context, imageRect.left, imageRect.top, imageRect.width, imageRect.height, 6, "#d6e2f2", 1);
-    drawThreadExplorerSnapshotImageAltText(context, image.alt || "", imageRect, altTextMaxBottom);
+  drawSnapshotMediaImagesFromModule(context, card, stageRect, mediaImages, altTextMaxBottom, {
+    isMediaImage: isThreadExplorerSnapshotMediaImage,
+    getStageRect: getThreadExplorerStageRect,
+    getDrawableImage: getThreadExplorerSnapshotDrawableMediaImage,
+    drawCoverImage: drawThreadExplorerSnapshotCoverImage,
+    drawPlaceholder: drawThreadExplorerSnapshotMediaPlaceholder,
+    strokeRoundedRect: strokeThreadExplorerSnapshotRoundRect,
+    drawAltText: drawThreadExplorerSnapshotImageAltText,
   });
 }
 
@@ -13288,40 +11157,7 @@ function drawThreadExplorerSnapshotMediaImages(context, card, stageRect, mediaIm
  * @returns {string} Snapshot-ready count summary with explicit spacing.
  */
 function getThreadExplorerSnapshotCountsText(card) {
-  const container = card.querySelector(".thread-explorer-post-counts");
-  if (!container) {
-    return "";
-  }
-
-  const parts = [];
-  Array.from(container.children).forEach((child) => {
-    const text = String(child.textContent || "").replace(/\s+/g, " ").trim();
-    if (text) {
-      parts.push(text);
-    }
-  });
-  return parts.join("   ");
-}
-
-/**
- * Creates the standard error used when a Thread Explorer snapshot export is cancelled.
- * @returns {Error} Cancel error.
- */
-function createThreadExplorerSnapshotAbortError() {
-  const error = new Error(t("threadExplorerSnapshotCancelled"));
-  error.name = "AbortError";
-  return error;
-}
-
-/**
- * Throws when the current Thread Explorer snapshot export was cancelled.
- * @param {AbortSignal|null} signal - Abort signal for the current export.
- * @returns {void}
- */
-function throwIfThreadExplorerSnapshotAborted(signal = null) {
-  if (signal?.aborted) {
-    throw createThreadExplorerSnapshotAbortError();
-  }
+  return getSnapshotCountsTextFromModule(card);
 }
 
 /**
@@ -13343,25 +11179,6 @@ function throwIfMediaExportAborted(signal = null) {
   if (signal?.aborted) {
     throw createMediaExportAbortError();
   }
-}
-
-/**
- * Keeps Snapshot progress values inside the visible 0-100 percent range.
- * @param {number} value - Raw progress value.
- * @returns {number} Integer progress value between 0 and 100.
- */
-function clampThreadExplorerSnapshotProgress(value) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return 0;
-  }
-  if (numericValue < 0) {
-    return 0;
-  }
-  if (numericValue > 100) {
-    return 100;
-  }
-  return Math.round(numericValue);
 }
 
 /**
@@ -13450,85 +11267,45 @@ function createThreadExplorerSnapshotProgressReporter(signal = null) {
  * @returns {Promise<Blob>} Lossless PNG blob.
  */
 async function renderThreadExplorerTiledPngSnapshotBlob(width, height, onProgress = async () => {}, signal = null) {
-  throwIfThreadExplorerSnapshotAborted(signal);
-  const crcTable = createThreadExplorerPngCrcTable();
-  const parts = [];
-  const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
-  parts.push(signature);
-  parts.push(createThreadExplorerPngChunk("IHDR", createThreadExplorerPngHeaderData(width, height), crcTable));
-  parts.push(...createThreadExplorerPngMetadataChunks(crcTable));
-
-  if (typeof CompressionStream !== "function") {
-    throw new Error("CompressionStream is not available.");
-  }
-  const compressionStream = new CompressionStream("deflate");
-  const compressionWriter = compressionStream.writable.getWriter();
-  const compressedBytesPromise = new Response(compressionStream.readable).arrayBuffer();
-  const stageRect = threadExplorerThreadStage.getBoundingClientRect();
-  const cards = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card"));
-  await onProgress({
-    percent: 54,
-    step: t("threadExplorerSnapshotProgressAvatars"),
-    detail: t("threadExplorerSnapshotProgressPostCount", { count: cards.length }),
+  return renderTiledPngFromModule({
+    width,
+    height,
+    tileSize: THREAD_EXPLORER_SNAPSHOT_TILE_SIZE,
+    onProgress,
+    signal,
+    text: t,
+    stage: threadExplorerThreadStage,
+    preloadAvatars: preloadThreadExplorerSnapshotAvatarImages,
+    preloadMedia: preloadThreadExplorerSnapshotMediaImages,
+    renderTile: (tileX, tileY, tileWidth, tileHeight, stageRect, cards, avatarImages, mediaImages) => renderSnapshotTileFromModule({
+      x: tileX,
+      y: tileY,
+      width: tileWidth,
+      height: tileHeight,
+      stageRect,
+      cards,
+      avatarImages,
+      mediaImages,
+      createCanvas: (tileCanvasWidth, tileCanvasHeight) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = tileCanvasWidth;
+        canvas.height = tileCanvasHeight;
+        return canvas;
+      },
+      backgroundColor: getSnapshotBackgroundColorFromModule({
+        stage: threadExplorerThreadStage,
+        tree: threadExplorerThreadTree,
+        body: document.body,
+      }, getComputedStyle),
+      drawEdges: drawThreadExplorerSnapshotEdges,
+      drawCard: drawThreadExplorerSnapshotCard,
+    }),
+    crcTableFactory: createThreadExplorerPngCrcTable,
+    chunkFactory: createThreadExplorerPngChunk,
+    headerFactory: createThreadExplorerPngHeaderData,
+    metadataFactory: createThreadExplorerPngMetadataChunks,
+    requestFrame: (callback) => window.requestAnimationFrame(callback),
   });
-  const avatarImages = await preloadThreadExplorerSnapshotAvatarImages(cards);
-  throwIfThreadExplorerSnapshotAborted(signal);
-  await onProgress({
-    percent: 58,
-    step: t("threadExplorerSnapshotProgressMedia"),
-    detail: t("threadExplorerSnapshotProgressPostCount", { count: cards.length }),
-  });
-  const mediaImages = await preloadThreadExplorerSnapshotMediaImages(cards);
-  throwIfThreadExplorerSnapshotAborted(signal);
-  const tileRows = Math.max(1, Math.ceil(height / THREAD_EXPLORER_SNAPSHOT_TILE_SIZE));
-  let tileRow = 0;
-
-  for (let tileY = 0; tileY < height; tileY += THREAD_EXPLORER_SNAPSHOT_TILE_SIZE) {
-    throwIfThreadExplorerSnapshotAborted(signal);
-    tileRow += 1;
-    const tilePercent = 60 + ((tileRow - 1) / tileRows * 32);
-    await onProgress({
-      percent: tilePercent,
-      step: t("threadExplorerSnapshotProgressRenderTiles"),
-      detail: t("threadExplorerSnapshotProgressRenderTileDetail", { row: tileRow, rows: tileRows }),
-    });
-    const tileHeight = Math.min(THREAD_EXPLORER_SNAPSHOT_TILE_SIZE, height - tileY);
-    const rowTiles = [];
-    for (let tileX = 0; tileX < width; tileX += THREAD_EXPLORER_SNAPSHOT_TILE_SIZE) {
-      const tileWidth = Math.min(THREAD_EXPLORER_SNAPSHOT_TILE_SIZE, width - tileX);
-      const tileCanvas = renderThreadExplorerSnapshotTile(tileX, tileY, tileWidth, tileHeight, stageRect, cards, avatarImages, mediaImages);
-      const tileContext = tileCanvas.getContext("2d");
-      rowTiles.push({
-        x: tileX,
-        width: tileWidth,
-        data: tileContext.getImageData(0, 0, tileWidth, tileHeight).data,
-      });
-      await new Promise((resolve) => window.requestAnimationFrame(resolve));
-    }
-
-    for (let row = 0; row < tileHeight; row += 1) {
-      const scanline = new Uint8Array((width * 4) + 1);
-      scanline[0] = 0;
-      rowTiles.forEach((tile) => {
-        const sourceOffset = row * tile.width * 4;
-        const targetOffset = 1 + (tile.x * 4);
-        scanline.set(tile.data.subarray(sourceOffset, sourceOffset + (tile.width * 4)), targetOffset);
-      });
-      await compressionWriter.write(scanline);
-    }
-  }
-
-  throwIfThreadExplorerSnapshotAborted(signal);
-  await onProgress({
-    percent: 94,
-    step: t("threadExplorerSnapshotProgressEncode"),
-    detail: t("threadExplorerSnapshotProgressRenderTileDetail", { row: tileRows, rows: tileRows }),
-  });
-  await compressionWriter.close();
-  const compressedScanlines = new Uint8Array(await compressedBytesPromise);
-  parts.push(createThreadExplorerPngChunk("IDAT", compressedScanlines, crcTable));
-  parts.push(createThreadExplorerPngChunk("IEND", new Uint8Array(0), crcTable));
-  return new Blob(parts, { type: "image/png" });
 }
 
 /**
@@ -13556,23 +11333,12 @@ function shouldUseThreadExplorerTiledPngSnapshot(width, height) {
  * @returns {void}
  */
 function drawThreadExplorerSnapshotEdges(context) {
-  const edges = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-edge"));
-  edges.forEach((edge) => {
-    const data = String(edge.getAttribute("d") || "").trim();
-    if (!data) {
-      return;
-    }
-    try {
-      context.save();
-      context.strokeStyle = getComputedStyle(edge).stroke || "#b8cce8";
-      context.lineWidth = Number.parseFloat(getComputedStyle(edge).strokeWidth) || 2;
-      context.lineCap = "round";
-      context.stroke(new Path2D(data));
-      context.restore();
-    } catch {
-      // Ignore malformed paths in fallback renderer.
-    }
-  });
+  drawSnapshotEdgesFromModule(
+    context,
+    Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-edge")),
+    getComputedStyle,
+    Path2D,
+  );
 }
 
 /**
@@ -13585,80 +11351,16 @@ function drawThreadExplorerSnapshotEdges(context) {
  * @returns {void}
  */
 function drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages = new Map(), mediaImages = new Map()) {
-  const rect = getThreadExplorerStageRect(card, stageRect);
-  const computed = getComputedStyle(card);
-  context.save();
-  drawThreadExplorerSnapshotRoundRect(context, rect.left, rect.top, rect.width, rect.height, 8);
-  context.fillStyle = computed.backgroundColor || "#ffffff";
-  context.fill();
-  context.strokeStyle = computed.borderColor || "#d8e3f2";
-  context.lineWidth = 1.5;
-  context.stroke();
-
-  const avatarX = rect.left + 16;
-  const avatarY = rect.top + 16;
-  const avatar = card.querySelector(".thread-explorer-avatar");
-  const avatarKey = getThreadExplorerSnapshotAvatarCacheKey(avatar);
-  let avatarImage = null;
-  if (avatarKey && avatarImages.has(avatarKey)) {
-    avatarImage = avatarImages.get(avatarKey);
-  } else {
-    avatarImage = avatar;
-  }
-  const avatarWasDrawn = drawThreadExplorerSnapshotAvatarImage(context, avatarImage, avatarX, avatarY, 40);
-  if (!avatarWasDrawn) {
-    drawThreadExplorerSnapshotFallbackAvatar(context, avatarX, avatarY, 40);
-  }
-
-  const textX = rect.left + 66;
-  const textWidth = Math.max(80, rect.width - 86);
-  let y = rect.top + 28;
-  const author = card.querySelector(".thread-explorer-post-author")?.textContent || "";
-  const handle = card.querySelector(".thread-explorer-post-handle")?.textContent || "";
-  const meta = card.querySelector(".thread-explorer-post-meta")?.textContent || "";
-  const body = card.querySelector(".thread-explorer-post-text")?.textContent || "";
-  const counts = getThreadExplorerSnapshotCountsText(card);
-  const editMarker = card.querySelector(".thread-explorer-edit-button:not([hidden])")?.textContent || "";
-  const countsElement = card.querySelector(".thread-explorer-post-counts");
-  let altTextMaxBottom = rect.bottom - 20;
-  if (countsElement) {
-    const countsRect = getThreadExplorerStageRect(countsElement, stageRect);
-    if (countsRect.top > rect.top) {
-      altTextMaxBottom = countsRect.top - 8;
-    }
-  }
-
-  context.fillStyle = "#14233d";
-  context.font = "700 16px Segoe UI, Arial, sans-serif";
-  drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, author, textWidth, 1), textX, y, 18);
-  y += 18;
-  context.fillStyle = "#5d7394";
-  context.font = "13px Segoe UI, Arial, sans-serif";
-  drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, handle, textWidth, 1), textX, y, 16);
-  y += 26;
-  if (meta) {
-    drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, meta, textWidth, 1), rect.left + 16, y, 16);
-    y += 24;
-  }
-  if (editMarker) {
-    context.fillStyle = "#92560d";
-    context.font = "700 12px Segoe UI, Arial, sans-serif";
-    y = drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, editMarker, rect.width - 32, 1), rect.left + 16, y, 15);
-    y += 8;
-  }
-
-  context.fillStyle = "#1e3150";
-  context.font = "14px Segoe UI, Arial, sans-serif";
-  y = drawThreadExplorerSnapshotTextBlock(context, wrapThreadExplorerSnapshotText(context, body, rect.width - 32, 10), rect.left + 16, y, 19);
-  drawThreadExplorerSnapshotMediaImages(context, card, stageRect, mediaImages, altTextMaxBottom);
-  if (counts) {
-    context.fillStyle = "#5d7394";
-    context.font = "12px Segoe UI, Arial, sans-serif";
-    const countLines = wrapThreadExplorerSnapshotText(context, counts, rect.width - 32, 2);
-    const countY = rect.bottom - 16 - ((countLines.length - 1) * 15);
-    drawThreadExplorerSnapshotTextBlock(context, countLines, rect.left + 16, countY, 15);
-  }
-  context.restore();
+  drawSnapshotCardFromModule(context, card, stageRect, {
+    getStageRect: getThreadExplorerStageRect,
+    getComputedStyle,
+    getAvatarKey: getThreadExplorerSnapshotAvatarCacheKey,
+    avatarImages,
+    mediaImages,
+    drawAvatar: drawThreadExplorerSnapshotAvatarImage,
+    drawFallbackAvatar: drawThreadExplorerSnapshotFallbackAvatar,
+    drawMedia: drawThreadExplorerSnapshotMediaImages,
+  });
 }
 
 /**
@@ -13671,50 +11373,21 @@ function drawThreadExplorerSnapshotCard(context, card, stageRect, avatarImages =
  * @returns {Promise<Blob>} Image blob.
  */
 async function renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height, onProgress = async () => {}, signal = null) {
-  throwIfThreadExplorerSnapshotAborted(signal);
-  const snapshot = createThreadExplorerSnapshotCanvas(width, height);
-  const stageRect = threadExplorerThreadStage.getBoundingClientRect();
-  await onProgress({
-    percent: 64,
-    step: t("threadExplorerSnapshotProgressRenderCanvas"),
-    detail: t("threadExplorerSnapshotProgressEdges"),
+  return renderCanvasSnapshotFromModule({
+    stage: threadExplorerThreadStage,
+    width,
+    height,
+    mimeType,
+    onProgress,
+    signal,
+    text: t,
+    createCanvas: createThreadExplorerSnapshotCanvas,
+    drawEdges: drawThreadExplorerSnapshotEdges,
+    preloadAvatars: preloadThreadExplorerSnapshotAvatarImages,
+    preloadMedia: preloadThreadExplorerSnapshotMediaImages,
+    drawCard: drawThreadExplorerSnapshotCard,
+    encodeCanvas: encodeThreadExplorerSnapshotCanvas,
   });
-  drawThreadExplorerSnapshotEdges(snapshot.context);
-  const cards = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card"));
-  await onProgress({
-    percent: 68,
-    step: t("threadExplorerSnapshotProgressAvatars"),
-    detail: t("threadExplorerSnapshotProgressPostCount", { count: cards.length }),
-  });
-  const avatarImages = await preloadThreadExplorerSnapshotAvatarImages(cards);
-  throwIfThreadExplorerSnapshotAborted(signal);
-  await onProgress({
-    percent: 72,
-    step: t("threadExplorerSnapshotProgressMedia"),
-    detail: t("threadExplorerSnapshotProgressPostCount", { count: cards.length }),
-  });
-  const mediaImages = await preloadThreadExplorerSnapshotMediaImages(cards);
-  throwIfThreadExplorerSnapshotAborted(signal);
-  const totalCards = Math.max(1, cards.length);
-  for (let index = 0; index < cards.length; index += 1) {
-    throwIfThreadExplorerSnapshotAborted(signal);
-    drawThreadExplorerSnapshotCard(snapshot.context, cards[index], stageRect, avatarImages, mediaImages);
-    if ((index % 10) === 0) {
-      const percent = 74 + (index / totalCards * 18);
-      await onProgress({
-        percent,
-        step: t("threadExplorerSnapshotProgressRenderCanvas"),
-        detail: t("threadExplorerSnapshotProgressRenderCardDetail", { index: index + 1, count: cards.length }),
-      });
-    }
-  }
-  throwIfThreadExplorerSnapshotAborted(signal);
-  await onProgress({
-    percent: 94,
-    step: t("threadExplorerSnapshotProgressEncode"),
-    detail: t("threadExplorerSnapshotProgressRenderCardDetail", { index: cards.length, count: cards.length }),
-  });
-  return encodeThreadExplorerSnapshotCanvas(snapshot.canvas, mimeType);
 }
 
 /**
@@ -13727,86 +11400,20 @@ async function renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height, o
  * @returns {Promise<Blob>} Image blob.
  */
 async function renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, height, onProgress = async () => {}, signal = null) {
-  throwIfThreadExplorerSnapshotAborted(signal);
-  const sourceStage = threadExplorerThreadStage;
-  await onProgress({
-    percent: 62,
-    step: t("threadExplorerSnapshotProgressRenderSvg"),
-    detail: t("threadExplorerSnapshotProgressClone"),
+  return renderForeignObjectFromModule({
+    stage: threadExplorerThreadStage,
+    width,
+    height,
+    mimeType,
+    onProgress,
+    signal,
+    text: t,
+    getComputedStyle,
+    inlineImages: inlineThreadExplorerSnapshotImages,
+    collectCss: collectThreadExplorerSnapshotCss,
+    createCanvas: createThreadExplorerSnapshotCanvas,
+    encodeCanvas: encodeThreadExplorerSnapshotCanvas,
   });
-  const clone = sourceStage.cloneNode(true);
-  clone.style.setProperty("--thread-explorer-zoom", "1");
-  clone.style.setProperty("--thread-explorer-pan-x", "0px");
-  clone.style.setProperty("--thread-explorer-pan-y", "0px");
-  clone.style.width = `${width}px`;
-  clone.style.minWidth = `${width}px`;
-  clone.style.height = `${height}px`;
-  clone.style.padding = getComputedStyle(sourceStage).padding;
-  inlineThreadExplorerSnapshotImages(sourceStage, clone);
-
-  const css = collectThreadExplorerSnapshotCss();
-  const html = `
-    <div xmlns="http://www.w3.org/1999/xhtml">
-      <style>${css}</style>
-      ${clone.outerHTML}
-    </div>
-  `;
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-      <foreignObject width="100%" height="100%">${html}</foreignObject>
-    </svg>
-  `;
-  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-  const svgUrl = URL.createObjectURL(svgBlob);
-  try {
-    const image = new Image();
-    throwIfThreadExplorerSnapshotAborted(signal);
-    await onProgress({
-      percent: 76,
-      step: t("threadExplorerSnapshotProgressRenderSvg"),
-      detail: t("threadExplorerSnapshotProgressBrowserImage"),
-    });
-    await new Promise((resolve, reject) => {
-      const handleAbort = () => {
-        reject(createThreadExplorerSnapshotAbortError());
-      };
-      const cleanup = () => {
-        image.removeEventListener("load", handleLoad);
-        image.removeEventListener("error", handleError);
-        if (signal) {
-          signal.removeEventListener("abort", handleAbort);
-        }
-      };
-      const handleLoad = () => {
-        cleanup();
-        resolve();
-      };
-      const handleError = () => {
-        cleanup();
-        const error = new Error("foreignObject snapshot failed");
-        error.name = "ThreadExplorerSnapshotFallbackError";
-        reject(error);
-      };
-      image.addEventListener("load", handleLoad, { once: true });
-      image.addEventListener("error", handleError, { once: true });
-      if (signal) {
-        signal.addEventListener("abort", handleAbort, { once: true });
-      }
-      image.src = svgUrl;
-    });
-
-    throwIfThreadExplorerSnapshotAborted(signal);
-    await onProgress({
-      percent: 88,
-      step: t("threadExplorerSnapshotProgressRenderSvg"),
-      detail: t("threadExplorerSnapshotProgressEncode"),
-    });
-    const snapshot = createThreadExplorerSnapshotCanvas(width, height);
-    snapshot.context.drawImage(image, 0, 0);
-    return encodeThreadExplorerSnapshotCanvas(snapshot.canvas, mimeType);
-  } finally {
-    URL.revokeObjectURL(svgUrl);
-  }
 }
 
 /**
@@ -13817,108 +11424,46 @@ async function renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, he
  * @returns {Promise<Blob>} Image blob.
  */
 async function renderThreadExplorerSnapshotBlob(mimeType = "image/png", onProgress = async () => {}, signal = null) {
-  if (!threadExplorerTree) {
-    throw new Error(t("threadExplorerSnapshotNoThread"));
-  }
-  throwIfThreadExplorerSnapshotAborted(signal);
-
-  await onProgress({
-    percent: 4,
-    step: t("threadExplorerSnapshotProgressPreparing"),
-    detail: t("threadExplorerSnapshotProgressPreparingDetail"),
-  });
-  await hydrateThreadExplorerTreeAvatars(threadExplorerTree, onProgress, signal);
-  throwIfThreadExplorerSnapshotAborted(signal);
-  await onProgress({
-    percent: 18,
-    step: t("threadExplorerSnapshotProgressMedia"),
-    detail: t("threadExplorerSnapshotProgressMediaDetail"),
-  });
-  await hydrateThreadExplorerSnapshotMedia(threadExplorerTree, onProgress, signal);
-  throwIfThreadExplorerSnapshotAborted(signal);
-  await onProgress({
-    percent: 28,
-    step: t("threadExplorerSnapshotProgressAvatars"),
-    detail: t("threadExplorerSnapshotProgressCacheDetail"),
-  });
-  await restoreAccountAvatarCache();
-  applyThreadExplorerAvatarCacheToTree(threadExplorerTree);
-  throwIfThreadExplorerSnapshotAborted(signal);
-  await onProgress({
-    percent: 36,
-    step: t("threadExplorerSnapshotProgressRenderTree"),
-    detail: t("threadExplorerSnapshotProgressRenderTreeDetail"),
-  });
-  threadExplorerForceHydrateCards = true;
-  try {
-    renderThreadExplorerTree();
-  } finally {
-    threadExplorerForceHydrateCards = false;
-  }
-  const inspectedMediaCount = cacheLoadedThreadExplorerRenderedMediaImages();
-  await onProgress({
-    percent: 37,
-    step: t("threadExplorerSnapshotProgressMedia"),
-    detail: t("threadExplorerSnapshotProgressRenderedCacheDetail", { count: inspectedMediaCount }),
-  });
-  const hydratedMediaCounts = await applyThreadExplorerSnapshotMediaDataUrisToRenderedTree(onProgress, signal);
-  await onProgress({
-    percent: 40,
-    step: t("threadExplorerSnapshotProgressMedia"),
-    detail: t("threadExplorerSnapshotProgressHydratedMediaDetail", {
-      count: hydratedMediaCounts.embedded,
-      missing: hydratedMediaCounts.missing,
-      total: hydratedMediaCounts.total,
-    }),
-  });
-  throwIfThreadExplorerSnapshotAborted(signal);
-  await onProgress({
-    percent: 44,
-    step: t("threadExplorerSnapshotProgressBrowserFrame"),
-    detail: t("threadExplorerSnapshotProgressBrowserFrameDetail"),
-  });
-  await waitForThreadExplorerSnapshotFrame();
-
-  const sourceStage = threadExplorerThreadStage;
-  await onProgress({
-    percent: 50,
-    step: t("threadExplorerSnapshotProgressMeasure"),
-    detail: t("threadExplorerSnapshotProgressMeasureDetail"),
-  });
-  const width = Math.ceil(Math.max(sourceStage.scrollWidth, sourceStage.offsetWidth, sourceStage.getBoundingClientRect().width));
-  const height = Math.ceil(Math.max(sourceStage.scrollHeight, sourceStage.offsetHeight, sourceStage.getBoundingClientRect().height));
-  if (!width || !height) {
-    throw new Error(t("threadExplorerSnapshotFailed"));
-  }
-
-  if (mimeType === "image/png" && shouldUseThreadExplorerTiledPngSnapshot(width, height)) {
-    try {
-      return await renderThreadExplorerTiledPngSnapshotBlob(width, height, onProgress, signal);
-    } catch (error) {
-      console.warn("Thread Explorer tiled PNG snapshot failed; using scaled fallback.", error);
-      await onProgress({
-        percent: 58,
-        step: t("threadExplorerSnapshotProgressFallback"),
-        detail: t("threadExplorerSnapshotProgressFallbackDetail"),
-      });
-    }
-  }
-
-  try {
-    return await renderThreadExplorerForeignObjectSnapshotBlob(mimeType, width, height, onProgress, signal);
-  } catch (error) {
-    if (error?.name === "ThreadExplorerSnapshotFallbackError") {
-      console.info("Thread Explorer foreignObject snapshot was not supported for this tree; using canvas fallback.");
-    } else {
+  return renderSnapshotFromModule({
+    root: threadExplorerTree,
+    mimeType,
+    onProgress,
+    signal,
+    text: t,
+    hydrateAvatars: hydrateThreadExplorerTreeAvatars,
+    hydrateMedia: hydrateThreadExplorerSnapshotMedia,
+    restoreAvatarCache: async () => {
+      await restoreAccountAvatarCache();
+      applyThreadExplorerAvatarCacheToTree(threadExplorerTree);
+    },
+    renderTree: () => {
+      threadExplorerForceHydrateCards = true;
+      try {
+        renderThreadExplorerTree();
+      } finally {
+        threadExplorerForceHydrateCards = false;
+      }
+    },
+    cacheRenderedMedia: cacheLoadedThreadExplorerRenderedMediaImages,
+    applyMediaDataUris: applyThreadExplorerSnapshotMediaDataUrisToRenderedTree,
+    waitForFrame: waitForThreadExplorerSnapshotFrame,
+    getStage: () => threadExplorerThreadStage,
+    shouldUseTiled: shouldUseThreadExplorerTiledPngSnapshot,
+    renderTiled: renderThreadExplorerTiledPngSnapshotBlob,
+    renderForeignObject: renderThreadExplorerForeignObjectSnapshotBlob,
+    renderCanvas: renderThreadExplorerCanvasSnapshotBlob,
+    onFallback: (renderer, error) => {
+      if (renderer === "tiled") {
+        console.warn("Thread Explorer tiled PNG snapshot failed; using scaled fallback.", error);
+        return;
+      }
+      if (error?.name === "ThreadExplorerSnapshotFallbackError") {
+        console.info("Thread Explorer foreignObject snapshot was not supported for this tree; using canvas fallback.");
+        return;
+      }
       console.warn("Thread Explorer foreignObject snapshot failed; using canvas fallback.", error);
-    }
-    await onProgress({
-      percent: 58,
-      step: t("threadExplorerSnapshotProgressFallback"),
-      detail: t("threadExplorerSnapshotProgressFallbackDetail"),
-    });
-    return renderThreadExplorerCanvasSnapshotBlob(mimeType, width, height, onProgress, signal);
-  }
+    },
+  });
 }
 
 /**
@@ -13946,7 +11491,11 @@ async function downloadThreadExplorerSnapshot() {
       detail: t("threadExplorerSnapshotProgressPreparingDetail"),
     });
     const blob = await renderThreadExplorerSnapshotBlob("image/png", reportProgress, snapshotSignal);
-    const fileName = buildThreadExplorerSnapshotFileName("png");
+    const fileName = buildThreadExplorerSnapshotFileNameFromData(
+      threadExplorerTree?.post || {},
+      "png",
+      sanitizeThreadExplorerFileNamePart,
+    );
     await reportProgress({
       percent: 97,
       step: t("threadExplorerSnapshotProgressDownload"),
@@ -14194,7 +11743,7 @@ function handleThreadExplorerReloadThreadClick() {
  * @returns {Promise<void>} Resolves after the snapshot was started or cancelled.
  */
 async function handleThreadExplorerSnapshotPngClick() {
-  const mediaCount = countThreadExplorerSnapshotMediaAssets(threadExplorerTree);
+  const mediaCount = countThreadExplorerSnapshotMediaAssetsFromData(threadExplorerTree);
   if (mediaCount >= THREAD_EXPLORER_SNAPSHOT_MEDIA_WARNING_THRESHOLD) {
     const confirmed = await openConfirmDialog({
       title: t("threadExplorerSnapshotLargeWarningTitle"),
@@ -14388,8 +11937,11 @@ function toggleThreadExplorerZoomResetButtonMode() {
  * @returns {void}
  */
 function handleThreadExplorerZoomOutClick() {
-  cancelPendingThreadExplorerZoomResetClick();
-  setThreadExplorerZoom(threadExplorerZoom / 1.15);
+  handleThreadExplorerZoomOutClickFromTools({
+    cancelPendingZoomReset: cancelPendingThreadExplorerZoomResetClick,
+    getZoom: () => threadExplorerZoom,
+    setZoom: setThreadExplorerZoom,
+  });
 }
 
 /**
@@ -14425,8 +11977,11 @@ function handleThreadExplorerZoomResetDoubleClick(event) {
  * @returns {void}
  */
 function handleThreadExplorerZoomInClick() {
-  cancelPendingThreadExplorerZoomResetClick();
-  setThreadExplorerZoom(threadExplorerZoom * 1.15);
+  handleThreadExplorerZoomInClickFromTools({
+    cancelPendingZoomReset: cancelPendingThreadExplorerZoomResetClick,
+    getZoom: () => threadExplorerZoom,
+    setZoom: setThreadExplorerZoom,
+  });
 }
 
 /**
@@ -14434,7 +11989,7 @@ function handleThreadExplorerZoomInClick() {
  * @returns {void}
  */
 function handleThreadExplorerOrientationClick() {
-  toggleThreadExplorerOrientation();
+  handleThreadExplorerOrientationClickFromTools(toggleThreadExplorerOrientation);
 }
 
 /**
@@ -14449,6 +12004,7 @@ function toggleThreadExplorerViewMode() {
     threadExplorerReplyClusterExpandedUris.clear();
     expandAllThreadExplorerReplyClusterNodes(threadExplorerTree);
   }
+  threadExplorerController.setViewMode(threadExplorerViewMode);
   persistThreadExplorerViewModePreference(threadExplorerViewMode);
   renderThreadExplorerWorkspace();
   if (threadExplorerTree) {
@@ -22731,11 +20287,7 @@ function normalizeSegmentImages(segments) {
 }
 
 function normalizeSegmentOverrides(segments) {
-  const normalized = (Array.isArray(segments) ? segments : [])
-    .map((entry) => String(entry || ""))
-    .filter((entry) => entry.trim().length > 0);
-
-  return normalized.length > 0 ? normalized : null;
+  return normalizeComposerSegmentOverridesFromModule(segments);
 }
 
 function normalizePostingHistory(entries) {
@@ -22760,7 +20312,7 @@ function formatHistoryMeta(threadCount, imageCount) {
 }
 
 function syncSegmentImages(segmentCount) {
-  const next = [];
+  const next = syncComposerSegmentImagesFromModule(segmentImages, segmentCount);
   for (let index = 0; index < segmentCount; index += 1) {
     next[index] = Array.isArray(segmentImages[index]) ? segmentImages[index] : [];
   }
@@ -23210,23 +20762,7 @@ function getPublicationCardFooterLabel(standardSite) {
  * @returns {object|null} Normalized link-card data, or null when invalid.
  */
 function normalizeLinkCard(card = null) {
-  if (!card || typeof card !== "object") {
-    return null;
-  }
-  const url = String(card.url || "").trim();
-  if (!/^https?:\/\//i.test(url)) {
-    return null;
-  }
-  return {
-    url,
-    title: String(card.title || url).trim().slice(0, 300),
-    description: String(card.description || "").trim().slice(0, 1000),
-    imageUrl: String(card.imageUrl || "").trim(),
-    imageDataUrl: String(card.imageDataUrl || "").trim(),
-    imageMimeType: String(card.imageMimeType || "").trim(),
-    standardSite: normalizeStandardSiteMetadata(card.standardSite),
-    createdAt: String(card.createdAt || new Date().toISOString()),
-  };
+  return normalizeComposerLinkCard(card, normalizeStandardSiteMetadata);
 }
 
 function normalizeSegmentLinkCards(cards = []) {
@@ -23247,13 +20783,7 @@ function syncSegmentLinkCards(segmentCount) {
  * @returns {string} `none`, `microlink`, or `proxy`.
  */
 function normalizeLinkCardProvider(value) {
-  if (value === LINK_CARD_PROVIDER_PROXY) {
-    return LINK_CARD_PROVIDER_PROXY;
-  }
-  if (value === LINK_CARD_PROVIDER_MICROLINK) {
-    return LINK_CARD_PROVIDER_MICROLINK;
-  }
-  return LINK_CARD_PROVIDER_NONE;
+  return normalizeComposerLinkCardProvider(value, LINK_CARD_PROVIDER_PROXY, LINK_CARD_PROVIDER_MICROLINK, LINK_CARD_PROVIDER_NONE);
 }
 
 /**
@@ -23271,15 +20801,7 @@ function getMicrolinkUsageDatePart() {
  */
 function normalizeMicrolinkUsage(usage = null) {
   const today = getMicrolinkUsageDatePart();
-  const date = String(usage?.date || "").trim();
-  let count = Math.max(0, Number(usage?.count) || 0);
-  if (date !== today) {
-    count = 0;
-  }
-  return {
-    date: today,
-    count,
-  };
+  return normalizeComposerProviderUsage(usage, today);
 }
 
 /**
@@ -23394,23 +20916,7 @@ function isLinkCardProxyConfigured() {
 }
 
 function normalizeLinkCardProxyEndpoint(rawEndpoint) {
-  const endpoint = String(rawEndpoint || "").trim();
-  if (!endpoint) {
-    return "";
-  }
-  if (/^ttps:\/\//i.test(endpoint)) {
-    return `h${endpoint}`;
-  }
-  if (/^\/\//.test(endpoint)) {
-    return `https:${endpoint}`;
-  }
-  if (/^https?:\/\//i.test(endpoint)) {
-    return endpoint;
-  }
-  if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?\//i.test(endpoint)) {
-    return `https://${endpoint}`;
-  }
-  return "";
+  return normalizeComposerLinkCardProxyEndpoint(rawEndpoint);
 }
 
 function normalizeLinkCardSettingsInputs() {
@@ -23800,62 +21306,7 @@ function getHistoryPreviewText(text) {
 }
 
 function normalizeReplyTarget(target = null) {
-  if (!target || typeof target !== "object") {
-    return null;
-  }
-  const replyRootUri = String(target.replyRoot?.uri || "").trim();
-  const replyRootCid = String(target.replyRoot?.cid || "").trim();
-  const replyParentUri = String(target.replyParent?.uri || "").trim();
-  const replyParentCid = String(target.replyParent?.cid || "").trim();
-  if (!replyRootUri || !replyRootCid || !replyParentUri || !replyParentCid) {
-    return null;
-  }
-  return {
-    mode: target.mode === "thread" ? "thread" : "post",
-    sourceUrl: String(target.sourceUrl || "").trim(),
-    threadLength: Math.max(1, Number(target.threadLength) || 1),
-    replyHint: String(target.replyHint || "").trim(),
-    targetPost: {
-      uri: String(target.targetPost?.uri || "").trim(),
-      cid: String(target.targetPost?.cid || "").trim(),
-      text: getHistoryPreviewText(target.targetPost?.text || ""),
-      createdAt: String(target.targetPost?.createdAt || "").trim(),
-    },
-    rootPost: {
-      uri: String(target.rootPost?.uri || "").trim(),
-      cid: String(target.rootPost?.cid || "").trim(),
-      text: getHistoryPreviewText(target.rootPost?.text || ""),
-      createdAt: String(target.rootPost?.createdAt || "").trim(),
-    },
-    targetAccount: {
-      did: String(target.targetAccount?.did || "").trim(),
-      handle: String(target.targetAccount?.handle || "").trim(),
-      displayName: String(target.targetAccount?.displayName || "").trim(),
-      avatar: String(target.targetAccount?.avatar || "").trim(),
-    },
-    rootAccount: {
-      did: String(target.rootAccount?.did || "").trim(),
-      handle: String(target.rootAccount?.handle || "").trim(),
-      displayName: String(target.rootAccount?.displayName || "").trim(),
-      avatar: String(target.rootAccount?.avatar || "").trim(),
-    },
-    lastOwnPost: target.lastOwnPost && typeof target.lastOwnPost === "object"
-      ? {
-          uri: String(target.lastOwnPost.uri || "").trim(),
-          cid: String(target.lastOwnPost.cid || "").trim(),
-          text: getHistoryPreviewText(target.lastOwnPost.text || ""),
-          createdAt: String(target.lastOwnPost.createdAt || "").trim(),
-        }
-      : null,
-    replyRoot: {
-      uri: replyRootUri,
-      cid: replyRootCid,
-    },
-    replyParent: {
-      uri: replyParentUri,
-      cid: replyParentCid,
-    },
-  };
+  return normalizeComposerReplyTarget(target, getHistoryPreviewText);
 }
 
 function setReplyTargetStatus(message = "", tone = "") {
@@ -23915,17 +21366,7 @@ function isOwnThreadReplyChoiceTarget(target = composerReplyTarget) {
 
 function buildThreadContinuationTarget(target = composerReplyTarget) {
   const normalized = normalizeReplyTarget(target);
-  if (!normalized?.lastOwnPost?.uri || !normalized?.lastOwnPost?.cid) {
-    return normalized;
-  }
-  return {
-    ...normalized,
-    mode: "thread",
-    replyParent: {
-      uri: normalized.lastOwnPost.uri,
-      cid: normalized.lastOwnPost.cid,
-    },
-  };
+  return buildComposerThreadContinuationTarget(normalized);
 }
 
 function renderReplyTargetCard() {
@@ -24021,20 +21462,12 @@ async function createThreadImageFromFile(file) {
 }
 
 function getSourceDimensions(image, source = null) {
-  return {
-    width: Math.max(1, Number(source?.width) || Number(image?.width) || 1),
-    height: Math.max(1, Number(source?.height) || Number(image?.height) || 1),
-  };
+  return getComposerSourceDimensions(image, source);
 }
 
 function getOrientedSourceDimensions(image, edit = image.edit, source = null) {
   const normalizedEdit = normalizeImageEdit(edit);
-  const sourceDimensions = getSourceDimensions(image, source);
-  const quarterTurn = normalizedEdit.rotation % 180 !== 0;
-  return {
-    width: quarterTurn ? sourceDimensions.height : sourceDimensions.width,
-    height: quarterTurn ? sourceDimensions.width : sourceDimensions.height,
-  };
+  return getComposerOrientedSourceDimensions(image, normalizedEdit, source);
 }
 
 function getImageEditorCanvasDimensions(image, edit = image.edit, source = null) {
@@ -24073,13 +21506,7 @@ function getImagePreviewFrameDimensions(image) {
 }
 
 function getContainedPreviewBox(frameWidth, frameHeight, maxWidth, maxHeight) {
-  const safeWidth = Math.max(1, Number(frameWidth) || 1);
-  const safeHeight = Math.max(1, Number(frameHeight) || 1);
-  const scale = Math.min(maxWidth / safeWidth, maxHeight / safeHeight);
-  return {
-    width: Math.max(1, Math.round(safeWidth * scale)),
-    height: Math.max(1, Math.round(safeHeight * scale)),
-  };
+  return getComposerContainedPreviewBox(frameWidth, frameHeight, maxWidth, maxHeight);
 }
 
 function getImageMetrics(image, frameWidth, frameHeight, edit = image.edit, fit = null, source = null) {
@@ -24141,35 +21568,12 @@ async function loadImageBitmapForDataUrl(dataUrl) {
 }
 
 async function renderImageToCanvas(image, canvas, options = {}) {
-  const width = options.width || canvas.width;
-  const height = options.height || canvas.height;
-  const fit = options.fit || normalizeImageEdit(options.edit || image.edit).fitMode || "cover";
-  if (!canvas.width) {
-    canvas.width = width;
-  }
-  if (!canvas.height) {
-    canvas.height = height;
-  }
-  const ctx = canvas.getContext("2d");
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  const bitmap = await loadImageBitmapForDataUrl(image.dataUrl);
-  const source = { width: bitmap.width, height: bitmap.height };
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, width, height);
-  ctx.clip();
-  const metrics = getImageMetrics(image, width, height, options.edit || image.edit, fit, source);
-  ctx.translate(metrics.centerX, metrics.centerY);
-  ctx.rotate((metrics.rotation * Math.PI) / 180);
-  ctx.scale(metrics.flipX ? -1 : 1, metrics.flipY ? -1 : 1);
-  ctx.drawImage(bitmap, -metrics.drawWidth / 2, -metrics.drawHeight / 2, metrics.drawWidth, metrics.drawHeight);
-
-  ctx.restore();
-  bitmap.close?.();
+  return renderComposerImageToCanvas(image, canvas, {
+    ...options,
+    normalizeEdit,
+    getMetrics: getImageMetrics,
+    loadBitmap: loadImageBitmapForDataUrl,
+  });
 }
 
 function getPreviewRenderEdit(image, width, height, edit = image.edit) {
@@ -32546,40 +29950,13 @@ function splitTokenByPostLimit(text, limitFactory, initialChunkIndex) {
  * @returns {object} Grapheme counts, limit flags, and advisory hints.
  */
 function getSegmentLengthDiagnostics(text) {
-  const normalizedText = String(text || "");
-  const metrics = getPostTextMetrics(normalizedText);
-  const graphemeCount = metrics.graphemeCount;
-  const utf8ByteCount = metrics.utf8ByteCount;
-  const codeUnitCount = normalizedText.length;
-  const codePointCount = Array.from(normalizedText).length;
-  const hasEmoji = hasEmojiLikeGraphemes(normalizedText);
-  const hasCjk = hasCjkGraphemes(normalizedText);
-  const hasComplexDifference = codeUnitCount !== graphemeCount || codePointCount !== graphemeCount;
-  const adviceKeys = [];
-
-  if (hasEmoji) {
-    adviceKeys.push("segmentLengthAdviceEmoji");
-  }
-  if (hasCjk) {
-    adviceKeys.push("segmentLengthAdviceCjk");
-  }
-  adviceKeys.push("segmentLengthAdviceSplit");
-
-  return {
-    graphemeCount,
-    utf8ByteCount,
-    codeUnitCount,
-    codePointCount,
-    hasEmoji,
-    hasCjk,
-    hasComplexDifference,
-    isNearLimit: graphemeCount >= (MAX_POST_LENGTH - 20),
-    isNearByteLimit: utf8ByteCount >= (MAX_POST_UTF8_BYTES - 200),
-    exceedsGraphemeLimit: graphemeCount > MAX_POST_LENGTH,
-    exceedsByteLimit: utf8ByteCount > MAX_POST_UTF8_BYTES,
-    exceedsLimit: graphemeCount > MAX_POST_LENGTH || utf8ByteCount > MAX_POST_UTF8_BYTES,
-    adviceKeys,
-  };
+  return getComposerSegmentLengthDiagnostics(text, {
+    getMetrics: getPostTextMetrics,
+    graphemeLimit: MAX_POST_LENGTH,
+    byteLimit: MAX_POST_UTF8_BYTES,
+    hasEmoji: hasEmojiLikeGraphemes,
+    hasCjk: hasCjkGraphemes,
+  });
 }
 
 /**
@@ -32588,15 +29965,11 @@ function getSegmentLengthDiagnostics(text) {
  * @returns {string} Human-readable length label.
  */
 function formatSegmentLengthLabel(diagnostics) {
-  const graphemeLabel = t("segmentLengthLabel", {
-    count: diagnostics.graphemeCount,
-    limit: MAX_POST_LENGTH,
+  return formatComposerSegmentLengthLabel(diagnostics, {
+    translate: t,
+    graphemeLimit: MAX_POST_LENGTH,
+    byteLimit: MAX_POST_UTF8_BYTES,
   });
-  const byteLabel = t("segmentByteLengthLabel", {
-    count: diagnostics.utf8ByteCount,
-    limit: MAX_POST_UTF8_BYTES,
-  });
-  return `${graphemeLabel} · ${byteLabel}`;
 }
 
 /**
@@ -33182,24 +30555,31 @@ function renderSegments(options = {}) {
   segmentsList.innerHTML = "";
 
   activeSegments.forEach((segment, index) => {
-    const fragment = cloneTemplateContent(segmentTemplate);
-    const card = fragment.querySelector(".segment-card");
-    const indexLabel = fragment.querySelector(".segment-index");
-    const lengthLabel = fragment.querySelector(".segment-length");
-    const warningLabel = fragment.querySelector(".segment-warning");
-    const textarea = fragment.querySelector(".segment-text");
-    const mentionContainer = fragment.querySelector(".segment-mentions");
-    const addImagesButton = fragment.querySelector(".segment-add-image-button");
-    const linkCardButton = fragment.querySelector(".segment-link-card-button");
-    const linkCardManualButton = fragment.querySelector(".segment-link-card-manual-button");
-    const linkCardManageButton = fragment.querySelector(".segment-link-card-manage-button");
-    const linkCardContainer = fragment.querySelector(".segment-link-card");
-    const imageContainer = fragment.querySelector(".segment-images");
-    const existingImages = Array.isArray(segmentImages[index]) ? segmentImages[index] : [];
-    const remainingSlots = Math.max(0, MAX_IMAGES_PER_SEGMENT - existingImages.length);
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
+    const segmentContext = createComposerSegmentRenderContext(segmentTemplate, document);
+    const fragment = segmentContext.fragment;
+    const card = segmentContext.card;
+    const indexLabel = segmentContext.indexLabel;
+    const lengthLabel = segmentContext.lengthLabel;
+    const warningLabel = segmentContext.warningLabel;
+    const textarea = segmentContext.textarea;
+    const mentionContainer = segmentContext.mentionContainer;
+    const addImagesButton = segmentContext.addImagesButton;
+    const linkCardButton = segmentContext.linkCardButton;
+    const linkCardManualButton = segmentContext.linkCardManualButton;
+    const linkCardManageButton = segmentContext.linkCardManageButton;
+    const linkCardContainer = segmentContext.linkCardContainer;
+    const imageContainer = segmentContext.imageContainer;
+    const segmentRenderState = buildComposerSegmentRenderState(
+      segment,
+      index,
+      segmentImages[index],
+      normalizeLinkCard(segmentLinkCards[index]),
+      getFirstHttpUrl(segment),
+      MAX_IMAGES_PER_SEGMENT,
+    );
+    const existingImages = segmentRenderState.existingImages;
+    const remainingSlots = segmentRenderState.remainingImageSlots;
+    const input = segmentContext.fileInput;
     input.multiple = remainingSlots > 1;
     input.className = "is-hidden";
 
@@ -33213,22 +30593,27 @@ function renderSegments(options = {}) {
     indexLabel.textContent = t("segmentPart", { index: index + 1 });
     textarea.value = segment;
     updateSegmentLengthPresentation(lengthLabel, warningLabel, segment);
-    textarea.addEventListener("input", () => {
-      activeSegments[index] = textarea.value;
-      segmentOverrides = normalizeSegmentOverrides(activeSegments);
-      setComposerLocked(true);
-      setComposerPosted(false);
-      updateSegmentLengthPresentation(lengthLabel, warningLabel, textarea.value);
-      updateComposerLengthWarning(activeSegments);
-      autoSizeTextarea(textarea);
-      scheduleSegmentMentionDisplayUpdate(index, mentionContainer, textarea.value);
-      updatePublishAvailability();
-      queueDraftSave();
-    });
     addImagesButton.textContent = t("addImagesButton");
     addImagesButton.hidden = existingImages.length >= MAX_IMAGES_PER_SEGMENT || Boolean(normalizeLinkCard(segmentLinkCards[index]));
-    addImagesButton.addEventListener("click", () => {
-      input.click();
+    bindComposerSegmentInteractions(segmentContext, {
+      index,
+      activeSegments,
+      segmentImageDragState: () => segmentImageDragState,
+      eventHasTransferFiles,
+      getDroppedImageFiles,
+      handleSegmentImageSelection,
+      updateSegmentLengthPresentation,
+      updateComposerLengthWarning,
+      scheduleSegmentMentionDisplayUpdate,
+      normalizeSegmentOverrides: (segments) => {
+        segmentOverrides = normalizeSegmentOverrides(segments);
+        return segmentOverrides;
+      },
+      setComposerLocked,
+      setComposerPosted,
+      updatePublishAvailability,
+      queueDraftSave,
+      autoSizeTextarea,
     });
     if (index === 0) {
       const imageHelpButton = document.createElement("button");
@@ -33242,110 +30627,12 @@ function renderSegments(options = {}) {
       });
       addImagesButton.insertAdjacentElement("afterend", imageHelpButton);
     }
-    input.addEventListener("change", async (event) => {
-      await handleSegmentImageSelection(index, event.target.files);
-      event.target.value = "";
+    bindComposerSegmentLinkCardInteractions(segmentContext, segmentRenderState, {
+      translate: t,
+      openLinkCardDialog,
+      canCreateLinkCards: canCreateLinkCardsWithCurrentProvider(),
+      linkCardTargetEntries: getLinkCardTargetEntries(index),
     });
-    card.addEventListener("dragover", (event) => {
-      if (segmentImageDragState || !eventHasTransferFiles(event)) {
-        return;
-      }
-      event.preventDefault();
-      card.classList.add("is-file-drop-target");
-    });
-    card.addEventListener("dragleave", (event) => {
-      const rect = card.getBoundingClientRect();
-      if (
-        event.clientX < rect.left ||
-        event.clientX > rect.right ||
-        event.clientY < rect.top ||
-        event.clientY > rect.bottom
-      ) {
-        card.classList.remove("is-file-drop-target");
-      }
-    });
-    card.addEventListener("drop", (event) => {
-      if (segmentImageDragState || !eventHasTransferFiles(event)) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      const files = getDroppedImageFiles(event);
-      card.classList.remove("is-file-drop-target");
-      if (files.length > 0) {
-        void handleSegmentImageSelection(index, files);
-      }
-    });
-    card.appendChild(input);
-    const existingLinkCard = normalizeLinkCard(segmentLinkCards[index]);
-    const detectedUrl = getFirstHttpUrl(segment);
-    const linkCardUrl = detectedUrl || existingLinkCard?.url || "";
-    const linkCardAvailable = canCreateLinkCardsWithCurrentProvider();
-    const hasImages = existingImages.length > 0;
-    const linkCardTargetEntries = getLinkCardTargetEntries(index);
-    linkCardButton.hidden = false;
-    if (linkCardManualButton) {
-      linkCardManualButton.hidden = false;
-      linkCardManualButton.textContent = t("linkCardManualButton");
-    }
-    if (linkCardManageButton) {
-      linkCardManageButton.hidden = linkCardTargetEntries.length === 0;
-      linkCardManageButton.textContent = t("linkCardManageButton");
-      linkCardManageButton.disabled = hasImages;
-      if (hasImages) {
-        linkCardManageButton.title = t("linkCardBlocksImages");
-      } else {
-        linkCardManageButton.title = t("linkCardManageButton");
-        linkCardManageButton.addEventListener("click", () => openLinkCardDialog(index, "", "manage"));
-      }
-    }
-    if (existingLinkCard) {
-      linkCardButton.textContent = t("linkCardRefreshButton");
-      linkCardButton.disabled = !linkCardAvailable;
-      if (!linkCardAvailable) {
-        linkCardButton.title = t("linkCardMicrolinkLimitReached");
-      } else {
-        linkCardButton.title = t("linkCardRefreshButton");
-      }
-      linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl, "refresh"));
-      if (linkCardManualButton) {
-        linkCardManualButton.disabled = !linkCardAvailable;
-        if (!linkCardAvailable) {
-          linkCardManualButton.title = t("linkCardMicrolinkLimitReached");
-        } else {
-          linkCardManualButton.title = t("linkCardManualButton");
-        }
-        linkCardManualButton.addEventListener("click", () => openLinkCardDialog(index, existingLinkCard.url || linkCardUrl, "refresh"));
-      }
-    } else if (linkCardAvailable) {
-      linkCardButton.textContent = t("linkCardDetectedButton");
-      linkCardButton.disabled = hasImages || !linkCardUrl;
-      if (hasImages) {
-        linkCardButton.title = t("linkCardBlocksImages");
-      } else if (!linkCardUrl) {
-        linkCardButton.title = t("linkCardNoUrl");
-      } else {
-        linkCardButton.title = t("linkCardDetectedButton");
-      }
-      linkCardButton.addEventListener("click", () => openLinkCardDialog(index, linkCardUrl, "create"));
-      if (linkCardManualButton) {
-        linkCardManualButton.disabled = hasImages;
-        if (hasImages) {
-          linkCardManualButton.title = t("linkCardBlocksImages");
-        } else {
-          linkCardManualButton.title = t("linkCardManualButton");
-        }
-        linkCardManualButton.addEventListener("click", () => openLinkCardDialog(index, "", "create"));
-      }
-    } else {
-      linkCardButton.textContent = t("linkCardDetectedButton");
-      linkCardButton.disabled = true;
-      linkCardButton.title = t("linkCardMicrolinkLimitReached");
-      if (linkCardManualButton) {
-        linkCardManualButton.disabled = true;
-        linkCardManualButton.title = t("linkCardMicrolinkLimitReached");
-      }
-    }
     renderSegmentLinkCard(linkCardContainer, index);
     renderSegmentImages(imageContainer, index);
     void updateSegmentMentionDisplay(index, mentionContainer, segment, currentMentionVersion);
@@ -33548,39 +30835,37 @@ async function persistLocale(locale) {
   await persistSettings();
 }
 
-addAccountButton.addEventListener("click", () => {
-  openLoginDialog({
-    mode: "add",
-    service: authAccountService || LOGIN_SERVICE_PRESETS["bsky.social"],
-  });
-});
-
-loginDialogCloseTop.addEventListener("click", () => {
-  closeLoginDialog();
-});
-
-loginDialogCancelButton.addEventListener("click", () => {
-  closeLoginDialog();
-});
-
-loginDialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  closeLoginDialog();
-});
-
-window.addEventListener("online", () => {
-  appOnline = true;
-  renderAccountSwitcher();
-  updateStatusForAuth();
-});
-
-window.addEventListener("offline", () => {
-  appOnline = false;
-  renderAccountSwitcher();
-  updateStatusForAuth();
-});
-
-loginForm.addEventListener("submit", async (event) => {
+bindAuthenticationEvents({
+  addAccountButton,
+  loginDialogCloseTop,
+  loginDialogCancelButton,
+  loginDialog,
+  window,
+  loginForm,
+}, {
+  addAccountClick: () => {
+    openLoginDialog({
+      mode: "add",
+      service: authAccountService || LOGIN_SERVICE_PRESETS["bsky.social"],
+    });
+  },
+  closeClick: closeLoginDialog,
+  cancelClick: closeLoginDialog,
+  cancelEvent: (event) => {
+    event.preventDefault();
+    closeLoginDialog();
+  },
+  online: () => {
+    appOnline = true;
+    renderAccountSwitcher();
+    updateStatusForAuth();
+  },
+  offline: () => {
+    appOnline = false;
+    renderAccountSwitcher();
+    updateStatusForAuth();
+  },
+  submit: async (event) => {
   event.preventDefault();
 
   try {
@@ -33723,62 +31008,34 @@ publishButton.addEventListener("click", async () => {
     return;
   }
 
-  try {
-    setBusy(publishButton, true, getPublishBusyLabel(), getPublishButtonLabel());
-    showProgressDialog(t("progressTitle"), t("progressCheckingConnectivity"));
-    await sendToServiceWorker("CHECK_CONNECTIVITY");
-    showProgressDialog(t("progressTitle"), t("progressPreparing"));
-    const preparedSegments = [];
-    for (const [segmentIndex, segment] of segments.entries()) {
-      showProgressDialog(
-        t("progressTitle"),
-        t("progressPreparingSegment", { index: segmentIndex + 1, count: segments.length }),
-      );
-      const preparedImages = [];
-      const externalCard = normalizeLinkCard(segment.externalCard);
-      if (externalCard && segment.images.length > 0) {
-        throw new Error(t("linkCardImageConflictPublish"));
-      }
-      for (const [imageIndex, image] of segment.images.entries()) {
-        showProgressDialog(
-          t("progressTitle"),
-          t("progressPreparingImage", {
-            image: imageIndex + 1,
-            imageCount: segment.images.length,
-            index: segmentIndex + 1,
-          }),
-        );
-        const preparedImage = await prepareImageForUpload(image, imageAutoResizeMode);
-        if (preparedImage.validation?.tooBig || preparedImage.blob.size > IMAGE_BLOB_LIMIT || preparedImage.width > IMAGE_MAX_DIMENSION || preparedImage.height > IMAGE_MAX_DIMENSION) {
-          image.validation = {
-            sizeBytes: preparedImage.blob.size,
-            width: preparedImage.width,
-            height: preparedImage.height,
-            exceedsDimensions: preparedImage.width > IMAGE_MAX_DIMENSION || preparedImage.height > IMAGE_MAX_DIMENSION,
-            tooBig: true,
-          };
-          renderSegments({ preserveOverrides: true });
-          throw new Error(t("statusImageTooLarge"));
+  await runComposerPublishWorkflow({
+    setBusy: (busy) => setBusy(publishButton, busy, getPublishBusyLabel(), getPublishButtonLabel()),
+    showProgress: (title, message) => showProgressDialog(title, message),
+    hideProgress: hideProgressDialog,
+    checkConnectivity: () => sendToServiceWorker("CHECK_CONNECTIVITY"),
+    progressTitle: t("progressTitle"),
+    connectivityMessage: t("progressCheckingConnectivity"),
+    preparingMessage: t("progressPreparing"),
+    prepareSegments: async () => prepareComposerPublishSegments(segments, {
+      normalizeLinkCard,
+      prepareImage: (image) => prepareImageForUpload(image, imageAutoResizeMode),
+      dataUrlToFile,
+      blobLimit: IMAGE_BLOB_LIMIT,
+      maxDimension: IMAGE_MAX_DIMENSION,
+      linkCardImageConflictMessage: t("linkCardImageConflictPublish"),
+      imageTooLargeMessage: t("statusImageTooLarge"),
+      onProgress(progress) {
+        if (progress.type === "segment") {
+          showProgressDialog(t("progressTitle"), t("progressPreparingSegment", { index: progress.segmentIndex + 1, count: progress.segmentCount }));
+        } else {
+          showProgressDialog(t("progressTitle"), t("progressPreparingImage", { image: progress.imageIndex + 1, imageCount: progress.imageCount, index: progress.segmentIndex + 1 }));
         }
-        preparedImages.push({
-          blob: new File([preparedImage.blob], image.name || "image.jpg", { type: preparedImage.blob.type || image.type || "image/jpeg" }),
-          alt: image.alt || "",
-          width: preparedImage.width,
-          height: preparedImage.height,
-        });
-      }
-      preparedSegments.push({
-        text: segment.text,
-        images: preparedImages,
-        externalCard: externalCard
-          ? {
-              ...externalCard,
-              thumb: externalCard.imageDataUrl ? dataUrlToFile(externalCard.imageDataUrl, "link-card.jpg") : null,
-            }
-          : null,
-      });
-    }
-    const result = await requestThreadPublish(sendToServiceWorker, {
+      },
+      onTooLarge() {
+        renderSegments({ preserveOverrides: true });
+      },
+    }),
+    publish: (preparedSegments) => requestThreadPublish(sendToServiceWorker, {
       segments: preparedSegments,
       langs: getNormalizedPostLanguagesOrDefault(),
       postInteraction: getCurrentPostInteractionSettings(),
@@ -33793,103 +31050,142 @@ publishButton.addEventListener("click", async () => {
       onProgress(progress) {
         showProgressDialog(t("progressTitle"), progress.message || t("progressUploading"));
       },
-    });
-    hideProgressDialog();
-    lastPublishRateLimit = normalizePublishRateLimit(result.rateLimit);
-    // UI output disabled for now; keep collecting the last observed headers for later reuse.
-    // renderPublishRateLimitNote(lastPublishRateLimit);
-    await recordPublishedThread(result, preparedSegments);
-    clearComposerReplyTarget();
-    setComposerPosted(true);
-    queueDraftSave();
-    setStatus(result.posts.length === 1 ? t("statusPublishedOne") : t("statusPublishedMany", { count: result.posts.length }));
-    showPublishResult(result);
-  } catch (error) {
+    }),
+    onSuccess: async (result, preparedSegments) => {
+      lastPublishRateLimit = normalizePublishRateLimit(result.rateLimit);
+      await recordPublishedThread(result, preparedSegments);
+      clearComposerReplyTarget();
+      setComposerPosted(true);
+      queueDraftSave();
+      if (result.posts.length === 1) {
+        setStatus(t("statusPublishedOne"));
+      } else {
+        setStatus(t("statusPublishedMany", { count: result.posts.length }));
+      }
+      showPublishResult(result);
+    },
+    onError: async (error) => {
     console.error(error);
     lastPublishRateLimit = normalizePublishRateLimit(error?.details?.rateLimit);
-    // UI output disabled for now; keep collecting the last observed headers for later reuse.
-    // renderPublishRateLimitNote(lastPublishRateLimit);
     const message = buildPublishErrorMessage(error);
     setStatus(message, "error");
-    hideProgressDialog();
     showErrorDialog(message);
-  } finally {
-    hideProgressDialog();
-    setBusy(publishButton, false, getPublishBusyLabel(), getPublishButtonLabel());
-  }
+    },
+  });
+  },
 });
 
-sourceText.addEventListener("input", () => {
-  if (composerInputEventSuppressed) {
-    composerInputEventSuppressed = false;
-    return;
-  }
-  const showTruncationWarning = composerInputWarningPendingTruncation;
-  composerInputWarningPendingTruncation = false;
-  handleComposerTextInput(showTruncationWarning);
+bindComposerCoreEvents({
+  sourceText,
+  counterToggle,
+  threadIntroToggle,
+  threadEmojiToggle,
+  markerSpacingToggle,
+  replyModeInputs,
+  replyAllowFollowersInput,
+  replyAllowFollowingInput,
+  replyAllowMentionedInput,
+  quotePostsToggle,
+}, {
+  sourceInput: () => {
+    if (composerInputEventSuppressed) {
+      composerInputEventSuppressed = false;
+      return;
+    }
+    const showTruncationWarning = composerInputWarningPendingTruncation;
+    composerInputWarningPendingTruncation = false;
+    handleComposerTextInput(showTruncationWarning);
+  },
+  sourceBeforeInput: (event) => {
+    if (event.inputType !== "insertFromPaste" && event.inputType !== "insertFromDrop") {
+      return;
+    }
+    const insertedText = event.dataTransfer?.getData("text/plain") || event.data || "";
+    if (typeof insertedText !== "string") {
+      return;
+    }
+    event.preventDefault();
+    insertTextIntoComposer(insertedText, true);
+  },
+  sourcePaste: (event) => {
+    const pastedText = event.clipboardData?.getData("text/plain");
+    if (typeof pastedText !== "string") {
+      return;
+    }
+    event.preventDefault();
+    insertTextIntoComposer(pastedText, true);
+  },
+  counterChange: () => {
+    segmentOverrides = null;
+    setComposerLocked(false);
+    setComposerPosted(false);
+    renderSegments({ preserveOverrides: false });
+    renderReplyTargetCard();
+    renderPostLanguageSummary();
+    void persistSettings();
+    queueDraftSave();
+  },
+  threadIntroChange: () => {
+    appendThreadIntro = threadIntroToggle.checked;
+    segmentOverrides = null;
+    setComposerLocked(false);
+    setComposerPosted(false);
+    renderSegments({ preserveOverrides: false });
+    renderPostLanguageSummary();
+    void persistSettings();
+    queueDraftSave();
+  },
+  threadEmojiChange: () => {
+    appendThreadEmoji = threadEmojiToggle.checked;
+    segmentOverrides = null;
+    setComposerLocked(false);
+    setComposerPosted(false);
+    renderSegments({ preserveOverrides: false });
+    renderPostLanguageSummary();
+    void persistSettings();
+    queueDraftSave();
+  },
+  markerSpacingChange: () => {
+    addMarkerSpacing = markerSpacingToggle.checked;
+    segmentOverrides = null;
+    setComposerLocked(false);
+    setComposerPosted(false);
+    renderSegments({ preserveOverrides: false });
+    renderPostLanguageSummary();
+    void persistSettings();
+    queueDraftSave();
+  },
+  replyModeChange: async (event) => {
+    if (!event.currentTarget.checked) {
+      return;
+    }
+    replyMode = event.currentTarget.value;
+    renderPostInteractionControls();
+    renderPostLanguageSummary();
+    await persistSettings();
+  },
+  replyAllowFollowersChange: async () => {
+    replyAllowFollowers = replyAllowFollowersInput.checked;
+    renderPostLanguageSummary();
+    await persistSettings();
+  },
+  replyAllowFollowingChange: async () => {
+    replyAllowFollowing = replyAllowFollowingInput.checked;
+    renderPostLanguageSummary();
+    await persistSettings();
+  },
+  replyAllowMentionedChange: async () => {
+    replyAllowMentioned = replyAllowMentionedInput.checked;
+    renderPostLanguageSummary();
+    await persistSettings();
+  },
+  quotePostsChange: async () => {
+    quotePostsAllowed = quotePostsToggle.checked;
+    renderPostLanguageSummary();
+    await persistSettings();
+  },
 });
-sourceText.addEventListener("beforeinput", (event) => {
-  if (event.inputType !== "insertFromPaste" && event.inputType !== "insertFromDrop") {
-    return;
-  }
 
-  const insertedText = event.dataTransfer?.getData("text/plain") || event.data || "";
-  if (typeof insertedText !== "string") {
-    return;
-  }
-
-  event.preventDefault();
-  insertTextIntoComposer(insertedText, true);
-});
-sourceText.addEventListener("paste", (event) => {
-  const pastedText = event.clipboardData?.getData("text/plain");
-  if (typeof pastedText !== "string") {
-    return;
-  }
-
-  event.preventDefault();
-  insertTextIntoComposer(pastedText, true);
-});
-counterToggle.addEventListener("change", () => {
-  segmentOverrides = null;
-  setComposerLocked(false);
-  setComposerPosted(false);
-  renderSegments({ preserveOverrides: false });
-  renderReplyTargetCard();
-  renderPostLanguageSummary();
-  void persistSettings();
-  queueDraftSave();
-});
-threadIntroToggle.addEventListener("change", () => {
-  appendThreadIntro = threadIntroToggle.checked;
-  segmentOverrides = null;
-  setComposerLocked(false);
-  setComposerPosted(false);
-  renderSegments({ preserveOverrides: false });
-  renderPostLanguageSummary();
-  void persistSettings();
-  queueDraftSave();
-});
-threadEmojiToggle.addEventListener("change", () => {
-  appendThreadEmoji = threadEmojiToggle.checked;
-  segmentOverrides = null;
-  setComposerLocked(false);
-  setComposerPosted(false);
-  renderSegments({ preserveOverrides: false });
-  renderPostLanguageSummary();
-  void persistSettings();
-  queueDraftSave();
-});
-markerSpacingToggle.addEventListener("change", () => {
-  addMarkerSpacing = markerSpacingToggle.checked;
-  segmentOverrides = null;
-  setComposerLocked(false);
-  setComposerPosted(false);
-  renderSegments({ preserveOverrides: false });
-  renderPostLanguageSummary();
-  void persistSettings();
-  queueDraftSave();
-});
 enableAutoAccountPicker(searchActorInput, t("searchActorLabel"));
 enableAutoAccountPicker(searchMentionsInput, t("searchMentionsLabel"));
 enableAutoAccountPicker(networkAccountInput, t("networkAccountInputLabel"));
@@ -33904,54 +31200,23 @@ enableAutoAccountPicker(dmContactSearchInput, t("dmContactSearchLabel"), {
   noteKey: "accountPickerDialogDmNote",
   onSelect: applyDmContactPickerSelection,
 });
-replyModeInputs.forEach((input) => {
-  input.addEventListener("change", async () => {
-    if (!input.checked) {
-      return;
-    }
-    replyMode = input.value;
-    renderPostInteractionControls();
-    renderPostLanguageSummary();
-    await persistSettings();
-  });
-});
-replyAllowFollowersInput.addEventListener("change", async () => {
-  replyAllowFollowers = replyAllowFollowersInput.checked;
-  renderPostLanguageSummary();
-  await persistSettings();
-});
-replyAllowFollowingInput.addEventListener("change", async () => {
-  replyAllowFollowing = replyAllowFollowingInput.checked;
-  renderPostLanguageSummary();
-  await persistSettings();
-});
-replyAllowMentionedInput.addEventListener("change", async () => {
-  replyAllowMentioned = replyAllowMentionedInput.checked;
-  renderPostLanguageSummary();
-  await persistSettings();
-});
-quotePostsToggle.addEventListener("change", async () => {
-  quotePostsAllowed = quotePostsToggle.checked;
-  renderPostLanguageSummary();
-  await persistSettings();
-});
-sidebarToggleButton.addEventListener("click", async () => {
+bindApplicationEvents(sidebarToggleButton, [{ type: "click", handler: async () => {
   sidebarCollapsedDesktop = !sidebarCollapsedDesktop;
   applySidebarState();
   await persistSettings();
-});
-sidebarResizeHandle.addEventListener("pointerdown", (event) => {
+} }]);
+bindApplicationEvents(sidebarResizeHandle, [{ type: "pointerdown", handler: (event) => {
   event.preventDefault();
   startDesktopColumnResize("sidebar");
-});
-composerResizeHandle.addEventListener("pointerdown", (event) => {
+} }]);
+bindApplicationEvents(composerResizeHandle, [{ type: "pointerdown", handler: (event) => {
   event.preventDefault();
   startDesktopColumnResize("composer");
-});
-DESKTOP_LAYOUT_MEDIA.addEventListener("change", () => {
+} }]);
+bindApplicationEvents(DESKTOP_LAYOUT_MEDIA, [{ type: "change", handler: () => {
   applyDesktopLayoutState();
   applySidebarState();
-});
+} }]);
 
 serverPresetField.addEventListener("change", () => {
   customServerWrap.hidden = serverPresetField.value !== "custom";
@@ -33994,299 +31259,308 @@ clearButton.addEventListener("click", async () => {
   }
 });
 
-settingsButton.addEventListener("click", () => {
+bindApplicationEvents(settingsButton, [{ type: "click", handler: () => {
   setUpdateStatus("", false);
   setBackupStatus("");
   setShareStatus("");
   updateLinkCardSettingsStatus({ show: false });
   settingsDialog.showModal();
-});
+} }]);
 
-historyButton.addEventListener("click", () => {
+bindApplicationEvents(historyButton, [{ type: "click", handler: () => {
   renderHistoryList();
   historyDialog.showModal();
-});
+} }]);
 
-publishResultThreadExplorerButton?.addEventListener("click", handlePublishResultThreadExplorerClick);
+bindOptionalApplicationEvent(publishResultThreadExplorerButton, "click", handlePublishResultThreadExplorerClick);
+bindApplicationEvents(composerButton, [{
+  type: "click",
+  handler: () => showComposerWorkspace({ redirectPage: true }),
+}]);
+bindApplicationEvents(archiveButton, [{ type: "click", handler: showArchiveWorkspace }]);
+bindApplicationEvents(searchButton, [{ type: "click", handler: showSearchWorkspace }]);
+bindApplicationEvents(networkButton, [{ type: "click", handler: showNetworkWorkspace }]);
 
-composerButton.addEventListener("click", () => {
-  showComposerWorkspace({ redirectPage: true });
-});
-
-archiveButton.addEventListener("click", () => {
-  showArchiveWorkspace();
-});
-
-searchButton.addEventListener("click", () => {
-  showSearchWorkspace();
-});
-
-networkButton.addEventListener("click", () => {
-  showNetworkWorkspace();
-});
-
-threadExplorerButton.addEventListener("click", handleThreadExplorerLaunchClick);
-threadExplorerUrlButton.addEventListener("click", handleThreadExplorerUrlClick);
-threadExplorerSearchesButton.addEventListener("click", handleThreadExplorerSearchesClick);
-threadExplorerRefreshButton.addEventListener("click", handleThreadExplorerRefreshClick);
-threadExplorerSourceSelect.addEventListener("change", handleThreadExplorerSourceSelectChange);
-threadExplorerAccountInput?.addEventListener("input", () => {
-  threadExplorerAccountError = "";
-  renderThreadExplorerAccountNote();
-  void persistSettings();
-});
-threadExplorerAccountInput?.addEventListener("change", () => {
-  applyThreadExplorerAccountInput({ loadFeed: true });
-});
-threadExplorerAccountInput?.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter") {
-    return;
-  }
-  event.preventDefault();
-  applyThreadExplorerAccountInput({ loadFeed: true });
-});
-threadExplorerUseOwnAccountButton?.addEventListener("click", handleThreadExplorerUseOwnAccountClick);
-threadExplorerAccountModeSelect?.addEventListener("change", handleThreadExplorerAccountModeChange);
-threadExplorerFeedSelect.addEventListener("change", handleThreadExplorerFeedSelectChange);
-
-searchModeSelect?.addEventListener("change", () => {
-  updateSearchModeUi();
-  renderSearchWorkspace();
-  scheduleSearchPreferencesPersist();
-});
-searchUseOwnAccountButton?.addEventListener("click", handleSearchUseOwnAccountClick);
-searchUrlInput?.addEventListener("input", () => {
-  if (searchUrlStatus) {
-    searchUrlStatus.textContent = "";
-  }
-  scheduleSearchPreferencesPersist();
-});
-searchUrlInput?.addEventListener("paste", () => {
-  scheduleSearchUrlImport();
-});
-searchUrlInput?.addEventListener("change", () => {
-  importSearchUrlFromField();
-});
-searchQueryInput?.addEventListener("input", () => {
-  renderSearchSummary();
-  scheduleSearchPreferencesPersist();
-});
-searchExcludeTextInput?.addEventListener("input", () => {
-  renderSearchSummary();
-  scheduleSearchPreferencesPersist();
-});
-searchActorInput?.addEventListener("input", () => {
-  renderSearchSummary();
-  scheduleSearchPreferencesPersist();
-});
-searchSortSelect?.addEventListener("change", () => {
-  enforceSearchSortConstraints(true);
-  renderSearchSummary();
-  scheduleSearchPreferencesPersist();
-});
-searchMediaSelect?.addEventListener("change", () => {
-  renderSearchSummary();
-  scheduleSearchPreferencesPersist();
-});
-searchPostTypeSelect?.addEventListener("change", () => {
-  renderSearchSummary();
-  scheduleSearchPreferencesPersist();
-});
-searchMentionsInput?.addEventListener("input", () => {
-  renderSearchSummary();
-  scheduleSearchPreferencesPersist();
-});
-searchDomainInput?.addEventListener("input", scheduleSearchPreferencesPersist);
-searchTargetUrlInput?.addEventListener("input", scheduleSearchPreferencesPersist);
-searchSinceInput?.addEventListener("input", () => {
-  renderSearchSummary();
-  scheduleSearchPreferencesPersist();
-});
-searchUntilInput?.addEventListener("input", () => {
-  renderSearchSummary();
-  scheduleSearchPreferencesPersist();
-});
-searchRunButton?.addEventListener("click", () => {
-  void loadSearchResults({ append: false });
-});
-searchMoreButton?.addEventListener("click", () => {
-  void loadSearchResults({ append: true });
-});
-searchCancelButton?.addEventListener("click", () => {
-  void cancelActiveSearchRun();
-});
-searchSaveButton?.addEventListener("click", () => {
-  void saveCurrentSearchPreferences();
-});
-searchSavedButton?.addEventListener("click", handleSearchSavedClick);
-searchHashtagButton?.addEventListener("click", openSearchHashtagDialog);
-searchTagMatchSelect?.addEventListener("change", () => {
-  renderSearchWorkspace();
-  scheduleSearchPreferencesPersist();
-});
-searchClearButton?.addEventListener("click", () => {
-  void clearSearchForm();
-});
-searchCopyUrlButton?.addEventListener("click", () => {
-  void copyCurrentSearchAsBskyUrl();
-});
-threadExplorerFeedList.addEventListener("scroll", handleThreadExplorerFeedScroll);
-threadExplorerActorFeedList?.addEventListener("scroll", handleThreadExplorerActorFocusScroll);
-threadExplorerActorFocusCloseButton.addEventListener("click", closeThreadExplorerActorFocus);
-threadExplorerActorModeSelect.addEventListener("change", handleThreadExplorerActorModeChange);
-threadExplorerRootButton.addEventListener("click", handleThreadExplorerRootClick);
-threadExplorerReloadThreadButton.addEventListener("click", handleThreadExplorerReloadThreadClick);
-threadExplorerSnapshotPngButton.addEventListener("click", handleThreadExplorerSnapshotPngClick);
-threadExplorerSaveButton.addEventListener("click", handleThreadExplorerSaveClick);
-threadExplorerFavoritesButton.addEventListener("click", handleThreadExplorerFavoritesClick);
-threadExplorerZoomOutButton.addEventListener("click", handleThreadExplorerZoomOutClick);
-threadExplorerZoomResetButton.addEventListener("click", handleThreadExplorerZoomResetClick);
-threadExplorerZoomResetButton.addEventListener("dblclick", handleThreadExplorerZoomResetDoubleClick);
-threadExplorerZoomInButton.addEventListener("click", handleThreadExplorerZoomInClick);
-threadExplorerViewModeButton.addEventListener("click", handleThreadExplorerViewModeClick);
-threadExplorerOrientationButton.addEventListener("click", handleThreadExplorerOrientationClick);
-threadExplorerFullscreenButton.addEventListener("click", handleThreadExplorerFullscreenClick);
-threadExplorerCollapseButton.addEventListener("click", handleThreadExplorerCollapseClick);
-threadExplorerExpandButton.addEventListener("click", handleThreadExplorerExpandClick);
-threadExplorerFullscreenCloseButton?.addEventListener("click", () => {
-  setThreadExplorerFullscreen(false);
-});
-threadExplorerThreadTree.addEventListener("pointerdown", handleThreadExplorerPointerDown);
-threadExplorerThreadTree.addEventListener("pointermove", handleThreadExplorerPointerMove);
-threadExplorerThreadTree.addEventListener("pointerup", handleThreadExplorerPointerUp);
-threadExplorerThreadTree.addEventListener("pointercancel", handleThreadExplorerPointerUp);
-threadExplorerThreadTree.addEventListener("wheel", handleThreadExplorerWheel, { passive: false });
-if (threadExplorerSnapshotProgressDialog) {
-  threadExplorerSnapshotProgressDialog.addEventListener("cancel", (event) => {
-    event.preventDefault();
-  });
-}
-if (threadExplorerSnapshotCancelButton) {
-  threadExplorerSnapshotCancelButton.addEventListener("click", cancelThreadExplorerSnapshotExport);
-}
-threadExplorerUrlCloseTopButton.addEventListener("click", closeThreadExplorerUrlDialog);
-threadExplorerUrlCloseButton.addEventListener("click", closeThreadExplorerUrlDialog);
-threadExplorerUrlLoadButton.addEventListener("click", () => {
-  void loadThreadExplorerPostFromUrl();
-});
-threadExplorerUrlInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    void loadThreadExplorerPostFromUrl();
-  }
-});
-threadExplorerFavoritesCloseButton.addEventListener("click", () => {
-  threadExplorerFavoritesDialog.close();
-});
-savedSearchesCloseButton.addEventListener("click", () => {
-  savedSearchesDialog.close();
-});
-searchHashtagCloseTop?.addEventListener("click", closeSearchHashtagDialog);
-searchHashtagCloseButton?.addEventListener("click", closeSearchHashtagDialog);
-savedSearchAddButton.addEventListener("click", handleSavedSearchAddClick);
-savedSearchUrlInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    handleSavedSearchAddClick();
-  }
-});
-threadExplorerReactionsCloseButton.addEventListener("click", () => {
-  threadExplorerReactionsDialog.close();
-});
-threadExplorerRepliesCloseButton.addEventListener("click", () => {
-  threadExplorerRepliesDialog.close();
-});
-threadExplorerGalleryCloseButton.addEventListener("click", () => {
-  setThreadExplorerGalleryPseudoFullscreen(false);
-  threadExplorerGalleryDialog.close();
-});
-threadExplorerGalleryCloseBottomButton.addEventListener("click", () => {
-  setThreadExplorerGalleryPseudoFullscreen(false);
-  threadExplorerGalleryDialog.close();
-});
-threadExplorerGalleryPrevButton?.addEventListener("click", () => {
-  stepThreadExplorerGallery(-1);
-});
-threadExplorerGalleryNextButton?.addEventListener("click", () => {
-  stepThreadExplorerGallery(1);
-});
-threadExplorerGalleryOverlayPrevButton?.addEventListener("click", () => {
-  stepThreadExplorerGallery(-1);
-});
-threadExplorerGalleryOverlayNextButton?.addEventListener("click", () => {
-  stepThreadExplorerGallery(1);
-});
-threadExplorerGalleryOverlayCloseButton?.addEventListener("click", async () => {
-  await closeThreadExplorerGalleryOverlay();
-});
-threadExplorerGalleryImage.addEventListener("error", handleThreadExplorerGalleryImageError);
-threadExplorerGalleryImage.addEventListener("click", async () => {
-  try {
-    await openThreadExplorerGalleryFullscreen();
-  } catch (error) {
-    console.warn("Thread Explorer fullscreen failed.", error);
-  }
-});
-threadExplorerGalleryDialog?.addEventListener("keydown", handleThreadExplorerGalleryKeydown);
-threadExplorerGalleryDialog?.addEventListener("close", () => {
-  setThreadExplorerGalleryPseudoFullscreen(false);
-});
-threadExplorerGalleryFullscreenButton.addEventListener("click", async () => {
-  try {
-    await openThreadExplorerGalleryFullscreen();
-  } catch (error) {
-    console.warn("Thread Explorer fullscreen failed.", error);
-  }
-});
-window.addEventListener("resize", handleThreadExplorerResize);
-window.visualViewport?.addEventListener("resize", handleThreadExplorerResize);
-window.addEventListener("keydown", handleGlobalKeydown);
-
-analysisButton.addEventListener("click", () => {
-  showAnalysisWorkspace();
-});
-
-dmButton.addEventListener("click", () => {
-  showDmWorkspace();
-});
-
-analysisAccountAOwnButton?.addEventListener("click", () => {
-  const actor = getActiveAnalysisActor();
-  if (analysisAccountAInput && actor) {
-    analysisAccountAInput.value = actor;
-    updateAnalysisControls();
-    setAnalysisStatus(t("analysisAccountLoadedStatus", { slot: "A", account: actor }));
+bindThreadExplorerWorkspaceEvents({
+  launchButton: threadExplorerButton,
+  urlButton: threadExplorerUrlButton,
+  searchesButton: threadExplorerSearchesButton,
+  refreshButton: threadExplorerRefreshButton,
+  sourceSelect: threadExplorerSourceSelect,
+  accountInput: threadExplorerAccountInput,
+  useOwnAccountButton: threadExplorerUseOwnAccountButton,
+  accountModeSelect: threadExplorerAccountModeSelect,
+  feedSelect: threadExplorerFeedSelect,
+}, {
+  launchClick: handleThreadExplorerLaunchClick,
+  urlClick: handleThreadExplorerUrlClick,
+  searchesClick: handleThreadExplorerSearchesClick,
+  refreshClick: handleThreadExplorerRefreshClick,
+  sourceChange: handleThreadExplorerSourceSelectChange,
+  accountInput: () => {
+    threadExplorerAccountError = "";
+    renderThreadExplorerAccountNote();
     void persistSettings();
-  }
+  },
+  accountChange: () => {
+    applyThreadExplorerAccountInput({ loadFeed: true });
+  },
+  accountKeydown: (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    applyThreadExplorerAccountInput({ loadFeed: true });
+  },
+  useOwnAccountClick: handleThreadExplorerUseOwnAccountClick,
+  accountModeChange: handleThreadExplorerAccountModeChange,
+  feedChange: handleThreadExplorerFeedSelectChange,
 });
 
-analysisAccountBOwnButton?.addEventListener("click", () => {
-  const actor = getActiveAnalysisActor();
-  if (analysisAccountBInput && actor) {
-    analysisAccountBInput.value = actor;
-    updateAnalysisControls();
-    setAnalysisStatus(t("analysisAccountLoadedStatus", { slot: "B", account: actor }));
-    void persistSettings();
-  }
+bindSearchWorkspaceEvents({
+  modeSelect: searchModeSelect,
+  useOwnAccountButton: searchUseOwnAccountButton,
+  urlInput: searchUrlInput,
+  queryInput: searchQueryInput,
+  excludeTextInput: searchExcludeTextInput,
+  actorInput: searchActorInput,
+  sortSelect: searchSortSelect,
+  mediaSelect: searchMediaSelect,
+  postTypeSelect: searchPostTypeSelect,
+  mentionsInput: searchMentionsInput,
+  domainInput: searchDomainInput,
+  targetUrlInput: searchTargetUrlInput,
+  sinceInput: searchSinceInput,
+  untilInput: searchUntilInput,
+  runButton: searchRunButton,
+  moreButton: searchMoreButton,
+  cancelButton: searchCancelButton,
+  saveButton: searchSaveButton,
+  savedButton: searchSavedButton,
+  hashtagButton: searchHashtagButton,
+  tagMatchSelect: searchTagMatchSelect,
+  clearButton: searchClearButton,
+  copyUrlButton: searchCopyUrlButton,
+}, {
+  modeChange: () => {
+    updateSearchModeUi();
+    renderSearchWorkspace();
+    scheduleSearchPreferencesPersist();
+  },
+  useOwnAccountClick: handleSearchUseOwnAccountClick,
+  urlInput: () => {
+    if (searchUrlStatus) {
+      searchUrlStatus.textContent = "";
+    }
+    scheduleSearchPreferencesPersist();
+  },
+  urlPaste: scheduleSearchUrlImport,
+  urlChange: importSearchUrlFromField,
+  summaryInput: () => {
+    renderSearchSummary();
+    scheduleSearchPreferencesPersist();
+  },
+  sortChange: () => {
+    enforceSearchSortConstraints(true);
+    renderSearchSummary();
+    scheduleSearchPreferencesPersist();
+  },
+  persistInput: scheduleSearchPreferencesPersist,
+  runClick: () => {
+    void loadSearchResults({ append: false });
+  },
+  moreClick: () => {
+    void loadSearchResults({ append: true });
+  },
+  cancelClick: () => {
+    void cancelActiveSearchRun();
+  },
+  saveClick: () => {
+    void saveCurrentSearchPreferences();
+  },
+  savedClick: handleSearchSavedClick,
+  hashtagClick: openSearchHashtagDialog,
+  tagMatchChange: () => {
+    renderSearchWorkspace();
+    scheduleSearchPreferencesPersist();
+  },
+  clearClick: () => {
+    void clearSearchForm();
+  },
+  copyUrlClick: () => {
+    void copyCurrentSearchAsBskyUrl();
+  },
+});
+bindThreadExplorerApplicationEvents({
+  feedList: threadExplorerFeedList,
+  actorFeedList: threadExplorerActorFeedList,
+  actorFocusCloseButton: threadExplorerActorFocusCloseButton,
+  actorModeSelect: threadExplorerActorModeSelect,
+  rootButton: threadExplorerRootButton,
+  reloadThreadButton: threadExplorerReloadThreadButton,
+  snapshotPngButton: threadExplorerSnapshotPngButton,
+  saveButton: threadExplorerSaveButton,
+  favoritesButton: threadExplorerFavoritesButton,
+  zoomOutButton: threadExplorerZoomOutButton,
+  zoomResetButton: threadExplorerZoomResetButton,
+  zoomInButton: threadExplorerZoomInButton,
+  viewModeButton: threadExplorerViewModeButton,
+  orientationButton: threadExplorerOrientationButton,
+  fullscreenButton: threadExplorerFullscreenButton,
+  collapseButton: threadExplorerCollapseButton,
+  expandButton: threadExplorerExpandButton,
+  threadTree: threadExplorerThreadTree,
+}, {
+  feedScroll: handleThreadExplorerFeedScroll,
+  actorFeedScroll: handleThreadExplorerActorFocusScroll,
+  actorFocusClose: closeThreadExplorerActorFocus,
+  actorModeChange: handleThreadExplorerActorModeChange,
+  rootClick: handleThreadExplorerRootClick,
+  reloadThreadClick: handleThreadExplorerReloadThreadClick,
+  snapshotPngClick: handleThreadExplorerSnapshotPngClick,
+  saveClick: handleThreadExplorerSaveClick,
+  favoritesClick: handleThreadExplorerFavoritesClick,
+  zoomOutClick: handleThreadExplorerZoomOutClick,
+  zoomResetClick: handleThreadExplorerZoomResetClick,
+  zoomResetDoubleClick: handleThreadExplorerZoomResetDoubleClick,
+  zoomInClick: handleThreadExplorerZoomInClick,
+  viewModeClick: handleThreadExplorerViewModeClick,
+  orientationClick: handleThreadExplorerOrientationClick,
+  fullscreenClick: handleThreadExplorerFullscreenClick,
+  collapseClick: handleThreadExplorerCollapseClick,
+  expandClick: handleThreadExplorerExpandClick,
+  pointerDown: handleThreadExplorerPointerDown,
+  pointerMove: handleThreadExplorerPointerMove,
+  pointerUp: handleThreadExplorerPointerUp,
+  wheel: handleThreadExplorerWheel,
+});
+bindThreadExplorerSnapshotEvents({
+  fullscreenCloseButton: threadExplorerFullscreenCloseButton,
+  snapshotProgressDialog: threadExplorerSnapshotProgressDialog,
+  snapshotCancelButton: threadExplorerSnapshotCancelButton,
+}, {
+  fullscreenClose: () => {
+    setThreadExplorerFullscreen(false);
+  },
+  snapshotCancelEvent: (event) => {
+    event.preventDefault();
+  },
+  snapshotCancel: cancelThreadExplorerSnapshotExport,
+});
+bindThreadExplorerDialogEvents({
+  urlCloseTopButton: threadExplorerUrlCloseTopButton,
+  urlCloseButton: threadExplorerUrlCloseButton,
+  urlLoadButton: threadExplorerUrlLoadButton,
+  urlInput: threadExplorerUrlInput,
+  favoritesCloseButton: threadExplorerFavoritesCloseButton,
+  savedSearchesCloseButton,
+  reactionsCloseButton: threadExplorerReactionsCloseButton,
+  repliesCloseButton: threadExplorerRepliesCloseButton,
+  galleryCloseButton: threadExplorerGalleryCloseButton,
+  galleryCloseBottomButton: threadExplorerGalleryCloseBottomButton,
+  galleryPrevButton: threadExplorerGalleryPrevButton,
+  galleryNextButton: threadExplorerGalleryNextButton,
+  galleryOverlayPrevButton: threadExplorerGalleryOverlayPrevButton,
+  galleryOverlayNextButton: threadExplorerGalleryOverlayNextButton,
+  galleryOverlayCloseButton: threadExplorerGalleryOverlayCloseButton,
+  galleryImage: threadExplorerGalleryImage,
+  galleryDialog: threadExplorerGalleryDialog,
+  galleryFullscreenButton: threadExplorerGalleryFullscreenButton,
+}, {
+  urlClose: closeThreadExplorerUrlDialog,
+  urlLoad: () => { void loadThreadExplorerPostFromUrl(); },
+  urlKeydown: (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void loadThreadExplorerPostFromUrl();
+    }
+  },
+  favoritesClose: () => { threadExplorerFavoritesDialog.close(); },
+  savedSearchesClose: () => { savedSearchesDialog.close(); },
+  reactionsClose: () => { threadExplorerReactionsDialog.close(); },
+  repliesClose: () => { threadExplorerRepliesDialog.close(); },
+  galleryClose: () => {
+    setThreadExplorerGalleryPseudoFullscreen(false);
+    threadExplorerGalleryDialog.close();
+  },
+  galleryPrevious: () => { stepThreadExplorerGallery(-1); },
+  galleryNext: () => { stepThreadExplorerGallery(1); },
+  galleryOverlayClose: async () => { await closeThreadExplorerGalleryOverlay(); },
+  galleryImageError: handleThreadExplorerGalleryImageError,
+  galleryImageClick: async () => {
+    try { await openThreadExplorerGalleryFullscreen(); } catch (error) { console.warn("Thread Explorer fullscreen failed.", error); }
+  },
+  galleryKeydown: handleThreadExplorerGalleryKeydown,
+  galleryDialogClose: () => { setThreadExplorerGalleryPseudoFullscreen(false); },
+  galleryFullscreen: async () => {
+    try { await openThreadExplorerGalleryFullscreen(); } catch (error) { console.warn("Thread Explorer fullscreen failed.", error); }
+  },
+});
+bindSearchDialogEvents({
+  hashtagCloseTop: searchHashtagCloseTop,
+  hashtagCloseButton: searchHashtagCloseButton,
+  savedSearchAddButton,
+  savedSearchUrlInput,
+}, {
+  hashtagClose: closeSearchHashtagDialog,
+  savedSearchAdd: handleSavedSearchAddClick,
+  savedSearchKeydown: (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleSavedSearchAddClick();
+    }
+  },
+});
+bindThreadExplorerGlobalEvents({
+  window,
+  visualViewport: window.visualViewport,
+}, {
+  resize: handleThreadExplorerResize,
+  keydown: handleGlobalKeydown,
 });
 
-analysisAccountALoadButton?.addEventListener("click", () => {
-  void handleAnalysisAccountLoad("a");
+bindToolsWorkspaceNavigationEvents({
+  analysisButton,
+  dmButton,
+}, {
+  analysisClick: showAnalysisWorkspace,
+  dmClick: showDmWorkspace,
 });
 
-analysisAccountBLoadButton?.addEventListener("click", () => {
-  void handleAnalysisAccountLoad("b");
-});
-
-analysisCompareButton?.addEventListener("click", () => {
-  void runAnalysisComparison();
-});
-
-analysisResetButton?.addEventListener("click", () => {
-  resetAnalysisWorkspace();
-});
-
-analysisExportPdfButton?.addEventListener("click", async () => {
+bindAnalysisWorkspaceEvents({
+  accountAOwnButton: analysisAccountAOwnButton,
+  accountBOwnButton: analysisAccountBOwnButton,
+  accountALoadButton: analysisAccountALoadButton,
+  accountBLoadButton: analysisAccountBLoadButton,
+  compareButton: analysisCompareButton,
+  resetButton: analysisResetButton,
+  exportPdfButton: analysisExportPdfButton,
+  accountInputs: [analysisAccountAInput, analysisAccountBInput],
+  optionControls: [analysisRangeSelect, analysisPostLimitSelect, analysisIncludeRepliesToggle, analysisIncludeQuotesToggle],
+}, {
+  accountAOwn: () => {
+    const actor = getActiveAnalysisActor();
+    if (analysisAccountAInput && actor) {
+      analysisAccountAInput.value = actor;
+      updateAnalysisControls();
+      setAnalysisStatus(t("analysisAccountLoadedStatus", { slot: "A", account: actor }));
+      void persistSettings();
+    }
+  },
+  accountBOwn: () => {
+    const actor = getActiveAnalysisActor();
+    if (analysisAccountBInput && actor) {
+      analysisAccountBInput.value = actor;
+      updateAnalysisControls();
+      setAnalysisStatus(t("analysisAccountLoadedStatus", { slot: "B", account: actor }));
+      void persistSettings();
+    }
+  },
+  accountALoad: () => { void handleAnalysisAccountLoad("a"); },
+  accountBLoad: () => { void handleAnalysisAccountLoad("b"); },
+  compare: () => { void runAnalysisComparison(); },
+  reset: resetAnalysisWorkspace,
+  exportPdf: async () => {
   try {
     setBusy(analysisExportPdfButton, true, t("analysisExportPdfWorking"), t("analysisExportPdfButton"));
     await exportAnalysisPdfReport();
@@ -34297,10 +31571,9 @@ analysisExportPdfButton?.addEventListener("click", async () => {
   } finally {
     setBusy(analysisExportPdfButton, false, t("analysisExportPdfWorking"), t("analysisExportPdfButton"));
   }
-});
-
-[analysisAccountAInput, analysisAccountBInput].forEach((input) => {
-  input?.addEventListener("input", () => {
+  },
+  accountInput: (event) => {
+    const input = event.currentTarget;
     analysisComparisonResult = null;
     input.setCustomValidity("");
     setAnalysisAccountFieldNote(input === analysisAccountAInput ? "a" : "b", "");
@@ -34312,204 +31585,166 @@ analysisExportPdfButton?.addEventListener("click", async () => {
     updateAnalysisControls();
     renderAnalysisResult();
     void persistSettings();
-  });
-  input?.addEventListener("blur", () => {
+  },
+  accountBlur: (event) => {
+    const input = event.currentTarget;
     const slot = input === analysisAccountAInput ? "a" : "b";
     void validateAnalysisAccountInput(slot);
-  });
-  input?.addEventListener("keydown", (event) => {
+  },
+  accountKeydown: (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
       void runAnalysisComparison();
     }
-  });
-});
-
-[analysisRangeSelect, analysisPostLimitSelect, analysisIncludeRepliesToggle, analysisIncludeQuotesToggle].forEach((control) => {
-  control?.addEventListener("change", () => {
+  },
+  optionChange: () => {
     analysisComparisonResult = null;
     renderAnalysisWorkspace();
     void persistSettings();
-  });
+  },
 });
 
-networkFilterButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    networkFilterMode = button.dataset.networkFilter || "all";
+bindNetworkWorkspaceEvents({
+  filterButtons: networkFilterButtons,
+  searchInput: networkSearchInput,
+  accountInput: networkAccountInput,
+  sortField: networkSortFieldSelect,
+  sortDirection: networkSortDirectionSelect,
+  accountLoadButton: networkAccountLoadButton,
+  ownLoadButton: networkOwnLoadButton,
+  loadButton: networkLoadButton,
+  resetButton: networkResetButton,
+}, {
+  filterClick: (event) => {
+    networkFilterMode = event.currentTarget.dataset.networkFilter || "all";
     renderNetworkWorkspace();
-  });
-});
-
-if (networkSearchInput) {
-  networkSearchInput.addEventListener("input", () => {
+  },
+  searchInput: () => {
     networkSearchQuery = networkSearchInput.value.trim();
     renderNetworkWorkspace();
-  });
-}
-
-if (networkAccountInput) {
-  networkAccountInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void loadNetworkWave({
-        actor: networkAccountInput.value.trim(),
-        append: false,
-        silentErrors: false,
-      });
+  },
+  accountKeydown: (event) => {
+    if (event.key !== "Enter") {
+      return;
     }
-  });
-  networkAccountInput.addEventListener("input", () => {
+    event.preventDefault();
+    void loadNetworkWave({ actor: networkAccountInput.value.trim(), append: false, silentErrors: false });
+  },
+  accountInput: () => {
     setNetworkAccountFieldNote("");
     updateNetworkControls();
-  });
-}
-
-
-if (networkSortFieldSelect) {
-  networkSortFieldSelect.addEventListener("change", () => {
-    networkSortField = networkSortFieldSelect.value === "handle" ? "handle" : "displayName";
+  },
+  sortFieldChange: () => {
+    if (networkSortFieldSelect.value === "handle") {
+      networkSortField = "handle";
+    } else {
+      networkSortField = "displayName";
+    }
     renderNetworkWorkspace();
-  });
-}
-
-if (networkSortDirectionSelect) {
-  networkSortDirectionSelect.addEventListener("change", () => {
-    networkSortDirection = networkSortDirectionSelect.value === "desc" ? "desc" : "asc";
+  },
+  sortDirectionChange: () => {
+    if (networkSortDirectionSelect.value === "desc") {
+      networkSortDirection = "desc";
+    } else {
+      networkSortDirection = "asc";
+    }
     renderNetworkWorkspace();
-  });
-}
-
-if (networkAccountLoadButton) {
-  networkAccountLoadButton.addEventListener("click", async () => {
-    await loadNetworkWave({
-      actor: networkAccountInput?.value.trim() || "",
-      append: false,
-      silentErrors: false,
-    });
-  });
-}
-
-if (networkOwnLoadButton) {
-  networkOwnLoadButton.addEventListener("click", async () => {
+  },
+  accountLoad: async () => {
+    await loadNetworkWave({ actor: networkAccountInput?.value.trim() || "", append: false, silentErrors: false });
+  },
+  ownLoad: async () => {
     if (networkAccountInput) {
       networkAccountInput.value = authAccount || authAccountDid || "";
     }
-    await loadNetworkWave({
-      actor: authAccountDid || authAccount || "",
-      append: false,
-      silentErrors: false,
-    });
-  });
-}
-
-networkLoadButton.addEventListener("click", async () => {
-  await loadNetworkWave({ append: true });
+    await loadNetworkWave({ actor: authAccountDid || authAccount || "", append: false, silentErrors: false });
+  },
+  load: async () => {
+    await loadNetworkWave({ append: true });
+  },
+  reset: () => {
+    networkFilterMode = "all";
+    networkSearchQuery = "";
+    networkSelectedDid = "";
+    networkHoveredDid = "";
+    networkFocusPreviewTab = "followers";
+    if (networkSearchInput) {
+      networkSearchInput.value = "";
+    }
+    renderNetworkWorkspace();
+  },
 });
 
-networkResetButton.addEventListener("click", () => {
-  networkFilterMode = "all";
-  networkSearchQuery = "";
-  networkSelectedDid = "";
-  networkHoveredDid = "";
-  networkFocusPreviewTab = "followers";
-  if (networkSearchInput) {
-    networkSearchInput.value = "";
-  }
-  renderNetworkWorkspace();
+bindNetworkViewportControls({
+  stage: networkStageSvg,
+  shapeToggle: networkShapeToggleButton,
+  zoomIn: networkZoomInButton,
+  zoomOut: networkZoomOutButton,
+  zoomReset: networkZoomResetButton,
+}, {
+  toggleShape: toggleNetworkStageShape,
+  zoomAtPoint: zoomNetworkStageAtPoint,
+  resetZoom: resetNetworkStageView,
 });
 
-if (networkShapeToggleButton) {
-  networkShapeToggleButton.addEventListener("click", () => {
-    toggleNetworkStageShape();
-  });
-}
-
-if (networkZoomInButton) {
-  networkZoomInButton.addEventListener("click", () => {
-    const bounds = networkStageSvg?.getBoundingClientRect();
-    zoomNetworkStageAtPoint(
-      1.24,
-      bounds ? (bounds.left + (bounds.width / 2)) : 0,
-      bounds ? (bounds.top + (bounds.height / 2)) : 0,
-    );
-  });
-}
-
-if (networkZoomOutButton) {
-  networkZoomOutButton.addEventListener("click", () => {
-    const bounds = networkStageSvg?.getBoundingClientRect();
-    zoomNetworkStageAtPoint(
-      1 / 1.24,
-      bounds ? (bounds.left + (bounds.width / 2)) : 0,
-      bounds ? (bounds.top + (bounds.height / 2)) : 0,
-    );
-  });
-}
-
-if (networkZoomResetButton) {
-  networkZoomResetButton.addEventListener("click", () => {
-    resetNetworkStageView();
-  });
-}
-
-if (networkStageModeButton) {
-  networkStageModeButton.addEventListener("click", async () => {
+bindNetworkStageModeEvents({
+  enterButton: networkStageModeButton,
+  exitButton: networkStageModeExitButton,
+  focusButton: networkStageModeFocusButton,
+  listsButton: networkStageModeListsButton,
+}, {
+  enterClick: async () => {
     await enterNetworkStageMode();
-  });
-}
-
-if (networkStageModeExitButton) {
-  networkStageModeExitButton.addEventListener("click", async () => {
+  },
+  exitClick: async () => {
     await exitNetworkStageMode();
-  });
-}
-
-if (networkStageModeFocusButton) {
-  networkStageModeFocusButton.addEventListener("click", () => {
+  },
+  focusClick: () => {
     networkStageModeFocusVisible = !networkStageModeFocusVisible;
     renderNetworkWorkspace();
-  });
-}
-
-if (networkStageModeListsButton) {
-  networkStageModeListsButton.addEventListener("click", () => {
+  },
+  listsClick: () => {
     networkStageModeListsVisible = !networkStageModeListsVisible;
     renderNetworkWorkspace();
-  });
-}
+  },
+});
 
-networkInsightsGroupButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    const nextGroup = String(button.dataset.networkInsightsGroup || "").trim();
+bindNetworkInsightEvents({
+  groupButtons: networkInsightsGroupButtons,
+  focusToggleButton: networkFocusToggleButton,
+}, {
+  groupClick: (event) => {
+    const button = event.currentTarget;
+    const nextGroup = String(button?.dataset?.networkInsightsGroup || "").trim();
     if (!nextGroup) {
       return;
     }
     networkInsightsStageGroup = nextGroup;
     networkResultsScrollTop = 0;
     renderNetworkWorkspace();
-  });
-});
-
-if (networkFocusToggleButton) {
-  networkFocusToggleButton.addEventListener("click", () => {
+  },
+  focusToggleClick: () => {
     if (!networkSelectedDid) {
       return;
     }
     networkFocusCollapsed = !networkFocusCollapsed;
     renderNetworkWorkspace();
-  });
-}
+  },
+});
 
-if (networkStageSvg) {
-  networkStageSvg.addEventListener("wheel", (event) => {
+bindNetworkStageInteractionEvents({ stage: networkStageSvg }, {
+  wheel: (event) => {
     if (currentWorkspace !== "network") {
       return;
     }
     event.preventDefault();
-    zoomNetworkStageAtPoint(event.deltaY < 0 ? 1.12 : (1 / 1.12), event.clientX, event.clientY);
-  }, { passive: false });
-
-  networkStageSvg.addEventListener("pointerdown", (event) => {
+    let scale = 1 / 1.12;
+    if (event.deltaY < 0) {
+      scale = 1.12;
+    }
+    zoomNetworkStageAtPoint(scale, event.clientX, event.clientY);
+  },
+  pointerDown: (event) => {
     if (currentWorkspace !== "network") {
       return;
     }
@@ -34521,9 +31756,8 @@ if (networkStageSvg) {
       y: event.clientY,
     };
     networkStageSvg.setPointerCapture(event.pointerId);
-  });
-
-  networkStageSvg.addEventListener("pointermove", (event) => {
+  },
+  pointerMove: (event) => {
     if (!networkStageDrag || networkStageDrag.pointerId !== event.pointerId) {
       return;
     }
@@ -34540,20 +31774,16 @@ if (networkStageSvg) {
     networkStageDrag.x = event.clientX;
     networkStageDrag.y = event.clientY;
     renderNetworkStage();
-  });
-
-  const stopNetworkStageDrag = (event) => {
+  },
+  pointerUp: (event) => {
     if (networkStageDrag?.pointerId === event.pointerId) {
       networkStageDrag = null;
     }
-  };
+  },
+});
 
-  networkStageSvg.addEventListener("pointerup", stopNetworkStageDrag);
-  networkStageSvg.addEventListener("pointercancel", stopNetworkStageDrag);
-  networkStageSvg.addEventListener("pointerleave", stopNetworkStageDrag);
-}
-
-document.addEventListener("fullscreenchange", () => {
+bindNetworkLifecycleEvents({ document, results: networkResults }, {
+  fullscreenChange: () => {
   if (!document.fullscreenElement && networkStageMode) {
     networkStageMode = false;
     networkStageModeFocusVisible = false;
@@ -34561,96 +31791,68 @@ document.addEventListener("fullscreenchange", () => {
     document.body.classList.remove("network-stage-mode");
     renderNetworkWorkspace();
   }
-});
-
-document.addEventListener("keydown", (event) => {
+  },
+  keydown: (event) => {
   if (event.key === "Escape" && networkStageMode && !document.fullscreenElement) {
     event.preventDefault();
     void exitNetworkStageMode();
   }
-});
-
-if (networkResults) {
-  networkResults.addEventListener("scroll", () => {
+  },
+  resultsScroll: () => {
     if (networkResultsRestorePending) {
       return;
     }
     networkResultsScrollTop = networkResults.scrollTop;
-  });
-}
-
-archiveScopeSelect.addEventListener("change", () => {
-  updateArchiveScopeFields();
-  invalidateArchiveCatalog();
-  void persistArchivePreferences();
+  },
 });
 
-archiveSourceInput?.addEventListener("input", () => {
-  archiveSourceProfile = null;
-  if (archiveSourceStatus) {
-    archiveSourceStatus.textContent = "";
-  }
-  renderArchiveSourceState();
-  scheduleArchiveSourceValidation();
-  invalidateArchiveCatalog();
-  void persistArchivePreferences();
-});
-
-archiveSourceInput?.addEventListener("blur", () => {
-  void validateArchiveSourceInput({ silentSuccess: false }).catch(() => {});
-});
-
-archiveContentModeSelect.addEventListener("change", () => {
-  invalidateArchiveCatalog();
-  void persistArchivePreferences();
-});
-
-archiveConversationContextToggle?.addEventListener("change", () => {
-  invalidateArchiveCatalog();
-  void persistArchivePreferences();
-});
-
-archiveBandSizeSelect.addEventListener("change", () => {
-  updateArchiveSummary();
-  void persistArchivePreferences();
-});
-
-archiveImageSizeSelect.addEventListener("change", () => {
-  void persistArchivePreferences();
-});
-
-if (archiveThreadImportModeSelect) {
-  archiveThreadImportModeSelect.addEventListener("change", () => {
+bindArchivePreferenceEvents({
+  scope: archiveScopeSelect,
+  sourceInput: archiveSourceInput,
+  contentMode: archiveContentModeSelect,
+  conversationContext: archiveConversationContextToggle,
+  bandSize: archiveBandSizeSelect,
+  imageSize: archiveImageSizeSelect,
+  threadImportMode: archiveThreadImportModeSelect,
+  metrics: archiveMetricsToggle,
+  threads: archiveThreadsToggle,
+  pdfIndent: archivePdfIndentToggle,
+  livePreview: archiveLivePreviewToggle,
+  waveSize: archiveWaveSizeSelect,
+  fromInput: archiveFromInput,
+  toInput: archiveToInput,
+}, {
+  scopeChange: () => {
+    updateArchiveScopeFields();
+    invalidateArchiveCatalog();
     void persistArchivePreferences();
-  });
-}
-
-archiveMetricsToggle.addEventListener("change", () => {
-  void persistArchivePreferences();
-});
-
-archiveThreadsToggle.addEventListener("change", () => {
-  updateArchiveSummary();
-  void persistArchivePreferences();
-});
-
-if (archivePdfIndentToggle) {
-  archivePdfIndentToggle.addEventListener("change", () => {
+  },
+  sourceInput: () => {
+    archiveSourceProfile = null;
+    if (archiveSourceStatus) {
+      archiveSourceStatus.textContent = "";
+    }
+    renderArchiveSourceState();
+    scheduleArchiveSourceValidation();
+    invalidateArchiveCatalog();
     void persistArchivePreferences();
-  });
-}
-
-archiveLivePreviewToggle.addEventListener("change", () => {
-  renderArchivePreview();
-  void persistArchivePreferences();
-});
-
-archiveWaveSizeSelect.addEventListener("change", () => {
-  invalidateArchiveCatalog();
-  void persistArchivePreferences();
-});
-
-archiveFromInput.addEventListener("change", () => {
+  },
+  sourceBlur: () => {
+    void validateArchiveSourceInput({ silentSuccess: false }).catch(() => {});
+  },
+  preferenceChange: () => {
+    invalidateArchiveCatalog();
+    void persistArchivePreferences();
+  },
+  summaryPreferenceChange: () => {
+    updateArchiveSummary();
+    void persistArchivePreferences();
+  },
+  livePreviewChange: () => {
+    renderArchivePreview();
+    void persistArchivePreferences();
+  },
+  fromChange: () => {
   const normalizedRange = enforceArchiveDateRangeLimit("from");
   syncArchiveDateInputBounds();
   if (normalizedRange.changed) {
@@ -34660,9 +31862,8 @@ archiveFromInput.addEventListener("change", () => {
   updateArchiveScopeFields();
   invalidateArchiveCatalog();
   void persistArchivePreferences();
-});
-
-archiveToInput.addEventListener("change", () => {
+  },
+  toChange: () => {
   const normalizedRange = enforceArchiveDateRangeLimit("to");
   syncArchiveDateInputBounds();
   if (normalizedRange.changed) {
@@ -34672,13 +31873,24 @@ archiveToInput.addEventListener("change", () => {
   updateArchiveScopeFields();
   invalidateArchiveCatalog();
   void persistArchivePreferences();
+  },
 });
 
-dmContactSearchInput.addEventListener("input", () => {
-  renderDmContacts();
-});
-
-dmCheckButton.addEventListener("click", async () => {
+bindDmArchiveEvents({
+  contactSearchInput: dmContactSearchInput,
+  checkButton: dmCheckButton,
+  loadPartnersButton: dmLoadPartnersButton,
+  fromInput: dmFromInput,
+  toInput: dmToInput,
+  loadButton: dmLoadButton,
+  exportJsonButton: dmExportJsonButton,
+  exportHtmlButton: dmExportHtmlButton,
+  exportPdfButton: dmExportPdfButton,
+}, {
+  contactSearchInput: () => {
+    renderDmContacts();
+  },
+  checkClick: async () => {
   try {
     setBusy(dmCheckButton, true, t("archiveWorkingButton"), t("dmCheckButton"));
     await checkDmAccess();
@@ -34696,9 +31908,8 @@ dmCheckButton.addEventListener("click", async () => {
   } finally {
     setBusy(dmCheckButton, false, t("archiveWorkingButton"), t("dmCheckButton"));
   }
-});
-
-dmLoadPartnersButton.addEventListener("click", async () => {
+  },
+  loadPartnersClick: async () => {
   try {
     setBusy(dmLoadPartnersButton, true, t("archiveWorkingButton"), t("dmLoadPartnersButton"));
     await loadDmPartners();
@@ -34714,40 +31925,123 @@ dmLoadPartnersButton.addEventListener("click", async () => {
   } finally {
     setBusy(dmLoadPartnersButton, false, t("archiveWorkingButton"), t("dmLoadPartnersButton"));
   }
+  },
+  dateChange: () => {
+    renderDmWorkspace();
+  },
+  loadClick: async () => {
+    try {
+      setBusy(dmLoadButton, true, t("archiveWorkingButton"), t("dmLoadButton"));
+      await loadDmArchive();
+    } catch (error) {
+      console.error(error);
+      setDmProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("dmLoadFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("dmLoadFailed"), t("archiveErrorTitle"));
+    } finally {
+      setBusy(dmLoadButton, false, t("archiveWorkingButton"), t("dmLoadButton"));
+    }
+  },
+  exportJsonClick: async () => {
+    try {
+      setBusy(dmExportJsonButton, true, t("archiveWorkingButton"), t("dmExportJsonButton"));
+      await exportDmArchiveJson(dmCatalog);
+    } catch (error) {
+      console.error(error);
+      setDmProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("dmExportFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("dmExportFailed"), t("archiveErrorTitle"));
+    } finally {
+      setBusy(dmExportJsonButton, false, t("archiveWorkingButton"), t("dmExportJsonButton"));
+    }
+  },
+  exportHtmlClick: async () => {
+    try {
+      setBusy(dmExportHtmlButton, true, t("archiveWorkingButton"), t("dmExportHtmlButton"));
+      await exportDmHtmlFromCatalog(dmCatalog);
+    } catch (error) {
+      console.error(error);
+      setDmProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("dmExportFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("dmExportFailed"), t("archiveErrorTitle"));
+    } finally {
+      setBusy(dmExportHtmlButton, false, t("archiveWorkingButton"), t("dmExportHtmlButton"));
+    }
+  },
+  exportPdfClick: async () => {
+    try {
+      setBusy(dmExportPdfButton, true, t("archiveWorkingButton"), t("dmExportPdfButton"));
+      await exportDmPdfFromCatalog(dmCatalog);
+    } catch (error) {
+      console.error(error);
+      setDmProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("dmExportFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("dmExportFailed"), t("archiveErrorTitle"));
+    } finally {
+      setBusy(dmExportPdfButton, false, t("archiveWorkingButton"), t("dmExportPdfButton"));
+    }
+  },
 });
 
-dmFromInput.addEventListener("change", () => {
-  renderDmWorkspace();
-});
-
-dmToInput.addEventListener("change", () => {
-  renderDmWorkspace();
-});
-
-archiveNextWaveButton.addEventListener("click", async () => {
-  try {
-    setBusy(archiveNextWaveButton, true, t("archiveWorkingButton"), t("archiveNextWaveButton"));
-    await ensureArchiveCatalogLoaded(true);
-    renderArchiveWorkspace();
-  } catch (error) {
-    console.error(error);
-    showErrorDialog(error.message || t("archiveExportFailed"), t("archiveErrorTitle"));
-  } finally {
-    setBusy(archiveNextWaveButton, false, t("archiveWorkingButton"), t("archiveNextWaveButton"));
-  }
-});
-
-if (archiveThreadUrlInput) {
-  archiveThreadUrlInput.addEventListener("keydown", (event) => {
+bindArchiveActionEvents({
+  nextWaveButton: archiveNextWaveButton,
+  threadUrlInput: archiveThreadUrlInput,
+  loadThreadUrlButton: archiveLoadThreadUrlButton,
+  importButton: archiveImportButton,
+  resetButton: archiveResetButton,
+  pauseButton: archivePauseButton,
+  resumeButton: archiveResumeButton,
+  cancelButton: archiveCancelButton,
+  importInput: archiveImportInput,
+  exportZipButton: archiveExportZipButton,
+  exportMediaZipButton: archiveExportMediaZipButton,
+  exportHtmlButton: archiveExportHtmlButton,
+  exportHtmlCompactButton: archiveExportHtmlCompactButton,
+  exportPdfButton: archiveExportPdfButton,
+  zipScriptCopyButton: archiveZipHtmlScriptCopyButton,
+  checkPostEditButton: archiveCheckPostEditButton,
+  savedSearchesButton: archiveSavedSearchesButton,
+  actionsExportHtmlButton: archiveActionsExportHtmlButton,
+  actionsExportHtmlCompactButton: archiveActionsExportHtmlCompactButton,
+  progressExportHtmlCompactButton: archiveProgressExportHtmlCompactButton,
+  actionsExportPdfButton: archiveActionsExportPdfButton,
+  expertModeToggle: archiveExpertModeToggle,
+}, {
+  nextWaveClick: async () => {
+    try {
+      setBusy(archiveNextWaveButton, true, t("archiveWorkingButton"), t("archiveNextWaveButton"));
+      await ensureArchiveCatalogLoaded(true);
+      renderArchiveWorkspace();
+    } catch (error) {
+      console.error(error);
+      showErrorDialog(error.message || t("archiveExportFailed"), t("archiveErrorTitle"));
+    } finally {
+      setBusy(archiveNextWaveButton, false, t("archiveWorkingButton"), t("archiveNextWaveButton"));
+    }
+  },
+  threadUrlKeydown: (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
       archiveLoadThreadUrlButton?.click();
     }
-  });
-}
-
-if (archiveLoadThreadUrlButton) {
-  archiveLoadThreadUrlButton.addEventListener("click", async () => {
+  },
+  loadThreadUrlClick: async () => {
     try {
       setBusy(archiveLoadThreadUrlButton, true, t("archiveWorkingButton"), t("archiveLoadThreadUrlButton"));
       await importArchiveThreadFromUrl();
@@ -34763,7 +32057,193 @@ if (archiveLoadThreadUrlButton) {
     } finally {
       setBusy(archiveLoadThreadUrlButton, false, t("archiveWorkingButton"), t("archiveLoadThreadUrlButton"));
     }
-  });
+  },
+  importClick: () => {
+    archiveImportInput.click();
+  },
+  resetClick: async () => {
+    try {
+      await clearArchiveSession();
+      renderArchiveWorkspace();
+      setArchiveProgress({
+        title: t("archiveProgressDoneTitle"),
+        step: t("archiveResetDone"),
+        percent: 0,
+        detail: "",
+      });
+    } catch (error) {
+      console.error(error);
+      showErrorDialog(error.message || t("archiveResetFailed"), t("archiveErrorTitle"));
+    }
+  },
+  pauseClick: () => {
+    void setArchiveRunControl("pause");
+  },
+  resumeClick: () => {
+    void setArchiveRunControl("resume");
+  },
+  cancelClick: () => {
+    if (activeMediaExportAbortController) {
+      activeMediaExportAbortController.abort();
+      activeMediaExportState = "cancelled";
+      setArchiveProgress({
+        title: t("archiveProgressPausedTitle"),
+        step: t("archiveMediaCancelled"),
+        percent: Number(archiveProgressFill?.style?.width?.replace("%", "")) || 0,
+        detail: t("archiveMediaCancelledDetail"),
+      });
+      updateArchiveRunControls();
+      return;
+    }
+    void setArchiveRunControl("cancel");
+  },
+  checkPostEditClick: () => {
+    openPostEditCheckDialog();
+  },
+  savedSearchesClick: handleArchiveSavedSearchesClick,
+  actionsExportHtmlClick: () => {
+    archiveExportHtmlButton?.click();
+  },
+  actionsExportHtmlCompactClick: () => {
+    archiveExportHtmlCompactButton?.click();
+  },
+  progressExportHtmlCompactClick: () => {
+    archiveExportHtmlCompactButton?.click();
+  },
+  actionsExportPdfClick: () => {
+    archiveExportPdfButton?.click();
+  },
+  expertModeChange: async () => {
+    archiveExpertMode = archiveExpertModeToggle.checked === true;
+    await persistSettings();
+  },
+  exportZipClick: () => {
+    void runArchiveCatalogExport(archiveExportZipButton, "archiveExportZipButton", "archiveExportFailed", async () => {
+      const catalog = await ensureArchiveCatalogLoaded(false);
+      await exportArchiveZipFromCatalog(catalog);
+    });
+  },
+  exportHtmlClick: () => {
+    void runArchiveCatalogExport(archiveExportHtmlButton, "archiveExportHtmlButton", "archiveHtmlFailed", async () => {
+      const catalog = await ensureArchiveCatalogLoaded(false);
+      await exportArchiveHtmlFromCatalog(catalog);
+    });
+  },
+  exportHtmlCompactClick: () => {
+    void runArchiveCatalogExport(archiveExportHtmlCompactButton, "archiveExportHtmlCompactButton", "archiveHtmlFailed", async () => {
+      const catalog = await ensureArchiveCatalogLoaded(false);
+      await exportArchiveHtmlFromCatalog(catalog, { mode: "compact" });
+    });
+  },
+  exportPdfClick: () => {
+    void runArchiveCatalogExport(archiveExportPdfButton, "archiveExportPdfButton", "archivePdfFailed", async () => {
+      const catalog = await ensureArchiveCatalogLoaded(false);
+      await exportArchivePdfBandsFromCatalog(catalog);
+    });
+  },
+  exportMediaZipClick: async () => {
+    try {
+      activeMediaExportAbortController = new AbortController();
+      activeMediaExportState = "running";
+      setArchiveMediaExportControlsDisabled(true);
+      updateArchiveRunControls();
+      setBusy(archiveExportMediaZipButton, true, t("archiveWorkingButton"), t("archiveExportMediaZipButton"));
+      await exportArchiveMediaZip();
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        setArchiveProgress({
+          title: t("archiveProgressPausedTitle"),
+          step: t("archiveMediaCancelled"),
+          percent: 0,
+          detail: t("archiveMediaCancelledDetail"),
+        });
+        archiveTransientNotice = t("archiveMediaCancelledDetail");
+        renderArchiveStatusLine();
+        return;
+      }
+      console.error(error);
+      setArchiveProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("archiveExportFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("archiveExportFailed"), t("archiveErrorTitle"));
+    } finally {
+      activeMediaExportAbortController = null;
+      activeMediaExportState = "idle";
+      setArchiveMediaExportControlsDisabled(false);
+      updateArchiveRunControls();
+      setBusy(archiveExportMediaZipButton, false, t("archiveWorkingButton"), t("archiveExportMediaZipButton"));
+    }
+  },
+  zipScriptCopyClick: async () => {
+    try {
+      await copyTextToClipboard(getArchiveZipHtmlScriptCommand());
+      setStatus(t("archiveZipHtmlScriptCopied"));
+    } catch (error) {
+      console.error(error);
+      setStatus(error.message || t("statusNoSupport"), "error");
+    }
+  },
+  importInputChange: async (event) => {
+    const [file] = event.target.files || [];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    try {
+      setArchiveProgress({
+        title: t("archiveImportingTitle"),
+        step: t("archiveImportingStep"),
+        percent: 40,
+        detail: file.name,
+      });
+      await applyLoadedArchiveCatalog(await loadArchiveCatalogFromFile(file), {
+        filterKey: "import",
+        filters: null,
+        waveIndex: 1,
+        nextCursor: "",
+        hasMore: false,
+        step: t("archiveImported"),
+      });
+    } catch (error) {
+      console.error(error);
+      setArchiveProgress({
+        title: t("archiveErrorTitle"),
+        step: error.message || t("archiveImportFailed"),
+        percent: 0,
+        detail: "",
+      });
+      showErrorDialog(error.message || t("archiveImportFailed"), t("archiveErrorTitle"));
+    }
+  },
+});
+
+/**
+ * Runs one catalog export with consistent busy, progress and error handling.
+ * @param {HTMLButtonElement|null} button - Export button whose busy state is managed.
+ * @param {string} labelKey - Translation key for the button label.
+ * @param {string} errorKey - Translation key for the fallback error message.
+ * @param {() => Promise<void>} exportAction - Export operation to execute.
+ * @returns {Promise<void>} Resolves when the export flow has completed.
+ */
+async function runArchiveCatalogExport(button, labelKey, errorKey, exportAction) {
+  try {
+    setBusy(button, true, t("archiveWorkingButton"), t(labelKey));
+    await exportAction();
+  } catch (error) {
+    console.error(error);
+    setArchiveProgress({
+      title: t("archiveErrorTitle"),
+      step: error.message || t(errorKey),
+      percent: 0,
+      detail: "",
+    });
+    showErrorDialog(error.message || t(errorKey), t("archiveErrorTitle"));
+  } finally {
+    setBusy(button, false, t("archiveWorkingButton"), t(labelKey));
+  }
 }
 
 async function resolveComposerReplyTarget(url, mode = "post") {
@@ -34812,16 +32292,6 @@ async function resolveComposerReplyTarget(url, mode = "post") {
   return composerReplyTarget;
 }
 
-if (archiveCheckPostEditButton) {
-  archiveCheckPostEditButton.addEventListener("click", () => {
-    openPostEditCheckDialog();
-  });
-}
-
-if (archiveSavedSearchesButton) {
-  archiveSavedSearchesButton.addEventListener("click", handleArchiveSavedSearchesClick);
-}
-
 if (postEditCheckUrlInput) {
   postEditCheckUrlInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -34854,394 +32324,89 @@ postEditCheckDialog?.addEventListener("cancel", (event) => {
   closePostEditCheckDialog();
 });
 
-dmLoadButton.addEventListener("click", async () => {
-  try {
-    setBusy(dmLoadButton, true, t("archiveWorkingButton"), t("dmLoadButton"));
-    await loadDmArchive();
-  } catch (error) {
-    console.error(error);
-    setDmProgress({
-      title: t("archiveErrorTitle"),
-      step: error.message || t("dmLoadFailed"),
-      percent: 0,
-      detail: "",
-    });
-    showErrorDialog(error.message || t("dmLoadFailed"), t("archiveErrorTitle"));
-  } finally {
-    setBusy(dmLoadButton, false, t("archiveWorkingButton"), t("dmLoadButton"));
-  }
-});
-
-dmExportJsonButton.addEventListener("click", async () => {
-  try {
-    setBusy(dmExportJsonButton, true, t("archiveWorkingButton"), t("dmExportJsonButton"));
-    await exportDmArchiveJson(dmCatalog);
-  } catch (error) {
-    console.error(error);
-    setDmProgress({
-      title: t("archiveErrorTitle"),
-      step: error.message || t("dmExportFailed"),
-      percent: 0,
-      detail: "",
-    });
-    showErrorDialog(error.message || t("dmExportFailed"), t("archiveErrorTitle"));
-  } finally {
-    setBusy(dmExportJsonButton, false, t("archiveWorkingButton"), t("dmExportJsonButton"));
-  }
-});
-
-if (dmExportHtmlButton) {
-  dmExportHtmlButton.addEventListener("click", async () => {
-    try {
-      setBusy(dmExportHtmlButton, true, t("archiveWorkingButton"), t("dmExportHtmlButton"));
-      await exportDmHtmlFromCatalog(dmCatalog);
-    } catch (error) {
-      console.error(error);
-      setDmProgress({
-        title: t("archiveErrorTitle"),
-        step: error.message || t("dmExportFailed"),
-        percent: 0,
-        detail: "",
-      });
-      showErrorDialog(error.message || t("dmExportFailed"), t("archiveErrorTitle"));
-    } finally {
-      setBusy(dmExportHtmlButton, false, t("archiveWorkingButton"), t("dmExportHtmlButton"));
+bindComposerDialogEvents({
+  unlockButton: composerUnlockButton,
+  postedDismissButton: composerPostedDismissButton,
+  postSettingsButton,
+  searchLanguageButton,
+  replyTargetButton,
+  replyTargetClearButton,
+  replyTargetCloseTop,
+  replyTargetCloseButton,
+  replyTargetSubmitButton,
+  replyTargetUrlInput,
+  replyTargetDialog,
+  postLanguagesSearch,
+  postLanguagesDisclosure,
+  postLanguagesCloseTop,
+  postLanguagesCloseButton,
+  helpButton,
+}, {
+  unlock: () => {
+    segmentOverrides = null;
+    setComposerLocked(false);
+    sourceText.focus();
+  },
+  postedDismiss: () => {
+    setComposerPosted(false);
+    sourceText.focus();
+  },
+  postSettings: () => {
+    activeLanguageDialogContext = "composer";
+    renderPostLanguageDialog();
+    postLanguagesDialog.showModal();
+    if (postLanguagesDisclosure.open) {
+      window.setTimeout(() => postLanguagesSearch.focus(), 0);
     }
-  });
-}
-
-if (dmExportPdfButton) {
-  dmExportPdfButton.addEventListener("click", async () => {
-    try {
-      setBusy(dmExportPdfButton, true, t("archiveWorkingButton"), t("dmExportPdfButton"));
-      await exportDmPdfFromCatalog(dmCatalog);
-    } catch (error) {
-      console.error(error);
-      setDmProgress({
-        title: t("archiveErrorTitle"),
-        step: error.message || t("dmExportFailed"),
-        percent: 0,
-        detail: "",
-      });
-      showErrorDialog(error.message || t("dmExportFailed"), t("archiveErrorTitle"));
-    } finally {
-      setBusy(dmExportPdfButton, false, t("archiveWorkingButton"), t("dmExportPdfButton"));
+  },
+  searchLanguage: () => {
+    activeLanguageDialogContext = "search";
+    renderPostLanguageDialog();
+    postLanguagesDialog.showModal();
+    if (postLanguagesDisclosure.open) {
+      window.setTimeout(() => postLanguagesSearch.focus(), 0);
     }
-  });
-}
-
-if (archiveActionsExportHtmlButton) {
-  archiveActionsExportHtmlButton.addEventListener("click", () => {
-    archiveExportHtmlButton?.click();
-  });
-}
-
-if (archiveActionsExportHtmlCompactButton) {
-  archiveActionsExportHtmlCompactButton.addEventListener("click", () => {
-    archiveExportHtmlCompactButton?.click();
-  });
-}
-
-if (archiveProgressExportHtmlCompactButton) {
-  archiveProgressExportHtmlCompactButton.addEventListener("click", () => {
-    archiveExportHtmlCompactButton?.click();
-  });
-}
-
-archiveZipHtmlScriptCopyButton?.addEventListener("click", async () => {
-  try {
-    await copyTextToClipboard(getArchiveZipHtmlScriptCommand());
-    setStatus(t("archiveZipHtmlScriptCopied"));
-  } catch (error) {
-    console.error(error);
-    setStatus(error.message || t("statusNoSupport"), "error");
-  }
-});
-
-if (archiveActionsExportPdfButton) {
-  archiveActionsExportPdfButton.addEventListener("click", () => {
-    archiveExportPdfButton?.click();
-  });
-}
-
-archivePauseButton.addEventListener("click", () => {
-  void setArchiveRunControl("pause");
-});
-
-archiveResumeButton.addEventListener("click", () => {
-  void setArchiveRunControl("resume");
-});
-
-archiveCancelButton.addEventListener("click", () => {
-  if (activeMediaExportAbortController) {
-    activeMediaExportAbortController.abort();
-    activeMediaExportState = "cancelled";
-    setArchiveProgress({
-      title: t("archiveProgressPausedTitle"),
-      step: t("archiveMediaCancelled"),
-      percent: Number(archiveProgressFill?.style?.width?.replace("%", "")) || 0,
-      detail: t("archiveMediaCancelledDetail"),
-    });
-    updateArchiveRunControls();
-    return;
-  }
-  void setArchiveRunControl("cancel");
-});
-
-archiveExportZipButton.addEventListener("click", async () => {
-  try {
-    setBusy(archiveExportZipButton, true, t("archiveWorkingButton"), t("archiveExportZipButton"));
-    const catalog = await ensureArchiveCatalogLoaded(false);
-    await exportArchiveZipFromCatalog(catalog);
-  } catch (error) {
-    console.error(error);
-    setArchiveProgress({
-      title: t("archiveErrorTitle"),
-      step: error.message || t("archiveExportFailed"),
-      percent: 0,
-      detail: "",
-    });
-    showErrorDialog(error.message || t("archiveExportFailed"), t("archiveErrorTitle"));
-  } finally {
-    setBusy(archiveExportZipButton, false, t("archiveWorkingButton"), t("archiveExportZipButton"));
-  }
-});
-
-if (archiveExportMediaZipButton) {
-  archiveExportMediaZipButton.addEventListener("click", async () => {
-    try {
-      activeMediaExportAbortController = new AbortController();
-      activeMediaExportState = "running";
-      setArchiveMediaExportControlsDisabled(true);
-      updateArchiveRunControls();
-      setBusy(archiveExportMediaZipButton, true, t("archiveWorkingButton"), t("archiveExportMediaZipButton"));
-      await exportArchiveMediaZip();
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        setArchiveProgress({
-          title: t("archiveProgressPausedTitle"),
-          step: t("archiveMediaCancelled"),
-          percent: 0,
-          detail: t("archiveMediaCancelledDetail"),
-        });
-        archiveTransientNotice = t("archiveMediaCancelledDetail");
-        renderArchiveStatusLine();
-        return;
-      }
-      console.error(error);
-      setArchiveProgress({
-        title: t("archiveErrorTitle"),
-        step: error.message || t("archiveExportFailed"),
-        percent: 0,
-        detail: "",
-      });
-      showErrorDialog(error.message || t("archiveExportFailed"), t("archiveErrorTitle"));
-    } finally {
-      activeMediaExportAbortController = null;
-      activeMediaExportState = "idle";
-      setArchiveMediaExportControlsDisabled(false);
-      updateArchiveRunControls();
-      setBusy(archiveExportMediaZipButton, false, t("archiveWorkingButton"), t("archiveExportMediaZipButton"));
-    }
-  });
-}
-
-archiveExportHtmlButton.addEventListener("click", async () => {
-  try {
-    setBusy(archiveExportHtmlButton, true, t("archiveWorkingButton"), t("archiveExportHtmlButton"));
-    const catalog = await ensureArchiveCatalogLoaded(false);
-    await exportArchiveHtmlFromCatalog(catalog);
-  } catch (error) {
-    console.error(error);
-    setArchiveProgress({
-      title: t("archiveErrorTitle"),
-      step: error.message || t("archiveHtmlFailed"),
-      percent: 0,
-      detail: "",
-    });
-    showErrorDialog(error.message || t("archiveHtmlFailed"), t("archiveErrorTitle"));
-  } finally {
-    setBusy(archiveExportHtmlButton, false, t("archiveWorkingButton"), t("archiveExportHtmlButton"));
-  }
-});
-
-archiveExportHtmlCompactButton?.addEventListener("click", async () => {
-  try {
-    setBusy(archiveExportHtmlCompactButton, true, t("archiveWorkingButton"), t("archiveExportHtmlCompactButton"));
-    const catalog = await ensureArchiveCatalogLoaded(false);
-    await exportArchiveHtmlFromCatalog(catalog, { mode: "compact" });
-  } catch (error) {
-    console.error(error);
-    setArchiveProgress({
-      title: t("archiveErrorTitle"),
-      step: error.message || t("archiveHtmlFailed"),
-      percent: 0,
-      detail: "",
-    });
-    showErrorDialog(error.message || t("archiveHtmlFailed"), t("archiveErrorTitle"));
-  } finally {
-    setBusy(archiveExportHtmlCompactButton, false, t("archiveWorkingButton"), t("archiveExportHtmlCompactButton"));
-  }
-});
-
-archiveExportPdfButton.addEventListener("click", async () => {
-  try {
-    setBusy(archiveExportPdfButton, true, t("archiveWorkingButton"), t("archiveExportPdfButton"));
-    const catalog = await ensureArchiveCatalogLoaded(false);
-    await exportArchivePdfBandsFromCatalog(catalog);
-  } catch (error) {
-    console.error(error);
-    setArchiveProgress({
-      title: t("archiveErrorTitle"),
-      step: error.message || t("archivePdfFailed"),
-      percent: 0,
-      detail: "",
-    });
-    showErrorDialog(error.message || t("archivePdfFailed"), t("archiveErrorTitle"));
-  } finally {
-    setBusy(archiveExportPdfButton, false, t("archiveWorkingButton"), t("archiveExportPdfButton"));
-  }
-});
-
-archiveImportButton.addEventListener("click", () => {
-  archiveImportInput.click();
-});
-
-archiveResetButton.addEventListener("click", async () => {
-  try {
-    await clearArchiveSession();
-    renderArchiveWorkspace();
-    setArchiveProgress({
-      title: t("archiveProgressDoneTitle"),
-      step: t("archiveResetDone"),
-      percent: 0,
-      detail: "",
-    });
-  } catch (error) {
-    console.error(error);
-    showErrorDialog(error.message || t("archiveResetFailed"), t("archiveErrorTitle"));
-  }
-});
-
-archiveImportInput.addEventListener("change", async (event) => {
-  const [file] = event.target.files || [];
-  event.target.value = "";
-  if (!file) {
-    return;
-  }
-
-  try {
-    setArchiveProgress({
-      title: t("archiveImportingTitle"),
-      step: t("archiveImportingStep"),
-      percent: 40,
-      detail: file.name,
-    });
-    await applyLoadedArchiveCatalog(await loadArchiveCatalogFromFile(file), {
-      filterKey: "import",
-      filters: null,
-      waveIndex: 1,
-      nextCursor: "",
-      hasMore: false,
-      step: t("archiveImported"),
-    });
-  } catch (error) {
-    console.error(error);
-    setArchiveProgress({
-      title: t("archiveErrorTitle"),
-      step: error.message || t("archiveImportFailed"),
-      percent: 0,
-      detail: "",
-    });
-    showErrorDialog(error.message || t("archiveImportFailed"), t("archiveErrorTitle"));
-  }
-});
-
-composerUnlockButton.addEventListener("click", () => {
-  segmentOverrides = null;
-  setComposerLocked(false);
-  sourceText.focus();
-});
-
-composerPostedDismissButton?.addEventListener("click", () => {
-  setComposerPosted(false);
-  sourceText.focus();
-});
-
-postSettingsButton.addEventListener("click", () => {
-  activeLanguageDialogContext = "composer";
-  renderPostLanguageDialog();
-  postLanguagesDialog.showModal();
-  if (postLanguagesDisclosure.open) {
-    window.setTimeout(() => postLanguagesSearch.focus(), 0);
-  }
-});
-
-searchLanguageButton?.addEventListener("click", () => {
-  activeLanguageDialogContext = "search";
-  renderPostLanguageDialog();
-  postLanguagesDialog.showModal();
-  if (postLanguagesDisclosure.open) {
-    window.setTimeout(() => postLanguagesSearch.focus(), 0);
-  }
-});
-
-replyTargetButton?.addEventListener("click", () => {
-  openReplyTargetDialog(replyTargetUrlInput?.value || composerReplyTarget?.sourceUrl || "");
-});
-
-replyTargetClearButton?.addEventListener("click", () => {
-  clearComposerReplyTarget();
-  queueDraftSave();
-  setStatus(t("replyTargetCleared"));
-});
-
-replyTargetCloseTop?.addEventListener("click", () => {
-  closeReplyTargetDialog();
-});
-
-replyTargetCloseButton?.addEventListener("click", () => {
-  closeReplyTargetDialog();
-});
-
-replyTargetSubmitButton?.addEventListener("click", () => {
-  void submitReplyTargetDialog();
-});
-
-replyTargetUrlInput?.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
+  },
+  replyTargetOpen: () => {
+    openReplyTargetDialog(replyTargetUrlInput?.value || composerReplyTarget?.sourceUrl || "");
+  },
+  replyTargetClear: () => {
+    clearComposerReplyTarget();
+    queueDraftSave();
+    setStatus(t("replyTargetCleared"));
+  },
+  replyTargetClose: () => {
+    closeReplyTargetDialog();
+  },
+  replyTargetSubmit: () => {
     void submitReplyTargetDialog();
-  }
-});
-
-replyTargetDialog?.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  closeReplyTargetDialog();
-});
-
-postLanguagesSearch.addEventListener("input", () => {
-  renderPostLanguageDialog();
-});
-
-postLanguagesDisclosure.addEventListener("toggle", () => {
-  if (postLanguagesDisclosure.open) {
-    window.setTimeout(() => postLanguagesSearch.focus(), 0);
-  }
-});
-
-postLanguagesCloseTop.addEventListener("click", () => {
-  postLanguagesDialog.close();
-});
-
-postLanguagesCloseButton.addEventListener("click", () => {
-  postLanguagesDialog.close();
-});
-
-helpButton.addEventListener("click", () => {
-  applyHelpDialogHeader(t("helpEyebrow"), t("helpTitle"));
-  helpDialog.showModal();
-  void loadReadmeContent();
+  },
+  replyTargetKeydown: (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void submitReplyTargetDialog();
+    }
+  },
+  replyTargetCancel: (event) => {
+    event.preventDefault();
+    closeReplyTargetDialog();
+  },
+  languagesSearch: () => {
+    renderPostLanguageDialog();
+  },
+  languagesToggle: () => {
+    if (postLanguagesDisclosure.open) {
+      window.setTimeout(() => postLanguagesSearch.focus(), 0);
+    }
+  },
+  languagesClose: () => {
+    postLanguagesDialog.close();
+  },
+  help: () => {
+    applyHelpDialogHeader(t("helpEyebrow"), t("helpTitle"));
+    helpDialog.showModal();
+    void loadReadmeContent();
+  },
 });
 
 document.addEventListener("click", (event) => {
@@ -35310,11 +32475,6 @@ imageAutoResizeSelect?.addEventListener("change", async () => {
     renderSegments({ preserveOverrides: true });
   });
   updatePublishAvailability();
-  await persistSettings();
-});
-
-archiveExpertModeToggle?.addEventListener("change", async () => {
-  archiveExpertMode = archiveExpertModeToggle.checked === true;
   await persistSettings();
 });
 
@@ -35523,116 +32683,117 @@ altTextDialog.addEventListener("cancel", (event) => {
   closeAltTextDialog();
 });
 
-imageZoomInput.addEventListener("input", () => {
-  if (!imageEditorDraft) {
-    return;
-  }
-  const image = getEditedImage();
-  if (!image) {
-    return;
-  }
-  imageEditorDraft = clampImageEditorDraftToFrame(image, {
-    ...imageEditorDraft,
-    fitMode: "cover",
-    zoom: Number(imageZoomInput.value) || 1,
-  });
-  drawImageEditor();
-});
-imageFlipHorizontalButton.addEventListener("click", () => {
-  if (!imageEditorDraft) {
-    return;
-  }
-  imageEditorDraft = transformImageEditorDraftForFlip(imageEditorDraft, "x");
-  const image = getEditedImage();
-  if (image) {
-    imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
-  }
-  drawImageEditor();
-});
-imageFlipVerticalButton.addEventListener("click", () => {
-  if (!imageEditorDraft) {
-    return;
-  }
-  imageEditorDraft = transformImageEditorDraftForFlip(imageEditorDraft, "y");
-  const image = getEditedImage();
-  if (image) {
-    imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
-  }
-  drawImageEditor();
-});
-imageRotateLeftButton.addEventListener("click", () => {
-  if (!imageEditorDraft) {
-    return;
-  }
-  imageEditorDraft = transformImageEditorDraftForQuarterTurn(imageEditorDraft, "left");
-  const image = getEditedImage();
-  if (image) {
+bindComposerImageEditorEvents({
+  zoomInput: imageZoomInput,
+  flipHorizontalButton: imageFlipHorizontalButton,
+  flipVerticalButton: imageFlipVerticalButton,
+  rotateLeftButton: imageRotateLeftButton,
+  resetButton: imageResetButton,
+  saveButton: imageEditorSaveButton,
+  fitDimensionsButton: imageFitDimensionsButton,
+  lossyResizeButton: imageLossyResizeButton,
+  cancelButton: imageEditorCancelButton,
+  closeTopButton: imageEditorCloseTop,
+  dialog: imageEditorDialog,
+  canvas: imageEditorCanvas,
+}, {
+  zoomInput: () => {
+    if (!imageEditorDraft) {
+      return;
+    }
+    const image = getEditedImage();
+    if (!image) {
+      return;
+    }
     imageEditorDraft = clampImageEditorDraftToFrame(image, {
       ...imageEditorDraft,
       fitMode: "cover",
+      zoom: Number(imageZoomInput.value) || 1,
     });
-  }
-  drawImageEditor();
-});
-imageResetButton.addEventListener("click", () => {
-  resetImageEditor();
-});
-imageEditorSaveButton.addEventListener("click", async () => {
-  await saveImageEditor();
-});
-imageFitDimensionsButton.addEventListener("click", async () => {
-  await fitImageToAllowedDimensions();
-});
-imageLossyResizeButton.addEventListener("click", async () => {
-  await applyLossyResize();
-});
-imageEditorCancelButton.addEventListener("click", () => {
-  closeImageEditorDialog();
-});
-imageEditorCloseTop.addEventListener("click", () => {
-  closeImageEditorDialog();
-});
-imageEditorDialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  closeImageEditorDialog();
+    drawImageEditor();
+  },
+  flipHorizontal: () => {
+    if (!imageEditorDraft) {
+      return;
+    }
+    imageEditorDraft = transformImageEditorDraftForFlip(imageEditorDraft, "x");
+    const image = getEditedImage();
+    if (image) {
+      imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
+    }
+    drawImageEditor();
+  },
+  flipVertical: () => {
+    if (!imageEditorDraft) {
+      return;
+    }
+    imageEditorDraft = transformImageEditorDraftForFlip(imageEditorDraft, "y");
+    const image = getEditedImage();
+    if (image) {
+      imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
+    }
+    drawImageEditor();
+  },
+  rotateLeft: () => {
+    if (!imageEditorDraft) {
+      return;
+    }
+    imageEditorDraft = transformImageEditorDraftForQuarterTurn(imageEditorDraft, "left");
+    const image = getEditedImage();
+    if (image) {
+      imageEditorDraft = clampImageEditorDraftToFrame(image, {
+        ...imageEditorDraft,
+        fitMode: "cover",
+      });
+    }
+    drawImageEditor();
+  },
+  reset: resetImageEditor,
+  save: async () => {
+    await saveImageEditor();
+  },
+  fitDimensions: async () => {
+    await fitImageToAllowedDimensions();
+  },
+  lossyResize: async () => {
+    await applyLossyResize();
+  },
+  cancel: closeImageEditorDialog,
+  dialogCancel: (event) => {
+    event.preventDefault();
+    closeImageEditorDialog();
+  },
+  pointerDown: (event) => {
+    imageEditorCanvas.setPointerCapture(event.pointerId);
+    startImageEditorDrag(event);
+  },
+  pointerMove: updateImageEditorDrag,
+  pointerUp: stopImageEditorDrag,
+  pointerCancel: stopImageEditorDrag,
+  wheel: (event) => {
+    if (!imageEditorDraft) {
+      return;
+    }
+    const image = getEditedImage();
+    if (!image) {
+      return;
+    }
+    event.preventDefault();
+    const delta = -event.deltaY;
+    const factor = 1 + delta * 0.0015;
+    imageEditorDraft = clampImageEditorDraftToFrame(image, {
+      ...imageEditorDraft,
+      fitMode: "cover",
+      zoom: (imageEditorDraft.zoom || 1) * factor,
+    });
+    imageZoomInput.value = String(imageEditorDraft.zoom);
+    drawImageEditor();
+  },
 });
 errorDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
   errorDialog.close();
 });
-imageEditorCanvas.addEventListener("pointerdown", (event) => {
-  imageEditorCanvas.setPointerCapture(event.pointerId);
-  startImageEditorDrag(event);
-});
-imageEditorCanvas.addEventListener("pointermove", (event) => {
-  updateImageEditorDrag(event);
-});
-imageEditorCanvas.addEventListener("pointerup", () => {
-  stopImageEditorDrag();
-});
-imageEditorCanvas.addEventListener("pointercancel", () => {
-  stopImageEditorDrag();
-});
-imageEditorCanvas.addEventListener("wheel", (event) => {
-  if (!imageEditorDraft) {
-    return;
-  }
-  const image = getEditedImage();
-  if (!image) {
-    return;
-  }
-  event.preventDefault();
-  const delta = -event.deltaY;
-  const factor = 1 + delta * 0.0015;
-  imageEditorDraft = clampImageEditorDraftToFrame(image, {
-    ...imageEditorDraft,
-    fitMode: "cover",
-    zoom: (imageEditorDraft.zoom || 1) * factor,
-  });
-  imageZoomInput.value = String(imageEditorDraft.zoom);
-  drawImageEditor();
-}, { passive: false });
-
 confirmDialogConfirmButton.addEventListener("click", () => {
   confirmDialogController.confirm();
 });
@@ -35733,77 +32894,63 @@ reloadAppButton.addEventListener("click", async () => {
   await performAppReload();
 });
 
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") {
+bindGlobalApplicationEvents({
+  displayModeMediaQuery: window.matchMedia("(display-mode: standalone)"),
+}, {
+  visibilityChange: () => {
+    if (document.visibilityState === "visible") {
+      void verifySession({ silent: true });
+      scheduleSilentUpdateCheck();
+      syncAppearanceFromLocalStorage();
+    }
+  },
+  focus: () => {
     void verifySession({ silent: true });
     scheduleSilentUpdateCheck();
-  }
+    syncAppearanceFromLocalStorage();
+  },
+  hashChange: () => {
+    void applyDmAccessGateFromLocation();
+  },
+  resize: () => {
+    scheduleSegmentTextareaResize();
+  },
+  visualViewportResize: () => {
+    scheduleSegmentTextareaResize();
+  },
+  beforeInstallPrompt: (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    updateInstallButtonVisibility();
+  },
+  appInstalled: () => {
+    deferredInstallPrompt = null;
+    updateInstallButtonVisibility();
+  },
+  displayModeChange: () => {
+    updateInstallButtonVisibility();
+  },
+  pageShow: () => {
+    syncAppearanceFromLocalStorage();
+  },
+  pageHide: () => {
+    syncAppearanceFromLocalStorage();
+  },
 });
 
-window.addEventListener("focus", () => {
-  void verifySession({ silent: true });
-  scheduleSilentUpdateCheck();
-});
-
-window.addEventListener("hashchange", () => {
-  void applyDmAccessGateFromLocation();
-});
-
-window.addEventListener("resize", () => {
-  scheduleSegmentTextareaResize();
-});
-
-window.visualViewport?.addEventListener("resize", () => {
-  scheduleSegmentTextareaResize();
-});
-
-window.addEventListener("beforeinstallprompt", (event) => {
-  event.preventDefault();
-  deferredInstallPrompt = event;
-  updateInstallButtonVisibility();
-});
-
-window.addEventListener("appinstalled", () => {
-  deferredInstallPrompt = null;
-  updateInstallButtonVisibility();
-});
-
-window.matchMedia("(display-mode: standalone)").addEventListener("change", () => {
-  updateInstallButtonVisibility();
-});
-
-pageSwitchLinks.forEach((link) => {
-  link.addEventListener("click", () => {
+bindApplicationNavigationEvents({ pageSwitchLinks, privacyPageLinks }, {
+  pageSwitchClick: (event) => {
+    const link = event.currentTarget;
     persistAppearancePreferences();
     persistPendingPageSwitchUrl(link.href);
-  });
-});
-
-privacyPageLinks.forEach((link) => {
-  link.addEventListener("click", (event) => {
+  },
+  privacyClick: (event) => {
+    const link = event.currentTarget;
     event.preventDefault();
     privacyPageNavigationInProgress = true;
     clearPendingPageSwitchUrl();
     window.location.assign(link.href);
-  });
-});
-
-window.addEventListener("pageshow", () => {
-  syncAppearanceFromLocalStorage();
-});
-
-window.addEventListener("pagehide", () => {
-  syncAppearanceFromLocalStorage();
-});
-
-window.addEventListener("focus", () => {
-  syncAppearanceFromLocalStorage();
-});
-
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") {
-    syncAppearanceFromLocalStorage();
-  }
+  },
 });
 
 currentLocale = detectBrowserLocale();

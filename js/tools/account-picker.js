@@ -12,6 +12,29 @@ export function getAccountPickerSelectionValue(actor = {}) {
 }
 
 /**
+ * Binds the three actions rendered for one saved account.
+ * @param {object} elements - Account, authentication and remove buttons.
+ * @param {object} handlers - Explicit callbacks for the three actions.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindAccountSwitcherItemEvents(elements = {}, handlers = {}) {
+  const bindings = [
+    [elements.accountButton, "click", handlers.accountClick],
+    [elements.authActionButton, "click", handlers.authActionClick],
+    [elements.removeButton, "click", handlers.removeClick],
+  ];
+  let boundCount = 0;
+  bindings.forEach((binding) => {
+    if (!binding[0] || typeof binding[0].addEventListener !== "function" || typeof binding[2] !== "function") {
+      return;
+    }
+    binding[0].addEventListener(binding[1], binding[2]);
+    boundCount += 1;
+  });
+  return boundCount;
+}
+
+/**
  * Checks whether a value can serve as an account-picker input target.
  * @param {unknown} value - Candidate input element.
  * @returns {boolean} True when the value provides the input methods used by the picker.

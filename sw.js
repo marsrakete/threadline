@@ -16,11 +16,13 @@ const APP_SHELL = [
   "./js/core/app-bootstrap.js",
   "./js/core/app-dialogs.js",
   "./js/core/app-i18n.js",
+  "./js/core/app-initialization.js",
   "./js/core/app-navigation.js",
   "./js/core/app-shell.js",
   "./js/core/app-state.js",
   "./js/core/app-storage.js",
   "./js/core/app-utils.js",
+  "./js/core/app-layout-state.js",
   "./js/atproto/atproto-client.js",
   "./js/atproto/atproto-actors.js",
   "./js/atproto/atproto-media.js",
@@ -35,12 +37,28 @@ const APP_SHELL = [
   "./js/composer/composer-mentions.js",
   "./js/composer/composer-page.js",
   "./js/composer/composer-post-settings.js",
+  "./js/composer/composer-validation.js",
+  "./js/composer/composer-segments.js",
+  "./js/composer/composer-image-geometry.js",
+  "./js/composer/composer-publishing.js",
+  "./js/composer/composer-image-renderer.js",
+  "./js/composer/composer-link-card-providers.js",
+  "./js/composer/composer-dialogs.js",
+  "./js/composer/composer-segment-rendering.js",
   "./js/tools/tools-layout.js",
   "./js/tools/tools-page.js",
   "./js/tools/account-picker.js",
+  "./js/tools/network-ui.js",
   "./js/tools/dm-archive.js",
   "./js/tools/search.js",
+  "./js/tools/search-results.js",
   "./js/tools/thread-explorer.js",
+  "./js/tools/thread-explorer-controller.js",
+  "./js/tools/thread-explorer-snapshot.js",
+  "./js/tools/thread-explorer-layout.js",
+  "./js/tools/thread-explorer-hydration.js",
+  "./js/tools/thread-explorer-media-hydration.js",
+  "./js/tools/thread-explorer-rendering.js",
   "./js/tools/network.js",
   "./js/tools/analysis.js",
   "./js/tools/archive.js",
@@ -7912,6 +7930,7 @@ async function listDmPartners(payload = {}, notifyProgress = () => {}) {
     .sort((left, right) => (Date.parse(right.lastMessageAt || 0) || 0) - (Date.parse(left.lastMessageAt || 0) || 0));
 
   if (downloadAssets) {
+    await hydrateMissingDmPartnerProfiles(auth, recentContacts);
     const avatarContacts = recentContacts.filter((contact) => contact.avatar);
     for (const [index, contact] of avatarContacts.entries()) {
       notifyProgress({
@@ -7978,6 +7997,7 @@ async function hydrateDmPartnerAvatars(payload = {}, notifyProgress = () => {}) 
   const assets = [];
   const seenAssetPaths = new Set();
   const pdsServiceCache = new Map();
+  await hydrateMissingDmPartnerProfiles(auth, contacts);
   const avatarContacts = contacts.filter((contact) => contact.avatar);
 
   notifyProgress({
@@ -9840,6 +9860,44 @@ async function likePost(payload = {}) {
     uri: String(result?.uri || "").trim(),
     cid: String(result?.cid || "").trim(),
   };
+}
+
+/**
+ * Resolves missing DM partner avatars through the public profile endpoint.
+ * @param {object} auth - Authenticated session used for the profile request.
+ * @param {object[]} contacts - DM contacts that may be enriched in place.
+ * @returns {Promise<object[]>} The same contacts with missing profile fields filled when available.
+ */
+async function hydrateMissingDmPartnerProfiles(auth, contacts = []) {
+  const pending = contacts.filter((contact) => {
+    return contact?.did && !String(contact.avatar || "").trim();
+  });
+  if (!pending.length || !auth?.session?.accessJwt) {
+    return contacts;
+  }
+
+  for (let index = 0; index < pending.length; index += 25) {
+    const batch = pending.slice(index, index + 25).map((contact) => contact.did);
+    try {
+      const response = await bskyGet("app.bsky.actor.getProfiles", { actors: batch }, {
+        headers: { authorization: `Bearer ${auth.session.accessJwt}` },
+        base: authXrpcBase(auth),
+      });
+      const profiles = Array.isArray(response?.profiles) ? response.profiles : [];
+      profiles.forEach((profile) => {
+        const contact = pending.find((entry) => entry.did === String(profile?.did || "").trim());
+        if (!contact) {
+          return;
+        }
+        contact.handle = String(profile.handle || contact.handle || "").trim();
+        contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
+        contact.avatar = String(profile.avatar || contact.avatar || "").trim();
+      });
+    } catch (error) {
+      // The contact remains usable without an avatar when profile lookup fails.
+    }
+  }
+  return contacts;
 }
 
 /**

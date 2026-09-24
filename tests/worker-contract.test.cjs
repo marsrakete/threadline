@@ -47,7 +47,7 @@ function loadAtprotoWorkerContext() {
 test("AT Protocol worker imports client before session and exposes their contracts", () => {
   const worker = loadAtprotoWorkerContext();
 
-  assert.deepEqual(worker.importedScripts, ["./atproto-client.js", "./atproto-session.js"]);
+  assert.deepEqual(worker.importedScripts, ["./js/atproto/atproto-client.js", "./js/atproto/atproto-session.js"]);
   assert.equal(typeof worker.context.parseAtUri, "function");
   assert.equal(typeof worker.context.parseBlobUrlInfo, "function");
   assert.equal(typeof worker.context.extractPdsServiceFromDidDocument, "function");

@@ -4,6 +4,36 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { createMemoryStorage, importProjectModule } = require("./module-test-helpers.cjs");
 
+test("desktop layout state normalizes dimensions and migrates legacy values", async () => {
+  const layout = await importProjectModule("js/core/app-layout-state.js");
+  const options = {
+    defaultSidebarWidth: 320,
+    defaultComposerWidth: 640,
+    minSidebarWidth: 240,
+    maxSidebarWidth: 500,
+    minComposerWidth: 400,
+    maxComposerWidth: 900,
+    layoutVersion: 2,
+    legacySignatures: new Set(["200|600"]),
+    clamp: (value, min, max, fallback) => {
+      if (value == null) {
+        return fallback;
+      }
+      return Math.min(max, Math.max(min, value));
+    },
+  };
+  assert.deepEqual(layout.normalizeStoredDesktopLayout("200", "600", undefined, options), {
+    sidebarWidthDesktop: 320,
+    composerWidthDesktop: 640,
+    desktopLayoutVersion: 2,
+  });
+  assert.deepEqual(layout.normalizeStoredDesktopLayout("100", "1000", 1, options), {
+    sidebarWidthDesktop: 240,
+    composerWidthDesktop: 900,
+    desktopLayoutVersion: 1,
+  });
+});
+
 /**
  * Creates a minimal native-dialog test double.
  * @returns {object} Dialog-compatible test double.
@@ -227,4 +257,90 @@ test("dialog helpers manage modal content, links and queued confirmations", asyn
   assert.deepEqual(previews, [{ handle: "alice.test" }]);
   controller.cancel();
   assert.equal(await second, false);
+});
+
+test("application initialization binds declared and optional events", async () => {
+  const initialization = await importProjectModule("js/core/app-initialization.js");
+  const target = new EventTarget();
+  let calls = 0;
+  const handler = () => {
+    calls += 1;
+  };
+
+  assert.equal(initialization.bindApplicationEvents(target, [
+    { type: "custom", handler },
+    { type: "invalid", handler: null },
+  ]), 1);
+  assert.equal(initialization.bindOptionalApplicationEvent(target, "optional", handler), true);
+  assert.equal(initialization.bindOptionalApplicationEvent(null, "optional", handler), false);
+  target.dispatchEvent(new Event("custom"));
+  target.dispatchEvent(new Event("optional"));
+  assert.equal(calls, 2);
+});
+
+test("application initialization binds authentication lifecycle events", async () => {
+  const initialization = await importProjectModule("js/core/app-initialization.js");
+  const controls = Array.from({ length: 7 }, () => new EventTarget());
+  let calls = 0;
+  const handler = () => { calls += 1; };
+  const bound = initialization.bindAuthenticationEvents({
+    addAccountButton: controls[0],
+    loginDialogCloseTop: controls[1],
+    loginDialogCancelButton: controls[2],
+    loginDialog: controls[3],
+    window: controls[4],
+    loginForm: controls[5],
+  }, {
+    addAccountClick: handler,
+    closeClick: handler,
+    cancelClick: handler,
+    cancelEvent: handler,
+    online: handler,
+    offline: handler,
+    submit: handler,
+  });
+  assert.equal(bound, 7);
+  controls[0].dispatchEvent(new Event("click"));
+  controls[1].dispatchEvent(new Event("click"));
+  controls[2].dispatchEvent(new Event("click"));
+  controls[3].dispatchEvent(new Event("cancel"));
+  controls[4].dispatchEvent(new Event("online"));
+  controls[4].dispatchEvent(new Event("offline"));
+  controls[5].dispatchEvent(new Event("submit"));
+  assert.equal(calls, 7);
+});
+
+test("application initialization binds Thread Explorer controls", async () => {
+  const initialization = await importProjectModule("js/core/app-initialization.js");
+  const target = new EventTarget();
+  const elements = { feedList: target, threadTree: target };
+  let scrollCalls = 0;
+  let wheelCalls = 0;
+  const bound = initialization.bindThreadExplorerApplicationEvents(elements, {
+    feedScroll: () => { scrollCalls += 1; },
+    wheel: () => { wheelCalls += 1; },
+  });
+  assert.equal(bound, 2);
+  target.dispatchEvent(new Event("scroll"));
+  target.dispatchEvent(new Event("wheel"));
+  assert.equal(scrollCalls, 1);
+  assert.equal(wheelCalls, 1);
+});
+
+test("application initialization binds page navigation through supplied handlers", async () => {
+  const initialization = await importProjectModule("js/core/app-initialization.js");
+  const link = new EventTarget();
+  let pageSwitchCalls = 0;
+  let privacyCalls = 0;
+  const bound = initialization.bindApplicationNavigationEvents({
+    pageSwitchLinks: [link],
+    privacyPageLinks: [link],
+  }, {
+    pageSwitchClick: () => { pageSwitchCalls += 1; },
+    privacyClick: () => { privacyCalls += 1; },
+  });
+  assert.equal(bound, 2);
+  link.dispatchEvent(new Event("click"));
+  assert.equal(pageSwitchCalls, 1);
+  assert.equal(privacyCalls, 1);
 });

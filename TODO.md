@@ -88,6 +88,7 @@ Diese Liste ist nach Arbeitsstand sortiert. Erledigte Punkte bleiben sichtbar, o
 - [ ] Optional bessere Mehrfachauswahl oder Sammel-Drop fuer Bilder pruefen.
 - [ ] Pruefen, ob Bilder zwischen Segmenten noch sichtbarer verschoben werden koennen.
 - [ ] Hochgeladene Bilder optional automatisch mit einem Wasserzeichen versehen.
+- [ ] Composer: Schrift-Formatierer fuer Bluesky integrieren, zum Beispiel auf Basis des [Bluesky Text Formatters von Nuelink](https://nuelink.com/tools/bluesky-text-formatter).
 
 ## Spaeter / Refactor
 
@@ -113,6 +114,11 @@ Diese Liste ist nach Arbeitsstand sortiert. Erledigte Punkte bleiben sichtbar, o
 - [ ] Eigenen Medien-Index im HTML-Archiv pruefen.
 - [ ] Optional Kapitel- oder Jahresnavigation im HTML-Archiv ergaenzen.
 - [ ] Vergleich zwischen `vollem Archiv` und `kompaktem HTML` verbessern.
+
+### Composer-Medien Und Abschnittsformatierung
+
+- [ ] Bilder und Link-Cards eines Thread-Abschnitts beim Neuformatieren erhalten, auch wenn der Abschnitt dadurch keinen Text mehr enthaelt.
+- [ ] Medienbehaftete, dadurch leere Thread-Abschnitte sichtbar belassen und mit einer klaren Loeschmoeglichkeit versehen.
 
 ### Dokumentation
 
