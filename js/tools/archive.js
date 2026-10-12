@@ -115,3 +115,49 @@ export function bindArchiveActionEvents(elements = {}, actions = {}) {
   bind(elements.expertModeToggle, "change", actions.expertModeChange);
   return boundCount;
 }
+
+/**
+ * Binds export actions on one rendered archive result card.
+ * @param {object} elements - ZIP, HTML and PDF export buttons.
+ * @param {object} actions - Export callbacks for the result catalog.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindArchiveResultExportEvents(elements = {}, actions = {}) {
+  let boundCount = 0;
+  const bindings = [
+    [elements.zipButton, actions.zipClick],
+    [elements.htmlButton, actions.htmlClick],
+    [elements.pdfButton, actions.pdfClick],
+  ];
+  bindings.forEach(([target, handler]) => {
+    if (!target || typeof handler !== "function") {
+      return;
+    }
+    target.addEventListener("click", handler);
+    boundCount += 1;
+  });
+  return boundCount;
+}
+
+/**
+ * Binds the Post-Edit-Check dialog controls.
+ * @param {object} elements - Input, submit, close and dialog elements.
+ * @param {object} actions - Explicit callbacks for loading and closing the dialog.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindPostEditCheckDialogEvents(elements = {}, actions = {}) {
+  let boundCount = 0;
+  const bind = (target, type, handler) => {
+    if (!target || typeof handler !== "function") {
+      return;
+    }
+    target.addEventListener(type, handler);
+    boundCount += 1;
+  };
+  bind(elements.urlInput, "keydown", actions.urlKeydown);
+  bind(elements.submitButton, "click", actions.submitClick);
+  bind(elements.closeTopButton, "click", actions.close);
+  bind(elements.closeButton, "click", actions.close);
+  bind(elements.dialog, "cancel", actions.cancel);
+  return boundCount;
+}

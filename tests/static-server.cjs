@@ -5,7 +5,7 @@ const http = require("node:http");
 const path = require("node:path");
 
 const projectRoot = path.resolve(__dirname, "..");
-const port = 4173;
+const port = Number(process.env.THREADLINE_TEST_PORT || 4173);
 
 /**
  * Returns the HTTP content type for one static project file.

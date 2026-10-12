@@ -61,6 +61,195 @@ export function bindAuthenticationEvents(targets = {}, handlers = {}) {
 }
 
 /**
+ * Binds application appearance and editor preference controls.
+ * @param {object} elements - Preference controls and compact-mode buttons.
+ * @param {object} handlers - Explicit callbacks for preference changes.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindPreferenceEvents(elements = {}, handlers = {}) {
+  const bindings = [
+    [elements.languageSelect, "change", handlers.languageChange],
+    [elements.tipsVisibleToggle, "change", handlers.tipsVisibleChange],
+    [elements.altTextRequiredToggle, "change", handlers.altTextRequiredChange],
+    [elements.imageAutoResizeSelect, "change", handlers.imageAutoResizeChange],
+    [elements.themeToggleButton, "click", handlers.themeClick],
+    [elements.resetColumnWidthsButton, "click", handlers.resetColumnWidthsClick],
+    [elements.nextTipButton, "click", handlers.nextTipClick],
+    [elements.hideTipsButton, "click", handlers.hideTipsClick],
+  ];
+  let boundCount = 0;
+  bindings.forEach((binding) => {
+    if (bindOptionalApplicationEvent(binding[0], binding[1], binding[2])) {
+      boundCount += 1;
+    }
+  });
+  if (Array.isArray(elements.compactModeToggleButtons)) {
+    elements.compactModeToggleButtons.forEach((button) => {
+      if (bindOptionalApplicationEvent(button, "click", handlers.compactModeClick)) {
+        boundCount += 1;
+      }
+    });
+  }
+  return boundCount;
+}
+
+/**
+ * Binds settings backup, sharing, import and history controls.
+ * @param {object} elements - Settings data controls and file inputs.
+ * @param {object} handlers - Explicit settings data callbacks.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindSettingsDataEvents(elements = {}, handlers = {}) {
+  const bindings = [
+    [elements.exportButton, "click", handlers.exportClick],
+    [elements.backupSaveButton, "click", handlers.backupSaveClick],
+    [elements.backupLaterButton, "click", handlers.backupLaterClick],
+    [elements.backupCloseButton, "click", handlers.backupCloseClick],
+    [elements.shareButton, "click", handlers.shareClick],
+    [elements.importButton, "click", handlers.importClick],
+    [elements.clearHistoryButton, "click", handlers.clearHistoryClick],
+    [elements.importInput, "change", handlers.importChange],
+    [elements.threadImportInput, "change", handlers.threadImportChange],
+  ];
+  let boundCount = 0;
+  bindings.forEach((binding) => {
+    if (bindOptionalApplicationEvent(binding[0], binding[1], binding[2])) {
+      boundCount += 1;
+    }
+  });
+  return boundCount;
+}
+
+/**
+ * Binds hashtag-edit and alt-text dialog controls.
+ * @param {object} elements - Hashtag and alt-text dialog elements.
+ * @param {object} handlers - Explicit dialog callbacks.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindEditorDialogEvents(elements = {}, handlers = {}) {
+  const bindings = [
+    [elements.hashtagSaveButton, "click", handlers.hashtagSaveClick],
+    [elements.hashtagCancelButton, "click", handlers.hashtagCancelClick],
+    [elements.hashtagCancelTop, "click", handlers.hashtagCancelClick],
+    [elements.hashtagInput, "keydown", handlers.hashtagKeydown],
+    [elements.hashtagDialog, "close", handlers.hashtagDialogClose],
+    [elements.altTextInput, "input", handlers.altTextInput],
+    [elements.altTextSaveButton, "click", handlers.altTextSaveClick],
+    [elements.altTextCancelButton, "click", handlers.altTextCancelClick],
+    [elements.altTextCloseTop, "click", handlers.altTextCancelClick],
+    [elements.altTextDialog, "cancel", handlers.altTextCancelEvent],
+  ];
+  let boundCount = 0;
+  bindings.forEach((binding) => {
+    if (bindOptionalApplicationEvent(binding[0], binding[1], binding[2])) {
+      boundCount += 1;
+    }
+  });
+  return boundCount;
+}
+
+/**
+ * Binds application update and reload controls.
+ * @param {object} elements - Update and reload buttons.
+ * @param {object} handlers - Update and reload callbacks.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindApplicationUpdateEvents(elements = {}, handlers = {}) {
+  let boundCount = 0;
+  if (bindOptionalApplicationEvent(elements.checkUpdatesButton, "click", handlers.checkUpdatesClick)) {
+    boundCount += 1;
+  }
+  if (bindOptionalApplicationEvent(elements.reloadAppButton, "click", handlers.reloadClick)) {
+    boundCount += 1;
+  }
+  return boundCount;
+}
+
+/**
+ * Binds error and confirmation dialog lifecycle controls.
+ * @param {object} elements - Error and confirmation dialog elements.
+ * @param {object} handlers - Explicit dialog lifecycle callbacks.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindConfirmationDialogEvents(elements = {}, handlers = {}) {
+  const bindings = [
+    [elements.errorDialog, "cancel", handlers.errorCancel],
+    [elements.confirmButton, "click", handlers.confirmClick],
+    [elements.cancelButton, "click", handlers.cancelClick],
+    [elements.confirmDialog, "cancel", handlers.dialogCancel],
+    [elements.confirmDialog, "close", handlers.dialogClose],
+  ];
+  let boundCount = 0;
+  bindings.forEach((binding) => {
+    if (bindOptionalApplicationEvent(binding[0], binding[1], binding[2])) {
+      boundCount += 1;
+    }
+  });
+  return boundCount;
+}
+
+/**
+ * Binds Link-Card provider and endpoint settings controls.
+ * @param {object} elements - Link-Card settings fields and provider inputs.
+ * @param {object} handlers - Explicit settings callbacks.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindLinkCardSettingsEvents(elements = {}, handlers = {}) {
+  let boundCount = 0;
+  const bind = (target, type, handler) => {
+    if (bindOptionalApplicationEvent(target, type, handler)) {
+      boundCount += 1;
+    }
+  };
+  [elements.endpointInput, elements.secretInput].forEach((input) => {
+    bind(input, "input", handlers.input);
+    bind(input, "change", handlers.change);
+  });
+  [elements.noneInput, elements.microlinkInput, elements.proxyInput].forEach((input) => {
+    bind(input, "change", handlers.providerChange);
+  });
+  return boundCount;
+}
+
+/**
+ * Binds thread import/export and installation controls.
+ * @param {object} elements - Install, import and save controls.
+ * @param {object} handlers - Explicit import, export and install callbacks.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindWorkspaceUtilityEvents(elements = {}, handlers = {}) {
+  const bindings = [
+    [elements.installButton, "click", handlers.installClick],
+    [elements.loadThreadButton, "click", handlers.loadThreadClick],
+    [elements.saveThreadButton, "click", handlers.saveThreadClick],
+  ];
+  let boundCount = 0;
+  bindings.forEach((binding) => {
+    if (bindOptionalApplicationEvent(binding[0], binding[1], binding[2])) {
+      boundCount += 1;
+    }
+  });
+  return boundCount;
+}
+
+/**
+ * Binds settings close and inline help actions.
+ * @param {object} elements - Settings close control and document-like help target.
+ * @param {object} handlers - Explicit close and help callbacks.
+ * @returns {number} Number of listeners bound.
+ */
+export function bindHelpAndSettingsEvents(elements = {}, handlers = {}) {
+  let boundCount = 0;
+  if (bindOptionalApplicationEvent(elements.settingsCloseTop, "click", handlers.settingsClose)) {
+    boundCount += 1;
+  }
+  if (bindOptionalApplicationEvent(elements.helpTarget, "click", handlers.helpClick)) {
+    boundCount += 1;
+  }
+  return boundCount;
+}
+
+/**
  * Binds the primary Thread Explorer controls and stage gestures.
  * @param {object} elements - Thread Explorer DOM elements.
  * @param {object} handlers - Named event handlers for the controls.
@@ -152,4 +341,25 @@ export function bindApplicationNavigationEvents(elements = {}, handlers = {}) {
     });
   }
   return boundCount;
+}
+
+/**
+ * Coordinates page visibility/focus, appearance, media sizing and installation events.
+ * @param {object} options - Session/update/appearance/install controllers and native adapters.
+ * @returns {object} Global event handlers for the existing binder.
+ */
+export function createApplicationLifecycleHandlers(options) {
+  /** Refreshes session, update metadata and cached appearance. @returns {void} */
+  function focus() { void options.verifySession({ silent: true }); options.checkUpdates(); options.syncAppearance(); }
+  /** Refreshes only when the document becomes visible. @returns {void} */
+  function visibilityChange() { if (options.isVisible()) { focus(); } }
+  /** Applies a URL hash-based access gate. @returns {void} */
+  function hashChange() { void options.applyAccessGate(); }
+  /** Resizes segment textareas after native viewport changes. @returns {void} */
+  function resize() { options.resizeTextareas(); }
+  /** Synchronizes appearance after browser page transitions. @returns {void} */
+  function syncAppearance() { options.syncAppearance(); }
+  return { visibilityChange, focus, hashChange, resize, visualViewportResize: resize,
+    beforeInstallPrompt: options.install.beforePrompt, appInstalled: options.install.installed,
+    displayModeChange: options.install.render, pageShow: syncAppearance, pageHide: syncAppearance };
 }

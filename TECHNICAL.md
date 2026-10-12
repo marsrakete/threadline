@@ -4,6 +4,67 @@
 
 This file collects the technical background information that would otherwise overload the quick-start README.
 
+## Application Startup Boundaries
+
+`app-storage.js` owns the required app-state request, four optional startup-cache requests and queued settings writes. Failed optional reads remain non-fatal; required state errors propagate to hydration. Settings snapshots are captured before entering the serialized write queue.
+
+`app-state.js` normalizes preferences and coordinates domain restoration in the existing order. Local theme/density values take precedence over stored state. URL reply handoff precedes pending browser storage, layout migration is saved before workspace activation, and hydration failures still release workspace restoration without scheduling a success reminder.
+
+`app-bootstrap.js` registers the worker, waits for readiness and then runs hydration, session verification, session checks and the update check. Its controller-change handler preserves pending page navigation, ignores privacy navigation and guards against duplicate reloads. `app.js` composes adapters and applies explicit shared-state patches; it does not retain duplicate startup orchestration.
+
+Contract tests cover errors, fallback rules and ordering. The browser regression traverses the real entry-point startup on both pages using a controlled worker transport; this is not an actual IndexedDB or offline-recovery test.
+
+## Shared Appearance And Navigation
+
+`app-shell.js` owns shared appearance cache normalization, restoration, synchronization, URL handoff, body classes and translated settings controls. Both cache values are applied before rendering either change, preventing stale density/theme writes. Missing or invalid cache entries do not overwrite live preferences during synchronization. Native storage and URL operations are injected.
+
+`app-navigation.js` owns pending destinations across worker reloads: store, read, consume and clear on reaching the intended path. The entry point keeps state and adapters only.
+
+`app-layout-state.js` owns width normalization/migration, CSS geometry, responsive sidebar labels/classes, reset and pointer drag lifecycle. State, native events and persistence are injected. Repeated drags replace previous listeners; cancellation, reset and switching to mobile remove active drag listeners. The entry point retains only state adapters and thin rendering delegates. No new cache asset or storage schema is introduced.
+
+Layout contract tests cover bounds, invalid values, cancellation, collapsed offsets and media transitions. The browser test exercises real pointer drags, reset, equal collapsed geometry in both densities and mobile stacking on both pages. It collects runtime errors and uses a controlled worker transport, not real devices or offline persistence.
+
+Contract tests cover invalid values and restricted storage. The Edge regression exercises both pages, real settings clicks, round-trip navigation, reload and appearance query consumption against contradictory worker state. This controlled transport does not verify live service-worker update races or offline recovery.
+
+## Application Lifecycle Controllers
+
+Update presentation, metadata checks, automatic-check throttling and worker-assisted reloads are owned by `createApplicationUpdateController` in `app-bootstrap.js`. Its concurrent-check and reload guards are private; browser navigation, timers and registration access are explicit adapters.
+
+`app-session.js` owns verification, account/identity updates, avatar restoration, offline behavior, password-repair routing and the five-minute check timer. It also owns endpoint normalization, login error localization, the login dialog/submission controller and saved-account switching, sign-in/out and confirmed removal. `shared-accounts.js` renders the sidebar through `account-switcher-item-template` with explicit state, avatar, translation and action adapters. No account actions remain embedded in the entry-point renderer. The worker protocol and persisted account schema are unchanged; workspace updates and native APIs remain injected dependencies.
+
+Contract tests cover endpoint/error fallbacks, private-input cleanup, request/busy lifecycle, offline and repair routing, canceled removal and action failures. Browser integration exercises login, logout, switching, verification and removal on both pages with controlled worker responses and page-error collection. Renderer tests check untrusted labels and rebinding without duplicate actions; live authentication and IndexedDB persistence are not exercised.
+
+`createApplicationInstallController` in `app-shell.js` owns the deferred install prompt and install-button availability, including iOS instructions and standalone mode. `createApplicationLifecycleHandlers` in `app-initialization.js` coordinates visibility/focus, appearance synchronization, viewport resizing and installation lifecycle events. `app.js` only assembles these controllers and native adapters.
+
+Contract tests cover normal, boundary, concurrent and failure cases. The browser regression loads both authenticated pages using a controlled worker, opens the password-repair dialog, consumes a synthetic install prompt, shows remote update metadata and performs a real URL reload. This does not validate live authentication, actual OS installation or live worker activation/offline races.
+
+## Help Boundaries
+
+`app-help-topics.js` holds the contextual help translation-key catalog, replacing the large entry-point switch. `app-help.js` owns the dialog, localized README selection/loading/cache, failure state and delegated topic clicks. Topic bodies and lists use the shared `help-topic-template` with plain text. Request generations prevent late README responses from replacing a newer topic or closed dialog.
+
+`app-help-markdown.js` owns the intentional controlled Markdown-to-HTML boundary. URL context and text escaping are explicit dependencies. Raw HTML remains escaped; allowed centered README blocks use generated markers rather than accepting arbitrary source HTML as trusted. Link/image protocols are filtered, and generated attributes are escaped. The general application HTML escaper remains a single injected implementation.
+
+Contract tests cover the catalog, locale fallback, markup, unsafe URLs/HTML, caching, failures and cancellation. Browser coverage loads both pages, checks all help topics in German/English/French, localized README paths, template text safety and stale-request protection. New modules are included in the service-worker shell; there is no storage migration.
+
+## Composer Document Boundaries
+
+The Composer domain extraction is complete under the project boundary rule: application state, native API adapters and page-level composition remain in `app.js`, not a second Composer implementation. Startup hydration and shared navigation/preferences are application concerns and are not part of this completion claim.
+
+| Domain | Owning modules |
+| --- | --- |
+| Document, draft and file lifecycle | `composer-document.js`, `composer-page.js` |
+| Text limits, splitting and section rendering | `composer-main.js`, `composer-splitter.js`, `composer-segments.js`, `composer-segment-rendering.js`, `composer-validation.js` |
+| Images, Canvas and editor lifecycle | `composer-images.js`, `composer-image-processing.js`, `composer-image-geometry.js`, `composer-image-renderer.js`, `composer-image-editor.js` |
+| Link cards, provider validation and transport | `composer-link-cards.js`, `composer-link-card-providers.js`, `shared-link-cards.js` |
+| Mentions, reply dialogs and posting settings | `composer-mentions.js`, `composer-dialogs.js`, `composer-post-settings.js` |
+| Publish validation/confirmation orchestration, progress, server limits and history | `composer-publishing.js`, `composer-history.js` |
+
+Structural regression tests prevent selected domain operations, request timers and the publish-click orchestration from returning to the entry point. These tests are an architectural guard, not proof of authenticated network behavior. Live publishing, real-device interaction and offline/IndexedDB recovery still require separate acceptance checks.
+
+Segment link-card previews and their removal lifecycle belong to `composer-link-cards.js` and use `composer-link-card-preview-template` on both pages. Mention source correction, resolver invalidation and document refresh belong to `composer-mentions.js`. Ordered text/media payload collection belongs to `composer-publishing.js`. `app.js` only supplies document state, storage and UI adapters for these operations.
+
+Contract tests cover media identity, empty text slots, safe preview labels and the correction/removal update order. Targeted Edge tests render the actual preview template on both pages and collect initialization errors; they do not exercise authenticated publishing or real IndexedDB writes.
+
 ## OpenGraph Asset Pipeline
 
 The OpenGraph source of truth is `icons/threadline-og-workspaces.svg`. Derived raster files are generated with `npm run build:og-image` using the settings in `config/og-image.config.json`.
@@ -938,6 +999,138 @@ The PWA approach also has clear limits:
 - local storage is practical, but security-sensitive
 
 That is why topics like local session storage, link cards, and PDS compatibility are also architecture questions tied to the PWA design.
+
+## Composer Mention Components
+
+`js/composer/composer-mentions.js` owns mention parsing, DID resolution and its cache, pending source corrections, template-based segment rendering, debounced updates and account search-result rendering. The entry point supplies translations, worker requests, render-version access, timers and UI actions explicitly.
+
+The display templates are present in both `index.html` and `tools.html`. Browser tests cover review, repair and source-sync actions, per-segment debouncing, stale resolution results and initialization errors on both pages.
+
+The module also prepares the review/repair dialog, collects known account handles and runs actor search with request-token guards. Older search responses and errors cannot replace the current query status or results.
+
+`createComposerMentionSearchActions()` handles selection, reset and close. Selection queues the source correction, replaces the segment, invalidates cached handles, closes the dialog, rerenders and saves the draft through explicit callbacks.
+
+Browser tests can use a dedicated port via `THREADLINE_TEST_PORT`; the test runner starts its own static server to avoid silently using another project's server.
+
+## Composer Input And Length Presentation
+
+`createComposerInputController()` in `composer-page.js` owns source edits and selection insertion: whole-grapheme clipping, newline normalization, cursor placement, state reset, scheduled rendering and draft persistence. UI effects are supplied as callbacks.
+
+`createComposerLengthPresentationController()` in `composer-segment-rendering.js` owns segment counters and segment/thread warnings. Diagnostics, limits, translations and DOM nodes are explicit dependencies. The entry point only delegates these operations; the previous implementations are removed.
+
+Browser tests exercise actual textarea selections with multi-codepoint emoji and warning transitions on both pages, collecting initialization errors.
+
+`createComposerInputEventHandlers()` routes input, paste and drop events to the input controller, including the suppression/pending-warning state. `createComposerInputWarningController()` owns localized input warnings and the throttled truncation dialog timer. `createComposerRenderScheduler()` owns render debounce, animation-frame coalescing and textarea-resize scheduling. Timer/frame state is private to the controllers, not the entry point. Contract tests cover ignored/invalid clipboard events, the alert throttle boundary and replacement of pending work; browser tests exercise the actual page event wiring.
+
+## Composer Reply Targets
+
+The editor Canvas draw pipeline, pointer-drag controller and debounced export
+metrics controller live in `composer-image-renderer.js`. Drag coordinates and
+metrics timer/request versions are private; closing invalidates queued and in-flight
+metrics. Tests protect draw transforms, clamped pointer deltas and stale success/error
+results. Browser checks exercise actual Canvas pixels and both pages' metrics nodes.
+
+ALT-text dialog state, optional image preview, length counter, saving and cleanup
+are owned by `createComposerAltTextDialogController` in `composer-dialogs.js`.
+`updateComposerImageAltDisplay` updates only the existing card's tooltip, state and
+warning button. Storage precedes UI/draft updates; the existing UTF-16 length limit
+and missing-image behavior are preserved. Unit and browser tests cover these flows.
+
+The segment image collection controller in `composer-images.js` owns selection,
+directional/positioned moves and deletion. State readers/writers, image decoding,
+validation, storage and draft rendering are injected. Selection awaits storage before
+rendering; synchronous mutations keep their non-blocking persistence order. Transfer
+filtering, insertion-side geometry and DOM drag-marker cleanup are module helpers.
+
+Segment image thumbnails are rendered by `composer-images.js` from the shared
+`composer-segment-image-template` in both pages. Preview geometry/Canvas, translations,
+image actions and drag state are injected. Container drops and card positioning/
+keyboard activation have separate exported binders. Tests cover file versus image
+drops, before/after insertion, portrait/landscape geometry, size/ALT warnings and tools.
+
+`composer-history.js` now owns saved-publication list rendering, per-entry Explorer/
+continuation/delete actions and entry construction/recording. Both app pages supply
+the same item and empty-state templates; text is assigned using `textContent`.
+Unit tests protect publication fallbacks, image counts and storage/action ordering.
+Browser tests check empty/populated lists, safe previews and all three action bindings.
+
+Publication result models/rendering, Explorer navigation from the result dialog,
+and ordered success/failure processing live in `composer-publishing.js`. The result
+dialog uses the existing HTML button on both pages, with no dynamic duplicate.
+History is recorded before clearing reply state or marking the draft posted.
+Browser tests verify literal text, empty links and recovery after Explorer failures.
+
+Publish preflight is centralized in `composer-validation.js`, preserving the order
+of source/segment length, alt-text, image-size and connectivity checks.
+`composer-publishing.js` owns the ordered hashtag/reply/account confirmations and
+the worker payload projection. Tests cover every cancellation point, exact limits,
+error priority and reply metadata exclusion; a browser test exercises the real
+publish button and cancellation without sending a post.
+
+Cross-page reply handoff now belongs to `composer-page.js`: URL encoding/consumption,
+session persistence/consumption, and local-versus-cross-page opening use explicit
+storage, location, history and UI callbacks. `composer-dialogs.js` builds normalized
+reply targets from live posts, preserving separate root and parent strong references.
+Unit tests cover malformed payloads, restricted storage and update ordering; a browser
+test transfers a target from tools to Composer using real session storage and URL state.
+
+`composer-dialogs.js` owns normalized reply-target presentation, URL-dialog lifecycle/submission and the target resolution/clear workflow. The request-version guard is private to the controller; newer requests and clear operations invalidate delayed replies and confirmations. Worker requests, account state, confirmation UI, persistence and preview/publish refresh are explicit callbacks. Unit tests cover continuation choices, dismissal, stale results and busy/error cleanup. Browser tests exercise the existing preview/dialog structure on both pages with `pageerror` collection.
+
+## Composer Link-Card Management
+
+Remote preview-image loading and effective-provider request routing are extracted into the provider module; basic metadata-free cards are built in `shared-link-cards.js`. Fetch, blob conversion and translations are explicit dependencies. Image diagnostics are centralized in German, English and French. Unit tests cover rejected URLs/MIME types and single-provider routing; browser tests exercise real Blob/FileReader conversion and the no-request basic-card path on both pages.
+
+The actual proxy and Microlink callers now delegate to the existing request adapters instead of retaining duplicate transports in `app.js`. HMAC signing, proxy image payload decoding and provider error mapping live beside the adapters. Proxy time/nonce/signing and all requests are explicit dependencies. Tests verify signatures against Node HMAC, request headers, response fallbacks, usage recording and optional image failures; browser checks use native Web Crypto with stubbed requests, not live provider services.
+
+Proxy credential/path validation, settings input/status presentation and effective provider availability are also owned by `composer-link-card-providers.js`. Empty/incomplete settings keep their existing validation semantics; custom browser validity is applied without conflating it with status visibility. Provider availability retains proxy fallback and permits metadata-free cards when no external provider is active. Unit and browser tests cover these contracts on both pages.
+
+`composer-link-card-providers.js` now owns daily usage operations, provider note models and selection/hint presentation. Storage and UTC day access are injected; the existing daily boundary and recording-before-persistence semantics are unchanged. UI synchronization preserves proxy fallback, radio selection and hidden hints for move/manage actions. Tests cover budget exhaustion, day rollover, persistence failure, optional nodes and real controls on both pages.
+
+The module also owns the action-specific dialog model, dialog open/reset presentation and the pending create/refresh/move submission controller. Pending state and data access are injected through accessors, including after asynchronous requests. Validation, provider synchronization, busy/error states, persistence and cleanup retain their explicit order. Tests cover action/image states, invalid URLs, request/storage failures and real dialog focus/visibility on both pages.
+
+`composer-link-cards.js` derives move/swap targets, renders the management list from the target and empty-state templates, and executes move/swap persistence workflows. The entry point supplies card slots, normalization, translations and UI callbacks. Both pages provide the same templates. Unit tests cover target eligibility, both move directions, swaps and persistence failures; browser tests verify plain-text rendering and button callbacks on both pages.
+
+## Composer Image Editor Controller
+
+The remaining image pipeline is separated into three units. `createComposerImageGeometry` owns editor/export frame sizing, preview bounds and cover/contain offset calculations. `composer-image-processing.js` owns file/data-URL decoding, bitmap access, DPR previews, byte-preserving original exports, transformed JPEGs, validation and bounded automatic upload resizing. `createComposerImageValidationController` owns segment-wide validation sequencing and stale-render protection. Browser APIs and application state are supplied explicitly; the former implementations and validation token were removed from `app.js`.
+
+Dedicated tests in `tests/composer-image-processing.test.cjs` cover IO failures, original byte preservation, offset scaling, exact export limits, null blobs, nonmutating upload preparation, bounded retries and concurrent validation. Browser tests exercise real Canvas/Blob exports on both pages; publication and live server uploads are not exercised.
+
+`composer-image-editor.js` owns editor lifecycle, private target/bitmap/draft state, slider and wheel zoom, mirroring, rotation, reset, save/cancel, and both export-resize workflows. Collection access, geometry, validation, persistence and rendering are explicit dependencies. Canvas drawing, dragging and debounced export metrics remain independent adapters in `composer-image-renderer.js`.
+
+Closing or switching invalidates pending bitmap loads, stops dragging and releases resources. Rotation and reset synchronize the Canvas orientation before drawing. Tests cover editing, invalid targets, export limits, persistence order and asynchronous cleanup. Browser integration exercises the actual upload/edit/save/cancel workflow with a controlled worker-storage adapter and loads both pages with runtime-error collection. This integration test does not verify actual service-worker activation or IndexedDB writes.
+
+## Composer Document Pipeline
+
+`createComposerTextService` in `composer-splitter.js` owns the complete splitting/decorating algorithm: grapheme and UTF-8 limits, manual boundaries, global counters, thread markers and hashtag placement. `createComposerSegmentRenderer` owns the entire section-card render pass, private mention generation, manual overrides, media synchronization, interactions and scroll restoration. Shared help markup is cloned from a template on both pages.
+
+`composer-document.js` owns JSON/gzip thread files, import confirmation and normalization, export, complete reset and the private debounced draft timer. The existing file schema and storage messages remain unchanged. `app.js` supplies initialized DOM/state/transport adapters instead of retaining parallel implementations; archive import reuses the file codec's gzip decoder.
+
+Contract tests cover normal, cancelled, legacy and invalid imports, export round trips, persistence errors, text limits and empty rendering. Browser integration imports a file, edits a real section, downloads and checks the export, checks mobile card overflow, clears the document and loads the tools page while collecting runtime errors. Worker storage is controlled in this test; real IndexedDB, service-worker activation and live publication are not verified by it.
+
+## Composer Settings and UI State
+
+`createComposerPostSettingsController` owns the full posting-settings workflow: language fallback and summaries, reply/quote rules, decoration changes, dialog context/open/close/focus, filtering and selection limits. The language dialog privately tracks Composer versus search context, uses shared option/empty templates on both pages and keeps both language selections separate. Persistence, search summaries and document rendering are explicit adapters.
+
+`createComposerUiStateController` owns manual-edit locking, clear availability, already-posted visibility and unlock/dismiss actions. Search/archive hashtag controls remain usable while the Composer is locked. `composer-validation.js` calculates and renders editing-time publish availability and localized ALT/image warnings; login/online checks remain part of publication preflight, not editing-time availability.
+
+Contract tests cover defaults, invalid rules, exact limits, context isolation, lock behavior, reset ordering and persistence failures. Browser integration exercises the real posting controls, three-language selection limit, reply/quote settings, manual-edit locking and search-language filtering on both pages with runtime-error collection. Worker responses are controlled; this is not a real storage or publication test.
+
+## Shared Hashtag Management
+
+`shared-hashtags.js` owns the entire shared hashtag lifecycle: legacy input normalization, case-insensitive deduplication, display casing, selection filtering, placement and rename/merge across Composer/search/archive selections. Its controller owns cloud rendering from the existing chip template, adding/deleting/selecting, private edit-dialog state, search summaries, pane relocation and form/dialog actions. The former algorithms and inline handlers were removed from `app.js`.
+
+Dependencies include live state/context, translations, existing settings/archive persistence and workspace rendering callbacks. Composer locking still permits search/archive selection; archive selection still switches ordinary posts to thread roots. Existing action ordering and file/storage shapes are retained. No provider or posting calls are introduced. The new module is included in the service-worker static asset list.
+
+Dedicated contract tests cover invalid/legacy records, case changes and duplicate merging, all three selection lists, lock boundaries, persistence failures and context-specific side effects. Browser tests exercise real add/edit/merge/delete and manual locking, search pane relocation and summary updates, and archive pane/control rendering through explicit test state. Browser storage responses are controlled, not real IndexedDB or account writes.
+
+## Settings Backup Pipeline
+
+`app-backup.js` owns three complete units: JSON/gzip and binary-cache encoding, settings backup export/import, and reminder/status lifecycle. Import merges hashtag/history data, restores posting preferences and existing account/avatar/DM metadata contracts, applies appearance/layout/provider preferences and refreshes dependent views. The backup schema and existing export whitelist remain unchanged; account session tokens and Composer image collections are not added to exports. Existing proxy settings retain their previous backup behavior.
+
+The application provides a shared settings snapshot plus explicit state setters, normalizers, worker/persistence and UI adapters. The reminder owns its status timer, defensive timestamp storage, exact due/snooze boundaries and save/close error handling. Unsupported gzip errors are translated in all three languages. Previous inline codec/import/export/reminder implementations and timer state were removed, and the new module is precached.
+
+Contract tests cover native gzip and plain JSON round trips, binary assets, export exclusions, legacy/invalid imports, merges, cache request ordering, optional cache failures, failed handoff and reminder time/storage errors. Browser integration imports and downloads real gzip backups on Composer and tools pages, checks settings and exercises the native reminder dialog while collecting runtime errors. Worker responses are controlled; real IndexedDB and account restoration are not verified by the integration test.
 
 ## Official Source Documentation
 

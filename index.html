@@ -1865,6 +1865,10 @@
       </form>
     </dialog>
 
+    <template id="help-topic-template">
+      <p></p>
+      <ul class="help-topic-list"><li></li></ul>
+    </template>
     <dialog id="help-dialog" class="settings-dialog">
       <form method="dialog" class="settings-sheet help-sheet">
         <div class="section-heading settings-heading">
@@ -1900,6 +1904,10 @@
       </form>
     </dialog>
 
+    <template id="post-language-option-template">
+      <label class="post-language-option"><input type="checkbox"><span></span></label>
+    </template>
+    <template id="post-language-empty-template"><p class="settings-note"></p></template>
     <dialog id="post-languages-dialog" class="settings-dialog">
       <form method="dialog" class="settings-sheet post-languages-sheet">
         <div class="section-heading settings-heading">
@@ -2435,6 +2443,10 @@
       </article>
     </template>
 
+    <template id="composer-segment-help-template">
+      <button type="button" class="help-trigger segment-image-help-trigger">?</button>
+    </template>
+
     <template id="segment-template">
       <article class="segment-card">
         <div class="segment-header">
@@ -2455,6 +2467,9 @@
       </article>
     </template>
 
+    <template id="link-card-target-empty-template">
+      <p class="settings-note"></p>
+    </template>
     <template id="link-card-target-template">
       <article class="link-card-target-item">
         <div class="link-card-target-body">
@@ -2463,6 +2478,28 @@
         </div>
         <button type="button" class="ghost-button link-card-target-action"></button>
       </article>
+    </template>
+
+    <template id="segment-mention-label-template">
+      <span class="segment-mentions-label"></span>
+    </template>
+    <template id="segment-mention-resolved-template">
+      <span class="segment-mention-chip">
+        <button type="button" class="segment-mention-chip-body-button">
+          <span class="segment-mention-chip-body"><span class="segment-mention-handle"></span><small></small></span>
+        </button>
+        <a class="thread-explorer-view-link segment-mention-open-link" target="_blank" rel="noreferrer noopener">&#8599;</a>
+      </span>
+    </template>
+    <template id="segment-mention-unresolved-template">
+      <button type="button" class="segment-mention-chip segment-mention-chip-warning segment-mention-chip-button">
+        <strong></strong><small></small>
+      </button>
+    </template>
+    <template id="segment-mention-sync-template">
+      <div class="segment-mention-sync">
+        <small></small><button type="button" class="segment-mention-sync-button"></button>
+      </div>
     </template>
 
     <template id="mention-search-result-template">
@@ -2525,12 +2562,9 @@
       <div class="account-chip-wrap">
         <button type="button" class="account-chip">
           <img class="account-chip-avatar" alt="" loading="lazy">
-          <span class="account-chip-copy">
-            <strong class="account-chip-name"></strong>
-            <small class="account-chip-handle"></small>
-          </span>
+          <span class="account-chip-label"></span>
         </button>
-        <button type="button" class="account-chip-toggle" aria-label="">
+        <button type="button" class="account-chip-action" aria-label="">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d=""></path>
           </svg>
@@ -2546,20 +2580,54 @@
     <!-- History Item Template -->
     <template id="history-item-template">
       <article class="history-item">
-        <div class="history-item-header">
-          <span class="history-item-timestamp"></span>
-          <span class="history-item-account"></span>
-        </div>
-        <p class="history-item-preview"></p>
         <div class="history-item-meta">
-          <span class="history-item-count"></span>
-          <span class="history-item-images"></span>
+          <p class="history-item-eyebrow"></p>
+          <p class="history-preview"></p>
+          <div class="history-meta-row">
+            <p class="history-timestamp"></p>
+            <p class="history-meta history-counts"></p>
+            <p class="history-meta history-account"></p>
+          </div>
         </div>
         <div class="history-item-actions">
-          <button type="button" class="ghost-button history-continue-button" data-i18n="threadContinueButton">Thread fortsetzen</button>
-          <button type="button" class="ghost-button history-delete-button" data-i18n="deleteButton">Löschen</button>
+          <a class="ghost-button link-button history-link" target="_blank" rel="noreferrer noopener"></a>
+          <button type="button" class="ghost-button history-link history-explorer-button"></button>
+          <button type="button" class="ghost-button history-link history-continue-button"></button>
+          <button type="button" class="segment-image-tool danger history-delete-button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path></svg>
+          </button>
         </div>
       </article>
+    </template>
+    <template id="history-empty-template"><p class="history-empty"></p></template>
+
+    <template id="composer-link-card-preview-template">
+      <div class="segment-link-card-preview">
+        <img alt="" loading="lazy">
+        <div class="segment-link-card-body"><strong></strong><span></span><small></small></div>
+        <button type="button" class="segment-image-tool danger">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path></svg>
+        </button>
+      </div>
+    </template>
+    <template id="composer-segment-image-template">
+      <div class="segment-image-card" draggable="true">
+        <div class="segment-image-preview" role="button" tabindex="0"><canvas></canvas></div>
+        <div class="segment-image-meta">
+          <span class="segment-image-name"></span>
+          <span class="segment-image-alt-state"></span>
+          <span class="segment-image-original-size"></span>
+          <span class="segment-image-export-size"></span>
+          <span class="segment-image-export-dimensions"></span>
+        </div>
+        <div class="segment-image-tools">
+          <button type="button" class="segment-image-tool" data-image-action="left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6-1.4 1.4L6.2 12l7.4-7.4z"></path></svg></button>
+          <button type="button" class="segment-image-tool" data-image-action="right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l1.4-1.4 7.4 7.4-7.4 7.4L9 18l6-6z"></path></svg></button>
+          <button type="button" class="segment-image-tool" data-image-action="alt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.75V20h3.25L18.4 8.84l-3.24-3.24L4 16.75zm14.71-9.04a1 1 0 0 0 0-1.42l-1-1a1 1 0 0 0-1.42 0l-.88.88 3.24 3.24.06-.06z"></path></svg></button>
+          <button type="button" class="segment-image-tool" data-image-action="edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm2 8 2.5-3 2 2.5 3-4L19 15H7z"></path></svg></button>
+          <button type="button" class="segment-image-tool danger" data-image-action="delete"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path></svg></button>
+        </div>
+      </div>
     </template>
 
     <!-- Generic Icon Button Templates -->

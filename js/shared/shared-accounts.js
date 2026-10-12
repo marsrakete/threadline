@@ -32,3 +32,56 @@ export {
   DEFAULT_AVATAR_URI,
   setAvatarImage,
 };
+
+/** Resolves saved-account visual state. @param {object} account - Session/password flags. @param {object} state - Online and active DID. @returns {string} UI state. */
+export function getSavedAccountVisualState(account, state) {
+  if (!state.online && account.hasSession) { return "offline"; }
+  if (account.did && account.did === state.did && account.hasSession) { return "active"; }
+  if (account.hasSession) { return "available"; }
+  return "signed-out";
+}
+
+/**
+ * Renders saved account controls from the existing sidebar template.
+ * @param {object} elements - Panel, list and item template.
+ * @param {object} options - State, avatar, translation and account-action adapters.
+ * @returns {object} Render operation.
+ */
+export function createSavedAccountRenderer(elements, options) {
+  /** Renders the current account list and binds independent item actions. @returns {void} */
+  function render() {
+    const state = options.getState(); elements.list.replaceChildren();
+    elements.panel.hidden = !state.accounts.length;
+    for (const account of state.accounts) {
+      const visual = getSavedAccountVisualState(account, state);
+      const fragment = elements.template.content.cloneNode(true);
+      const item = fragment.querySelector(".account-chip-wrap"); const button = fragment.querySelector(".account-chip");
+      const auth = fragment.querySelector(".account-chip-action"); const remove = fragment.querySelector(".account-chip-remove");
+      item.classList.add(`is-${visual}`); button.classList.add(`is-${visual}`); button.disabled = !account.did;
+      const needsLogin = !account.hasStoredPassword && !account.hasSession;
+      if (needsLogin) { button.classList.add("is-needs-login"); }
+      const label = account.handle || account.identifier || "account";
+      fragment.querySelector(".account-chip-label").textContent = label;
+      options.setAvatar(fragment.querySelector("img"), options.avatar(account), label);
+      const stateKeys = { offline: "accountStateOffline", active: "accountStateActive", available: "accountStateAvailable", "signed-out": "accountStateSignedOut" };
+      const title = [account.handle || account.identifier || "", account.service || "", options.t(stateKeys[visual])];
+      if (needsLogin) { title.push(options.t("accountNeedsLoginShort")); }
+      button.title = title.filter(Boolean).join(" \u00b7 ");
+      let authKey = "accountSignOutButton";
+      let authClass = "is-logout";
+      let path = "M14 17l-1.4-1.4 2.6-2.6H4v-2h11.2l-2.6-2.6L14 7l5 5-5 5zM20 24h-8v-2h8V2h-8V0h8c1.1 0 2 .9 2 2v20c0 1.1-.9 2-2 2z";
+      if (visual === "signed-out") {
+        authKey = "accountSignInButton"; authClass = "is-login";
+        path = "M10 17l1.4-1.4L8.8 13H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zm-6 7h8v-2H4V2h8V0H4C2.9 0 2 .9 2 2v20c0 1.1.9 2 2 2z";
+      }
+      auth.classList.add(authClass); auth.setAttribute("aria-label", options.t(authKey, { account: label }));
+      auth.title = options.t(authKey, { account: label }); auth.querySelector("path").setAttribute("d", path);
+      remove.setAttribute("aria-label", options.t("removeAccountButton", { account: label })); remove.title = options.t("removeAccountButton", { account: label });
+      options.bind({ accountButton: button, authActionButton: auth, removeButton: remove }, {
+        accountClick: () => options.actions.select(account), authActionClick: () => options.actions.toggle(account, visual), removeClick: () => options.actions.remove(account),
+      });
+      elements.list.append(fragment);
+    }
+  }
+  return { render };
+}

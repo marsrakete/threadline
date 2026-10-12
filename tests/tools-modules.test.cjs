@@ -1637,6 +1637,53 @@ test("archive UI binds preference controls through explicit callbacks", async ()
   assert.equal(calls, 3);
 });
 
+test("archive UI binds Post-Edit-Check dialog controls", async () => {
+  const archive = await importProjectModule("js/tools/archive.js");
+  const elements = {
+    urlInput: new EventTarget(),
+    submitButton: new EventTarget(),
+    closeTopButton: new EventTarget(),
+    closeButton: new EventTarget(),
+    dialog: new EventTarget(),
+  };
+  let calls = 0;
+  const handler = () => { calls += 1; };
+  const bound = archive.bindPostEditCheckDialogEvents(elements, {
+    urlKeydown: handler,
+    submitClick: handler,
+    close: handler,
+    cancel: handler,
+  });
+  assert.equal(bound, 5);
+  elements.urlInput.dispatchEvent(new Event("keydown"));
+  elements.submitButton.dispatchEvent(new Event("click"));
+  elements.closeTopButton.dispatchEvent(new Event("click"));
+  elements.closeButton.dispatchEvent(new Event("click"));
+  elements.dialog.dispatchEvent(new Event("cancel"));
+  assert.equal(calls, 5);
+});
+
+test("archive UI binds result export actions", async () => {
+  const archive = await importProjectModule("js/tools/archive.js");
+  const elements = {
+    zipButton: new EventTarget(),
+    htmlButton: new EventTarget(),
+    pdfButton: new EventTarget(),
+  };
+  let calls = 0;
+  const handler = () => { calls += 1; };
+  const bound = archive.bindArchiveResultExportEvents(elements, {
+    zipClick: handler,
+    htmlClick: handler,
+    pdfClick: handler,
+  });
+  assert.equal(bound, 3);
+  elements.zipButton.dispatchEvent(new Event("click"));
+  elements.htmlButton.dispatchEvent(new Event("click"));
+  elements.pdfButton.dispatchEvent(new Event("click"));
+  assert.equal(calls, 3);
+});
+
 test("archive UI binds loading and reset actions through explicit callbacks", async () => {
   const archive = await importProjectModule("js/tools/archive.js");
   const nextWaveButton = new EventTarget();

@@ -4,6 +4,67 @@
 
 Diese Datei bündelt die technischeren Hintergrundinformationen, die nicht im schnellen Einstieg des Haupt-README stehen sollen.
 
+## Grenzen Des Anwendungsstarts
+
+`app-storage.js` verwaltet den verpflichtenden Hauptzustand, vier optionale Startspeicher und serialisierte Einstellungs-Schreibzugriffe. Fehler optionaler Ladevorgaenge bleiben nichtfatal; Fehler des Hauptzustands gehen an die Wiederherstellung. Einstellungssnapshots werden vor dem Eintritt in die Schreibwarteschlange erfasst.
+
+`app-state.js` normalisiert Einstellungen und koordiniert die Wiederherstellung der Bereiche in der bisherigen Reihenfolge. Lokale Theme-/Dichte-Werte haben Vorrang. Die Reply-Uebergabe per URL hat Vorrang vor dem Browserspeicher; die Layoutmigration wird vor Aktivierung des Arbeitsbereichs gespeichert. Fehler geben die Arbeitsbereichswiederherstellung trotzdem frei, ohne eine erfolgreiche Backup-Erinnerung zu planen.
+
+`app-bootstrap.js` registriert den Worker und startet nach dessen Bereitschaft Wiederherstellung, Sitzungspruefung, laufende Sitzungschecks und Update-Pruefung. Der Controllerwechsel beruecksichtigt Seitenwechsel, ignoriert Datenschutz-Navigation und verhindert doppelte Reloads. `app.js` stellt Adapter zusammen und uebernimmt explizite Zustandspatches, ohne eine zweite Start-Orchestrierung zu behalten.
+
+Vertragstests pruefen Fehler, Fallbacks und Reihenfolge. Der Browsertest durchlaeuft die echte Startverdrahtung auf beiden Seiten mit kontrolliertem Worker-Transport; echte IndexedDB- und Offline-Wiederherstellung sind damit nicht getestet.
+
+## Gemeinsame Darstellung Und Navigation
+
+`app-shell.js` verwaltet Anzeige-Cache, Wiederherstellung, Synchronisierung, URL-Uebergabe, Body-Klassen und uebersetzte Einstellungsschalter. Beide Cache-Werte werden vor dem Rendern einer Aenderung uebernommen, damit keine veralteten Werte zurueckgeschrieben werden. Fehlende oder ungueltige Cache-Eintraege ueberschreiben beim Abgleich keine laufenden Einstellungen. Speicher- und URL-Zugriffe sind explizite Adapter.
+
+`app-navigation.js` verwaltet vorgemerkte Ziele bei Worker-Reloads: speichern, lesen, verbrauchen und nach Erreichen des Zielpfads entfernen. Der Einstieg behaelt Zustand und Adapter.
+
+`app-layout-state.js` verwaltet Breiten-Normalisierung/Migration, CSS-Geometrie, responsive Sidebar-Beschriftung/Klassen, Zuruecksetzen und Pointer-Drag-Lebenszyklus. Zustand, native Events und Speicherung sind explizite Adapter. Erneutes Ziehen ersetzt alte Listener; Abbruch, Zuruecksetzen und der Wechsel zur mobilen Ansicht entfernen aktive Drag-Listener. Der Einstieg behaelt nur Zustandsadapter und schlanke Render-Aufrufe. Es entstehen keine neuen Cache-Dateien oder Speicherschemata.
+
+Layout-Vertragstests pruefen Grenzen, ungueltige Werte, Abbruch, eingeklappte Abstaende und Media-Wechsel. Der Browsertest prueft echte Pointer-Drags, Zuruecksetzen, gleiche eingeklappte Geometrie beider Dichten und mobile Stapelung auf beiden Seiten. Er erfasst Laufzeitfehler und verwendet einen kontrollierten Worker-Transport, keine echten Geraete oder Offline-Speicherung.
+
+Vertragstests pruefen ungueltige Werte und gesperrten Speicher. Der Edge-Test prueft beide Seiten, echte Einstellungsklicks, Hin-/Rueckwechsel, Reload und URL-Uebergabe gegen widersprechenden Worker-Zustand. Dieser kontrollierte Transport prueft keine echten Service-Worker-Update-Rennen oder Offline-Wiederherstellung.
+
+## Controller Des Anwendungslebenszyklus
+
+Update-Anzeige, Versionspruefung, Drosselung automatischer Checks und Worker-gestuetzter Reload liegen in `createApplicationUpdateController` in `app-bootstrap.js`. Parallelpruefungs- und Reload-Sperren sind privat; Browser-Navigation, Timer und Registrierung sind explizite Adapter.
+
+`app-session.js` verwaltet Sitzungspruefung, Konto-/Identitaetsaktualisierung, Avatar-Wiederherstellung, Offline-Verhalten, Passwort-Reparatur und das Fuenf-Minuten-Pruefintervall. Hinzu kommen Endpoint-Normalisierung, Login-Fehlertexte, Login-Dialog/Formular sowie Kontowechsel, An-/Abmeldung und bestaetigtes Entfernen. `shared-accounts.js` rendert die Sidebar mit `account-switcher-item-template` und expliziten Zustands-, Avatar-, Uebersetzungs- und Aktionsadaptern. Im Entry-Point-Renderer verbleiben keine eingebetteten Kontoaktionen. Worker-Protokoll und gespeichertes Kontoschema bleiben unveraendert; Workspace-Aktualisierung und native APIs sind injizierte Abhaengigkeiten.
+
+Vertragstests sichern Endpoint-/Fehler-Fallbacks, Passwortbereinigung, Request-/Busy-Ablauf, Offline-/Reparaturverhalten, abgebrochenes Entfernen und Aktionsfehler. Browser-Integration bedient Login, Logout, Kontowechsel, Pruefung und Entfernen auf beiden Seiten mit kontrollierten Worker-Antworten und Laufzeitfehler-Erfassung. Renderer-Tests pruefen untrusted Labels und erneutes Binden ohne doppelte Aktionen. Echte Anmeldung und IndexedDB-Persistenz werden damit nicht getestet.
+
+`createApplicationInstallController` in `app-shell.js` verwaltet den Installationsprompt und die Button-Verfuegbarkeit einschliesslich iOS-Anleitung und Standalone-Modus. `createApplicationLifecycleHandlers` in `app-initialization.js` koordiniert Sichtbarkeit/Fokus, Darstellungsabgleich, Viewport-Groessenaenderungen und Installationsereignisse. `app.js` stellt nur Controller und native Adapter zusammen.
+
+Vertragstests pruefen Normal-, Grenz-, Parallel- und Fehlerfaelle. Der Browsertest laedt beide angemeldeten Seiten mit kontrolliertem Worker, oeffnet den Passwort-Reparaturdialog, verarbeitet einen synthetischen Installationsprompt, zeigt Update-Metadaten und fuehrt einen echten URL-Reload durch. Live-Authentifizierung, echte Betriebssystem-Installation und Worker-Aktivierung/Offline-Rennen sind damit nicht getestet.
+
+## Hilfe-Modulgrenzen
+
+`app-help-topics.js` enthaelt den Themenkatalog aus Uebersetzungsschluesseln statt des grossen Switch-Blocks im Einstieg. `app-help.js` verwaltet Dialog, sprachabhaengige README-Auswahl/Laden/Cache, Fehleranzeige und delegierte Themenklicks. Themenabsatz und Liste verwenden `help-topic-template` mit reinem Text. Anfrage-Generationen verhindern, dass spaete README-Antworten ein neueres Thema oder einen geschlossenen Dialog ueberschreiben.
+
+`app-help-markdown.js` verwaltet die bewusste Markdown-zu-HTML-Grenze. URL-Kontext und Text-Escaping sind explizite Abhaengigkeiten. Rohes HTML wird maskiert; unterstuetzte zentrierte README-Bloecke verwenden erzeugte Marker statt beliebiges Quell-HTML als vertrauenswuerdig zu behandeln. Link-/Bild-Protokolle werden geprueft und erzeugte Attribute maskiert. Der allgemeine HTML-Escaper bleibt eine einzelne injizierte Implementierung.
+
+Vertragstests pruefen Katalog, Sprach-Fallback, Markup, unsichere URLs/HTML, Cache, Fehler und Abbruch. Browsertests laden beide Seiten, pruefen alle Themen auf Deutsch/Englisch/Franzoesisch, lokalisierte README-Pfade, sichere Template-Texte und verspaetete Anfragen. Die neuen Module sind im Service-Worker-Shell-Cache enthalten; es gibt keine Speichermigration.
+
+## Composer-Dokumentgrenzen
+
+Die fachliche Composer-Auslagerung ist nach der Modulgrenze des Projekts abgeschlossen: Anwendungszustand, native API-Adapter und die Zusammenstellung der Abhaengigkeiten bleiben in `app.js`, jedoch keine zweite Composer-Implementierung. Start-Hydration und gemeinsame Navigation/Einstellungen sind Anwendungsaufgaben und nicht Teil dieser Abschlussaussage.
+
+| Bereich | Zustaendige Module |
+| --- | --- |
+| Dokument, Entwurf und Dateien | `composer-document.js`, `composer-page.js` |
+| Textgrenzen, Aufteilung und Abschnittsrendering | `composer-main.js`, `composer-splitter.js`, `composer-segments.js`, `composer-segment-rendering.js`, `composer-validation.js` |
+| Bilder, Canvas und Bildeditor | `composer-images.js`, `composer-image-processing.js`, `composer-image-geometry.js`, `composer-image-renderer.js`, `composer-image-editor.js` |
+| Link-Cards, Provider-Pruefung und Requests | `composer-link-cards.js`, `composer-link-card-providers.js`, `shared-link-cards.js` |
+| Mentions, Reply-Dialoge und Posting-Einstellungen | `composer-mentions.js`, `composer-dialogs.js`, `composer-post-settings.js` |
+| Publish-Pruefung/Bestaetigung, Fortschritt, Server-Limits und Historie | `composer-publishing.js`, `composer-history.js` |
+
+Strukturelle Regressionstests verhindern, dass ausgewaehlte Fachoperationen, Such-Timer und die Publish-Klick-Orchestrierung wieder in den Einstieg wandern. Das ist eine Architekturabsicherung, kein Nachweis authentifizierter Netzwerkablaeufe. Live-Publishing, echte Geraete und Offline-/IndexedDB-Wiederherstellung brauchen weiterhin eigene Abnahmepruefungen.
+
+Link-Card-Vorschauen und ihr Entfernen liegen in `composer-link-cards.js` und verwenden auf beiden Seiten `composer-link-card-preview-template`. Mention-Korrekturen im Ausgangstext mit Resolver-Invalidierung und Dokumentaktualisierung liegen in `composer-mentions.js`. Die geordnete Zusammenstellung von Text und Medien zum Posten liegt in `composer-publishing.js`. `app.js` stellt hier nur Dokumentzustand, Speicher- und UI-Adapter bereit.
+
+Vertragstests sichern Medienidentitaet, leere Textabschnitte, sichere Vorschautexte und die Aktualisierungsreihenfolge ab. Gezielte Edge-Tests rendern das echte Vorschau-Template auf beiden Seiten und erfassen Initialisierungsfehler; authentifiziertes Posten und echte IndexedDB-Schreibvorgaenge werden dabei nicht getestet.
+
 ## OpenGraph-Asset-Pipeline
 
 Die maßgebliche Quelle für das OpenGraph-Bild ist `icons/threadline-og-workspaces.svg`. Die abgeleiteten Rasterdateien werden mit `npm run build:og-image` anhand der Einstellungen in `config/og-image.config.json` erzeugt.
@@ -880,6 +941,139 @@ Die PWA-Struktur bringt auch klare Grenzen mit:
 - lokale Speicherung ist praktisch, aber sicherheitlich sensibel
 
 Gerade deshalb sind Themen wie lokale Session-Speicherung, Link-Cards und PDS-Kompatibilität in Threadline immer auch Architekturfragen der PWA-Bauweise.
+
+## Mention-Komponenten Im Composer
+
+`js/composer/composer-mentions.js` verwaltet Mention-Parsing, DID-Aufloesung und Cache, ausstehende Quelltextkorrekturen, Template-Rendering, verzoegerte Aktualisierung und Suchtreffer-Karten. Der Einstieg uebergibt Uebersetzungen, Worker-Aufrufe, Render-Version, Timer und UI-Aktionen explizit.
+
+Die Anzeige-Templates stehen in `index.html` und `tools.html`. Browsertests pruefen Review-, Reparatur- und Quelltextaktionen, die Verzoegerung je Abschnitt, veraltete Aufloesungsergebnisse und Initialisierungsfehler auf beiden Seiten.
+
+Das Modul bereitet auch den Review-/Reparaturdialog vor, sammelt bekannte Account-Handles und steuert die Account-Suche mit Anfrage-Token. Antworten und Fehler einer alten Suche koennen den aktuellen Suchstatus und die aktuellen Ergebnisse nicht ersetzen.
+
+`createComposerMentionSearchActions()` steuert Auswahl, Zuruecksetzen und Schliessen. Die Auswahl merkt die Quelltextkorrektur vor, ersetzt den Abschnitt, verwirft Cache-Eintraege, schliesst den Dialog und aktualisiert und speichert den Composer ueber explizite Callbacks.
+
+Mit `THREADLINE_TEST_PORT` kann ein eigener Testport gesetzt werden. Der Testrunner startet seinen eigenen statischen Server, damit er nicht versehentlich den Server eines anderen Projekts verwendet.
+
+## Composer-Eingabe Und Laengenanzeige
+
+`createComposerInputController()` in `composer-page.js` verwaltet Textaenderungen und das Einfuegen in die Auswahl: Kuerzung an Graphemgrenzen, Zeilenumbruch-Normalisierung, Cursorposition, Zuruecksetzen des Zustands, geplantes Rendering und Entwurfsspeicherung. UI-Effekte werden als Callbacks uebergeben.
+
+`createComposerLengthPresentationController()` in `composer-segment-rendering.js` verwaltet Abschnittszaehler und Laengenwarnungen fuer Abschnitte und Threads. Diagnostik, Limits, Uebersetzungen und DOM-Knoten sind explizite Abhaengigkeiten. Der Einstieg delegiert nur noch; die bisherigen Implementierungen sind entfernt.
+
+Browsertests pruefen echte Textarea-Auswahlen mit mehrteiligen Emoji und Warnungswechsel auf beiden Seiten und sammeln Initialisierungsfehler.
+
+`createComposerInputEventHandlers()` leitet Input-, Paste- und Drop-Events an den Eingabecontroller weiter und beruecksichtigt unterdrueckte Events und ausstehende Warnungen. `createComposerInputWarningController()` verwaltet lokalisierte Eingabewarnungen und den gedrosselten Timer des Kuerzungsdialogs. `createComposerRenderScheduler()` verwaltet Render-Debounce, Animation-Frames und Textarea-Groessenanpassung. Timer-/Frame-Zustaende liegen in den Controllern statt im Einstieg. Vertragstests pruefen ignorierte/ungueltige Clipboard-Events, die Drosselungsgrenze und das Ersetzen ausstehender Arbeit; Browsertests pruefen die echte Event-Verkabelung beider Seiten.
+
+## Composer-Antwortziele
+
+Canvas-Zeichnen, Pointer-Drag-Controller und entprellte Exportmetriken liegen in
+`composer-image-renderer.js`. Drag-Koordinaten sowie Timer/Anfrageversionen sind privat;
+Schliessen invalidiert geplante und laufende Metrikabfragen. Tests sichern Transformationen,
+begrenzte Pointer-Deltas und veraltete Ergebnisse/Fehler; Browsertests pruefen echte
+Canvas-Pixel und die Metrikanzeige auf beiden Seiten.
+
+ALT-Text-Dialogzustand, optionale Vorschau, Zaehler, Speichern und Bereinigung liegen
+im `createComposerAltTextDialogController` in `composer-dialogs.js`.
+`updateComposerImageAltDisplay` aktualisiert gezielt Tooltip, ALT-Zustand und Warnbutton.
+Speicherung erfolgt vor UI-/Entwurfsaktualisierung; die UTF-16-Laengenbegrenzung und
+das Verhalten bei fehlenden Bildern bleiben erhalten und sind durch Tests abgesichert.
+
+Der Bildbestands-Controller in `composer-images.js` uebernimmt Auswahl, Umsortieren,
+positionsbezogenes Verschieben und Loeschen. Zustand, Bilddekodierung, Validierung,
+Speicherung und Entwurfsanzeige sind explizite Abhaengigkeiten. Die Auswahl wartet
+vor der Anzeige auf Speicherung; synchrone Aenderungen speichern weiterhin ohne
+Warten. Datei-Erkennung, Drop-Geometrie und Marker-Bereinigung sind Modulhelfer.
+
+`composer-images.js` rendert Abschnittsbilder aus dem auf beiden Seiten vorhandenen
+`composer-segment-image-template`. Vorschau/Canvas, Texte, Bildaktionen und Drag-Zustand
+sind explizite Abhaengigkeiten. Container-Drops und Karten-/Tastaturaktionen haben
+getrennte Binder. Tests sichern Datei-/Bild-Drops, Einfuegepositionen, Vorschau-Geometrie,
+Groessen-/ALT-Warnungen und die Werkzeugaktionen.
+
+`composer-history.js` rendert die Liste letzter Postings, buendelt Explorer-/
+Fortsetzen-/Loeschaktionen und erstellt bzw. speichert Historieneintraege.
+Beide Seiten verwenden gleiche Vorlagen fuer Eintraege und den Leerzustand;
+Texte werden per `textContent` eingesetzt. Tests sichern Ersatzwerte, Bildzahlen,
+Aufrufreihenfolgen, sichere Vorschauen und alle drei Aktionsbindungen.
+
+Ergebnismodell und -anzeige, Explorer-Navigation aus dem Ergebnisdialog sowie die
+geordnete Erfolgs-/Fehlerverarbeitung liegen in `composer-publishing.js`.
+Beide Seiten verwenden den vorhandenen HTML-Button ohne dynamisches Duplikat.
+Vor dem Zuruecksetzen des Antwortziels wird die Historie gespeichert.
+Browsertests sichern Textausgabe, leere Links und Fehler beim Explorer-Oeffnen.
+
+Die Publish-Vorpruefung liegt in `composer-validation.js`; die Reihenfolge fuer
+Text- und Abschnittslaenge, Alternativtexte, Bildgroesse und Verbindung bleibt erhalten.
+`composer-publishing.js` uebernimmt Hashtag-/Antwort-/Kontobestaetigungen und den
+Worker-Payload ohne Vorschau-Metadaten. Tests sichern alle Abbruchstellen,
+exakte Grenzen und Fehlerprioritaeten. Ein Browsertest prueft den echten
+Publish-Button und den Abbruch, ohne ein Posting zu senden.
+
+Die seitenuebergreifende Antwortziel-Uebergabe liegt in `composer-page.js`:
+URL-Kodierung und -Verbrauch, Sitzungsspeicherung und das lokale oder seitenwechselnde
+Oeffnen verwenden explizite Storage-, Location-, History- und UI-Abhaengigkeiten.
+`composer-dialogs.js` baut normalisierte Antwortziele aus Live-Posts mit getrennten
+Root- und Parent-Referenzen. Tests pruefen defekte Nutzdaten, gesperrten Speicher und
+Aufrufreihenfolgen; ein Browsertest uebergibt ein Ziel von Werkzeuge an Composer
+ueber echten Sitzungsspeicher und URL-Zustand.
+
+`composer-dialogs.js` verwaltet die normalisierte Antwortziel-Vorschau, den URL-Dialog samt Submit und den Ablauf fuer Aufloesen/Zuruecksetzen. Der Anfragezaehler liegt privat im Controller; neuere Anfragen und Zuruecksetzen entwerten verspaetete Antworten und Bestaetigungen. Worker-Requests, Account-Zustand, Bestaetigung, Speicherung und Vorschau-/Publish-Aktualisierung werden explizit uebergeben. Unit-Tests pruefen Fortsetzungswahl, Abbruch, veraltete Ergebnisse und Busy-/Fehlerabschluss. Browsertests pruefen vorhandene Vorschau/Dialogstruktur auf beiden Seiten mit `pageerror`-Sammlung.
+
+## Composer-Link-Card-Verwaltung
+
+Remote-Vorschaubilder und die Request-Weiterleitung liegen im Provider-Modul; einfache Karten ohne Metadaten entstehen in `shared-link-cards.js`. Fetch, Blob-Konvertierung und Uebersetzungen sind explizite Abhaengigkeiten. Bilddiagnosen liegen zentral auf Deutsch, Englisch und Franzoesisch. Unit-Tests pruefen abgewiesene URLs/MIME-Typen und genau einen Provider-Pfad; Browsertests pruefen echte Blob-/FileReader-Konvertierung und den netzwerkfreien Basiskarten-Pfad auf beiden Seiten.
+
+Die echten Proxy-/Microlink-Aufrufer delegieren jetzt an die vorhandenen Request-Adapter; doppelte Transportlogik in `app.js` ist entfernt. HMAC-Signatur, Proxy-Bilddaten und Provider-Fehlermeldungen liegen neben den Adaptern. Zeit/Nonce/Signatur und Requests sind explizite Abhaengigkeiten. Tests vergleichen Signaturen mit Node-HMAC und pruefen Header, Antwort-Fallbacks, Verbrauchszaehlung und optionale Bildfehler. Browsertests nutzen natives Web Crypto mit simulierten Requests, keine Live-Provider.
+
+Auch Proxy-Zugangsdaten-/Pfadvalidierung, Einstellungsfelder mit Statusanzeige und effektive Provider-Verfuegbarkeit liegen in `composer-link-card-providers.js`. Leere/unvollstaendige Einstellungen behalten ihre bisherigen Validierungsregeln; Browser-Feldvaliditaet und Statussichtbarkeit bleiben getrennt. Die Verfuegbarkeit behaelt Proxy-Fallback und Karten ohne externe Metadaten bei. Unit- und Browsertests sichern diese Vertraege auf beiden Seiten.
+
+`composer-link-card-providers.js` verwaltet Tagesbudget, Provider-Hinweismodelle und Auswahl-/Hinweisanzeige. Speicherung und UTC-Tageszugriff werden explizit uebergeben; Tagesgrenze und Aktualisierung vor der Speicherung bleiben unveraendert. Die UI behaelt Proxy-Fallback, Radio-Auswahl und ausgeblendete Hinweise bei Verschieben/Verwalten. Tests pruefen erschoepftes Budget, Tageswechsel, Speicherfehler, optionale Elemente und echte Controls auf beiden Seiten.
+
+Das Modul verwaltet auch das aktionsabhaengige Dialogmodell, Oeffnen/Zuruecksetzen der Dialoganzeige und den Submit-Controller fuer Erzeugen/Aktualisieren/Verschieben. Ausstehender Zustand und Datenzugriff werden ueber Getter uebergeben, auch nach asynchronen Requests. Validierung, Provider-Abgleich, Busy-/Fehleranzeige, Speicherung und Abschluss behalten ihre explizite Reihenfolge. Tests pruefen Aktionen/Bildkonflikte, ungueltige URLs, Request-/Speicherfehler und echte Dialog-Fokus-/Sichtbarkeitswechsel auf beiden Seiten.
+
+`composer-link-cards.js` ermittelt Verschieben-/Tauschen-Ziele, rendert die Verwaltungsliste mit Ziel- und Leerzustands-Templates und steuert den Speicherablauf der Aktionen. Der Einstieg uebergibt Karten, Normalisierung, Uebersetzungen und UI-Callbacks. Beide Seiten enthalten dieselben Templates. Unit-Tests pruefen Zielauswahl, beide Verschieberichtungen, Tauschen und Speicherfehler; Browsertests pruefen Klartext-Rendering und Button-Callbacks auf beiden Seiten.
+
+## Composer Image Editor Controller
+
+Die verbleibende Bild-Pipeline besteht aus drei getrennten Einheiten: `createComposerImageGeometry` berechnet Editor-/Exportrahmen, Vorschaugroessen und Cover-/Contain-Versatz. `composer-image-processing.js` uebernimmt Datei-/Data-URL-Laden, Bitmaps, DPR-Vorschauen, unveraenderte Originalbytes, JPEG-Export, Validierung und begrenzte automatische Upload-Verkleinerung. `createComposerImageValidationController` steuert die Validierung aller Abschnitte und verhindert veraltetes Neurendern. Browser-APIs und Anwendungszustand werden explizit uebergeben; die alten Implementierungen und der Validierungszaehler wurden aus `app.js` entfernt.
+
+`tests/composer-image-processing.test.cjs` prueft Ladefehler, Originalbytes, Versatzskalierung, exakte Exportgrenzen, fehlende Blobs, unveraenderte Quelldaten, begrenzte Wiederholungen und parallele Validierung. Browser-Tests pruefen echte Canvas-/Blob-Exporte auf beiden Seiten, jedoch keine Veroeffentlichung oder Live-Uploads.
+
+`composer-image-editor.js` steuert den gesamten Bildeditor: privaten Ziel-/Bitmap-/Entwurfszustand, Zoom, Spiegelung, Rotation, Reset, Speichern/Abbrechen und beide Export-Verkleinerungen. Datenzugriff, Geometrie, Validierung, Speicherung und Rendering werden explizit uebergeben. Canvas, Ziehen und Export-Messung bleiben getrennte Adapter in `composer-image-renderer.js`.
+
+Schliessen oder Wechseln verwirft ausstehende Bildladevorgaenge, beendet Ziehen und gibt Bitmaps frei. Rotation und Reset synchronisieren die Canvas-Ausrichtung vor dem Zeichnen. Tests decken Bearbeitung, Exportgrenzen, Speicherreihenfolge und asynchrones Aufraeumen ab. Browser-Integration prueft den echten Upload-/Bearbeiten-/Speichern-/Abbrechen-Ablauf mit kontrolliertem Worker-Speicheradapter und laedt beide Seiten inklusive Fehlererfassung. Dieser Integrationstest prueft weder echte Worker-Aktivierung noch IndexedDB-Schreibvorgaenge.
+
+## Composer-Dokumentkette
+
+`createComposerTextService` in `composer-splitter.js` uebernimmt die gesamte Aufteilung und Dekoration: Graphem-/UTF-8-Grenzen, manuelle Abschnittswechsel, durchgehende Zaehler, Thread-Marker und Hashtag-Platzierung. `createComposerSegmentRenderer` verwaltet den kompletten Abschnittskarten-Renderlauf, private Mention-Generation, manuelle Aenderungen, Medienabgleich, Interaktionen und Scroll-Erhalt. Das Hilfe-Markup stammt auf beiden Seiten aus einem gemeinsamen Template.
+
+`composer-document.js` verwaltet JSON-/gzip-Thread-Dateien, Importbestaetigung und Normalisierung, Export, vollstaendiges Zuruecksetzen und den privaten Entwurfs-Timer. Dateischema und Speichernachrichten bleiben erhalten. `app.js` uebergibt initialisierte DOM-/Zustands-/Transportadapter statt paralleler Implementierungen; der Archivimport nutzt denselben gzip-Decoder.
+
+Vertragstests pruefen normale, abgebrochene, alte und ungueltige Importe, Export-Roundtrips, Speicherfehler, Textgrenzen und leeres Rendering. Die Browser-Integration importiert eine Datei, bearbeitet einen echten Abschnitt, prueft den heruntergeladenen Export und mobile Kartenbreiten, leert das Dokument und laedt die Werkzeuge-Seite mit Laufzeitfehler-Erfassung. Der Worker-Speicher ist kontrolliert; echte IndexedDB-Schreibvorgaenge, Worker-Aktivierung und Live-Veroeffentlichung werden damit nicht geprueft.
+
+## Composer-Einstellungen und UI-Zustand
+
+`createComposerPostSettingsController` verwaltet die vollstaendige Post-Einstellungskette: Sprach-Fallback und Zusammenfassungen, Antwort-/Zitatregeln, Dekorationsaenderungen, Dialogkontext/Oeffnen/Schliessen/Fokus, Filter und Auswahlgrenzen. Der Sprachdialog haelt seinen Composer-/Suchkontext privat, nutzt auf beiden Seiten Options-/Leerzustands-Templates und bewahrt getrennte Sprachauswahlen. Speicherung, Suchzusammenfassungen und Dokument-Rendering sind explizite Adapter.
+
+`createComposerUiStateController` verwaltet die Sperre bei manuellen Aenderungen, Loesch-Freigabe, Bereits-gepostet-Anzeige und Entsperren/Ausblenden. Such-/Archiv-Hashtags bleiben trotz Composer-Sperre bedienbar. `composer-validation.js` berechnet und rendert die Publish-Freigabe waehrend der Bearbeitung samt ALT-/Bildwarnungen; Login-/Online-Pruefungen bleiben in der Publish-Vorpruefung.
+
+Vertragstests sichern Standardwerte, ungueltige Regeln, exakte Grenzen, Kontexttrennung, Sperren, Reset-Reihenfolge und Speicherfehler. Die Browser-Integration bedient echte Post-Controls, die Drei-Sprachen-Grenze, Antwort-/Zitatregeln, manuelle Sperre und den Such-Sprachfilter auf beiden Seiten mit Laufzeitfehler-Erfassung. Worker-Antworten sind kontrolliert; echte Speicherung oder Veroeffentlichung wird nicht getestet.
+
+## Gemeinsame Hashtag-Verwaltung
+
+`shared-hashtags.js` verwaltet die vollstaendige Hashtag-Kette: Normalisierung alter Eingabeformen, Deduplizierung ohne Beachtung der Grossschreibung, sichtbare Schreibweise, Auswahlfilter, Platzierung und Umbenennen/Zusammenfuehren in Composer, Suche und Archiv. Der Controller uebernimmt das Chip-Rendering aus dem vorhandenen Template, Hinzufuegen/Loeschen/Auswaehlen, privaten Bearbeitungsdialog-Zustand, Suchzusammenfassungen, Pane-Verschiebung und Formular-/Dialogaktionen. Die bisherigen Algorithmen und Inline-Handler sind aus `app.js` entfernt.
+
+Aktueller Zustand/Kontext, Uebersetzungen, bestehende Einstellungs-/Archivspeicherung und Workspace-Rendering sind explizite Abhaengigkeiten. Trotz Composer-Sperre bleiben Such-/Archiv-Tags bedienbar; Archiv-Auswahl schaltet weiterhin von normalen Posts auf Thread-Roots. Aktionsreihenfolge und Datenformate bleiben erhalten. Es entstehen keine neuen Provider- oder Posting-Anfragen. Der neue Baustein steht in der statischen Asset-Liste des Service Workers.
+
+Vertragstests pruefen ungueltige/alte Daten, Grossschreibung und Zusammenfuehren, alle drei Auswahllisten, Sperrgrenzen, Speicherfehler und kontextspezifische Nebenwirkungen. Browsertests bedienen echtes Hinzufuegen/Bearbeiten/Zusammenfuehren/Loeschen und die manuelle Sperre, Such-Pane-Verschiebung und Zusammenfassung sowie Archiv-Pane/Controls mit explizitem Testzustand. Speicherantworten sind kontrolliert, keine echten IndexedDB-/Kontoschreibvorgaenge.
+
+## Einstellungs-Backup-Kette
+
+`app-backup.js` verwaltet drei vollstaendige Einheiten: JSON-/gzip- und Binaer-Cache-Verarbeitung, Einstellungs-Backup-Export/Import sowie Erinnerungs-/Statusablauf. Der Import fuehrt Hashtag-/History-Daten zusammen, stellt Post-Einstellungen und bestehende Konto-/Avatar-/DM-Metadatenvertraege wieder her, wendet Darstellung/Layout/Provider-Einstellungen an und aktualisiert die Ansichten. Backup-Schema und Export-Whitelist bleiben unveraendert; Konto-Sitzungstokens und Composer-Bildsammlungen werden nicht in den Export aufgenommen. Proxy-Einstellungen behalten ihr bisheriges Backup-Verhalten.
+
+Die Anwendung uebergibt einen gemeinsamen Einstellungssnapshot sowie explizite Zustandsschreiber, Normalisierer, Worker-/Speicher- und UI-Adapter. Die Erinnerung besitzt ihren Status-Timer, defensive Zeitstempelspeicherung, exakte Faelligkeits-/Snooze-Grenzen und Fehlerbehandlung beim Speichern/Schliessen. Fehlende gzip-Unterstuetzung ist in allen drei Sprachen uebersetzt. Alte Codec-/Import-/Export-/Erinnerungsimplementierungen und der globale Timer wurden entfernt; der neue Baustein wird vorgecacht.
+
+Vertragstests pruefen native gzip-/JSON-Roundtrips, Binaer-Assets, Export-Ausschluesse, alte/ungueltige Importe, Zusammenfuehren, Cache-Request-Reihenfolge, optionale Cache-Fehler, fehlgeschlagene Dateiuebergabe und Erinnerungs-/Speicherfehler. Browser-Integration importiert und exportiert echte gzip-Backups auf Composer und Werkzeuge, prueft Einstellungen und den nativen Erinnerungsdialog mit Laufzeitfehler-Erfassung. Worker-Antworten sind kontrolliert; echte IndexedDB- und Konto-Wiederherstellung wird nicht geprueft.
 
 ## Offizielle Original-Dokumentation
 

@@ -1,5 +1,35 @@
 ﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./js/shared/shared-languages.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./js/core/app-i18n.js";
+import { createSettingsBackupCodec, createSettingsBackupController, createSettingsBackupReminder } from "./js/core/app-backup.js";
+import { createComposerLinkCardPreviewRenderer } from "./js/composer/composer-link-cards.js";
+import { createComposerMentionSourceCorrectionController } from "./js/composer/composer-mentions.js";
+import { getComposerPostingTexts, buildComposerPostingPayloads } from "./js/composer/composer-publishing.js";
+import { normalizeStandardSiteMetadata as normalizeSharedStandardSiteMetadata,
+  getPublicationCardFooterLabel as getSharedPublicationCardFooterLabel } from "./js/shared/shared-link-cards.js";
+import { hasEmojiLikeGraphemes, hasCjkGraphemes,
+  formatComposerCharacterCount as formatComposerCharacterCountFromModule } from "./js/composer/composer-validation.js";
+import { syncComposerSegmentLinkCards } from "./js/composer/composer-link-cards.js";
+import { autoSizeComposerTextarea as autoSizeTextarea, resizeComposerTextareas } from "./js/composer/composer-segment-rendering.js";
+import { createComposerMentionDialogController } from "./js/composer/composer-mentions.js";
+import { createApplicationStorage } from "./js/core/app-storage.js";
+import { createApplicationHydrationController } from "./js/core/app-state.js";
+import { createApplicationBootstrap } from "./js/core/app-bootstrap.js";
+import { createHelpController } from "./js/core/app-help.js";
+import { createHelpMarkdownRenderer } from "./js/core/app-help-markdown.js";
+import { HELP_TOPICS } from "./js/core/app-help-topics.js";
+import { createApplicationUpdateController } from "./js/core/app-bootstrap.js";
+import { createApplicationSessionController, createLoginController, createSavedAccountActions, normalizeLoginServiceUrl } from "./js/core/app-session.js";
+import { createApplicationInstallController, isIosDevice as isIosDeviceFromShell } from "./js/core/app-shell.js";
+import { createApplicationLifecycleHandlers } from "./js/core/app-initialization.js";
+import { createAppearanceController } from "./js/core/app-shell.js";
+import { createPendingNavigationController } from "./js/core/app-navigation.js";
+import { createComposerLinkCardRequestController } from "./js/composer/composer-link-card-providers.js";
+import { normalizePublishRateLimit, createComposerRateLimitPresentation,
+  buildComposerPublishErrorMessage, createComposerPublishController } from "./js/composer/composer-publishing.js";
+import { createHashtagController, parseHashtag as parseHashtagValue,
+  normalizeHashtags as normalizeHashtagEntries, normalizeHashtagSelection,
+  mergeHashtags as mergeHashtagEntries, getHashtagDisplayValue, formatHashtag,
+  normalizeHashtagPlacement } from "./js/shared/shared-hashtags.js";
 import {
   bindApplicationEvents,
   bindOptionalApplicationEvent,
@@ -7,8 +37,16 @@ import {
   bindGlobalApplicationEvents,
   bindApplicationNavigationEvents,
   bindAuthenticationEvents,
+  bindPreferenceEvents,
+  bindSettingsDataEvents,
+  bindEditorDialogEvents,
+  bindApplicationUpdateEvents,
+  bindConfirmationDialogEvents,
+  bindLinkCardSettingsEvents,
+  bindWorkspaceUtilityEvents,
+  bindHelpAndSettingsEvents,
 } from "./js/core/app-initialization.js";
-import { CURRENT_VERSION_INFO, fetchVersionInfo, versionSignature } from "./js/core/app-bootstrap.js";
+import { CURRENT_VERSION_INFO, fetchVersionInfo } from "./js/core/app-bootstrap.js";
 import { createAsyncTaskQueue } from "./js/core/app-state.js";
 import {
   readBrowserStorageValue,
@@ -121,6 +159,8 @@ import {
   formatArchiveDatePart,
   bindArchivePreferenceEvents,
   bindArchiveActionEvents,
+  bindArchiveResultExportEvents,
+  bindPostEditCheckDialogEvents,
 } from "./js/tools/archive.js";
 import { createAccountPickerController, bindAccountSwitcherItemEvents } from "./js/tools/account-picker.js";
 import { bindNetworkViewportControls, bindNetworkWorkspaceEvents, bindNetworkStageModeEvents, bindNetworkInsightEvents, bindNetworkStageInteractionEvents, bindNetworkLifecycleEvents } from "./js/tools/network-ui.js";
@@ -148,7 +188,8 @@ import {
   setThreadExplorerPanningMode as setThreadExplorerPanningModeFromTools,
   advanceThreadExplorerPanInertia as advanceThreadExplorerPanInertiaFromTools,
 } from "./js/tools/thread-explorer.js";
-import { normalizeStoredDesktopLayout as normalizeStoredDesktopLayoutFromState } from "./js/core/app-layout-state.js";
+import { normalizeStoredDesktopLayout as normalizeStoredDesktopLayoutFromState,
+  clampDesktopWidth, createDesktopLayoutController } from "./js/core/app-layout-state.js";
 import { createThreadExplorerController, loadThreadExplorerActorFocusWorkflow, loadThreadExplorerFeedWorkflow, loadThreadExplorerThreadWorkflow, renderThreadExplorerWorkspace as renderThreadExplorerWorkspaceFromController, bindThreadExplorerWorkspaceEvents, bindThreadExplorerGlobalEvents, bindThreadExplorerDialogEvents, bindThreadExplorerSnapshotEvents } from "./js/tools/thread-explorer-controller.js";
 import {
   hydrateThreadExplorerCard,
@@ -246,7 +287,7 @@ import {
 } from "./js/tools/dm-archive.js";
 import { clamp, setAttr, setSafeHtml, setSafeText } from "./js/core/app-utils.js";
 import { cloneTemplate, cloneTemplateContent } from "./js/shared/shared-templates.js";
-import { DEFAULT_AVATAR_URI, setAvatarImage } from "./js/shared/shared-accounts.js";
+import { DEFAULT_AVATAR_URI, setAvatarImage, createSavedAccountRenderer } from "./js/shared/shared-accounts.js";
 import {
   requestPostLike,
   requestPostUnlike,
@@ -272,56 +313,72 @@ import {
 import {
   formatComposerSegmentLengthLabel,
   getComposerSegmentLengthDiagnostics,
+  validateComposerPublishInput,
+  createComposerPublishAvailabilityController,
 } from "./js/composer/composer-validation.js";
 import {
   normalizeComposerSegmentOverrides as normalizeComposerSegmentOverridesFromModule,
   syncComposerSegmentImages as syncComposerSegmentImagesFromModule,
 } from "./js/composer/composer-segments.js";
 import {
-  getComposerContainedPreviewBox,
-  getComposerOrientedSourceDimensions,
-  getComposerSourceDimensions,
+  createComposerImageGeometry,
 } from "./js/composer/composer-image-geometry.js";
-import { prepareComposerPublishSegments, runComposerPublishWorkflow } from "./js/composer/composer-publishing.js";
-import { renderComposerImageToCanvas, bindComposerImageEditorEvents } from "./js/composer/composer-image-renderer.js";
+import { prepareComposerPublishSegments, buildComposerPublishPayload, buildComposerPublishResultModel, renderComposerPublishResult, openComposerPublishedPost, createComposerPublishResultHandlers } from "./js/composer/composer-publishing.js";
+import { renderComposerImageToCanvas, bindComposerImageEditorEvents, drawComposerImageEditor, createComposerImageEditorDragController, createComposerImageEditorMetricsController } from "./js/composer/composer-image-renderer.js";
+import { createComposerImageEditorController } from "./js/composer/composer-image-editor.js";
+import { createComposerImageProcessing } from "./js/composer/composer-image-processing.js";
+import { createComposerDocumentController, createComposerThreadFileCodec } from "./js/composer/composer-document.js";
+import { createComposerTextService } from "./js/composer/composer-splitter.js";
+import { createComposerImageValidationController } from "./js/composer/composer-images.js";
 import {
   normalizeComposerLinkCardProvider,
-  normalizeComposerLinkCardProxyEndpoint,
-  normalizeComposerProviderUsage,
+  createComposerProxySettingsController,
+  createComposerProviderAvailabilityController,
+  createComposerProviderUsageController,
+  createComposerProviderPresentationController,
+  fetchComposerLinkCardImage,
+  requestComposerLinkCard,
+  signComposerLinkCardRequest,
+  composerLinkCardImageToDataUrl,
+  getComposerLinkCardProxyErrorMessage,
+  getComposerMicrolinkErrorMessage,
 } from "./js/composer/composer-link-card-providers.js";
 import {
-  normalizeComposerInput as normalizeInput,
-  splitComposerByManualMarkers,
-  subtractComposerPostTextLimit as subtractPostTextLimit,
   tokenizeComposerText as tokenizeText,
   trimComposerSegment as trimSegment,
-  splitComposerIntoSegments,
 } from "./js/composer/composer-splitter.js";
-import { moveComposerImage, removeComposerImage } from "./js/composer/composer-images.js";
-import { normalizeComposerLinkCard, normalizeComposerSegmentLinkCards } from "./js/composer/composer-link-cards.js";
-import { buildComposerThreadContinuationTarget, normalizeComposerReplyTarget } from "./js/composer/composer-dialogs.js";
-import { buildComposerSegmentRenderState, bindComposerSegmentInteractions, bindComposerSegmentLinkCardInteractions, createComposerSegmentRenderContext } from "./js/composer/composer-segment-rendering.js";
-import { openComposerWorkspace, bindComposerCoreEvents } from "./js/composer/composer-page.js";
+import { renderComposerSegmentImages, createComposerImageCollectionController, composerEventHasTransferFiles, getComposerDroppedImageFiles, getComposerImageDropPosition, clearComposerImageDropMarkers, clearComposerImageDragVisuals, updateComposerImageAltDisplay } from "./js/composer/composer-images.js";
+import { normalizeComposerLinkCard, normalizeComposerSegmentLinkCards, findOtherComposerLinkCardIndex, getComposerLinkCardTargetEntries, renderComposerLinkCardTargets, applyComposerLinkCardTargetAction, createComposerLinkCardDialogController, createComposerLinkCardSubmissionController } from "./js/composer/composer-link-cards.js";
+import { normalizeComposerReplyTarget, bindComposerContentDialogEvents, getComposerReplyTargetDisplayName, renderComposerReplyTargetCard, createComposerReplyTargetDialogController, createComposerReplyTargetController, buildComposerReplyTargetFromPost, createComposerAltTextDialogController } from "./js/composer/composer-dialogs.js";
+import { createComposerSegmentRenderer, createComposerLengthPresentationController, createComposerRenderScheduler } from "./js/composer/composer-segment-rendering.js";
+import { openComposerWorkspace, bindComposerCoreEvents, bindComposerHashtagEvents, createComposerInputController, createComposerInputEventHandlers, createComposerInputWarningController, createComposerReplyHandoff, openComposerReplyTarget, createComposerUiStateController } from "./js/composer/composer-page.js";
 import { bindComposerDialogEvents } from "./js/composer/composer-dialogs.js";
 import {
   formatComposerHistoryMeta,
+  renderComposerHistoryList,
+  createComposerHistoryItemActions,
+  buildComposerHistoryEntry,
+  recordComposerHistoryEntry,
   getComposerHistoryPreviewText,
   mergeComposerPostingHistory,
   normalizeComposerPostingHistory,
 } from "./js/composer/composer-history.js";
 import {
   buildComposerMentionProfileUrl as buildComposerMentionProfileUrlFromData,
+  createComposerMentionResolver,
+  createComposerMentionDisplayController,
+  renderComposerMentionSearchResults,
+  runComposerMentionSearch,
+  getKnownComposerMentionHandles,
+  createComposerMentionSourceSyncController,
+  createComposerMentionSearchActions,
   findComposerMentionSuggestion as findComposerMentionSuggestionFromData,
-  getUniqueComposerMentionHandles as getUniqueComposerMentionHandlesFromData,
-  parseComposerMentionCandidates as parseComposerMentionCandidatesFromData,
   replaceComposerMentionHandle as replaceComposerMentionHandleFromData,
   textContainsComposerMentionHandle as textContainsComposerMentionHandleFromData,
 } from "./js/composer/composer-mentions.js";
 import {
-  buildComposerPostSettingsDisclosureMeta,
+  createComposerPostSettingsController,
   DEFAULT_COMPOSER_POST_INTERACTION_SETTINGS,
-  getComposerReplyModeSummary,
-  normalizeComposerPostInteractionSettings,
 } from "./js/composer/composer-post-settings.js";
 import {
   createDefaultImageEdit,
@@ -334,7 +391,7 @@ import {
   normalizeSegmentImages as normalizeSharedSegmentImages,
   normalizeThreadImage as normalizeSharedThreadImage,
 } from "./js/shared/shared-images.js";
-import { getFirstHttpUrl, normalizeLinkCardTargetUrl, validateLinkCardTargetUrl } from "./js/shared/shared-link-cards.js";
+import { getFirstHttpUrl, normalizeLinkCardTargetUrl, validateLinkCardTargetUrl, buildBasicLinkCard } from "./js/shared/shared-link-cards.js";
 import {
   applyLikeStateToPost,
   buildLivePostInteractionModel,
@@ -373,7 +430,6 @@ const IMAGE_MIN_EXPORT_SCALE = 0.05;
 const IMAGE_EDITOR_CANVAS_WIDTH = 980;
 const IMAGE_EDITOR_CANVAS_HEIGHT = 630;
 const IMAGE_EXPORT_WIDTH = 1400;
-const IMAGE_EXPORT_HEIGHT = Math.round((IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH) * IMAGE_EDITOR_CANVAS_HEIGHT);
 const MAX_POSTING_HISTORY = 30;
 const ARCHIVE_SCHEMA_VERSION = 1;
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 3 * 60 * 1000;
@@ -1079,21 +1135,8 @@ let authAccountDid = "";
 let savedAccounts = [];
 let appOnline = navigator.onLine !== false;
 let accountAvatarAssets = [];
-let composerSegmentRenderFrame = 0;
-let composerSegmentRenderTimer = 0;
-let draftSaveTimer = null;
 let serviceWorkerRegistration = null;
-let updateInProgress = false;
-let reloadInProgress = false;
 let privacyPageNavigationInProgress = false;
-let sessionCheckTimer = null;
-let lastAutoUpdateCheckAt = 0;
-let deferredInstallPrompt = null;
-let segmentTextareaResizeFrame = 0;
-let helpCache = {
-  path: "",
-  text: "",
-};
 let currentTipIndex = 0;
 let tipsVisible = true;
 let altTextRequired = true;
@@ -1102,7 +1145,6 @@ let archiveExpertMode = false;
 let themeMode = "light";
 let compactMode = false;
 let composerReplyTarget = null;
-let replyTargetRequestToken = 0;
 const settingsSaveQueue = createAsyncTaskQueue();
 const draftSaveQueue = createAsyncTaskQueue();
 let sidebarCollapsedDesktop = false;
@@ -1124,7 +1166,6 @@ let selectedPostLanguages = [];
 let searchSelectedLanguages = [];
 const MAX_SEARCH_LANGUAGES = 3;
 const ACCOUNT_PICKER_AUTO_OPEN_MIN_LENGTH = 3;
-let activeLanguageDialogContext = "composer";
 let appendThreadIntro = false;
 let appendThreadEmoji = false;
 let addMarkerSpacing = false;
@@ -1140,24 +1181,13 @@ let composerPosted = false;
 let composerInputWarningPendingTruncation = false;
 let composerInputEventSuppressed = false;
 let composerInputWasTruncated = false;
-let lastComposerTruncationAlertAt = 0;
-let composerTruncationDialogTimer = 0;
-let backupStatusTimer = null;
 let shareStatusTimer = null;
-let editingHashtagNormalized = null;
 let segmentImages = [];
 let segmentLinkCards = [];
 let segmentImageDragState = null;
-let segmentMentionUpdateVersion = 0;
-let segmentMentionResolveTimerByIndex = new Map();
-let composerMentionResolutionCache = new Map();
-let composerMentionSourceSyncBySegment = new Map();
 let mentionSearchSegmentIndex = -1;
 let mentionSearchOriginalHandle = "";
-let mentionSearchMode = "repair";
 let mentionSearchContext = "mention";
-let mentionSearchRequestToken = 0;
-let mentionSearchInputTimer = 0;
 let pendingLinkCardSegmentIndex = -1;
 let pendingLinkCardSourceSegmentIndex = -1;
 let pendingLinkCardUrl = "";
@@ -1167,14 +1197,6 @@ let linkCardMicrolinkUsage = {
   date: "",
   count: 0,
 };
-let editingAltTarget = null;
-let editingImageTarget = null;
-let imageEditorSourceBitmap = null;
-let imageEditorDraft = null;
-let imageEditorDragging = false;
-let imageEditorDragStart = null;
-let imageEditorMetricsTimer = null;
-let imageEditorMetricsRequestId = 0;
 const confirmDialogController = createQueuedConfirmDialogController({
   dialog: confirmDialog,
   title: confirmDialogTitle,
@@ -1210,12 +1232,9 @@ const accountPickerController = createAccountPickerController({
   clearMentionTarget() {
     mentionSearchSegmentIndex = -1;
     mentionSearchOriginalHandle = "";
-    mentionSearchMode = "repair";
   },
   resetSearchRequest() {
-    mentionSearchRequestToken += 1;
-    window.clearTimeout(mentionSearchInputTimer);
-    mentionSearchInputTimer = 0;
+    composerMentionDialog.cancel();
   },
   runSearch(query) {
     void runMentionSearch(query);
@@ -1223,6 +1242,579 @@ const accountPickerController = createAccountPickerController({
   closeDialog: closeMentionSearchDialog,
   autoOpenDelayMs: COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS,
   minimumQueryLength: ACCOUNT_PICKER_AUTO_OPEN_MIN_LENGTH,
+});
+const hashtagController = createHashtagController({
+  pane: hashtagsPane, cloud: hashtagCloud, selectionNote: hashtagSelectionNote,
+  template: document.querySelector("#hashtag-item-template"), input: hashtagInput,
+  placementSelect: hashtagPlacementSelect, placementLabel: hashtagPlacementLabel,
+  archiveSlot: archiveHashtagSlot, archiveScope: archiveHashtagScopeWrap, archiveNote: archiveHashtagNote,
+  archiveMode: archiveContentModeSelect, composerColumn, searchSlot: searchHashtagDialogSlot,
+  searchDialog: searchHashtagDialog, searchMatch: searchTagMatchSelect,
+  searchSummary: searchHashtagSummary, searchButton: searchHashtagButton,
+  editInput: hashtagEditInput, editDialog: hashtagEditDialog,
+}, {
+  getState: () => ({ hashtags, selectedHashtags, searchSelectedHashtags, archiveSelectedHashtags, composerLocked }),
+  setState: (next) => {
+    if ("hashtags" in next) { hashtags = next.hashtags; }
+    if ("selectedHashtags" in next) { selectedHashtags = next.selectedHashtags; }
+    if ("searchSelectedHashtags" in next) { searchSelectedHashtags = next.searchSelectedHashtags; }
+    if ("archiveSelectedHashtags" in next) { archiveSelectedHashtags = next.archiveSelectedHashtags; }
+    if ("segmentOverrides" in next) { segmentOverrides = next.segmentOverrides; }
+    if ("hashtagPlacement" in next) { hashtagPlacement = next.hashtagPlacement; }
+  },
+  getContext: () => {
+    if (isArchiveHashtagContext()) { return "archive"; }
+    if (isSearchHashtagContext()) { return "search"; }
+    return "composer";
+  },
+  translate: t, persistSettings, persistArchive: persistArchivePreferences,
+  renderSearch: renderSearchWorkspace, invalidateArchive: invalidateArchiveCatalog,
+  setLocked: setComposerLocked, renderSegments, renderLock: updateComposerLockState,
+  setStatus, formatCount, setVisibility: setElementVisibility, setText: setSafeText,
+  defer: (callback, delay) => window.setTimeout(callback, delay),
+});
+const composerUiState = createComposerUiStateController({
+  source: sourceText, counter: counterToggle, intro: threadIntroToggle, emoji: threadEmojiToggle,
+  spacing: markerSpacingToggle, settings: postSettingsButton, clear: clearButton,
+  hashtagInput, hashtagAdd: hashtagAddButton, hashtagPlacement: hashtagPlacementSelect,
+  lockNote: composerLockNote, postedNote: composerPostedNote, hashtagsPane,
+}, {
+  getState: () => ({ locked: composerLocked, posted: composerPosted }),
+  setState: (next) => {
+    if ("locked" in next) { composerLocked = next.locked; }
+    if ("posted" in next) { composerPosted = next.posted; }
+    if ("segmentOverrides" in next) { segmentOverrides = next.segmentOverrides; }
+  },
+  isArchiveContext: isArchiveHashtagContext, isSearchContext: isSearchHashtagContext,
+  renderHashtags: renderHashtagCloud,
+});
+const composerPostSettings = createComposerPostSettingsController({
+  dialog: postLanguagesDialog, eyebrow: postLanguagesDialogEyebrow, title: postLanguagesDialogTitle,
+  description: postLanguagesDialogDescription, settingsList: postLanguagesSettingsList,
+  languageDisclosure: postLanguagesDisclosure, interactionDisclosure: postInteractionDisclosure,
+  searchNote: searchLanguageDialogNote, search: postLanguagesSearch, list: postLanguagesList,
+  selectionNote: postLanguagesSelectionNote, summary: postLanguagesSummary,
+  languageMeta: postLanguagesDisclosureMeta, interactionMeta: postInteractionDisclosureMeta,
+  everyone: replyModeEveryoneInput, nobody: replyModeNobodyInput, custom: replyModeCustomInput,
+  followers: replyAllowFollowersInput, following: replyAllowFollowingInput, mentioned: replyAllowMentionedInput,
+  quotes: quotePostsToggle, counter: counterToggle, intro: threadIntroToggle,
+  emoji: threadEmojiToggle, spacing: markerSpacingToggle,
+  optionTemplate: document.querySelector("#post-language-option-template"),
+  emptyTemplate: document.querySelector("#post-language-empty-template"),
+}, {
+  getState: () => ({ selectedPostLanguages, searchSelectedLanguages, currentLocale, locked: composerLocked,
+    interaction: { replyMode, allowFollowers: replyAllowFollowers, allowFollowing: replyAllowFollowing,
+      allowMentioned: replyAllowMentioned, quotePostsAllowed } }),
+  setState: (next) => {
+    if ("selectedPostLanguages" in next) { selectedPostLanguages = next.selectedPostLanguages; }
+    if ("searchSelectedLanguages" in next) { searchSelectedLanguages = next.searchSelectedLanguages; }
+    if ("segmentOverrides" in next) { segmentOverrides = next.segmentOverrides; }
+    if ("appendThreadIntro" in next) { appendThreadIntro = next.appendThreadIntro; }
+    if ("appendThreadEmoji" in next) { appendThreadEmoji = next.appendThreadEmoji; }
+    if ("addMarkerSpacing" in next) { addMarkerSpacing = next.addMarkerSpacing; }
+    if ("interaction" in next) {
+      replyMode = next.interaction.replyMode;
+      replyAllowFollowers = next.interaction.allowFollowers;
+      replyAllowFollowing = next.interaction.allowFollowing;
+      replyAllowMentioned = next.interaction.allowMentioned;
+      quotePostsAllowed = next.interaction.quotePostsAllowed;
+    }
+  },
+  translate: t, normalizeLanguages: normalizePostLanguageTags, inferLanguages: inferDefaultPostLanguages,
+  displayLanguage: getPostLanguageDisplayName, languageOptions: getPostLanguageOptions,
+  searchLimit: MAX_SEARCH_LANGUAGES, persist: persistSettings, renderSegments,
+  renderSearchLanguages: renderSearchLanguageSummary, renderSearchSummary,
+  enforceSearchSort: enforceSearchSortConstraints, setLocked: setComposerLocked,
+  setPosted: setComposerPosted, renderReply: renderReplyTargetCard, saveDraft: queueDraftSave,
+  defer: (callback, delay) => window.setTimeout(callback, delay),
+});
+const composerPublishAvailability = createComposerPublishAvailabilityController({
+  button: publishButton, warning: publishWarning,
+}, {
+  getOptions: () => ({ sourceText: sourceText.value, composedText: currentComposedText, activeSegments,
+    countGraphemes, getMetrics: getPostTextMetrics, getSegments: getSegmentPayloads,
+    composerLimit: MAX_COMPOSER_GRAPHEME_LENGTH, postLimit: MAX_POST_LENGTH, byteLimit: MAX_POST_UTF8_BYTES,
+    altTextRequired, autoResize: isImageAutoResizeEnabled() }),
+  translate: t, updateInputWarning: updateComposerInputWarning,
+});
+const composerRateLimitPresentation = createComposerRateLimitPresentation(publishRateLimitNote, {
+  translate: t,
+  formatTime: (timestamp) => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(timestamp),
+});
+const settingsBackupCodec = createSettingsBackupCodec({
+  File, Blob, Response, CompressionStream: globalThis.CompressionStream,
+  DecompressionStream: globalThis.DecompressionStream,
+  encode: (text) => new TextEncoder().encode(text), decode: (bytes) => new TextDecoder().decode(bytes),
+  toBase64: bytesToBase64, fromBase64: base64ToBytes, translate: t,
+});
+const settingsBackupReminder = createSettingsBackupReminder({
+  status: backupStatus, dialog: backupReminderDialog, message: backupReminderMessage,
+}, {
+  storage: window.localStorage, now: Date.now, translate: t,
+  hasOpenDialog: () => Boolean(document.querySelector("dialog[open]")),
+  clearTimer: (timer) => window.clearTimeout(timer), setTimer: (callback, delay) => window.setTimeout(callback, delay),
+  warn: (...args) => console.warn(...args), report: (error) => console.error(error), exportFile: exportSettingsBackup,
+  exportKey: SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY, dismissKey: SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY,
+  intervalMs: SETTINGS_BACKUP_REMINDER_INTERVAL_MS, snoozeMs: SETTINGS_BACKUP_REMINDER_SNOOZE_MS,
+});
+const settingsBackup = createSettingsBackupController({
+  placement: hashtagPlacementSelect, intro: threadIntroToggle, emoji: threadEmojiToggle, spacing: markerSpacingToggle,
+  resize: imageAutoResizeSelect, expert: archiveExpertModeToggle, proxyEndpoint: linkCardEndpointInput,
+  proxySecret: linkCardSecretInput, locale: languageSelect,
+}, {
+  codec: settingsBackupCodec, getSettings: getSettingsSnapshot,
+  getState: () => ({ localePreference, hashtags, selectedHashtags, searchSelectedHashtags, postingHistory, savedAccounts, accountAvatarAssets,
+    dmRecentContacts, dmRecentConversations, dmRecentContactAssets, dmPartnerCacheAccountDid, dmPartnerCacheUpdatedAt }),
+  setState: (next) => {
+    if ("hashtags" in next) { hashtags = next.hashtags; }
+    if ("selectedHashtags" in next) { selectedHashtags = next.selectedHashtags; }
+    if ("searchSelectedHashtags" in next) { searchSelectedHashtags = next.searchSelectedHashtags; }
+    if ("postingHistory" in next) { postingHistory = next.postingHistory; }
+    if ("threadExplorerFavorites" in next) { threadExplorerFavorites = next.threadExplorerFavorites; }
+    if ("savedSearches" in next) { savedSearches = next.savedSearches; }
+    if ("hashtagPlacement" in next) { hashtagPlacement = next.hashtagPlacement; }
+    if ("tipsVisible" in next) { tipsVisible = next.tipsVisible; }
+    if ("altTextRequired" in next) { altTextRequired = next.altTextRequired; }
+    if ("imageAutoResizeMode" in next) { imageAutoResizeMode = next.imageAutoResizeMode; }
+    if ("archiveExpertMode" in next) { archiveExpertMode = next.archiveExpertMode; }
+    if ("themeMode" in next) { themeMode = next.themeMode; }
+    if ("compactMode" in next) { compactMode = next.compactMode; }
+    if ("sidebarCollapsedDesktop" in next) { sidebarCollapsedDesktop = next.sidebarCollapsedDesktop; }
+    if ("sidebarWidthDesktop" in next) { sidebarWidthDesktop = next.sidebarWidthDesktop; }
+    if ("composerWidthDesktop" in next) { composerWidthDesktop = next.composerWidthDesktop; }
+    if ("selectedPostLanguages" in next) { selectedPostLanguages = next.selectedPostLanguages; }
+    if ("appendThreadIntro" in next) { appendThreadIntro = next.appendThreadIntro; }
+    if ("appendThreadEmoji" in next) { appendThreadEmoji = next.appendThreadEmoji; }
+    if ("addMarkerSpacing" in next) { addMarkerSpacing = next.addMarkerSpacing; }
+    if ("linkCardProvider" in next) { linkCardProvider = next.linkCardProvider; }
+    if ("linkCardMicrolinkUsage" in next) { linkCardMicrolinkUsage = next.linkCardMicrolinkUsage; }
+    if ("localePreference" in next) { localePreference = next.localePreference; }
+    if ("currentLocale" in next) { currentLocale = next.currentLocale; }
+    if ("savedAccounts" in next) { savedAccounts = next.savedAccounts; }
+    if ("segmentOverrides" in next) { segmentOverrides = next.segmentOverrides; }
+  },
+  normalize: { hashtags: normalizeHashtagEntries, mergeHashtags: mergeHashtagEntries, selection: normalizeSelectedHashtagEntries,
+    history: mergePostingHistoryEntries, favorites: normalizeThreadExplorerFavorites, searches: normalizeSavedSearches,
+    placement: normalizeHashtagPlacement, resize: normalizeImageAutoResizeMode, layout: normalizeStoredDesktopLayout,
+    languages: normalizePostLanguageTags, provider: normalizeLinkCardProvider, usage: normalizeMicrolinkUsage },
+  translate: t, now: () => new Date().toISOString(), version: CURRENT_VERSION_INFO, supportedLocales: SUPPORTED_LOCALES,
+  detectLocale: detectBrowserLocale, request: sendToServiceWorker, share: shareOrDownloadFile,
+  markExported: settingsBackupReminder.markExported, status: settingsBackupReminder.status,
+  applySearch: applySearchPreferences, persistAppearance: persistAppearancePreferences,
+  applyInteraction: applyPostInteractionSettings, syncProvider: syncLinkCardProviderUi,
+  applyArchive: applyArchivePreferences, restoreAnalysis: restorePersistedAnalysisState,
+  applyLayout: applyDesktopLayoutState, applySidebar: applySidebarState,
+  applyAvatarCache: applyAccountAvatarCache, applyDmCache: applyDmPartnerCache,
+  persist: persistSettings, translateUi: applyTranslations, applyTheme, applyDensity: applyCompactMode,
+  renderAccounts: renderAccountSwitcher, setLocked: setComposerLocked, renderSegments,
+});
+const { splitIntoSegments, buildComposedText } = createComposerTextService({
+  splitIntoGraphemes, createPostTextLimit, fitsPostTextLimit, getPostTextMetrics,
+  tokenizeText, trimSegment, getThreadIntroText, getSelectedHashtagText,
+  getHashtagPlacement: () => hashtagPlacement,
+  MANUAL_SPLIT_MARKER, MAX_POST_LENGTH, MAX_POST_UTF8_BYTES,
+});
+const composerMentionResolver = createComposerMentionResolver({ sendToServiceWorker });
+const {
+  getImageEditorCanvasDimensions, isPortraitEditorImage, getEditedImageExportDimensions,
+  getImagePreviewFrameDimensions, getContainedPreviewBox, getImageMetrics, clampImageEditToFrame,
+} = createComposerImageGeometry({
+  normalizeImageEdit, isImageUsingDefaultEdit, clamp,
+  IMAGE_EDITOR_CANVAS_WIDTH, IMAGE_EDITOR_CANVAS_HEIGHT, IMAGE_EXPORT_WIDTH,
+});
+const {
+  fileToDataUrl, createThreadImageFromFile, loadImageBitmapForDataUrl,
+  renderPreviewCanvas, renderImageToBlob, validateThreadImage, prepareImageForUpload,
+} = createComposerImageProcessing({
+  createImage: () => new Image(), createFileReader: () => new FileReader(),
+  fetchData: (url) => fetch(url), createImageBitmap: (blob) => createImageBitmap(blob),
+  createId: () => crypto.randomUUID(), createCanvas: () => document.createElement("canvas"),
+  getDevicePixelRatio: () => window.devicePixelRatio,
+  normalizeThreadImage, createDefaultImageEdit, normalizeImageEdit, isImageUsingDefaultEdit,
+  hasExplicitImageUploadTransform, normalizeImageAutoResizeMode,
+  getAutoResizeMode: () => imageAutoResizeMode,
+  getImageEditorCanvasDimensions, getEditedImageExportDimensions, getImageMetrics,
+  renderComposerImageToCanvas, t, IMAGE_MIN_EXPORT_SCALE, IMAGE_MAX_DIMENSION, IMAGE_BLOB_LIMIT,
+});
+const { schedule: scheduleImageValidation } = createComposerImageValidationController({
+  getImages: () => segmentImages, validateImage: validateThreadImage,
+  render: () => preserveScrollPosition(() => renderSegments({ preserveOverrides: true })),
+  reportError: (error) => console.error(error),
+});
+const composerImageEditor = createComposerImageEditorController({
+  dialog: imageEditorDialog, sheet: imageEditorSheet, canvas: imageEditorCanvas,
+  zoomInput: imageZoomInput, status: imageEditorStatus,
+  fitDimensionsButton: imageFitDimensionsButton, lossyResizeButton: imageLossyResizeButton,
+}, {
+  getImages: () => segmentImages, normalizeImageEdit, getImageEditorCanvasDimensions,
+  clampImageEditToFrame, loadImageBitmapForDataUrl, isPortraitEditorImage,
+  formatImageSize, t, IMAGE_BLOB_LIMIT, IMAGE_MIN_EXPORT_SCALE, IMAGE_MAX_DIMENSION,
+  getImageMetrics, drawComposerImageEditor, validateThreadImage, persistSettings,
+  preserveScrollPosition, renderSegments, queueDraftSave, createDefaultImageEdit, renderImageToBlob,
+  getMetricsController: () => composerImageEditorMetrics,
+  getDragController: () => composerImageEditorDrag,
+});
+const composerImageEditorDrag = createComposerImageEditorDragController({
+  getDraft: composerImageEditor.getDraft, setDraft: composerImageEditor.setDraft,
+  getImage: composerImageEditor.getImage, clamp: composerImageEditor.clamp, draw: composerImageEditor.draw,
+});
+const composerImageEditorMetrics = createComposerImageEditorMetricsController({
+  originalDimensions: imageEditorOriginalDimensions, originalSize: imageEditorOriginalSize,
+  exportDimensions: imageEditorExportDimensions, exportSize: imageEditorExportSize,
+}, {
+  getImage: composerImageEditor.getImage, getDraftImage: composerImageEditor.getDraftImage,
+  formatDimensions: composerImageEditor.formatDimensions, formatSize: formatImageSize,
+  minScale: IMAGE_MIN_EXPORT_SCALE, isDefaultEdit: isImageUsingDefaultEdit,
+  getExportDimensions: getEditedImageExportDimensions, renderBlob: renderImageToBlob,
+  translate: t, updateActions: composerImageEditor.updateActions,
+  clearTimer: (timer) => window.clearTimeout(timer), setTimer: (callback, delay) => window.setTimeout(callback, delay),
+});
+const composerAltTextDialog = createComposerAltTextDialogController({
+  dialog: altTextDialog, input: altTextInput, count: altTextCount,
+  previewWrap: altTextPreviewWrap, canvas: altTextPreviewCanvas,
+}, {
+  maxLength: MAX_ALT_TEXT_LENGTH,
+  getImage: (segmentIndex, imageIndex) => segmentImages[segmentIndex]?.[imageIndex],
+  getPreviewFrame: getImagePreviewFrameDimensions,
+  getContainedBox: getContainedPreviewBox,
+  renderCanvas: renderPreviewCanvas,
+  defer: (callback) => window.setTimeout(callback, 0),
+  persist: persistSettings,
+  updateCard: (segmentIndex, imageIndex) => updateComposerImageAltDisplay(
+    segmentImages[segmentIndex]?.[imageIndex],
+    segmentsList.querySelector(`.segment-image-card[data-segment-index="${segmentIndex}"][data-image-index="${imageIndex}"]`), t,
+  ),
+  updatePublish: updatePublishAvailability,
+  saveDraft: queueDraftSave,
+});
+const composerImageCollection = createComposerImageCollectionController({
+  getImages: () => segmentImages,
+  setImages: (images) => { segmentImages = images; },
+  setSegment: (index, images) => { segmentImages[index] = images; },
+  hasLinkCard: (index) => Boolean(normalizeLinkCard(segmentLinkCards[index])),
+  maxImages: MAX_IMAGES_PER_SEGMENT,
+  translate: t, setStatus,
+  createImage: createThreadImageFromFile,
+  validate: scheduleImageValidation,
+  persist: persistSettings,
+  render: () => preserveScrollPosition(() => renderSegments({ preserveOverrides: true })),
+  saveDraft: queueDraftSave,
+});
+const composerPublishResults = createComposerPublishResultHandlers({
+  setRateLimit: (value) => { lastPublishRateLimit = normalizePublishRateLimit(value); },
+  record: recordPublishedThread,
+  clearReply: clearComposerReplyTarget,
+  setPosted: setComposerPosted,
+  saveDraft: queueDraftSave,
+  translate: t,
+  setStatus,
+  showResult: showPublishResult,
+  reportError: (error) => console.error(error),
+  formatError: buildPublishErrorMessage,
+  showError: showErrorDialog,
+});
+const composerReplyHandoff = createComposerReplyHandoff({
+  normalize: normalizeReplyTarget,
+  getStorage: () => window.sessionStorage,
+  getHref: () => window.location.href,
+  replaceUrl: (href) => window.history.replaceState({}, document.title, href),
+  queryKey: PENDING_COMPOSER_REPLY_TARGET_QUERY_KEY,
+  storageKey: PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY,
+});
+const composerReplyDialog = createComposerReplyTargetDialogController({
+  dialog: replyTargetDialog, input: replyTargetUrlInput, status: replyTargetStatus, submit: replyTargetSubmitButton,
+}, { translate: t, setBusy, resolve: resolveComposerReplyTarget, setStatus, reportError: (error) => console.error(error) });
+const composerReplyController = createComposerReplyTargetController({
+  request: (url, mode) => requestReplyTarget(sendToServiceWorker, url, mode),
+  normalize: normalizeReplyTarget, getAccountDid: () => authAccountDid,
+  confirm: openConfirmDialog, translate: t,
+  setTarget: (target) => { composerReplyTarget = target; }, getTarget: () => composerReplyTarget,
+  persistPending: persistPendingComposerReplyTarget, resetDialog: composerReplyDialog.reset,
+  refresh: () => {
+    renderReplyTargetCard();
+    publishButton.textContent = getPublishButtonLabel();
+    updatePublishAvailability();
+  }, saveDraft: queueDraftSave,
+});
+const composerProviderUsage = createComposerProviderUsageController({
+  getUsage: () => linkCardMicrolinkUsage,
+  setUsage: (usage) => { linkCardMicrolinkUsage = usage; },
+  getToday: () => new Date().toISOString().slice(0, 10),
+  limit: MICROLINK_DAILY_LIMIT, persist: persistSettings,
+});
+const composerProxySettings = createComposerProxySettingsController({
+  endpoint: linkCardEndpointInput, secret: linkCardSecretInput, status: linkCardSettingsStatus,
+}, { translate: t, syncProvider: syncLinkCardProviderUi });
+const composerProviderAvailability = createComposerProviderAvailabilityController({
+  providers: { none: LINK_CARD_PROVIDER_NONE, microlink: LINK_CARD_PROVIDER_MICROLINK, proxy: LINK_CARD_PROVIDER_PROXY },
+  getProvider: () => linkCardProvider, normalizeProvider: normalizeLinkCardProvider,
+  isProxyConfigured: composerProxySettings.isConfigured, canUseMicrolink: composerProviderUsage.canUse,
+});
+const composerProviderPresentation = createComposerProviderPresentationController({
+  noneWrap: linkCardProviderNoneWrap, proxyWrap: linkCardProviderProxyWrap,
+  noneInput: linkCardProviderNoneInput, microlinkInput: linkCardProviderMicrolinkInput,
+  proxyInput: linkCardProviderProxyInput, settingsNote: linkCardProviderNote,
+  dialogNote: linkCardProviderState,
+}, {
+  providers: { none: LINK_CARD_PROVIDER_NONE, microlink: LINK_CARD_PROVIDER_MICROLINK, proxy: LINK_CARD_PROVIDER_PROXY },
+  getProvider: () => linkCardProvider,
+  setProvider: (provider) => { linkCardProvider = provider; },
+  getActiveProvider: getActiveLinkCardProvider, normalizeProvider: normalizeLinkCardProvider,
+  isProxyConfigured: isLinkCardProxyConfigured, getUsage: composerProviderUsage.state,
+  getAction: () => pendingLinkCardAction, limit: MICROLINK_DAILY_LIMIT,
+  translate: t, persist: persistSettings,
+});
+const composerLinkCardDialog = createComposerLinkCardDialogController({
+  dialog: linkCardDialog, title: linkCardDialogTitle, description: linkCardUrlNode,
+  urlField: linkCardUrlField, input: linkCardUrlInput,
+  targetField: linkCardTargetListField, targetList: linkCardTargetList,
+  warning: linkCardWarning, status: linkCardStatus, submit: linkCardCreateButton,
+}, {
+  translate: t, renderTargets: renderLinkCardTargetList,
+  updateProvider: updateLinkCardDialogProviderState,
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+});
+const composerLinkCardSubmission = createComposerLinkCardSubmissionController({
+  input: linkCardUrlInput, status: linkCardStatus, submit: linkCardCreateButton,
+}, {
+  getPending: () => ({ segmentIndex: pendingLinkCardSegmentIndex, sourceSegmentIndex: pendingLinkCardSourceSegmentIndex,
+    url: pendingLinkCardUrl, action: pendingLinkCardAction }),
+  setPendingUrl: (url) => { pendingLinkCardUrl = url; },
+  getImages: () => segmentImages, getCards: () => segmentLinkCards,
+  normalizeCard: normalizeLinkCard, validateUrl: validateLinkCardTargetUrl, translate: t,
+  setBusy, request: requestLinkCard, syncProvider: syncLinkCardProviderUi,
+  persist: persistSettings,
+  render: () => preserveScrollPosition(() => renderSegments({ preserveOverrides: true })),
+  saveDraft: queueDraftSave, setStatus, close: closeLinkCardDialog,
+  reportError: (error) => console.error(error),
+});
+const composerInputWarnings = createComposerInputWarningController({
+  source: sourceText,
+  note: composerInputWarning,
+  count: countGraphemes,
+  getLocale: () => currentLocale,
+  limit: MAX_COMPOSER_GRAPHEME_LENGTH,
+  isTruncated: () => composerInputWasTruncated,
+  translate: t,
+  now: () => Date.now(),
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: (timer) => window.clearTimeout(timer),
+  showDialog: showErrorDialog,
+});
+const composerRenderScheduler = createComposerRenderScheduler({
+  render: renderSegments,
+  resize: resizeAllSegmentTextareas,
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: (timer) => window.clearTimeout(timer),
+  requestFrame: (callback) => requestAnimationFrame(callback),
+  cancelFrame: (frame) => cancelAnimationFrame(frame),
+});
+const composerInputController = createComposerInputController(sourceText, {
+  clamp: clampComposerTextLength,
+  count: countGraphemes,
+  split: splitIntoGraphemes,
+  limit: MAX_COMPOSER_GRAPHEME_LENGTH,
+  setTruncated: (value) => { composerInputWasTruncated = value; },
+  updateWarning: updateComposerInputWarning,
+  clearOverrides: () => { segmentOverrides = null; },
+  setLocked: setComposerLocked,
+  setPosted: setComposerPosted,
+  scheduleRender: scheduleComposerSegmentRender,
+  delayMs: COMPOSER_SEGMENT_RENDER_DEBOUNCE_MS,
+  saveDraft: queueDraftSave,
+  showAlert: composerInputWarnings.alert,
+  setWarningPending: (value) => { composerInputWarningPendingTruncation = value; },
+  suppressInput: () => { composerInputEventSuppressed = true; },
+});
+const composerInputEvents = createComposerInputEventHandlers({
+  isSuppressed: () => composerInputEventSuppressed,
+  setSuppressed: (value) => { composerInputEventSuppressed = value; },
+  isWarningPending: () => composerInputWarningPendingTruncation,
+  setWarningPending: (value) => { composerInputWarningPendingTruncation = value; },
+  process: composerInputController.process,
+  insert: composerInputController.insert,
+});
+const composerLengthPresentation = createComposerLengthPresentationController({
+  getDiagnostics: getSegmentLengthDiagnostics,
+  formatLabel: formatSegmentLengthLabel,
+  translate: t,
+  graphemeLimit: MAX_POST_LENGTH,
+  byteLimit: MAX_POST_UTF8_BYTES,
+  warning: composerLengthWarning,
+});
+const composerMentionDisplay = createComposerMentionDisplayController({
+  templates: {
+    label: document.querySelector("#segment-mention-label-template"),
+    resolved: document.querySelector("#segment-mention-resolved-template"),
+    unresolved: document.querySelector("#segment-mention-unresolved-template"),
+    sync: document.querySelector("#segment-mention-sync-template"),
+  },
+  translate: t,
+  resolve: (handles) => composerMentionResolver.resolve(handles),
+  getVersion: () => composerSegmentRenderer.getMentionVersion(),
+  profileUrl: buildComposerMentionProfileUrl,
+  suggest: findComposerMentionSuggestion,
+  applyTranslatedTitle,
+  openSearch: openMentionSearchDialog,
+  getPending: (index, text) => composerMentionSourceSync.getPending(index, sourceText?.value || "", text),
+  applySync: applyMentionSourceSync,
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: (timer) => window.clearTimeout(timer),
+  delayMs: COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS,
+});
+const composerMentionSourceSync = createComposerMentionSourceSyncController({
+  containsHandle: textContainsComposerMentionHandleFromData,
+  replaceHandle: replaceComposerMentionHandleFromData,
+});
+const composerMentionSourceCorrection = createComposerMentionSourceCorrectionController({
+  sync: composerMentionSourceSync, resolver: composerMentionResolver,
+  getSource: () => String(sourceText?.value || ""),
+  setSource: (text) => { if (sourceText) { sourceText.value = text; } },
+  setLocked: setComposerLocked, setPosted: setComposerPosted,
+  render: renderSegments, saveDraft: queueDraftSave,
+});
+const composerMentionDialog = createComposerMentionDialogController({
+  dialog: mentionSearchDialog, eyebrow: mentionSearchDialogEyebrow,
+  title: mentionSearchDialogTitle, note: mentionSearchDialogNote,
+  status: mentionSearchStatus, results: mentionSearchResults, input: mentionSearchInput,
+}, {
+  translate: t, search: runMentionSearch,
+  setTarget(target) {
+    mentionSearchContext = target.context;
+    mentionSearchSegmentIndex = target.segmentIndex;
+    mentionSearchOriginalHandle = target.originalHandle;
+  },
+  clearTimeout: (timer) => window.clearTimeout(timer),
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  delayMs: COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS,
+});
+const composerLinkCardPreview = createComposerLinkCardPreviewRenderer(
+  document.querySelector("#composer-link-card-preview-template"), {
+    getCard: (index) => segmentLinkCards[index], normalize: normalizeLinkCard,
+    getFooterLabel: getPublicationCardFooterLabel, translate: t,
+    setCard: (index, card) => { segmentLinkCards[index] = card; },
+    persist: persistSettings, preserveScroll: preserveScrollPosition,
+    renderSegments, saveDraft: queueDraftSave,
+  },
+);
+const composerLinkCardRequests = createComposerLinkCardRequestController({
+  getSettings: getLinkCardSettings, validateProxy: updateLinkCardSettingsStatus,
+  canUseMicrolink: canUseMicrolinkToday, translate: t,
+  proxy: {
+    now: () => Date.now(), randomUUID: () => crypto.randomUUID(),
+    sign: (target, timestamp, nonce, key) => signComposerLinkCardRequest(target, timestamp, nonce, key, crypto.subtle),
+    fetch: (target, options) => fetch(target, options),
+    getErrorMessage: (response, payload) => getComposerLinkCardProxyErrorMessage(response, payload, t),
+    normalize: normalizeLinkCard, imageToDataUrl: composerLinkCardImageToDataUrl,
+  },
+  microlink: {
+    fetch: (target, options) => fetch(target, options), recordUsage: recordMicrolinkUsageAttempt,
+    getErrorMessage: (response, payload) => getComposerMicrolinkErrorMessage(response, payload, t),
+    fetchImage: fetchLinkCardImageDataUrl, normalize: normalizeLinkCard,
+  },
+});
+const composerMentionSearchActions = createComposerMentionSearchActions({
+  dialog: mentionSearchDialog,
+  input: mentionSearchInput,
+  status: mentionSearchStatus,
+  results: mentionSearchResults,
+  eyebrow: mentionSearchDialogEyebrow,
+  title: mentionSearchDialogTitle,
+  note: mentionSearchDialogNote,
+}, {
+  translate: t,
+  resetPicker: () => accountPickerController.reset(),
+  resetSearchState() {
+    composerMentionDialog.cancel();
+    mentionSearchSegmentIndex = -1;
+    mentionSearchOriginalHandle = "";
+    mentionSearchContext = "mention";
+  },
+  getTarget: () => ({ segmentIndex: mentionSearchSegmentIndex, originalHandle: mentionSearchOriginalHandle }),
+  getSegments: () => activeSegments,
+  setSegments(segments) {
+    activeSegments = segments;
+    segmentOverrides = normalizeSegmentOverrides(segments);
+  },
+  sourceSync: composerMentionSourceSync,
+  resolver: composerMentionResolver,
+  setLocked: setComposerLocked,
+  setPosted: setComposerPosted,
+  render: renderSegments,
+  saveDraft: queueDraftSave,
+});
+const composerSegmentRenderer = createComposerSegmentRenderer({
+  sourceText, counterToggle, threadIntroToggle, threadEmojiToggle, markerSpacingToggle,
+  characterCount, segmentSummary, segmentsPane, segmentsList, segmentTemplate,
+  helpTemplate: document.querySelector("#composer-segment-help-template"),
+}, {
+  document,
+  getState: () => ({ activeSegments, segmentOverrides, hashtagPlacement, segmentImages, segmentLinkCards }),
+  setState(next) {
+    if ("activeSegments" in next) { activeSegments = next.activeSegments; }
+    if ("segmentOverrides" in next) { segmentOverrides = next.segmentOverrides; }
+    if ("appendThreadIntro" in next) { appendThreadIntro = next.appendThreadIntro; }
+    if ("appendThreadEmoji" in next) { appendThreadEmoji = next.appendThreadEmoji; }
+    if ("addMarkerSpacing" in next) { addMarkerSpacing = next.addMarkerSpacing; }
+    if ("currentComposedText" in next) { currentComposedText = next.currentComposedText; }
+  },
+  clearMentionSync: () => composerMentionSourceSync.clear(),
+  getDragState: () => segmentImageDragState,
+  buildComposedText, getSelectedHashtagText, splitIntoSegments, normalizeSegmentOverrides,
+  syncSegmentImages, syncSegmentLinkCards, formatComposerCharacterCount, t,
+  updateComposerLengthWarning, normalizeLinkCard, getFirstHttpUrl, MAX_IMAGES_PER_SEGMENT,
+  eventHasTransferFiles, getDroppedImageFiles, handleSegmentImageSelection,
+  updateSegmentLengthPresentation, scheduleSegmentMentionDisplayUpdate, setComposerLocked,
+  setComposerPosted, updatePublishAvailability, queueDraftSave, autoSizeTextarea,
+  openInlineHelpTopic, openLinkCardDialog, canCreateLinkCardsWithCurrentProvider,
+  getLinkCardTargetEntries, renderSegmentLinkCard, renderSegmentImages,
+  updateSegmentMentionDisplay, scheduleSegmentTextareaResize,
+  requestAnimationFrame: (callback) => requestAnimationFrame(callback),
+});
+const composerThreadFileCodec = createComposerThreadFileCodec({
+  File, Blob, Response,
+  CompressionStream: globalThis.CompressionStream, DecompressionStream: globalThis.DecompressionStream,
+});
+const composerDocument = createComposerDocumentController({
+  sourceText, counterToggle, threadIntroToggle, threadEmojiToggle, markerSpacingToggle,
+  languageSelect, hashtagPlacementSelect, importInput: threadImportInput,
+}, {
+  getState: () => ({
+    appendThreadIntro, appendThreadEmoji, addMarkerSpacing, localePreference, hashtagPlacement,
+    hashtags, selectedHashtags, segmentImages, segmentLinkCards, segmentOverrides, composerReplyTarget,
+  }),
+  setState(next) {
+    if ("appendThreadIntro" in next) { appendThreadIntro = next.appendThreadIntro; }
+    if ("appendThreadEmoji" in next) { appendThreadEmoji = next.appendThreadEmoji; }
+    if ("addMarkerSpacing" in next) { addMarkerSpacing = next.addMarkerSpacing; }
+    if ("selectedPostLanguages" in next) { selectedPostLanguages = next.selectedPostLanguages; }
+    if ("localePreference" in next) { localePreference = next.localePreference; }
+    if ("currentLocale" in next) { currentLocale = next.currentLocale; }
+    if ("hashtags" in next) { hashtags = next.hashtags; }
+    if ("selectedHashtags" in next) { selectedHashtags = next.selectedHashtags; }
+    if ("hashtagPlacement" in next) { hashtagPlacement = next.hashtagPlacement; }
+    if ("segmentOverrides" in next) { segmentOverrides = next.segmentOverrides; }
+    if ("segmentImages" in next) { segmentImages = next.segmentImages; }
+    if ("segmentLinkCards" in next) { segmentLinkCards = next.segmentLinkCards; }
+    if ("activeSegments" in next) { activeSegments = next.activeSegments; }
+  },
+  codec: composerThreadFileCodec, version: CURRENT_VERSION_INFO, now: () => new Date().toISOString(),
+  getSegments: getSegmentPayloads, getInteraction: getCurrentPostInteractionSettings,
+  getLinkCardSettings, getLanguages: getNormalizedPostLanguagesOrDefault,
+  normalizeImages: normalizeSegmentImages, normalizeLinkCard, normalizeLinkCards: normalizeSegmentLinkCards,
+  normalizeHashtags: normalizeHashtagEntries, normalizeSelectedHashtags: normalizeSelectedHashtagEntries,
+  normalizePlacement: normalizeHashtagPlacement, normalizeOverrides: normalizeSegmentOverrides,
+  normalizeLanguages: normalizePostLanguageTags, supportedLocales: SUPPORTED_LOCALES, detectLocale: detectBrowserLocale,
+  applyInteraction: applyPostInteractionSettings, confirm: openConfirmDialog,
+  translate: t, setStatus, setLocked: setComposerLocked, setPosted: setComposerPosted,
+  persistSettings, applyTranslations, renderHashtags: renderHashtagCloud, renderSegments,
+  validateImages: scheduleImageValidation, share: shareOrDownloadFile,
+  clearReply: clearComposerReplyTarget, renderReply: renderReplyTargetCard,
+  updatePublishLabel: () => { publishButton.textContent = getPublishButtonLabel(); },
+  enqueueDraft: (task) => draftSaveQueue.enqueue(task),
+  saveDraft: (payload) => sendToServiceWorker("SAVE_DRAFT", payload, { timeoutMs: 120000 }),
+  reportError: (error) => console.error(error),
+  clearTimer: (timer) => window.clearTimeout(timer), setTimer: (callback, delay) => window.setTimeout(callback, delay),
 });
 const dmArchiveController = createDmArchiveController({
   getState() {
@@ -1343,7 +1935,6 @@ const dmArchiveExportController = createDmArchiveExportController({
   buildPdfFile,
   getConversationTitle: getDmConversationTitle,
 });
-let imageValidationToken = 0;
 let currentWorkspace = "composer";
 if (document.body && String(document.body.dataset.page || "").trim() === THREADLINE_PAGE_TOOLS) {
   currentWorkspace = "search";
@@ -1598,51 +2189,9 @@ const LOGIN_SERVICE_PRESETS = {
   "mu.social": "https://mu.social",
 };
 const DESKTOP_LAYOUT_MEDIA = window.matchMedia("(min-width: 981px)");
-const VALID_HASHTAG_PLACEMENTS = new Set(["first", "last", "all-top", "all-bottom"]);
 
-applyDesktopLayoutState();
-applySidebarState();
-
-async function registerServiceWorker() {
-  if (!("serviceWorker" in navigator)) {
-    setStatus(t("statusNoSupport"));
-    return;
-  }
-
-  try {
-    let refreshing = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (privacyPageNavigationInProgress) {
-        return;
-      }
-      if (refreshing) {
-        return;
-      }
-      refreshing = true;
-      const pendingPageSwitchUrl = consumePendingPageSwitchUrl();
-      const nextUrl = pendingPageSwitchUrl
-        ? new URL(pendingPageSwitchUrl, window.location.href)
-        : new URL(window.location.href);
-      nextUrl.searchParams.set("reload", String(Date.now()));
-      window.location.replace(nextUrl.toString());
-    });
-
-    serviceWorkerRegistration = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
-    await navigator.serviceWorker.ready;
-    setStatus(t("statusCheckingSession"));
-    await hydrateAppState();
-    await verifySession({ silent: true });
-    startSessionChecks();
-    await checkForUpdates({
-      showChecking: false,
-      silentNoChange: true,
-      silentError: true,
-    });
-  } catch (error) {
-    console.error(error);
-    setStatus(t("statusSwRegisterFailed", { message: error.message }), "error");
-  }
-}
+/** Starts the application worker lifecycle. @returns {Promise<void>} Startup completion. */
+async function registerServiceWorker() { await applicationBootstrap.start(); }
 
 async function sendToServiceWorker(type, payload = {}, options = {}) {
   const registration = await navigator.serviceWorker.ready;
@@ -1752,94 +2301,13 @@ async function sendToServiceWorker(type, payload = {}, options = {}) {
   });
 }
 
-function buildPublishErrorMessage(error) {
-  if (error?.details?.code === "PARTIAL_PUBLISH") {
-    const summary = t("publishPartialFailure", {
-      posted: error.details.postedCount,
-      total: error.details.totalCount,
-    });
-    return error.message ? `${summary}\n${error.message}` : summary;
-  }
+/** Formats publication errors. @param {object|null} error - Worker failure. @returns {string} Localized failure. */
+function buildPublishErrorMessage(error) { return buildComposerPublishErrorMessage(error, t); }
 
-  return error?.message || t("errorTitle");
-}
-
-function localizeLoginErrorMessage(error) {
-  const errorCode = String(error?.details?.code || "");
-  const localizedErrorKeys = {
-    AUTH_INVALID_CREDENTIALS: "statusLoginFailedInvalidCredentials",
-    LOGIN_MISSING_CREDENTIALS: "statusLoginFailedMissingCredentials",
-    CONNECTIVITY_FAILED: "statusLoginFailedConnection",
-    CONNECTIVITY_TIMEOUT: "statusLoginFailedConnection",
-    INSECURE_SERVICE_URL: "statusLoginFailedInsecureService",
-    LOGIN_MU_PDS_RESOLUTION_FAILED: "statusLoginFailedMuPdsResolution",
-  };
-  if (localizedErrorKeys[errorCode]) {
-    return t(localizedErrorKeys[errorCode]);
-  }
-
-  const raw = String(error?.message || "").trim();
-  const normalized = raw.toLowerCase();
-
-  if (!normalized) {
-    return t("statusLoginFailedGeneric");
-  }
-
-  if (
-    normalized.includes("invalid identifier or password")
-    || normalized.includes("invalid login credentials")
-    || normalized.includes("authentication required")
-  ) {
-    return t("statusLoginFailedInvalidCredentials");
-  }
-
-  if (
-    normalized.includes("app-password are required")
-    || normalized.includes("identifier and app password are required")
-  ) {
-    return t("statusLoginFailedMissingCredentials");
-  }
-
-  if (normalized.includes("could not connect to bluesky")) {
-    return t("statusLoginFailedConnection");
-  }
-
-  if (normalized.includes("insecure service urls are not allowed") || normalized.includes("please use https")) {
-    return t("statusLoginFailedInsecureService");
-  }
-
-  if (normalized.includes("bluesky error: 401")) {
-    return t("statusLoginFailedInvalidCredentials");
-  }
-
-  return raw;
-}
 
 function setStatus(message, tone = "neutral") {
   statusText.textContent = message;
   statusText.style.color = tone === "error" ? "var(--danger)" : "var(--text)";
-}
-
-/**
- * Shows or clears a local warning directly below the composer textarea.
- * @param {string} message - Warning text to show. Empty text hides the note.
- * @param {string} tone - Visual tone for the note.
- * @returns {void} No return value.
- */
-function setComposerInputWarning(message = "", tone = "error") {
-  if (!composerInputWarning) {
-    return;
-  }
-
-  const text = String(message || "").trim();
-  composerInputWarning.hidden = text.length === 0;
-  composerInputWarning.textContent = text;
-  if (text.length === 0) {
-    delete composerInputWarning.dataset.tone;
-    return;
-  }
-
-  composerInputWarning.dataset.tone = tone;
 }
 
 /**
@@ -1848,7 +2316,7 @@ function setComposerInputWarning(message = "", tone = "error") {
  * @returns {string} Localized representation of the composer limit.
  */
 function getComposerLimitLabel() {
-  return new Intl.NumberFormat(currentLocale || undefined).format(MAX_COMPOSER_GRAPHEME_LENGTH);
+  return composerInputWarnings.limitLabel();
 }
 
 /**
@@ -1857,234 +2325,24 @@ function getComposerLimitLabel() {
  * @returns {void} No return value.
  */
 function updateComposerInputWarning(wasTruncated = false) {
-  const composerLength = countGraphemes(sourceText.value);
-  const composerLimitLabel = getComposerLimitLabel();
-  const shouldShowTruncationWarning = wasTruncated || composerInputWasTruncated;
-
-  if (shouldShowTruncationWarning) {
-    setComposerInputWarning(t("composerTextTruncated", { count: composerLimitLabel }), "error");
-    return;
-  }
-
-  if (composerLength > MAX_COMPOSER_GRAPHEME_LENGTH) {
-    setComposerInputWarning(t("composerTextTooLong", { count: composerLimitLabel }), "error");
-    return;
-  }
-
-  setComposerInputWarning("");
+  composerInputWarnings.update(wasTruncated);
 }
 
-/**
- * Normalizes rate-limit metadata received from the service worker.
- * @param {object|null} value - Raw rate-limit metadata.
- * @returns {object|null} Sanitized rate-limit metadata or null when empty.
- */
-function normalizePublishRateLimit(value) {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  let limit = null;
-  if (Number.isFinite(Number(value.limit))) {
-    limit = Number(value.limit);
-  }
-
-  let remaining = null;
-  if (Number.isFinite(Number(value.remaining))) {
-    remaining = Number(value.remaining);
-  }
-
-  const normalized = {
-    limit,
-    remaining,
-    resetAt: String(value.resetAt || "").trim(),
-    policy: String(value.policy || "").trim(),
-    retryAfter: String(value.retryAfter || "").trim(),
-  };
-
-  if (
-    normalized.limit === null
-    && normalized.remaining === null
-    && !normalized.resetAt
-    && !normalized.policy
-    && !normalized.retryAfter
-  ) {
-    return null;
-  }
-
-  return normalized;
-}
-
-/**
- * Formats a rate-limit policy header into a short human-readable window label.
- * @param {string} policy - Raw `ratelimit-policy` header value.
- * @returns {string} Localized compact policy description, or an empty string.
- */
-function formatPublishRateLimitPolicy(policy) {
-  const normalizedPolicy = String(policy || "").trim();
-  if (!normalizedPolicy) {
-    return "";
-  }
-
-  const windowMatch = normalizedPolicy.match(/(?:^|;)w=(\d+)/i);
-  if (!windowMatch) {
-    return normalizedPolicy;
-  }
-
-  const windowSeconds = Number.parseInt(windowMatch[1], 10);
-  if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) {
-    return normalizedPolicy;
-  }
-
-  if (windowSeconds % 86400 === 0) {
-    return t("publishRateLimitWindowDays", { count: String(windowSeconds / 86400) });
-  }
-  if (windowSeconds % 3600 === 0) {
-    return t("publishRateLimitWindowHours", { count: String(windowSeconds / 3600) });
-  }
-  if (windowSeconds % 60 === 0) {
-    return t("publishRateLimitWindowMinutes", { count: String(windowSeconds / 60) });
-  }
-
-  return t("publishRateLimitWindowSeconds", { count: String(windowSeconds) });
-}
-
-/**
- * Formats an ISO reset timestamp for the compact publish status note.
- * @param {string} resetAt - ISO timestamp from the last observed rate-limit header.
- * @returns {string} Localized short time, or an empty string.
- */
-function formatPublishRateLimitResetAt(resetAt) {
-  const normalizedResetAt = String(resetAt || "").trim();
-  if (!normalizedResetAt) {
-    return "";
-  }
-
-  const parsedResetAt = Date.parse(normalizedResetAt);
-  if (!Number.isFinite(parsedResetAt)) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(parsedResetAt);
-}
-
-/**
- * Renders the latest observed server-side rate-limit note below the publish button.
- * @param {object|null} value - Raw or normalized rate-limit metadata.
- * @returns {void} No return value.
- */
-function renderPublishRateLimitNote(value) {
-  if (!publishRateLimitNote) {
-    return;
-  }
-
-  const message = buildPublishRateLimitMessage(value, false);
-  if (!message) {
-    publishRateLimitNote.hidden = true;
-    publishRateLimitNote.textContent = "";
-    publishRateLimitNote.dataset.tone = "neutral";
-    return;
-  }
-
-  publishRateLimitNote.hidden = false;
-  publishRateLimitNote.dataset.tone = "neutral";
-  publishRateLimitNote.textContent = message;
-}
-
-/**
- * Builds a compact publish rate-limit line for success dialogs and inline notes.
- * @param {object|null} value - Raw or normalized rate-limit metadata.
- * @param {boolean} includeUnavailable - Whether to return a fallback message when no headers exist.
- * @returns {string} Localized note text, or an empty string when nothing should be shown.
- */
-function buildPublishRateLimitMessage(value, includeUnavailable = false) {
-  const rateLimit = normalizePublishRateLimit(value);
-  if (!rateLimit) {
-    if (includeUnavailable) {
-      return t("publishRateLimitUnavailable");
-    }
-    return "";
-  }
-
-  const parts = [];
-  if (rateLimit.remaining !== null && rateLimit.limit !== null) {
-    parts.push(t("publishRateLimitRemaining", {
-      remaining: String(rateLimit.remaining),
-      limit: String(rateLimit.limit),
-    }));
-  } else if (rateLimit.limit !== null) {
-    parts.push(t("publishRateLimitLimit", {
-      limit: String(rateLimit.limit),
-    }));
-  }
-
-  const policyLabel = formatPublishRateLimitPolicy(rateLimit.policy);
-  if (policyLabel) {
-    parts.push(t("publishRateLimitWindow", { value: policyLabel }));
-  }
-
-  const resetLabel = formatPublishRateLimitResetAt(rateLimit.resetAt);
-  if (resetLabel) {
-    parts.push(t("publishRateLimitResetAt", { time: resetLabel }));
-  }
-
-  if (!resetLabel && rateLimit.retryAfter) {
-    parts.push(t("publishRateLimitRetryAfter", { value: rateLimit.retryAfter }));
-  }
-
-  if (parts.length === 0) {
-    if (includeUnavailable) {
-      return t("publishRateLimitUnavailable");
-    }
-    return "";
-  }
-
-  return t("publishRateLimitLabel", {
-    details: parts.join(" · "),
-  });
-}
+/** Renders current server limits. @param {object|null} value - Worker limit metadata. @returns {void} */
+function renderPublishRateLimitNote(value) { composerRateLimitPresentation.render(value); }
+/** Builds a server-limit message. @param {object|null} value - Worker metadata. @param {boolean} includeUnavailable - Include fallback. @returns {string} Localized message. */
+function buildPublishRateLimitMessage(value, includeUnavailable = false) { return composerRateLimitPresentation.message(value, includeUnavailable); }
 
 function setBusy(button, isBusy, busyLabel, idleLabel) {
   button.disabled = isBusy;
   button.textContent = isBusy ? busyLabel : idleLabel;
 }
 
+/** Normalizes service URLs through the session adapter. @param {string} value - Preset or URL. @returns {string} Base URL. */
 function normalizeServiceUrl(value) {
-  const preset = LOGIN_SERVICE_PRESETS[String(value || "").trim()];
-  let url = preset || String(value || "").trim();
-
-  if (!url) {
-    return LOGIN_SERVICE_PRESETS["bsky.social"];
-  }
-
-  if (!/^https?:\/\//i.test(url)) {
-    url = `https://${url}`;
-  }
-
-  try {
-    const normalized = new URL(url);
-    normalized.pathname = normalized.pathname.replace(/\/+$/, "");
-    if (normalized.pathname.endsWith("/xrpc")) {
-      normalized.pathname = normalized.pathname.slice(0, -5);
-    }
-    normalized.search = "";
-    normalized.hash = "";
-    return normalized.toString().replace(/\/$/, "");
-  } catch {
-    return url.replace(/\/+$/, "");
-  }
+  return normalizeLoginServiceUrl(value, LOGIN_SERVICE_PRESETS);
 }
 
-function getSelectedLoginService() {
-  if (serverPresetField.value === "custom") {
-    return normalizeServiceUrl(customServerField.value);
-  }
-
-  return normalizeServiceUrl(serverPresetField.value);
-}
 
 function getPostTargetName(webApp = authAccountWebApp) {
   try {
@@ -2116,57 +2374,17 @@ function getPublishBusyLabel() {
   return t("publishBusyTarget", { target: getPostTargetName() });
 }
 
+/** Updates the login endpoint controls. @param {string} serviceUrl - Selected endpoint. @returns {void} */
 function applyLoginServiceSelection(serviceUrl = LOGIN_SERVICE_PRESETS["bsky.social"]) {
-  const normalized = normalizeServiceUrl(serviceUrl);
-  const presetEntry = Object.entries(LOGIN_SERVICE_PRESETS).find(([, url]) => normalizeServiceUrl(url) === normalized);
-
-  if (presetEntry) {
-    serverPresetField.value = presetEntry[0];
-    customServerWrap.hidden = true;
-    customServerField.value = "";
-    return;
-  }
-
-  serverPresetField.value = "custom";
-  customServerWrap.hidden = false;
-  customServerField.value = normalized;
+  loginController.selectService(serviceUrl);
 }
 
-function setLoginDialogNote(message = "", tone = "neutral") {
-  loginDialogNote.hidden = !message;
-  loginDialogNote.textContent = message;
-  loginDialogNote.style.color = tone === "error" ? "var(--danger)" : "var(--muted)";
-}
 
+/** Opens account add/repair UI. @param {object} options - Account and field defaults. @returns {void} */
 function openLoginDialog(options = {}) {
-  const account = options.account || null;
-  identifierField.value = options.identifier ?? account?.identifier ?? account?.handle ?? "";
-  passwordField.value = "";
-  applyLoginServiceSelection(
-    options.service
-    || (account?.webApp === LOGIN_SERVICE_PRESETS["mu.social"] ? account.webApp : account?.service)
-    || LOGIN_SERVICE_PRESETS["bsky.social"],
-  );
-  setLoginDialogNote(options.note || "", options.tone || "neutral");
-  if (!loginDialog.open) {
-    loginDialog.showModal();
-  }
-  window.setTimeout(() => {
-    if (identifierField.value) {
-      passwordField.focus();
-    } else {
-      identifierField.focus();
-    }
-  }, 0);
+  loginController.open(options);
 }
 
-function closeLoginDialog() {
-  setLoginDialogNote("");
-  passwordField.value = "";
-  if (loginDialog.open) {
-    loginDialog.close();
-  }
-}
 
 function getAccountInitials(account) {
   const source = String(account?.handle || account?.identifier || "?").replace(/^@/, "");
@@ -2857,240 +3075,10 @@ function getRequestedNetworkActor() {
   return networkAccountDid || authAccountDid || "";
 }
 
-function getAccountVisualState(account) {
-  if (!appOnline && account.hasSession) {
-    return "offline";
-  }
-  if (account.did && account.did === authAccountDid && account.hasSession) {
-    return "active";
-  }
 
-  if (account.hasSession) {
-    return "available";
-  }
-
-  return "signed-out";
-}
-
+/** Refreshes the template-based saved-account sidebar. @returns {void} */
 function renderAccountSwitcher() {
-  accountSwitcherList.innerHTML = "";
-
-  if (!savedAccounts.length) {
-    accountSwitcherPanel.hidden = true;
-    return;
-  }
-
-  accountSwitcherPanel.hidden = false;
-
-  savedAccounts.forEach((account) => {
-    const state = getAccountVisualState(account);
-    const item = document.createElement("div");
-    item.className = `account-chip-wrap is-${state}`;
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "account-chip";
-    button.disabled = !account.did;
-    button.classList.add(`is-${state}`);
-    if (!account.hasStoredPassword && !account.hasSession) {
-      button.classList.add("is-needs-login");
-    }
-
-    const avatarUri = getStoredAccountAvatarUri(account);
-    const avatar = document.createElement("img");
-    avatar.className = "account-chip-avatar";
-    avatar.loading = "lazy";
-    setAvatarImage(avatar, avatarUri, account.handle || account.identifier || "account");
-
-    const label = document.createElement("span");
-    label.className = "account-chip-label";
-    label.textContent = account.handle || account.identifier || "account";
-
-    button.title = [
-      account.handle || account.identifier || "",
-      account.service || "",
-      state === "offline" ? t("accountStateOffline") : "",
-      state === "active" ? t("accountStateActive") : "",
-      state === "available" ? t("accountStateAvailable") : "",
-      state === "signed-out" ? t("accountStateSignedOut") : "",
-      !account.hasStoredPassword && !account.hasSession ? t("accountNeedsLoginShort") : "",
-    ].filter(Boolean).join(" · ");
-
-    button.append(avatar, label);
-    const handleAccountClick = async () => {
-      try {
-        const result = await requestAccountSwitch(sendToServiceWorker, account.did);
-        savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
-        await restoreAccountAvatarCache();
-        renderAccountSwitcher();
-
-        if (!result.authenticated) {
-          authAccount = null;
-          authAccountDid = "";
-          authAccountService = account.service || LOGIN_SERVICE_PRESETS["bsky.social"];
-          authAccountWebApp = account.webApp || resolvePostWebBase(authAccountService);
-          identifierField.value = account.identifier || account.handle || "";
-          applyLoginServiceSelection(authAccountService);
-          passwordField.value = "";
-          updateStatusForAuth();
-          const needsPassword = result.reason === "missing_password" || result.reason === "invalid_password";
-          const message = result.reason === "offline"
-            ? t("statusAccountOffline", { account: account.handle || account.identifier || "" })
-            : result.reason === "invalid_password"
-            ? t("statusAccountPasswordRejected", { account: account.handle || account.identifier || "" })
-            : t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" });
-          setStatus(message, "error");
-          if (needsPassword) {
-            openLoginDialog({
-              account,
-              mode: "repair",
-              note: message,
-              tone: "error",
-            });
-          }
-          return;
-        }
-
-        authAccount = result.handle || result.identifier || null;
-        authAccountDid = result.did || "";
-        authAccountService = result.service || account.service || LOGIN_SERVICE_PRESETS["bsky.social"];
-        authAccountWebApp = result.webApp || account.webApp || resolvePostWebBase(authAccountService);
-        identifierField.value = result.identifier || "";
-        applyLoginServiceSelection(authAccountService);
-        passwordField.value = "";
-        updateStatusForAuth();
-        await verifySession({ silent: true });
-      } catch (error) {
-        console.error(error);
-        setStatus(error.message, "error");
-      }
-    });
-
-    };
-
-    const authActionButton = document.createElement("button");
-    authActionButton.type = "button";
-    authActionButton.className = `account-chip-action${state === "signed-out" ? " is-login" : " is-logout"}`;
-    authActionButton.setAttribute("aria-label", state === "signed-out"
-      ? t("accountSignInButton", { account: account.handle || account.identifier || "account" })
-      : t("accountSignOutButton", { account: account.handle || account.identifier || "account" }));
-    authActionButton.title = state === "signed-out"
-      ? t("accountSignInButton", { account: account.handle || account.identifier || "account" })
-      : t("accountSignOutButton", { account: account.handle || account.identifier || "account" });
-    authActionButton.innerHTML = state === "signed-out"
-      ? createIconSvg("M10 17l1.4-1.4L8.8 13H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zm-6 7h8v-2H4V2h8V0H4C2.9 0 2 .9 2 2v20c0 1.1.9 2 2 2z")
-      : createIconSvg("M14 17l-1.4-1.4 2.6-2.6H4v-2h11.2l-2.6-2.6L14 7l5 5-5 5zM20 24h-8v-2h8V2h-8V0h8c1.1 0 2 .9 2 2v20c0 1.1-.9 2-2 2z");
-    const handleAuthActionClick = async () => {
-      try {
-        if (state === "signed-out") {
-          if (account.hasStoredPassword) {
-            const result = await requestAccountSwitch(sendToServiceWorker, account.did);
-            savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
-            await restoreAccountAvatarCache();
-            renderAccountSwitcher();
-            if (result.authenticated) {
-              authAccount = result.handle || result.identifier || null;
-              authAccountDid = result.did || "";
-              authAccountService = result.service || account.service || LOGIN_SERVICE_PRESETS["bsky.social"];
-              authAccountWebApp = result.webApp || account.webApp || resolvePostWebBase(authAccountService);
-              updateStatusForAuth();
-              await verifySession({ silent: true });
-              return;
-            }
-            const message = result.reason === "offline"
-              ? t("statusAccountOffline", { account: account.handle || account.identifier || "" })
-              : result.reason === "invalid_password"
-              ? t("statusAccountPasswordRejected", { account: account.handle || account.identifier || "" })
-              : t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" });
-            setStatus(message, "error");
-            if (result.reason !== "offline") {
-              openLoginDialog({
-                account,
-                mode: "repair",
-                note: message,
-                tone: "error",
-              });
-            }
-            return;
-          }
-
-          openLoginDialog({
-            account,
-            mode: "repair",
-            note: t("statusAccountNeedsLogin", { account: account.handle || account.identifier || "" }),
-            tone: "error",
-          });
-          return;
-        }
-
-        const result = await requestAccountLogout(sendToServiceWorker, account.did);
-        savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
-        await restoreAccountAvatarCache();
-        authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
-        authAccountDid = result.authenticated ? (result.did || "") : "";
-        authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
-        authAccountWebApp = result.webApp || resolvePostWebBase(authAccountService);
-        updateStatusForAuth();
-        setStatus(t("accountSignedOutStatus", { account: account.handle || account.identifier || "account" }));
-      } catch (error) {
-        console.error(error);
-        setStatus(error.message, "error");
-      }
-    });
-
-    };
-
-    const removeButton = document.createElement("button");
-    removeButton.type = "button";
-    removeButton.className = "account-chip-remove";
-    removeButton.setAttribute("aria-label", t("removeAccountButton", { account: account.handle || account.identifier || "account" }));
-    removeButton.title = t("removeAccountButton", { account: account.handle || account.identifier || "account" });
-    removeButton.innerHTML = createIconSvg("M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z");
-    const handleRemoveClick = async () => {
-      const confirmed = await openConfirmDialog({
-        title: t("removeAccountConfirmTitle"),
-        message: t("removeAccountConfirmText", { account: account.handle || account.identifier || "account" }),
-        confirmLabel: t("removeAccountConfirmButton"),
-        cancelLabel: t("cancelButton"),
-      });
-
-      if (!confirmed) {
-        return;
-      }
-
-      try {
-        const result = await requestAccountRemoval(sendToServiceWorker, account.did);
-        savedAccounts = Array.isArray(result.accounts) ? result.accounts : [];
-        await restoreAccountAvatarCache();
-        authAccount = result.authenticated ? (result.handle || result.identifier || null) : null;
-        authAccountDid = result.authenticated ? (result.did || "") : "";
-        authAccountService = result.service || LOGIN_SERVICE_PRESETS["bsky.social"];
-        authAccountWebApp = result.webApp || resolvePostWebBase(authAccountService);
-        identifierField.value = result.identifier || "";
-        applyLoginServiceSelection(authAccountService);
-        updateStatusForAuth();
-        setStatus(t("accountRemovedStatus", { account: account.handle || account.identifier || "account" }));
-      } catch (error) {
-        console.error(error);
-        setStatus(error.message, "error");
-      }
-    });
-
-    };
-
-    bindAccountSwitcherItemEvents({
-      accountButton: button,
-      authActionButton,
-      removeButton,
-    }, {
-      accountClick: handleAccountClick,
-      authActionClick: handleAuthActionClick,
-      removeClick: handleRemoveClick,
-    });
-
-    item.append(button, authActionButton, removeButton);
-    accountSwitcherList.appendChild(item);
-  });
+  savedAccountRenderer.render();
 }
 
 /**
@@ -3143,37 +3131,7 @@ function showDefaultWorkspaceForCurrentPage(options = {}) {
  * @returns {{themeMode: string, compactMode: boolean, hasThemeMode: boolean, hasCompactMode: boolean}} Normalized appearance preferences plus presence flags.
  */
 function getStoredAppearancePreferences() {
-  let storedThemeMode = "light";
-  let storedCompactMode = false;
-  let hasThemeMode = false;
-  let hasCompactMode = false;
-
-  try {
-    const rawThemeMode = readBrowserStorageValue(window.localStorage, THEME_MODE_STORAGE_KEY);
-    if (rawThemeMode === "dark" || rawThemeMode === "light") {
-      hasThemeMode = true;
-    }
-    if (rawThemeMode === "dark") {
-      storedThemeMode = "dark";
-    }
-
-    const rawCompactMode = readBrowserStorageValue(window.localStorage, COMPACT_MODE_STORAGE_KEY);
-    if (rawCompactMode === "true" || rawCompactMode === "false") {
-      hasCompactMode = true;
-    }
-    if (rawCompactMode === "true") {
-      storedCompactMode = true;
-    }
-  } catch {
-    // Ignore localStorage access errors in restricted contexts.
-  }
-
-  return {
-    themeMode: storedThemeMode,
-    compactMode: storedCompactMode,
-    hasThemeMode,
-    hasCompactMode,
-  };
+  return appearanceController.read();
 }
 
 /**
@@ -3181,16 +3139,7 @@ function getStoredAppearancePreferences() {
  * @returns {void}
  */
 function persistAppearancePreferences() {
-  try {
-    writeBrowserStorageValue(window.localStorage, THEME_MODE_STORAGE_KEY, themeMode);
-    if (compactMode === true) {
-      writeBrowserStorageValue(window.localStorage, COMPACT_MODE_STORAGE_KEY, "true");
-    } else {
-      writeBrowserStorageValue(window.localStorage, COMPACT_MODE_STORAGE_KEY, "false");
-    }
-  } catch {
-    // Ignore localStorage access errors in restricted contexts.
-  }
+  appearanceController.persist();
 }
 
 /**
@@ -3198,9 +3147,7 @@ function persistAppearancePreferences() {
  * @returns {void}
  */
 function restoreAppearancePreferencesFromLocalStorage() {
-  const storedPreferences = getStoredAppearancePreferences();
-  themeMode = storedPreferences.themeMode;
-  compactMode = storedPreferences.compactMode;
+  appearanceController.restore();
 }
 
 /**
@@ -3208,31 +3155,7 @@ function restoreAppearancePreferencesFromLocalStorage() {
  * @returns {boolean} True when at least one appearance value was applied from the URL.
  */
 function applyAppearancePreferencesFromUrl() {
-  const currentUrl = new URL(window.location.href);
-  const rawThemeMode = String(currentUrl.searchParams.get("_theme") || "").trim();
-  const rawDensity = String(currentUrl.searchParams.get("_density") || "").trim();
-  let didApply = false;
-
-  if (rawThemeMode === "dark" || rawThemeMode === "light") {
-    themeMode = rawThemeMode;
-    didApply = true;
-  }
-  if (rawDensity === "compact") {
-    compactMode = true;
-    didApply = true;
-  } else if (rawDensity === "normal") {
-    compactMode = false;
-    didApply = true;
-  }
-
-  if (didApply) {
-    persistAppearancePreferences();
-    currentUrl.searchParams.delete("_theme");
-    currentUrl.searchParams.delete("_density");
-    window.history.replaceState({}, document.title, currentUrl.toString());
-  }
-
-  return didApply;
+  return appearanceController.applyUrl();
 }
 
 /**
@@ -3241,16 +3164,7 @@ function applyAppearancePreferencesFromUrl() {
  * @returns {string} Encoded JSON payload, or an empty string when no valid target exists.
  */
 function encodeComposerReplyTargetForUrl(target) {
-  const normalizedTarget = normalizeReplyTarget(target);
-  if (!normalizedTarget) {
-    return "";
-  }
-
-  try {
-    return encodeURIComponent(JSON.stringify(normalizedTarget));
-  } catch {
-    return "";
-  }
+  return composerReplyHandoff.encode(target);
 }
 
 /**
@@ -3258,23 +3172,7 @@ function encodeComposerReplyTargetForUrl(target) {
  * @returns {object|null} Normalized reply target from the URL, or null.
  */
 function consumeComposerReplyTargetFromUrl() {
-  const currentUrl = new URL(window.location.href);
-  const rawValue = String(currentUrl.searchParams.get(PENDING_COMPOSER_REPLY_TARGET_QUERY_KEY) || "").trim();
-  if (!rawValue) {
-    return null;
-  }
-
-  let normalizedTarget = null;
-  try {
-    const decodedValue = decodeURIComponent(rawValue);
-    normalizedTarget = normalizeReplyTarget(JSON.parse(decodedValue));
-  } catch {
-    normalizedTarget = null;
-  }
-
-  currentUrl.searchParams.delete(PENDING_COMPOSER_REPLY_TARGET_QUERY_KEY);
-  window.history.replaceState({}, document.title, currentUrl.toString());
-  return normalizedTarget;
+  return composerReplyHandoff.consumeUrl();
 }
 
 /**
@@ -3283,14 +3181,7 @@ function consumeComposerReplyTargetFromUrl() {
  * @returns {string} Target URL with appearance transfer parameters.
  */
 function buildAppearanceAwarePageSwitchUrl(href) {
-  const targetUrl = new URL(String(href || ""), window.location.href);
-  targetUrl.searchParams.set("_theme", themeMode);
-  if (compactMode === true) {
-    targetUrl.searchParams.set("_density", "compact");
-  } else {
-    targetUrl.searchParams.set("_density", "normal");
-  }
-  return targetUrl.toString();
+  return appearanceController.buildUrl(href);
 }
 
 /**
@@ -3299,11 +3190,7 @@ function buildAppearanceAwarePageSwitchUrl(href) {
  * @returns {void}
  */
 function persistPendingPageSwitchUrl(url) {
-  try {
-    writeBrowserStorageValue(window.sessionStorage, PENDING_PAGE_SWITCH_URL_SESSION_KEY, url);
-  } catch {
-    // Ignore sessionStorage access errors in restricted contexts.
-  }
+  pendingNavigation.persist(url);
 }
 
 /**
@@ -3311,11 +3198,7 @@ function persistPendingPageSwitchUrl(url) {
  * @returns {string} Pending absolute target URL, or an empty string.
  */
 function getPendingPageSwitchUrl() {
-  try {
-    return readBrowserStorageValue(window.sessionStorage, PENDING_PAGE_SWITCH_URL_SESSION_KEY);
-  } catch {
-    return "";
-  }
+  return pendingNavigation.read();
 }
 
 /**
@@ -3323,13 +3206,7 @@ function getPendingPageSwitchUrl() {
  * @returns {string} Pending absolute target URL, or an empty string.
  */
 function consumePendingPageSwitchUrl() {
-  const pendingUrl = getPendingPageSwitchUrl();
-  try {
-    removeBrowserStorageValue(window.sessionStorage, PENDING_PAGE_SWITCH_URL_SESSION_KEY);
-  } catch {
-    // Ignore sessionStorage access errors in restricted contexts.
-  }
-  return pendingUrl;
+  return pendingNavigation.consume();
 }
 
 /**
@@ -3337,11 +3214,7 @@ function consumePendingPageSwitchUrl() {
  * @returns {void}
  */
 function clearPendingPageSwitchUrl() {
-  try {
-    removeBrowserStorageValue(window.sessionStorage, PENDING_PAGE_SWITCH_URL_SESSION_KEY);
-  } catch {
-    // Ignore sessionStorage access errors in restricted contexts.
-  }
+  pendingNavigation.clear();
 }
 
 /**
@@ -3349,20 +3222,7 @@ function clearPendingPageSwitchUrl() {
  * @returns {void}
  */
 function clearMatchingPendingPageSwitchUrl() {
-  const pendingUrl = getPendingPageSwitchUrl();
-  if (!pendingUrl) {
-    return;
-  }
-
-  try {
-    const currentUrl = new URL(window.location.href);
-    const targetUrl = new URL(pendingUrl, window.location.href);
-    if (currentUrl.pathname === targetUrl.pathname) {
-      window.sessionStorage.removeItem(PENDING_PAGE_SWITCH_URL_SESSION_KEY);
-    }
-  } catch {
-    // Ignore malformed URL or sessionStorage errors.
-  }
+  pendingNavigation.clearMatching();
 }
 
 /**
@@ -3371,36 +3231,7 @@ function clearMatchingPendingPageSwitchUrl() {
  * @returns {void}
  */
 function persistPendingComposerReplyTarget(target) {
-  const normalizedTarget = normalizeReplyTarget(target);
-  try {
-    if (!normalizedTarget) {
-      window.sessionStorage.removeItem(PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY);
-      return;
-    }
-    window.sessionStorage.setItem(
-      PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY,
-      JSON.stringify(normalizedTarget),
-    );
-  } catch {
-    // Ignore sessionStorage access errors in restricted contexts.
-  }
-}
-
-/**
- * Reads one pending composer reply target without removing it.
- * @returns {object|null} Normalized reply target from sessionStorage, or null.
- */
-function getPendingComposerReplyTarget() {
-  try {
-    const rawValue = String(window.sessionStorage.getItem(PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY) || "").trim();
-    if (!rawValue) {
-      return null;
-    }
-    const parsedValue = JSON.parse(rawValue);
-    return normalizeReplyTarget(parsedValue);
-  } catch {
-    return null;
-  }
+  composerReplyHandoff.persist(target);
 }
 
 /**
@@ -3408,13 +3239,7 @@ function getPendingComposerReplyTarget() {
  * @returns {object|null} Normalized reply target from sessionStorage, or null.
  */
 function consumePendingComposerReplyTarget() {
-  const target = getPendingComposerReplyTarget();
-  try {
-    window.sessionStorage.removeItem(PENDING_COMPOSER_REPLY_TARGET_SESSION_KEY);
-  } catch {
-    // Ignore sessionStorage access errors in restricted contexts.
-  }
-  return target;
+  return composerReplyHandoff.consumeStored();
 }
 
 /**
@@ -3422,25 +3247,7 @@ function consumePendingComposerReplyTarget() {
  * @returns {void}
  */
 function syncAppearanceFromLocalStorage() {
-  const storedPreferences = getStoredAppearancePreferences();
-  let needsThemeUpdate = false;
-  let needsCompactUpdate = false;
-
-  if (storedPreferences.hasThemeMode && themeMode !== storedPreferences.themeMode) {
-    themeMode = storedPreferences.themeMode;
-    needsThemeUpdate = true;
-  }
-  if (storedPreferences.hasCompactMode && compactMode !== storedPreferences.compactMode) {
-    compactMode = storedPreferences.compactMode;
-    needsCompactUpdate = true;
-  }
-
-  if (needsThemeUpdate) {
-    applyTheme();
-  }
-  if (needsCompactUpdate) {
-    applyCompactMode();
-  }
+  appearanceController.sync();
 }
 
 /**
@@ -4136,89 +3943,20 @@ function assertDmAccessUnlocked() {
   }
 }
 
-function applyHashtagPaneContext() {
-  if (!hashtagsPane) {
-    return;
-  }
-
-  const hashtagsEyebrow = hashtagsPane.querySelector(".eyebrow");
-  const hashtagsTitle = hashtagsPane.querySelector(".tips-title");
-
-  if (isArchiveHashtagContext()) {
-    archiveHashtagSlot?.replaceChildren(hashtagsPane);
-    hashtagsPane.classList.add("is-archive-context");
-    setElementVisibility(hashtagPlacementLabel, false);
-    setElementVisibility(archiveHashtagScopeWrap, true);
-    setElementVisibility(archiveHashtagNote, true);
-    if (hashtagsEyebrow) {
-      hashtagsEyebrow.textContent = t("archiveHashtagEyebrow");
-    }
-    if (hashtagsTitle) {
-      hashtagsTitle.textContent = t("archiveHashtagTitle");
-    }
-  } else if (isSearchHashtagContext()) {
-    searchHashtagDialogSlot?.replaceChildren(hashtagsPane);
-    hashtagsPane.classList.remove("is-archive-context");
-    setElementVisibility(hashtagPlacementLabel, false);
-    setElementVisibility(archiveHashtagScopeWrap, false);
-    setElementVisibility(archiveHashtagNote, false);
-    if (hashtagsEyebrow) {
-      hashtagsEyebrow.textContent = t("searchHashtagEyebrow");
-    }
-    if (hashtagsTitle) {
-      hashtagsTitle.textContent = t("searchHashtagTitle");
-    }
-  } else {
-    composerColumn?.appendChild(hashtagsPane);
-    hashtagsPane.classList.remove("is-archive-context");
-    setElementVisibility(hashtagPlacementLabel, true);
-    setElementVisibility(archiveHashtagScopeWrap, false);
-    setElementVisibility(archiveHashtagNote, false);
-    if (hashtagsEyebrow) {
-      hashtagsEyebrow.textContent = t("hashtagsEyebrow");
-    }
-    if (hashtagsTitle) {
-      hashtagsTitle.textContent = t("hashtagsTitle");
-    }
-  }
-
-  updateComposerLockState();
-}
+/** Relocates the shared hashtag pane to the active workspace. @returns {void} */
+function applyHashtagPaneContext() { hashtagController.applyContext(); }
 
 /**
  * Builds the compact hashtag summary for the search workspace.
  * @returns {string} Localized one-line summary for the selected search hashtags.
  */
-function buildSearchHashtagSummary() {
-  const selectedTags = normalizeSelectedHashtagEntries(searchSelectedHashtags, hashtags).map((tag) => {
-    return formatHashtag(getDisplayHashtag(tag));
-  });
-  if (selectedTags.length === 0) {
-    return t("searchHashtagSummaryEmpty");
-  }
-  let matchModeLabel = t("searchTagMatchAll");
-  if (String(searchTagMatchSelect?.value || "").trim() === "any") {
-    matchModeLabel = t("searchTagMatchAny");
-  }
-  return t("searchHashtagSummarySome", {
-    count: formatCount(selectedTags.length),
-    tags: selectedTags.join(", "),
-    mode: matchModeLabel,
-  });
-}
+function buildSearchHashtagSummary() { return hashtagController.getSearchSummary(); }
 
 /**
  * Renders the compact hashtag summary and button state in the search workspace.
  * @returns {void}
  */
-function renderSearchHashtagSummary() {
-  if (searchHashtagSummary) {
-    searchHashtagSummary.textContent = buildSearchHashtagSummary();
-  }
-  if (searchHashtagButton) {
-    searchHashtagButton.classList.toggle("is-active", searchSelectedHashtags.length > 0);
-  }
-}
+function renderSearchHashtagSummary() { hashtagController.renderSearchSummary(); }
 
 function createArchiveCardHeading({ eyebrowKey, eyebrowText, titleKey, titleText, helpTopic = "" } = {}) {
   const fragment = document.createDocumentFragment();
@@ -5374,24 +5112,13 @@ function showSearchWorkspace(options = {}) {
  * Opens the search hashtag dialog.
  * @returns {void}
  */
-function openSearchHashtagDialog() {
-  if (!searchHashtagDialog) {
-    return;
-  }
-  applyHashtagPaneContext();
-  renderSearchHashtagSummary();
-  searchHashtagDialog.showModal();
-}
+function openSearchHashtagDialog() { hashtagController.openSearch(); }
 
 /**
  * Closes the search hashtag dialog if it is open.
  * @returns {void}
  */
-function closeSearchHashtagDialog() {
-  if (searchHashtagDialog?.open) {
-    searchHashtagDialog.close();
-  }
-}
+function closeSearchHashtagDialog() { hashtagController.closeSearch(); }
 
 /**
  * Copies the authenticated account handle into the search account field.
@@ -6575,68 +6302,10 @@ function applyLikeStateToKnownPosts(postUri = "", likeUri = "", delta = 0) {
  * @returns {object|null} Normalized reply target, or null when required fields are missing.
  */
 function buildReplyTargetFromLivePost(post = {}) {
-  const postUri = String(post?.uri || "").trim();
-  const postCid = String(post?.cid || "").trim();
-  if (!postUri || !postCid) {
-    return null;
-  }
-
-  let rootUri = postUri;
-  let rootCid = postCid;
-  if (post.reply && typeof post.reply === "object") {
-    const rawRootUri = String(post.reply.root?.uri || "").trim();
-    const rawRootCid = String(post.reply.root?.cid || "").trim();
-    if (rawRootUri && rawRootCid) {
-      rootUri = rawRootUri;
-      rootCid = rawRootCid;
-    }
-  }
-
-  let sourceUrl = buildThreadExplorerPostWebUrl(post);
-  if (!sourceUrl) {
-    sourceUrl = "";
-  }
-
-  const target = {
-    mode: "post",
-    sourceUrl,
-    threadLength: 1,
-    replyHint: "",
-    targetPost: {
-      uri: postUri,
-      cid: postCid,
-      text: String(post?.text || "").trim(),
-      createdAt: String(post?.createdAt || post?.indexedAt || "").trim(),
-    },
-    rootPost: {
-      uri: rootUri,
-      cid: rootCid,
-      text: "",
-      createdAt: "",
-    },
-    targetAccount: {
-      did: String(post.author?.did || "").trim(),
-      handle: String(post.author?.handle || "").trim(),
-      displayName: String(post.author?.displayName || "").trim(),
-      avatar: String(post.author?.avatar || "").trim(),
-    },
-    rootAccount: {
-      did: "",
-      handle: "",
-      displayName: "",
-      avatar: "",
-    },
-    lastOwnPost: null,
-    replyRoot: {
-      uri: rootUri,
-      cid: rootCid,
-    },
-    replyParent: {
-      uri: postUri,
-      cid: postCid,
-    },
-  };
-  return normalizeReplyTarget(target);
+  return buildComposerReplyTargetFromPost(post, {
+    normalize: normalizeReplyTarget,
+    buildWebUrl: buildThreadExplorerPostWebUrl,
+  });
 }
 
 /**
@@ -6645,31 +6314,26 @@ function buildReplyTargetFromLivePost(post = {}) {
  * @returns {void}
  */
 function openComposerReplyForPost(post = {}) {
-  const target = buildReplyTargetFromLivePost(post);
-  if (!target) {
-    showErrorDialog(t("replyTargetResolveFailed"));
-    return;
-  }
-
-  composerReplyTarget = target;
-  if (getCurrentThreadlinePage() !== THREADLINE_PAGE_COMPOSER) {
-    persistPendingComposerReplyTarget(target);
-    const targetUrl = new URL(buildAppearanceAwarePageSwitchUrl("./"), window.location.href);
-    const encodedReplyTarget = encodeComposerReplyTargetForUrl(target);
-    if (encodedReplyTarget) {
-      targetUrl.searchParams.set(PENDING_COMPOSER_REPLY_TARGET_QUERY_KEY, encodedReplyTarget);
-    }
-    const nextHref = targetUrl.toString();
-    persistPendingPageSwitchUrl(nextHref);
-    window.location.href = nextHref;
-    return;
-  }
-  showComposerWorkspace({ redirectPage: true });
-  renderReplyTargetCard();
-  publishButton.textContent = getPublishButtonLabel();
-  updatePublishAvailability();
-  queueDraftSave();
-  setStatus(t("replyTargetPostReady"));
+  openComposerReplyTarget(buildReplyTargetFromLivePost(post), {
+    showError: () => showErrorDialog(t("replyTargetResolveFailed")),
+    setTarget: (target) => { composerReplyTarget = target; },
+    isComposerPage: () => getCurrentThreadlinePage() === THREADLINE_PAGE_COMPOSER,
+    persistTarget: persistPendingComposerReplyTarget,
+    getComposerUrl: () => buildAppearanceAwarePageSwitchUrl("./"),
+    getHref: () => window.location.href,
+    encodeTarget: encodeComposerReplyTargetForUrl,
+    queryKey: PENDING_COMPOSER_REPLY_TARGET_QUERY_KEY,
+    persistNavigation: persistPendingPageSwitchUrl,
+    navigate: (href) => { window.location.href = href; },
+    showWorkspace: () => showComposerWorkspace({ redirectPage: true }),
+    refresh: () => {
+      renderReplyTargetCard();
+      publishButton.textContent = getPublishButtonLabel();
+      updatePublishAvailability();
+    },
+    saveDraft: queueDraftSave,
+    showReady: () => setStatus(t("replyTargetPostReady")),
+  });
 }
 
 /**
@@ -18791,17 +18455,11 @@ function renderArchiveResults(catalog = archiveCatalog) {
   zipButton.type = "button";
   zipButton.className = "ghost-button";
   zipButton.textContent = t("archiveDownloadZipButton");
-  zipButton.addEventListener("click", () => {
-    void exportArchiveZipFromCatalog(catalog);
-  });
 
   const pdfButton = document.createElement("button");
   pdfButton.type = "button";
   pdfButton.className = "ghost-button";
   pdfButton.textContent = t("archiveDownloadPdfButton");
-  pdfButton.addEventListener("click", () => {
-    void exportArchivePdfBandsFromCatalog(catalog);
-  });
 
   const htmlButton = document.createElement("button");
   htmlButton.type = "button";
@@ -18811,8 +18469,22 @@ function renderArchiveResults(catalog = archiveCatalog) {
   htmlButton.title = htmlTooLarge ? t("archiveExportHtmlTooLargeTitle") : t("archiveDownloadHtmlButton");
   htmlButton.disabled = htmlTooLarge;
   if (!htmlTooLarge) {
-    htmlButton.addEventListener("click", () => {
-      void exportArchiveHtmlFromCatalog(catalog);
+    bindArchiveResultExportEvents({
+      zipButton,
+      htmlButton,
+      pdfButton,
+    }, {
+      zipClick: () => { void exportArchiveZipFromCatalog(catalog); },
+      htmlClick: () => { void exportArchiveHtmlFromCatalog(catalog); },
+      pdfClick: () => { void exportArchivePdfBandsFromCatalog(catalog); },
+    });
+  } else {
+    bindArchiveResultExportEvents({
+      zipButton,
+      pdfButton,
+    }, {
+      zipClick: () => { void exportArchiveZipFromCatalog(catalog); },
+      pdfClick: () => { void exportArchivePdfBandsFromCatalog(catalog); },
     });
   }
 
@@ -18867,88 +18539,24 @@ function invalidateArchiveCatalog() {
   renderArchiveWorkspace();
 }
 
-function updatePublishAvailability() {
-  const baseText = sourceText.value.trim();
-  let segments = [];
-  if (activeSegments.length > 0) {
-    segments = activeSegments;
-  } else if (currentComposedText.trim()) {
-    segments = [currentComposedText];
-  }
-  const hasTooLongComposer = countGraphemes(sourceText.value) > MAX_COMPOSER_GRAPHEME_LENGTH;
-  const hasTooLongSegment = segments.some((entry) => {
-    const metrics = getPostTextMetrics(entry);
-    return metrics.graphemeCount > MAX_POST_LENGTH || metrics.utf8ByteCount > MAX_POST_UTF8_BYTES;
-  });
-  const hasMissingAltText = altTextRequired && getSegmentPayloads().some((segment) =>
-    (segment.images || []).some((image) => !String(image.alt || "").trim()));
-  const hasOversizedImage = getSegmentPayloads().some((segment) =>
-    (segment.images || []).some((image) => image.validation?.tooBig));
-  const shouldBlockOversizedImages = !isImageAutoResizeEnabled();
-  const canPublish = Boolean(baseText) && !hasTooLongComposer && !hasTooLongSegment && !hasMissingAltText;
-  const canPublishWithImages = canPublish && (!shouldBlockOversizedImages || !hasOversizedImage);
+/** Refreshes the editing-time publish state and warnings. @returns {void} */
+function updatePublishAvailability() { composerPublishAvailability.render(); }
 
-  publishButton.disabled = !canPublishWithImages;
-  publishButton.classList.toggle("is-danger", hasTooLongComposer || hasTooLongSegment || hasMissingAltText || (shouldBlockOversizedImages && hasOversizedImage));
-  updateComposerInputWarning(false);
-  const publishWarnings = [];
-  if (hasMissingAltText) {
-    publishWarnings.push(t("publishAltTextWarning"));
-  }
-  if (shouldBlockOversizedImages && hasOversizedImage) {
-    publishWarnings.push(t("publishImageTooLargeWarning"));
-  }
-  publishWarning.hidden = publishWarnings.length === 0;
-  publishWarning.textContent = publishWarnings.join("\n");
-}
+/** Refreshes clear-button availability. @returns {void} */
+function updateClearButtonState() { composerUiState.renderClear(); }
 
-function updateClearButtonState() {
-  clearButton.disabled = composerLocked || !sourceText.value.trim();
-}
+/** Applies the current lock state to Composer controls. @returns {void} */
+function updateComposerLockState() { composerUiState.renderLock(); }
 
-function updateComposerLockState() {
-  const composerHashtagLocked = composerLocked && !isArchiveHashtagContext() && !isSearchHashtagContext();
-  sourceText.disabled = composerLocked;
-  counterToggle.disabled = composerLocked;
-  threadIntroToggle.disabled = composerLocked;
-  threadEmojiToggle.disabled = composerLocked;
-  markerSpacingToggle.disabled = composerLocked;
-  postSettingsButton.disabled = composerLocked;
-  hashtagInput.disabled = composerHashtagLocked;
-  hashtagAddButton.disabled = composerHashtagLocked;
-  hashtagPlacementSelect.disabled = composerHashtagLocked;
-  updateClearButtonState();
-  composerLockNote.hidden = !composerLocked;
-  hashtagsPane?.classList.toggle("is-locked", composerHashtagLocked);
-  renderHashtagCloud();
-}
-
-function setComposerLocked(locked) {
-  composerLocked = locked;
-  updateComposerLockState();
-}
-
-/**
- * Updates the visible note that the current composer contents were already published.
- * @returns {void}
- */
-function updateComposerPostedState() {
-  if (!composerPostedNote) {
-    return;
-  }
-
-  composerPostedNote.hidden = !composerPosted;
-}
+/** Sets manual-edit locking. @param {boolean} locked - Desired state. @returns {void} */
+function setComposerLocked(locked) { composerUiState.setLocked(locked); }
 
 /**
  * Sets whether the composer currently shows an already published thread.
  * @param {boolean} posted - True when the current composer content was just posted.
  * @returns {void}
  */
-function setComposerPosted(posted) {
-  composerPosted = posted;
-  updateComposerPostedState();
-}
+function setComposerPosted(posted) { composerUiState.setPosted(posted); }
 
 function detectBrowserLocale() {
   const candidates = [navigator.language, ...(navigator.languages || [])]
@@ -18958,19 +18566,15 @@ function detectBrowserLocale() {
   return candidates.find((value) => SUPPORTED_LOCALES.includes(value)) || DEFAULT_LOCALE;
 }
 
-function isIosDevice() {
-  return /iPad|iPhone|iPod/.test(window.navigator.userAgent)
-    || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
-}
+/** Detects iOS including desktop-identifying iPads. @returns {boolean} iOS device status. */
+function isIosDevice() { return isIosDeviceFromShell(window.navigator); }
 
 function isStandaloneMode() {
   return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 }
 
-function updateInstallButtonVisibility() {
-  const canShow = !isStandaloneMode() && (Boolean(deferredInstallPrompt) || isIosDevice());
-  installButton.hidden = !canShow;
-}
+/** Refreshes PWA installation availability. @returns {void} */
+function updateInstallButtonVisibility() { applicationInstall.render(); }
 
 function formatTemplate(template, values = {}) {
   return template.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "");
@@ -18992,13 +18596,7 @@ function t(key, values = {}) {
  * @returns {void}
  */
 function applyTheme() {
-  let isDarkTheme = false;
-  if (themeMode === "dark") {
-    isDarkTheme = true;
-  }
-  document.body.classList.toggle("theme-dark", isDarkTheme);
-  persistAppearancePreferences();
-  updateAppearanceModeControls();
+  appearanceController.applyTheme();
 }
 
 /**
@@ -19006,10 +18604,7 @@ function applyTheme() {
  * @returns {void}
  */
 function applyCompactMode() {
-  document.body.classList.toggle("ui-density-compact", compactMode === true);
-  persistAppearancePreferences();
-  applyDesktopLayoutState();
-  updateAppearanceModeControls();
+  appearanceController.applyDensity();
 }
 
 /**
@@ -19017,252 +18612,33 @@ function applyCompactMode() {
  * @returns {void}
  */
 function updateAppearanceModeControls() {
-  if (themeStatusNote) {
-    if (themeMode === "dark") {
-      themeStatusNote.textContent = t("themeDarkActive");
-    } else {
-      themeStatusNote.textContent = t("themeLightActive");
-    }
-  }
-  if (themeToggleButton) {
-    if (themeMode === "dark") {
-      themeToggleButton.textContent = t("lightModeButton");
-    } else {
-      themeToggleButton.textContent = t("darkModeButton");
-    }
-  }
-  if (compactModeStatusNote) {
-    if (compactMode === true) {
-      compactModeStatusNote.textContent = t("compactModeActive");
-    } else {
-      compactModeStatusNote.textContent = t("compactModeInactive");
-    }
-  }
-  if (compactModeToggleButtons.length > 0) {
-    compactModeToggleButtons.forEach((button, index) => {
-      button.hidden = index !== compactModeToggleButtons.length - 1;
-      if (compactMode === true) {
-        button.textContent = t("normalModeButton");
-      } else {
-        button.textContent = t("compactModeButton");
-      }
-    });
-  }
+  appearanceController.renderControls();
 }
 
 function getThreadIntroText() {
   return t("threadIntroText");
 }
 
-function getNormalizedPostLanguagesOrDefault() {
-  const normalized = normalizePostLanguageTags(selectedPostLanguages);
-  if (normalized.length > 0) {
-    return normalized;
-  }
-  return inferDefaultPostLanguages(currentLocale);
-}
+/** Reads posting languages with locale fallback. @returns {string[]} Language tags. */
+function getNormalizedPostLanguagesOrDefault() { return composerPostSettings.getLanguages(); }
 
-function normalizePostInteractionSettings(value = {}) {
-  return normalizeComposerPostInteractionSettings(value);
-}
+/** Reads normalized reply/quote rules. @returns {object} Posting interaction settings. */
+function getCurrentPostInteractionSettings() { return composerPostSettings.getInteraction(); }
 
-function getCurrentPostInteractionSettings() {
-  return normalizePostInteractionSettings({
-    replyMode,
-    allowFollowers: replyAllowFollowers,
-    allowFollowing: replyAllowFollowing,
-    allowMentioned: replyAllowMentioned,
-    quotePostsAllowed,
-  });
-}
+/** Applies imported/stored reply rules. @param {object} value - Raw settings. @returns {void} */
+function applyPostInteractionSettings(value = {}) { composerPostSettings.applyInteraction(value); }
 
-function applyPostInteractionSettings(value = {}) {
-  const normalized = normalizePostInteractionSettings(value);
-  replyMode = normalized.replyMode;
-  replyAllowFollowers = normalized.allowFollowers;
-  replyAllowFollowing = normalized.allowFollowing;
-  replyAllowMentioned = normalized.allowMentioned;
-  quotePostsAllowed = normalized.quotePostsAllowed;
+/** Refreshes enabled state for custom reply rules. @returns {void} */
+function renderPostInteractionControls() { composerPostSettings.renderInteraction(); }
 
-  replyModeEveryoneInput.checked = replyMode === "everyone";
-  replyModeNobodyInput.checked = replyMode === "nobody";
-  replyModeCustomInput.checked = replyMode === "custom";
-  replyAllowFollowersInput.checked = replyAllowFollowers;
-  replyAllowFollowingInput.checked = replyAllowFollowing;
-  replyAllowMentionedInput.checked = replyAllowMentioned;
-  quotePostsToggle.checked = quotePostsAllowed;
-  renderPostInteractionControls();
-}
+/** Applies normalized desktop column widths. @returns {void} */
+function applyDesktopLayoutState() { desktopLayout.apply(); }
 
-function renderPostInteractionControls() {
-  const isCustom = replyMode === "custom";
-  [replyAllowFollowersInput, replyAllowFollowingInput, replyAllowMentionedInput].forEach((input) => {
-    input.disabled = !isCustom;
-    input.closest(".toggle")?.classList.toggle("is-disabled", !isCustom);
-  });
-}
+/** Restores default widths and saves them. @returns {Promise<void>} Persistence completion. */
+async function resetDesktopColumnWidths() { await desktopLayout.reset(); }
 
-function getReplyModeSummary() {
-  return getComposerReplyModeSummary(getCurrentPostInteractionSettings(), t);
-}
-
-function renderPostSettingsDisclosureMeta() {
-  const metadata = buildComposerPostSettingsDisclosureMeta(
-    getCurrentPostInteractionSettings(),
-    getNormalizedPostLanguagesOrDefault().length,
-    t,
-  );
-  postLanguagesDisclosureMeta.textContent = metadata.languages;
-  postInteractionDisclosureMeta.textContent = metadata.interactions;
-}
-
-function clampDesktopWidth(value, min, max, fallback) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, Math.round(numericValue)));
-}
-
-function applyDesktopLayoutState() {
-  const resolvedSidebarWidth = clampDesktopWidth(
-    sidebarWidthDesktop,
-    MIN_SIDEBAR_WIDTH_DESKTOP,
-    MAX_SIDEBAR_WIDTH_DESKTOP,
-    DEFAULT_SIDEBAR_WIDTH_DESKTOP,
-  );
-  const resolvedComposerWidth = clampDesktopWidth(
-    composerWidthDesktop,
-    MIN_COMPOSER_WIDTH_DESKTOP,
-    MAX_COMPOSER_WIDTH_DESKTOP,
-    DEFAULT_COMPOSER_WIDTH_DESKTOP,
-  );
-
-  sidebarWidthDesktop = resolvedSidebarWidth;
-  composerWidthDesktop = resolvedComposerWidth;
-  document.documentElement.style.setProperty("--desktop-sidebar-width", `${resolvedSidebarWidth}px`);
-  document.documentElement.style.setProperty("--desktop-composer-width", `${resolvedComposerWidth}px`);
-  document.body.style.setProperty("--desktop-sidebar-width", `${resolvedSidebarWidth}px`);
-  document.body.style.setProperty("--desktop-composer-width", `${resolvedComposerWidth}px`);
-  scheduleSegmentTextareaResize();
-}
-
-async function resetDesktopColumnWidths() {
-  sidebarCollapsedDesktop = false;
-  sidebarWidthDesktop = DEFAULT_SIDEBAR_WIDTH_DESKTOP;
-  composerWidthDesktop = DEFAULT_COMPOSER_WIDTH_DESKTOP;
-  applyDesktopLayoutState();
-  applySidebarState();
-  await persistSettings();
-  setStatus(t("resetColumnWidthsDone"));
-}
-
-function applySidebarState() {
-  const isDesktop = DESKTOP_LAYOUT_MEDIA.matches;
-  const shouldCollapse = sidebarCollapsedDesktop;
-  document.body.classList.toggle("desktop-sidebar-collapsed", isDesktop && shouldCollapse);
-  document.body.classList.toggle("mobile-sidebar-collapsed", !isDesktop && shouldCollapse);
-  sidebarToggleButton.setAttribute("aria-expanded", shouldCollapse ? "false" : "true");
-  sidebarToggleButton.setAttribute("aria-label", shouldCollapse ? t("sidebarExpandButton") : t("sidebarCollapseButton"));
-  sidebarToggleButton.title = shouldCollapse ? t("sidebarExpandButton") : t("sidebarCollapseButton");
-  sidebarResizeHandle.setAttribute("aria-label", t("sidebarResizeHandleLabel"));
-  composerResizeHandle.setAttribute("aria-label", t("composerResizeHandleLabel"));
-  sidebarToggleGlyph.textContent = isDesktop
-    ? (shouldCollapse ? "▶" : "◀")
-    : (shouldCollapse ? "▼" : "▲");
-}
-
-function getDesktopResizeHandleWidth() {
-  const styleTarget = document.body || document.documentElement;
-  const value = Number.parseFloat(getComputedStyle(styleTarget).getPropertyValue("--desktop-resize-handle-width"));
-  return Number.isFinite(value) ? value : 14;
-}
-
-function startDesktopColumnResize(target) {
-  if (!DESKTOP_LAYOUT_MEDIA.matches) {
-    return;
-  }
-
-  const resizeTarget = target === "sidebar" ? "sidebar" : "composer";
-  const bodyRect = document.body.getBoundingClientRect();
-
-  const handlePointerMove = (event) => {
-    if (resizeTarget === "sidebar") {
-      sidebarWidthDesktop = clampDesktopWidth(
-        event.clientX - bodyRect.left,
-        MIN_SIDEBAR_WIDTH_DESKTOP,
-        MAX_SIDEBAR_WIDTH_DESKTOP,
-        DEFAULT_SIDEBAR_WIDTH_DESKTOP,
-      );
-    } else {
-      const sidebarWidth = sidebarCollapsedDesktop
-        ? DESKTOP_SIDEBAR_COLLAPSED_WIDTH
-        : clampDesktopWidth(
-          sidebarWidthDesktop,
-          MIN_SIDEBAR_WIDTH_DESKTOP,
-          MAX_SIDEBAR_WIDTH_DESKTOP,
-          DEFAULT_SIDEBAR_WIDTH_DESKTOP,
-        );
-      const nextComposerWidth = event.clientX - bodyRect.left - sidebarWidth - getDesktopResizeHandleWidth();
-      composerWidthDesktop = clampDesktopWidth(
-        nextComposerWidth,
-        MIN_COMPOSER_WIDTH_DESKTOP,
-        MAX_COMPOSER_WIDTH_DESKTOP,
-        DEFAULT_COMPOSER_WIDTH_DESKTOP,
-      );
-    }
-    applyDesktopLayoutState();
-    scheduleSegmentTextareaResize();
-  };
-
-  const handlePointerUp = async () => {
-    document.body.classList.remove("desktop-resizing");
-    window.removeEventListener("pointermove", handlePointerMove);
-    window.removeEventListener("pointerup", handlePointerUp);
-    window.removeEventListener("pointercancel", handlePointerUp);
-    await persistSettings();
-  };
-
-  document.body.classList.add("desktop-resizing");
-  window.addEventListener("pointermove", handlePointerMove);
-  window.addEventListener("pointerup", handlePointerUp, { once: true });
-  window.addEventListener("pointercancel", handlePointerUp, { once: true });
-}
-
-/**
- * Returns the maximum number of language tags allowed in the active dialog context.
- * @returns {number} Either `3` for search or `3` for posting.
- */
-function getActiveLanguageDialogMaxSelection() {
-  if (activeLanguageDialogContext === "search") {
-    return MAX_SEARCH_LANGUAGES;
-  }
-  return 3;
-}
-
-/**
- * Returns the current language selection for the active dialog context.
- * @returns {string[]} Selected language tags.
- */
-function getActiveLanguageDialogSelection() {
-  if (activeLanguageDialogContext === "search") {
-    return normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
-  }
-  return getNormalizedPostLanguagesOrDefault();
-}
-
-/**
- * Stores a language selection for the active dialog context.
- * @param {string[]} values - Candidate language tags.
- * @returns {void}
- */
-function setActiveLanguageDialogSelection(values = []) {
-  if (activeLanguageDialogContext === "search") {
-    searchSelectedLanguages = normalizePostLanguageTags(values, MAX_SEARCH_LANGUAGES);
-    return;
-  }
-  selectedPostLanguages = normalizePostLanguageTags(values);
-}
+/** Refreshes responsive sidebar presentation. @returns {void} */
+function applySidebarState() { desktopLayout.renderSidebar(); }
 
 /**
  * Renders the compact language summary in the search workspace.
@@ -19341,141 +18717,11 @@ function updateSearchSortOptionState() {
   topOption.disabled = isSearchMultiLanguageActive();
 }
 
-/**
- * Renders the language dialog heading, note and hidden sections for the active context.
- * @returns {void}
- */
-function renderLanguageDialogContext() {
-  const isSearchContext = activeLanguageDialogContext === "search";
+/** Refreshes the complete posting language/decorations/rules summary. @returns {void} */
+function renderPostLanguageSummary() { composerPostSettings.renderSummary(); }
 
-  if (postLanguagesDialogEyebrow) {
-    if (isSearchContext) {
-      postLanguagesDialogEyebrow.textContent = t("searchHeaderEyebrow");
-    } else {
-      postLanguagesDialogEyebrow.textContent = t("postLanguagesEyebrow");
-    }
-  }
-
-  if (postLanguagesDialogTitle) {
-    if (isSearchContext) {
-      postLanguagesDialogTitle.textContent = t("searchLanguageDialogTitle");
-    } else {
-      postLanguagesDialogTitle.textContent = t("postSettingsDialogTitle");
-    }
-  }
-
-  if (postLanguagesDialogDescription) {
-    if (isSearchContext) {
-      postLanguagesDialogDescription.textContent = t("searchLanguageDialogDescription");
-    } else {
-      postLanguagesDialogDescription.textContent = t("postSettingsDialogDescription");
-    }
-  }
-
-  if (postLanguagesSettingsList) {
-    postLanguagesSettingsList.hidden = isSearchContext;
-  }
-  if (postInteractionDisclosure) {
-    postInteractionDisclosure.hidden = isSearchContext;
-  }
-  if (searchLanguageDialogNote) {
-    if (isSearchContext) {
-      searchLanguageDialogNote.hidden = false;
-      searchLanguageDialogNote.textContent = t("searchLanguageDialogNote");
-    } else {
-      searchLanguageDialogNote.hidden = true;
-      searchLanguageDialogNote.textContent = "";
-    }
-  }
-  if (postLanguagesDisclosure) {
-    postLanguagesDisclosure.open = true;
-  }
-}
-
-function renderPostLanguageSummary() {
-  selectedPostLanguages = getNormalizedPostLanguagesOrDefault();
-  const labels = selectedPostLanguages.map((tag) => getPostLanguageDisplayName(tag, currentLocale));
-  const summaryParts = [];
-  summaryParts.push(labels.length === 1
-    ? t("postLanguagesSummarySingle", { language: labels[0] })
-    : t("postLanguagesSummaryMany", {
-      count: labels.length,
-      languages: labels.join(", "),
-    }));
-
-  if (counterToggle.checked) {
-    summaryParts.push(t("counterToggle"));
-  }
-  if (markerSpacingToggle.checked) {
-    summaryParts.push(t("markerSpacingToggle"));
-  }
-  if (threadIntroToggle.checked) {
-    summaryParts.push(t("threadIntroToggle"));
-  }
-  if (threadEmojiToggle.checked) {
-    summaryParts.push(t("threadEmojiToggle"));
-  }
-  summaryParts.push(t("postInteractionSummary", { replyMode: getReplyModeSummary() }));
-  if (!quotePostsAllowed) {
-    summaryParts.push(t("quotePostsBlockedSummary"));
-  }
-
-  postLanguagesSummary.textContent = summaryParts.join(" · ");
-  renderPostSettingsDisclosureMeta();
-}
-
-function renderPostLanguageDialog() {
-  renderLanguageDialogContext();
-  const activeSelection = getActiveLanguageDialogSelection();
-  const maxSelection = getActiveLanguageDialogMaxSelection();
-  const options = getPostLanguageOptions(currentLocale, postLanguagesSearch.value);
-  postLanguagesList.innerHTML = "";
-
-  if (options.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "settings-note";
-    empty.textContent = t("postLanguagesNoResults");
-    postLanguagesList.appendChild(empty);
-  } else {
-    options.forEach((option) => {
-      const checked = activeSelection.includes(option.code);
-      const disabled = !checked && activeSelection.length >= maxSelection;
-      const label = document.createElement("label");
-      label.className = `post-language-option${checked ? " is-selected" : ""}${disabled ? " is-disabled" : ""}`;
-
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.checked = checked;
-      input.disabled = disabled;
-      input.addEventListener("change", async () => {
-        const nextValues = input.checked
-          ? [...activeSelection, option.code]
-          : activeSelection.filter((entry) => entry !== option.code);
-        setActiveLanguageDialogSelection(nextValues);
-        enforceSearchSortConstraints(true);
-        renderPostLanguageSummary();
-        renderSearchLanguageSummary();
-        renderSearchSummary();
-        renderPostLanguageDialog();
-        if (activeLanguageDialogContext === "composer" && !composerLocked) {
-          renderSegments({ preserveOverrides: false });
-        }
-        await persistSettings();
-      });
-
-      const text = document.createElement("span");
-      text.textContent = option.name;
-
-      label.append(input, text);
-      postLanguagesList.appendChild(label);
-    });
-  }
-
-  postLanguagesSelectionNote.textContent = t("postLanguagesSelectionNote", {
-    count: activeSelection.length,
-    max: maxSelection,
-  });
-}
+/** Rebuilds the language dialog in its current context. @returns {void} */
+function renderPostLanguageDialog() { composerPostSettings.renderDialog(); }
 
 /**
  * Applies a translated tooltip and accessible label to one element.
@@ -19702,10 +18948,7 @@ function applyTranslations() {
   if (composerPostedDismissButton) {
     composerPostedDismissButton.textContent = t("composerPostedDismissButton");
   }
-  sidebarToggleButton.setAttribute("aria-label", sidebarCollapsedDesktop ? t("sidebarExpandButton") : t("sidebarCollapseButton"));
-  sidebarToggleButton.title = sidebarCollapsedDesktop ? t("sidebarExpandButton") : t("sidebarCollapseButton");
-  sidebarResizeHandle.setAttribute("aria-label", t("sidebarResizeHandleLabel"));
-  composerResizeHandle.setAttribute("aria-label", t("composerResizeHandleLabel"));
+  applySidebarState();
   altTextPreviewCanvas.setAttribute("aria-label", t("altPreviewLabel"));
   hashtagAddButton.textContent = t("addHashtagButton");
   nextTipButton.textContent = t("nextTipButton");
@@ -19840,273 +19083,47 @@ function nextTip() {
   renderTip();
 }
 
-function parseHashtagValue(value) {
-  const cleaned = String(value || "")
-    .trim()
-    .replace(/^#+/, "")
-    .replace(/\s+/g, "")
-    .replace(/[.,;:!?]+$/g, "");
 
-  if (!cleaned) {
-    return null;
-  }
 
-  return {
-    value: cleaned,
-    normalized: cleaned.toLowerCase(),
-  };
-}
+/** Filters selected ids against available tags. @param {*} entries - Selection. @param {object[]} availableHashtags - Records. @returns {string[]} Valid ids. */
+function normalizeSelectedHashtagEntries(entries, availableHashtags = hashtags) { return normalizeHashtagSelection(entries, availableHashtags); }
 
-function normalizeHashtagEntries(entries) {
-  const seen = new Set();
-  const normalizedEntries = [];
 
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    const parsed = typeof entry === "string"
-      ? parseHashtagValue(entry)
-      : parseHashtagValue(entry?.value || entry?.tag || entry?.label || "");
 
-    if (!parsed || seen.has(parsed.normalized)) {
-      continue;
-    }
-
-    seen.add(parsed.normalized);
-    normalizedEntries.push(parsed);
-  }
-
-  return normalizedEntries;
-}
-
-function normalizeSelectedHashtagEntries(entries, availableHashtags = hashtags) {
-  const validSet = new Set(availableHashtags.map((tag) => tag.normalized));
-  const unique = [];
-  const seen = new Set();
-
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    const normalized = typeof entry === "string"
-      ? parseHashtagValue(entry)?.normalized || String(entry).trim().toLowerCase()
-      : parseHashtagValue(entry?.value || entry?.tag || entry?.normalized || "")?.normalized;
-
-    if (!normalized || !validSet.has(normalized) || seen.has(normalized)) {
-      continue;
-    }
-
-    seen.add(normalized);
-    unique.push(normalized);
-  }
-
-  return unique;
-}
-
-function mergeHashtagEntries(baseEntries, importedEntries) {
-  return normalizeHashtagEntries([...(baseEntries || []), ...(importedEntries || [])]);
-}
-
-function findHashtag(normalized) {
-  return hashtags.find((tag) => tag.normalized === normalized) || null;
-}
-
-function formatHashtag(tag) {
-  return `#${tag}`;
-}
 
 /**
  * Resolves one hashtag identifier or object to the visible hashtag text.
  * @param {string|object} normalized - Normalized hashtag id or hashtag-like object.
  * @returns {string} Display-ready hashtag text without the leading #.
  */
-function getDisplayHashtag(normalized) {
-  let parsed = null;
-  if (typeof normalized === "string") {
-    parsed = parseHashtagValue(normalized);
-  } else {
-    parsed = parseHashtagValue(normalized?.value || normalized?.tag || normalized?.normalized || normalized?.label || "");
-  }
+function getDisplayHashtag(normalized) { return getHashtagDisplayValue(normalized, hashtags); }
 
-  if (!parsed) {
-    return "";
-  }
 
-  const stored = findHashtag(parsed.normalized);
-  if (stored?.value) {
-    return stored.value;
-  }
-  return parsed.value;
-}
+/** Reads the Composer hashtag suffix. @returns {string} Space-separated hashtags. */
+function getSelectedHashtagText() { return hashtagController.getSelectedText(); }
 
-function getHashtagFontClass(tag) {
-  return `hashtag-chip--size-${(tag.value.length % 4) + 1}`;
-}
 
-function getSelectedHashtagText() {
-  return selectedHashtags.map((tag) => formatHashtag(getDisplayHashtag(tag))).join(" ");
-}
-
-function normalizeHashtagPlacement(value) {
-  return VALID_HASHTAG_PLACEMENTS.has(value) ? value : "first";
-}
-
-function setBackupStatus(message, tone = "neutral") {
-  window.clearTimeout(backupStatusTimer);
-  backupStatus.textContent = message;
-  backupStatus.hidden = !message;
-  if (message) {
-    backupStatus.dataset.tone = tone;
-  } else {
-    delete backupStatus.dataset.tone;
-  }
-
-  if (message) {
-    backupStatusTimer = window.setTimeout(() => {
-      backupStatus.hidden = true;
-      backupStatus.textContent = "";
-      delete backupStatus.dataset.tone;
-    }, 5000);
-  }
-}
-
-/**
- * Reads a timestamp from localStorage for backup reminder decisions.
- * @param {string} key - Storage key containing a millisecond timestamp.
- * @returns {number} Stored timestamp in milliseconds, or 0 when unavailable.
- */
-function readBackupReminderTimestamp(key) {
-  try {
-    const rawValue = window.localStorage.getItem(key);
-    const timestamp = Number(rawValue);
-    if (Number.isFinite(timestamp) && timestamp > 0) {
-      return timestamp;
-    }
-  } catch (error) {
-    console.warn("Backup reminder storage read failed.", error);
-  }
-
-  return 0;
-}
-
-/**
- * Writes a timestamp to localStorage for backup reminder decisions.
- * @param {string} key - Storage key to update.
- * @param {number} timestamp - Timestamp in milliseconds.
- * @returns {void}
- */
-function writeBackupReminderTimestamp(key, timestamp) {
-  try {
-    window.localStorage.setItem(key, String(timestamp));
-  } catch (error) {
-    console.warn("Backup reminder storage write failed.", error);
-  }
-}
-
-/**
- * Stores the current time as the last successful settings backup export.
- * @returns {void}
- */
-function markSettingsBackupExported() {
-  const now = Date.now();
-  writeBackupReminderTimestamp(SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY, now);
-  writeBackupReminderTimestamp(SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY, 0);
-}
-
-/**
- * Checks whether the backup reminder should be shown now.
- * @returns {boolean} True when the reminder is due and not recently snoozed.
- */
-function shouldShowSettingsBackupReminder() {
-  if (!backupReminderDialog) {
-    return false;
-  }
-
-  if (backupReminderDialog.open) {
-    return false;
-  }
-
-  if (document.querySelector("dialog[open]")) {
-    return false;
-  }
-
-  const now = Date.now();
-  const dismissedAt = readBackupReminderTimestamp(SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY);
-  if (dismissedAt > 0 && now - dismissedAt < SETTINGS_BACKUP_REMINDER_SNOOZE_MS) {
-    return false;
-  }
-
-  const exportedAt = readBackupReminderTimestamp(SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY);
-  if (exportedAt <= 0) {
-    return true;
-  }
-
-  if (now - exportedAt >= SETTINGS_BACKUP_REMINDER_INTERVAL_MS) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Returns the localized backup reminder message for the current export state.
- * @returns {string} Message shown inside the backup reminder dialog.
- */
-function getSettingsBackupReminderMessage() {
-  const exportedAt = readBackupReminderTimestamp(SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY);
-  if (exportedAt <= 0) {
-    return t("backupReminderUnknownMessage");
-  }
-
-  return t("backupReminderDueMessage");
-}
+/** Presents transient backup feedback. @param {string} message - Status text. @param {string} tone - Status tone. @returns {void} */
+function setBackupStatus(message, tone = "neutral") { settingsBackupReminder.status(message, tone); }
 
 /**
  * Opens the backup reminder dialog when the stored backup age is due.
  * @returns {void}
  */
-function showSettingsBackupReminderIfNeeded() {
-  if (!shouldShowSettingsBackupReminder()) {
-    return;
-  }
-
-  if (backupReminderMessage) {
-    backupReminderMessage.textContent = getSettingsBackupReminderMessage();
-  }
-
-  try {
-    backupReminderDialog.showModal();
-  } catch (error) {
-    console.warn("Backup reminder dialog could not be opened.", error);
-  }
-}
+function showSettingsBackupReminderIfNeeded() { settingsBackupReminder.show(); }
 
 /**
  * Closes the backup reminder and optionally snoozes it.
  * @param {boolean} rememberDismissal - Whether to remember a temporary dismissal.
  * @returns {void}
  */
-function closeSettingsBackupReminder(rememberDismissal) {
-  if (rememberDismissal) {
-    writeBackupReminderTimestamp(SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY, Date.now());
-  }
-
-  if (backupReminderDialog?.open) {
-    backupReminderDialog.close();
-  }
-}
+function closeSettingsBackupReminder(rememberDismissal) { settingsBackupReminder.close(rememberDismissal); }
 
 /**
  * Saves a settings backup from the reminder dialog.
  * @returns {Promise<void>} Resolves after the backup export attempt finished.
  */
-async function handleBackupReminderSaveClick() {
-  try {
-    await exportSettingsBackup();
-    closeSettingsBackupReminder(false);
-  } catch (error) {
-    console.error(error);
-    if (backupReminderMessage) {
-      backupReminderMessage.textContent = t("backupExportFailed");
-    }
-    setBackupStatus(t("backupExportFailed"), "error");
-  }
-}
+async function handleBackupReminderSaveClick() { await settingsBackupReminder.save(); }
 
 function setShareStatus(message, tone = "neutral") {
   if (!shareStatus) {
@@ -20168,89 +19185,8 @@ async function shareAppRecommendation() {
   }
 }
 
-function openHashtagEditDialog(tag) {
-  editingHashtagNormalized = tag.normalized;
-  hashtagEditInput.value = tag.value;
-  hashtagEditDialog.showModal();
-  window.setTimeout(() => {
-    hashtagEditInput.focus();
-    hashtagEditInput.select();
-  }, 0);
-}
 
-function closeHashtagEditDialog() {
-  editingHashtagNormalized = null;
-  hashtagEditDialog.close();
-}
 
-async function saveEditedHashtag() {
-  if (!editingHashtagNormalized) {
-    closeHashtagEditDialog();
-    return;
-  }
-
-  const currentTag = findHashtag(editingHashtagNormalized);
-  if (!currentTag) {
-    closeHashtagEditDialog();
-    return;
-  }
-
-  const parsed = parseHashtagValue(hashtagEditInput.value);
-  if (!parsed) {
-    setStatus(t("hashtagInvalid"), "error");
-    hashtagEditInput.focus();
-    return;
-  }
-
-  const existing = findHashtag(parsed.normalized);
-  const isSelected = selectedHashtags.includes(currentTag.normalized);
-  const isSearchSelected = searchSelectedHashtags.includes(currentTag.normalized);
-  const isArchiveSelected = archiveSelectedHashtags.includes(currentTag.normalized);
-
-  if (existing && existing.normalized !== currentTag.normalized) {
-    hashtags = hashtags
-      .filter((entry) => entry.normalized !== currentTag.normalized)
-      .map((entry) => (entry.normalized === existing.normalized ? parsed : entry));
-    selectedHashtags = normalizeSelectedHashtagEntries(
-      [
-        ...selectedHashtags.filter((entry) => entry !== currentTag.normalized),
-        ...(isSelected ? [parsed.normalized] : []),
-      ],
-      hashtags,
-    );
-    searchSelectedHashtags = normalizeSelectedHashtagEntries(
-      [
-        ...searchSelectedHashtags.filter((entry) => entry !== currentTag.normalized),
-        ...(isSearchSelected ? [parsed.normalized] : []),
-      ],
-      hashtags,
-    );
-    archiveSelectedHashtags = normalizeSelectedHashtagEntries(
-      [
-        ...archiveSelectedHashtags.filter((entry) => entry !== currentTag.normalized),
-        ...(isArchiveSelected ? [parsed.normalized] : []),
-      ],
-      hashtags,
-    );
-  } else {
-    hashtags = hashtags.map((entry) => (entry.normalized === currentTag.normalized ? parsed : entry));
-    selectedHashtags = selectedHashtags.map((entry) => (entry === currentTag.normalized ? parsed.normalized : entry));
-    searchSelectedHashtags = searchSelectedHashtags.map((entry) => (entry === currentTag.normalized ? parsed.normalized : entry));
-    archiveSelectedHashtags = archiveSelectedHashtags.map((entry) => (entry === currentTag.normalized ? parsed.normalized : entry));
-  }
-
-  renderHashtagCloud();
-  if (isSearchHashtagContext()) {
-    renderSearchWorkspace();
-  } else if (!isArchiveHashtagContext()) {
-    segmentOverrides = null;
-    setComposerLocked(false);
-    renderSegments({ preserveOverrides: false });
-  }
-  await persistSettings();
-  setStatus(t("hashtagUpdated"));
-  closeHashtagEditDialog();
-}
 
 /**
  * Returns whether one image has explicit upload transforms after applying Threadline limits.
@@ -20312,11 +19248,7 @@ function formatHistoryMeta(threadCount, imageCount) {
 }
 
 function syncSegmentImages(segmentCount) {
-  const next = syncComposerSegmentImagesFromModule(segmentImages, segmentCount);
-  for (let index = 0; index < segmentCount; index += 1) {
-    next[index] = Array.isArray(segmentImages[index]) ? segmentImages[index] : [];
-  }
-  segmentImages = next;
+  segmentImages = syncComposerSegmentImagesFromModule(segmentImages, segmentCount);
 }
 
 /**
@@ -20325,58 +19257,7 @@ function syncSegmentImages(segmentCount) {
  * @param {number} segmentIndex - Index of the segment whose link card should be rendered.
  * @returns {void}
  */
-function renderSegmentLinkCard(container, segmentIndex) {
-  container.innerHTML = "";
-  const card = normalizeLinkCard(segmentLinkCards[segmentIndex]);
-  if (!card) {
-    return;
-  }
-  const wrap = document.createElement("div");
-  wrap.className = "segment-link-card-preview";
-  const standardSite = normalizeStandardSiteMetadata(card.standardSite);
-  if (standardSite) {
-    wrap.classList.add("is-publication");
-  }
-  if (card.imageDataUrl || card.imageUrl) {
-    const image = document.createElement("img");
-    if (card.imageDataUrl) {
-      image.src = card.imageDataUrl;
-    } else {
-      image.src = card.imageUrl;
-    }
-    image.alt = "";
-    image.loading = "lazy";
-    wrap.appendChild(image);
-  }
-  const body = document.createElement("div");
-  body.className = "segment-link-card-body";
-  const title = document.createElement("strong");
-  title.textContent = card.title || card.url;
-  const description = document.createElement("span");
-  description.textContent = card.description || card.url;
-  const url = document.createElement("small");
-  const publicationFooterLabel = getPublicationCardFooterLabel(standardSite);
-  if (publicationFooterLabel) {
-    url.textContent = `${card.url} - ${publicationFooterLabel}`;
-  } else {
-    url.textContent = card.url;
-  }
-  body.append(title, description, url);
-  const removeButton = document.createElement("button");
-  removeButton.type = "button";
-  removeButton.className = "segment-image-tool danger";
-  removeButton.title = t("linkCardRemoveButton");
-  removeButton.setAttribute("aria-label", t("linkCardRemoveButton"));
-  removeButton.innerHTML = createIconSvg("M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z");
-  removeButton.addEventListener("click", async () => {
-    segmentLinkCards[segmentIndex] = null;
-    await persistSettings();
-    preserveScrollPosition(() => renderSegments({ preserveOverrides: true }));
-    queueDraftSave();
-  });
-  wrap.append(body, removeButton);
-  container.appendChild(wrap);
-}
+function renderSegmentLinkCard(container, segmentIndex) { composerLinkCardPreview.render(container, segmentIndex); }
 
 /**
  * Returns the first other segment that currently carries a link card.
@@ -20384,15 +19265,7 @@ function renderSegmentLinkCard(container, segmentIndex) {
  * @returns {number} Source segment index, or `-1` when none was found.
  */
 function findOtherLinkCardSegmentIndex(targetSegmentIndex) {
-  for (let index = 0; index < segmentLinkCards.length; index += 1) {
-    if (index === targetSegmentIndex) {
-      continue;
-    }
-    if (normalizeLinkCard(segmentLinkCards[index])) {
-      return index;
-    }
-  }
-  return -1;
+  return findOtherComposerLinkCardIndex(segmentLinkCards, targetSegmentIndex, normalizeLinkCard);
 }
 
 /**
@@ -20401,34 +19274,7 @@ function findOtherLinkCardSegmentIndex(targetSegmentIndex) {
  * @returns {Array<object>} Available target entries with target segment and action kind.
  */
 function getLinkCardTargetEntries(currentSegmentIndex) {
-  const entries = [];
-  const currentCard = normalizeLinkCard(segmentLinkCards[currentSegmentIndex]);
-  const currentHasCard = Boolean(currentCard);
-
-  for (let index = 0; index < activeSegments.length; index += 1) {
-    if (index === currentSegmentIndex) {
-      continue;
-    }
-
-    const targetCard = normalizeLinkCard(segmentLinkCards[index]);
-    if (!currentHasCard && !targetCard) {
-      continue;
-    }
-
-    let action = "move";
-    if (currentHasCard && targetCard) {
-      action = "swap";
-    }
-
-    entries.push({
-      segmentIndex: index,
-      action,
-      card: targetCard,
-      textPreview: String(activeSegments[index] || "").replace(/\s+/g, " ").trim().slice(0, 140),
-    });
-  }
-
-  return entries;
+  return getComposerLinkCardTargetEntries(currentSegmentIndex, activeSegments, segmentLinkCards, normalizeLinkCard);
 }
 
 /**
@@ -20437,51 +19283,12 @@ function getLinkCardTargetEntries(currentSegmentIndex) {
  * @returns {void}
  */
 function renderLinkCardTargetList(currentSegmentIndex) {
-  if (!linkCardTargetList || !linkCardTargetTemplate || !linkCardTargetListNote) {
-    return;
-  }
-
-  linkCardTargetList.replaceChildren();
-  const entries = getLinkCardTargetEntries(currentSegmentIndex);
-  linkCardTargetListNote.textContent = t("linkCardManageDialogDescription");
-
-  if (entries.length === 0) {
-    const emptyNote = document.createElement("p");
-    emptyNote.className = "settings-note";
-    emptyNote.textContent = t("linkCardManageNoTargets");
-    linkCardTargetList.appendChild(emptyNote);
-    return;
-  }
-
-  entries.forEach((entry) => {
-    const fragment = cloneTemplateContent(linkCardTargetTemplate);
-    const item = fragment.querySelector(".link-card-target-item");
-    const title = fragment.querySelector(".link-card-target-title");
-    const meta = fragment.querySelector(".link-card-target-meta");
-    const actionButton = fragment.querySelector(".link-card-target-action");
-    const segmentLabel = t("segmentPart", { index: entry.segmentIndex + 1 });
-
-    title.textContent = segmentLabel;
-    if (entry.card) {
-      const urlLabel = shortenThreadExplorerUrlForDisplay(entry.card.url);
-      meta.textContent = `${entry.card.title || urlLabel} · ${urlLabel}`;
-    } else if (entry.textPreview) {
-      meta.textContent = entry.textPreview;
-    } else {
-      meta.textContent = t("linkCardManageEmptySegment");
-    }
-
-    if (entry.action === "swap") {
-      actionButton.textContent = t("linkCardSwapAction");
-    } else {
-      actionButton.textContent = t("linkCardMoveAction");
-    }
-    actionButton.addEventListener("click", async () => {
-      await applyLinkCardTargetAction(currentSegmentIndex, entry.segmentIndex);
-    });
-
-    item.dataset.segmentIndex = String(entry.segmentIndex);
-    linkCardTargetList.appendChild(fragment);
+  renderComposerLinkCardTargets(currentSegmentIndex, getLinkCardTargetEntries(currentSegmentIndex), {
+    list: linkCardTargetList, note: linkCardTargetListNote, template: linkCardTargetTemplate,
+    emptyTemplate: document.querySelector("#link-card-target-empty-template"),
+  }, {
+    translate: t, clone: cloneTemplateContent,
+    formatUrl: shortenThreadExplorerUrlForDisplay, applyAction: applyLinkCardTargetAction,
   });
 }
 
@@ -20492,30 +19299,12 @@ function renderLinkCardTargetList(currentSegmentIndex) {
  * @returns {Promise<void>}
  */
 async function applyLinkCardTargetAction(currentSegmentIndex, targetSegmentIndex) {
-  const currentCard = normalizeLinkCard(segmentLinkCards[currentSegmentIndex]);
-  const targetCard = normalizeLinkCard(segmentLinkCards[targetSegmentIndex]);
-  if (!currentCard && !targetCard) {
-    return;
-  }
-
-  if (currentCard && targetCard) {
-    segmentLinkCards[currentSegmentIndex] = targetCard;
-    segmentLinkCards[targetSegmentIndex] = currentCard;
-    setStatus(t("linkCardSwapped"));
-  } else if (currentCard) {
-    segmentLinkCards[targetSegmentIndex] = currentCard;
-    segmentLinkCards[currentSegmentIndex] = null;
-    setStatus(t("linkCardMoved"));
-  } else if (targetCard) {
-    segmentLinkCards[currentSegmentIndex] = targetCard;
-    segmentLinkCards[targetSegmentIndex] = null;
-    setStatus(t("linkCardMoved"));
-  }
-
-  await persistSettings();
-  preserveScrollPosition(() => renderSegments({ preserveOverrides: true }));
-  queueDraftSave();
-  closeLinkCardDialog();
+  await applyComposerLinkCardTargetAction(currentSegmentIndex, targetSegmentIndex, {
+    cards: segmentLinkCards, normalizeCard: normalizeLinkCard, translate: t, setStatus,
+    persist: persistSettings,
+    render: () => preserveScrollPosition(() => renderSegments({ preserveOverrides: true })),
+    saveDraft: queueDraftSave, close: closeLinkCardDialog,
+  });
 }
 
 /**
@@ -20532,83 +19321,8 @@ function openLinkCardDialog(segmentIndex, url, action = "create", sourceSegmentI
   pendingLinkCardSourceSegmentIndex = sourceSegmentIndex;
   pendingLinkCardAction = action;
   pendingLinkCardUrl = normalizedUrl;
-  if (linkCardDialogTitle) {
-    if (action === "move") {
-      linkCardDialogTitle.textContent = t("linkCardMoveButton");
-    } else if (action === "manage") {
-      linkCardDialogTitle.textContent = t("linkCardManageDialogTitle");
-    } else {
-      linkCardDialogTitle.textContent = t("linkCardDialogTitle");
-    }
-  }
-  if (action === "move" && sourceSegmentIndex >= 0) {
-    linkCardUrlNode.textContent = t("linkCardMovePrompt", {
-      source: sourceSegmentIndex + 1,
-      target: segmentIndex + 1,
-    });
-  } else if (action === "manage") {
-    linkCardUrlNode.textContent = t("linkCardManagePrompt", {
-      target: segmentIndex + 1,
-    });
-  } else {
-    linkCardUrlNode.textContent = t("linkCardDialogDescription");
-  }
-  if (linkCardUrlField) {
-    if (action === "move" || action === "manage") {
-      linkCardUrlField.hidden = true;
-    } else {
-      linkCardUrlField.hidden = false;
-    }
-  }
-  if (linkCardTargetListField) {
-    if (action === "manage") {
-      linkCardTargetListField.hidden = false;
-      renderLinkCardTargetList(segmentIndex);
-    } else {
-      linkCardTargetListField.hidden = true;
-      if (linkCardTargetList) {
-        linkCardTargetList.replaceChildren();
-      }
-    }
-  }
-  if (linkCardUrlInput) {
-    if (action === "move" || action === "manage") {
-      linkCardUrlInput.value = "";
-    } else {
-      linkCardUrlInput.value = normalizedUrl;
-    }
-  }
-  const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
-  updateLinkCardDialogProviderState();
-  linkCardWarning.hidden = !hasImages;
-  if (hasImages) {
-    linkCardWarning.textContent = t("linkCardImageConflictWarning");
-  } else {
-    linkCardWarning.textContent = "";
-  }
-  linkCardStatus.textContent = "";
-  delete linkCardStatus.dataset.tone;
-  if (action === "move") {
-    linkCardCreateButton.textContent = t("linkCardMoveButton");
-  } else if (action === "manage") {
-    linkCardCreateButton.hidden = true;
-  } else if (hasImages) {
-    linkCardCreateButton.hidden = false;
-    linkCardCreateButton.textContent = t("linkCardCreateAndRemoveImagesButton");
-  } else if (action === "refresh") {
-    linkCardCreateButton.hidden = false;
-    linkCardCreateButton.textContent = t("linkCardRefreshButton");
-  } else {
-    linkCardCreateButton.hidden = false;
-    linkCardCreateButton.textContent = t("linkCardCreateButton");
-  }
-  linkCardDialog.showModal();
-  if (linkCardUrlInput && action !== "move" && action !== "manage") {
-    window.setTimeout(() => {
-      linkCardUrlInput.focus();
-      linkCardUrlInput.select();
-    }, 0);
-  }
+  composerLinkCardDialog.open({ segmentIndex, sourceSegmentIndex, action, url: normalizedUrl,
+    hasImages: (segmentImages[segmentIndex]?.length || 0) > 0 });
 }
 
 /**
@@ -20620,141 +19334,21 @@ function closeLinkCardDialog() {
   pendingLinkCardSourceSegmentIndex = -1;
   pendingLinkCardUrl = "";
   pendingLinkCardAction = "create";
-  if (linkCardCreateButton) {
-    linkCardCreateButton.hidden = false;
-  }
-  if (linkCardUrlInput) {
-    linkCardUrlInput.value = "";
-  }
-  if (linkCardTargetListField) {
-    linkCardTargetListField.hidden = true;
-  }
-  if (linkCardTargetList) {
-    linkCardTargetList.replaceChildren();
-  }
-  if (linkCardDialog.open) {
-    linkCardDialog.close();
-  }
+  composerLinkCardDialog.close();
 }
 
 /**
  * Creates, refreshes, or moves the currently pending segment link card.
  * @returns {Promise<void>}
  */
-async function createLinkCardForPendingSegment() {
-  const segmentIndex = pendingLinkCardSegmentIndex;
-  const action = pendingLinkCardAction;
-  if (segmentIndex < 0) {
-    return;
-  }
-  const hasImages = (segmentImages[segmentIndex]?.length || 0) > 0;
-  let url = pendingLinkCardUrl;
-  if (action !== "move") {
-    const validation = validateLinkCardTargetUrl(linkCardUrlInput?.value || "", t);
-    if (!validation.ok) {
-      linkCardStatus.textContent = validation.message;
-      linkCardStatus.dataset.tone = "error";
-      return;
-    }
-    url = validation.url;
-    pendingLinkCardUrl = url;
-    if (linkCardUrlInput && linkCardUrlInput.value !== url) {
-      linkCardUrlInput.value = url;
-    }
-  }
-  let createButtonLabel = t("linkCardCreateButton");
-  if (action === "move") {
-    createButtonLabel = t("linkCardMoveButton");
-  } else if (hasImages) {
-    createButtonLabel = t("linkCardCreateAndRemoveImagesButton");
-  } else if (action === "refresh") {
-    createButtonLabel = t("linkCardRefreshButton");
-  }
-  try {
-    setBusy(linkCardCreateButton, true, t("linkCardLoading"), createButtonLabel);
-    linkCardStatus.textContent = t("linkCardLoading");
-    if (action === "move") {
-      const sourceSegmentIndex = pendingLinkCardSourceSegmentIndex;
-      const sourceCard = normalizeLinkCard(segmentLinkCards[sourceSegmentIndex]);
-      if (sourceSegmentIndex < 0 || !sourceCard) {
-        throw new Error(t("linkCardMoveMissingSource"));
-      }
-      segmentLinkCards[sourceSegmentIndex] = null;
-      segmentLinkCards[segmentIndex] = sourceCard;
-    } else {
-      const card = await requestLinkCard(url);
-      syncLinkCardProviderUi();
-      if (!card) {
-        throw new Error(t("linkCardCreateFallback"));
-      }
-      segmentLinkCards[segmentIndex] = card;
-      if (hasImages) {
-        segmentImages[segmentIndex] = [];
-      }
-    }
-    await persistSettings();
-    preserveScrollPosition(() => renderSegments({ preserveOverrides: true }));
-    queueDraftSave();
-    if (action === "move") {
-      setStatus(t("linkCardMoved"));
-    } else {
-      setStatus(t("linkCardCreated"));
-    }
-    closeLinkCardDialog();
-  } catch (error) {
-    console.error(error);
-    syncLinkCardProviderUi();
-    let fallbackMessage = error.message || t("linkCardCreateFallback");
-    if (!fallbackMessage.includes(t("linkCardCreateFallback"))) {
-      fallbackMessage = `${fallbackMessage} ${t("linkCardCreateFallback")}`.trim();
-    }
-    linkCardStatus.textContent = fallbackMessage;
-    linkCardStatus.dataset.tone = "error";
-  } finally {
-    setBusy(linkCardCreateButton, false, t("linkCardLoading"), createButtonLabel);
-  }
-}
-
-/**
- * Normalizes Standard.site publication metadata attached to a link card.
- * @param {object|null} value - Raw metadata from the proxy, archive, or Bluesky view.
- * @returns {object|null} Compact Standard.site metadata, or null when absent.
- */
-function normalizeStandardSiteMetadata(value = null) {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const documentUri = String(value.documentUri || value.document || "").trim();
-  const publicationUri = String(value.publicationUri || value.publication || "").trim();
-  const publicationUrl = String(value.publicationUrl || value.url || "").trim();
-  const publicationName = String(value.publicationName || value.name || "").trim().slice(0, 160);
-  if (!documentUri && !publicationUri && !publicationUrl && !publicationName) {
-    return null;
-  }
-
-  return {
-    documentUri,
-    publicationUri,
-    publicationUrl,
-    publicationName,
-    publicationVerified: value.publicationVerified === true,
-    ctaLabel: String(value.ctaLabel || t("publicationCardCta")).trim().slice(0, 80),
-  };
-}
+async function normalizeStandardSiteMetadata(value = null) { return normalizeSharedStandardSiteMetadata(value, t); }
 
 /**
  * Returns the footer label for a card that carries Standard.site publication metadata.
  * @param {object|null} standardSite - Normalized Standard.site metadata.
  * @returns {string} Localized footer suffix, or an empty string for normal link cards.
  */
-function getPublicationCardFooterLabel(standardSite) {
-  if (!standardSite) {
-    return "";
-  }
-
-  return t("publicationMetadataDetected");
-}
+function getPublicationCardFooterLabel(standardSite) { return getSharedPublicationCardFooterLabel(standardSite, t); }
 
 /**
  * Normalizes one composer link card for storage, rendering, and publishing.
@@ -20769,13 +19363,7 @@ function normalizeSegmentLinkCards(cards = []) {
   return normalizeComposerSegmentLinkCards(cards, normalizeLinkCard);
 }
 
-function syncSegmentLinkCards(segmentCount) {
-  const next = [];
-  for (let index = 0; index < segmentCount; index += 1) {
-    next[index] = normalizeLinkCard(segmentLinkCards[index]);
-  }
-  segmentLinkCards = next;
-}
+function syncSegmentLinkCards(segmentCount) { segmentLinkCards = syncComposerSegmentLinkCards(segmentLinkCards, segmentCount, normalizeLinkCard); }
 
 /**
  * Normalizes the selected link-card provider to one of the supported values.
@@ -20787,21 +19375,12 @@ function normalizeLinkCardProvider(value) {
 }
 
 /**
- * Returns the local calendar day used for Microlink usage tracking.
- * @returns {string} Date stamp in `YYYY-MM-DD` format.
- */
-function getMicrolinkUsageDatePart() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/**
  * Normalizes the locally persisted Microlink usage counter.
  * @param {object|null} usage - Raw stored usage payload.
  * @returns {object} Normalized date and count values.
  */
 function normalizeMicrolinkUsage(usage = null) {
-  const today = getMicrolinkUsageDatePart();
-  return normalizeComposerProviderUsage(usage, today);
+  return composerProviderUsage.normalize(usage);
 }
 
 /**
@@ -20809,54 +19388,7 @@ function normalizeMicrolinkUsage(usage = null) {
  * @returns {object} Normalized usage payload for today.
  */
 function getMicrolinkUsageState() {
-  linkCardMicrolinkUsage = normalizeMicrolinkUsage(linkCardMicrolinkUsage);
-  return linkCardMicrolinkUsage;
-}
-
-/**
- * Builds the short local Microlink usage summary shown in the link-card dialog.
- * @returns {string} Usage summary such as `2/25`.
- */
-function getMicrolinkUsageSummary() {
-  const usage = getMicrolinkUsageState();
-  return `${usage.count}/${MICROLINK_DAILY_LIMIT}`;
-}
-
-/**
- * Builds the settings note for the currently selected link-card provider.
- * @returns {string} Localized settings note for the selected provider.
- */
-function getLinkCardProviderSettingsNote() {
-  const provider = getActiveLinkCardProvider();
-  if (provider === LINK_CARD_PROVIDER_MICROLINK) {
-    return t("linkCardMicrolinkUsageNote", {
-      count: getMicrolinkUsageState().count,
-      limit: MICROLINK_DAILY_LIMIT,
-      remaining: getMicrolinkRemainingRequests(),
-    });
-  }
-  if (provider === LINK_CARD_PROVIDER_PROXY) {
-    return t("linkCardProviderProxyNote");
-  }
-  return t("linkCardProviderNoneNote");
-}
-
-/**
- * Builds the dialog note for the currently selected link-card provider.
- * @returns {string} Localized dialog note for the selected provider.
- */
-function getLinkCardDialogProviderNote() {
-  const provider = getActiveLinkCardProvider();
-  if (provider === LINK_CARD_PROVIDER_MICROLINK) {
-    return t("linkCardDialogMicrolinkNote", {
-      usage: getMicrolinkUsageSummary(),
-      limit: MICROLINK_DAILY_LIMIT,
-    });
-  }
-  if (provider === LINK_CARD_PROVIDER_PROXY) {
-    return t("linkCardDialogProxyNote");
-  }
-  return t("linkCardDialogNoneNote");
+  return composerProviderUsage.state();
 }
 
 /**
@@ -20864,25 +19396,7 @@ function getLinkCardDialogProviderNote() {
  * @returns {void}
  */
 function updateLinkCardDialogProviderState() {
-  if (!linkCardProviderState) {
-    return;
-  }
-  if (pendingLinkCardAction === "move" || pendingLinkCardAction === "manage") {
-    linkCardProviderState.hidden = true;
-    linkCardProviderState.textContent = "";
-    return;
-  }
-  linkCardProviderState.hidden = false;
-  linkCardProviderState.textContent = getLinkCardDialogProviderNote();
-}
-
-/**
- * Returns the remaining Microlink requests for today.
- * @returns {number} Remaining locally tracked request budget.
- */
-function getMicrolinkRemainingRequests() {
-  const usage = getMicrolinkUsageState();
-  return Math.max(0, MICROLINK_DAILY_LIMIT - usage.count);
+  composerProviderPresentation.updateDialog();
 }
 
 /**
@@ -20890,7 +19404,7 @@ function getMicrolinkRemainingRequests() {
  * @returns {boolean} True when another Microlink request may be sent.
  */
 function canUseMicrolinkToday() {
-  return getMicrolinkRemainingRequests() > 0;
+  return composerProviderUsage.canUse();
 }
 
 /**
@@ -20898,12 +19412,7 @@ function canUseMicrolinkToday() {
  * @returns {Promise<void>}
  */
 async function recordMicrolinkUsageAttempt() {
-  const usage = getMicrolinkUsageState();
-  linkCardMicrolinkUsage = {
-    date: usage.date,
-    count: usage.count + 1,
-  };
-  await persistSettings();
+  await composerProviderUsage.record();
 }
 
 /**
@@ -20911,53 +19420,24 @@ async function recordMicrolinkUsageAttempt() {
  * @returns {boolean} True when the proxy endpoint and secret are valid.
  */
 function isLinkCardProxyConfigured() {
-  const { endpoint, secret } = getLinkCardSettings();
-  return Boolean(endpoint && secret) && validateLinkCardProxySettings().ok;
+  return composerProxySettings.isConfigured();
 }
 
-function normalizeLinkCardProxyEndpoint(rawEndpoint) {
-  return normalizeComposerLinkCardProxyEndpoint(rawEndpoint);
-}
 
+/**
+ * Normalizes the Composer proxy endpoint input through its settings controller.
+ * @returns {void}
+ */
 function normalizeLinkCardSettingsInputs() {
-  if (!linkCardEndpointInput) {
-    return;
-  }
-  const normalizedEndpoint = normalizeLinkCardProxyEndpoint(linkCardEndpointInput.value);
-  if (normalizedEndpoint && normalizedEndpoint !== linkCardEndpointInput.value.trim()) {
-    linkCardEndpointInput.value = normalizedEndpoint;
-  }
+  composerProxySettings.normalizeInputs();
 }
 
+/**
+ * Validates current proxy settings without mutating their fields.
+ * @returns {object} Proxy validation result.
+ */
 function validateLinkCardProxySettings() {
-  const rawEndpoint = String(linkCardEndpointInput?.value || "").trim();
-  const endpoint = normalizeLinkCardProxyEndpoint(rawEndpoint);
-  const secret = String(linkCardSecretInput?.value || "").trim();
-  if (!rawEndpoint && !secret) {
-    return { ok: true, message: "", tone: "", isEmpty: true };
-  }
-  if (!rawEndpoint || !secret) {
-    return { ok: false, message: "", tone: "", isEmpty: true };
-  }
-  if (!endpoint) {
-    return { ok: false, message: t("linkCardProxyInvalidEndpoint"), tone: "error", isEmpty: false };
-  }
-  let parsedEndpoint = null;
-  try {
-    parsedEndpoint = new URL(endpoint);
-  } catch {
-    return { ok: false, message: t("linkCardProxyInvalidEndpoint"), tone: "error", isEmpty: false };
-  }
-  if (!["http:", "https:"].includes(parsedEndpoint.protocol)) {
-    return { ok: false, message: t("linkCardProxyInvalidEndpoint"), tone: "error", isEmpty: false };
-  }
-  if (!/\/wp-json\/threadline\/v1\/link-card\/?$/i.test(parsedEndpoint.pathname)) {
-    return { ok: false, message: t("linkCardProxyUnexpectedEndpoint"), tone: "error", isEmpty: false };
-  }
-  if (!secret) {
-    return { ok: false, message: t("linkCardProxyMissing"), tone: "error", isEmpty: false };
-  }
-  return { ok: true, message: t("linkCardSettingsSaved"), tone: "", isEmpty: false };
+  return composerProxySettings.validate();
 }
 
 /**
@@ -20967,41 +19447,8 @@ function validateLinkCardProxySettings() {
  * @param {boolean} options.persist - True when changed provider state should be saved.
  * @returns {void}
  */
-function syncLinkCardProviderUi({ persist = false } = {}) {
-  const proxyConfigured = isLinkCardProxyConfigured();
-  if (linkCardProviderNoneWrap) {
-    linkCardProviderNoneWrap.hidden = false;
-  }
-  if (linkCardProviderProxyWrap) {
-    linkCardProviderProxyWrap.hidden = !proxyConfigured;
-  }
-  if (linkCardProviderProxyInput) {
-    linkCardProviderProxyInput.disabled = !proxyConfigured;
-  }
-
-  linkCardProvider = normalizeLinkCardProvider(linkCardProvider);
-  if (!proxyConfigured && linkCardProvider === LINK_CARD_PROVIDER_PROXY) {
-    linkCardProvider = LINK_CARD_PROVIDER_NONE;
-  }
-
-  if (linkCardProviderNoneInput) {
-    linkCardProviderNoneInput.checked = linkCardProvider === LINK_CARD_PROVIDER_NONE;
-  }
-  if (linkCardProviderMicrolinkInput) {
-    linkCardProviderMicrolinkInput.checked = linkCardProvider === LINK_CARD_PROVIDER_MICROLINK;
-  }
-  if (linkCardProviderProxyInput) {
-    linkCardProviderProxyInput.checked = linkCardProvider === LINK_CARD_PROVIDER_PROXY;
-  }
-
-  if (linkCardProviderNote) {
-    linkCardProviderNote.textContent = getLinkCardProviderSettingsNote();
-  }
-  updateLinkCardDialogProviderState();
-
-  if (persist) {
-    void persistSettings();
-  }
+function syncLinkCardProviderUi(options = {}) {
+  composerProviderPresentation.sync(options);
 }
 
 /**
@@ -21009,14 +19456,7 @@ function syncLinkCardProviderUi({ persist = false } = {}) {
  * @returns {string} `none`, `microlink`, or `proxy`.
  */
 function getActiveLinkCardProvider() {
-  const provider = normalizeLinkCardProvider(linkCardProvider);
-  if (provider === LINK_CARD_PROVIDER_PROXY) {
-    if (isLinkCardProxyConfigured()) {
-      return LINK_CARD_PROVIDER_PROXY;
-    }
-    return LINK_CARD_PROVIDER_NONE;
-  }
-  return provider;
+  return composerProviderAvailability.active();
 }
 
 /**
@@ -21024,73 +19464,32 @@ function getActiveLinkCardProvider() {
  * @returns {boolean} True when the selected provider is currently usable.
  */
 function canCreateLinkCardsWithCurrentProvider() {
-  const provider = getActiveLinkCardProvider();
-  if (provider === LINK_CARD_PROVIDER_PROXY) {
-    return isLinkCardProxyConfigured();
-  }
-  if (provider === LINK_CARD_PROVIDER_MICROLINK) {
-    return canUseMicrolinkToday();
-  }
-  return true;
+  return composerProviderAvailability.canCreate();
 }
 
-function updateLinkCardSettingsStatus({ show = true } = {}) {
-  const validation = validateLinkCardProxySettings();
-  linkCardEndpointInput?.setCustomValidity(validation.ok || validation.isEmpty ? "" : validation.message);
-  if (!linkCardSettingsStatus) {
-    return validation;
-  }
-  linkCardSettingsStatus.hidden = validation.isEmpty || !show;
-  linkCardSettingsStatus.textContent = validation.message;
-  if (validation.tone) {
-    linkCardSettingsStatus.dataset.tone = validation.tone;
-  } else {
-    delete linkCardSettingsStatus.dataset.tone;
-  }
-  syncLinkCardProviderUi();
-  return validation;
+/**
+ * Updates proxy field validity and settings feedback.
+ * @param {object} options - Optional show flag.
+ * @returns {object} Proxy validation result.
+ */
+function updateLinkCardSettingsStatus(options = {}) {
+  return composerProxySettings.updateStatus(options);
 }
 
 function closeSettingsDialog() {
   settingsDialog.close();
 }
 
+/**
+ * Reads normalized proxy endpoint and secret values.
+ * @returns {{endpoint:string,secret:string}} Current proxy settings.
+ */
 function getLinkCardSettings() {
-  const endpoint = normalizeLinkCardProxyEndpoint(linkCardEndpointInput?.value);
-  return {
-    endpoint,
-    secret: String(linkCardSecretInput?.value || "").trim(),
-  };
+  return composerProxySettings.settings();
 }
 
-function bytesToHex(bytes) {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
 
-async function signLinkCardRequest(url, timestamp, nonce, secret) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`${url}\n${timestamp}\n${nonce}`),
-  );
-  return bytesToHex(new Uint8Array(signature));
-}
 
-function linkCardImageToDataUrl(image = {}) {
-  const bytesBase64 = String(image.bytesBase64 || "").trim();
-  if (!bytesBase64) {
-    return "";
-  }
-  const mimeType = String(image.mimeType || "image/jpeg").trim() || "image/jpeg";
-  return `data:${mimeType};base64,${bytesBase64}`;
-}
 
 /**
  * Loads a remote link-card image and converts it into a data URL for preview and upload.
@@ -21098,110 +19497,19 @@ function linkCardImageToDataUrl(image = {}) {
  * @returns {Promise<object>} Embedded image data and detected MIME type.
  */
 async function fetchLinkCardImageDataUrl(imageUrl) {
-  const normalizedUrl = String(imageUrl || "").trim();
-  if (!/^https?:\/\//i.test(normalizedUrl)) {
-    throw new Error("Link-Card-Bild hat keine gueltige HTTP-Adresse.");
-  }
-
-  const response = await fetch(normalizedUrl, {
-    method: "GET",
-    mode: "cors",
+  return await fetchComposerLinkCardImage(imageUrl, {
+    fetch: (url, options) => fetch(url, options), fileToDataUrl, translate: t,
   });
-  if (!response.ok) {
-    throw new Error(`Link-Card-Bild konnte nicht geladen werden (${response.status}).`);
-  }
-
-  const blob = await response.blob();
-  const mimeType = String(blob.type || "").trim();
-  if (!mimeType.startsWith("image/")) {
-    throw new Error(`Link-Card-Bild hat einen unerwarteten Typ (${mimeType || "unbekannt"}).`);
-  }
-
-  return {
-    imageDataUrl: await fileToDataUrl(blob),
-    imageMimeType: mimeType,
-  };
 }
 
-/**
- * Builds the user-facing error text for a failed link-card proxy response.
- * @param {Response} response - Fetch response returned by the proxy.
- * @param {object} payload - Parsed JSON error payload when available.
- * @returns {string} Localized error message.
- */
-function getLinkCardProxyErrorMessage(response, payload = {}) {
-  const code = String(payload?.code || "").trim().toLowerCase();
-  const message = String(payload?.message || "").trim().toLowerCase();
-  if (
-    response.status === 401
-    || code === "threadline_signature_invalid"
-    || code === "threadline_signature_missing"
-    || message === "invalid signature."
-    || message === "missing or expired signature."
-  ) {
-    return t("linkCardProxyAuthFailed");
-  }
-  return payload?.message || payload?.code || t("linkCardProxyFailed");
-}
 
-/**
- * Builds a localized error message for Microlink failures.
- * @param {Response|null} response - Fetch response when available.
- * @param {object|null} payload - Parsed Microlink payload when available.
- * @returns {string} User-facing error message for the Microlink request.
- */
-function getMicrolinkErrorMessage(response = null, payload = null) {
-  if (response && response.status === 429) {
-    return t("linkCardMicrolinkLimitReached");
-  }
-  const payloadMessage = String(payload?.description || payload?.message || "").trim();
-  if (payloadMessage) {
-    return payloadMessage;
-  }
-  return t("linkCardMicrolinkFailed");
-}
 
 /**
  * Requests link-card metadata for a URL from the configured WordPress proxy.
  * @param {string} url - HTTP(S) URL that should be previewed.
  * @returns {Promise<object|null>} Normalized link-card data, or null when the proxy returned invalid data.
  */
-async function requestLinkCardFromProxy(url) {
-  const { endpoint, secret } = getLinkCardSettings();
-  if (!endpoint && !secret) {
-    throw new Error(t("linkCardProxyMissing"));
-  }
-  const validation = updateLinkCardSettingsStatus();
-  if (!validation.ok) {
-    throw new Error(validation.message);
-  }
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const nonce = crypto.randomUUID();
-  const signature = await signLinkCardRequest(url, timestamp, nonce, secret);
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-threadline-timestamp": timestamp,
-      "x-threadline-nonce": nonce,
-      "x-threadline-signature": signature,
-    },
-    body: JSON.stringify({ url }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(getLinkCardProxyErrorMessage(response, payload));
-  }
-  return normalizeLinkCard({
-    url: payload.url || payload.finalUrl || url,
-    title: payload.title || payload.url || url,
-    description: payload.description || "",
-    imageUrl: payload.imageUrl || "",
-    imageDataUrl: linkCardImageToDataUrl(payload.image),
-    imageMimeType: payload.image?.mimeType || "",
-    standardSite: payload.standardSite,
-  });
-}
+async function requestLinkCardFromProxy(url) { return composerLinkCardRequests.proxy(url); }
 
 /**
  * Creates a simple link card without fetching external metadata.
@@ -21209,20 +19517,7 @@ async function requestLinkCardFromProxy(url) {
  * @returns {object|null} Normalized link-card data with URL-based fallback fields.
  */
 function createBasicLinkCard(url) {
-  let title = url;
-  let description = "";
-  try {
-    const parsedUrl = new URL(url);
-    title = parsedUrl.hostname || url;
-    description = parsedUrl.toString();
-  } catch {
-    title = url;
-  }
-  return normalizeLinkCard({
-    url,
-    title,
-    description,
-  });
+  return buildBasicLinkCard(url, normalizeLinkCard);
 }
 
 /**
@@ -21230,60 +19525,7 @@ function createBasicLinkCard(url) {
  * @param {string} url - HTTP(S) URL that should be previewed.
  * @returns {Promise<object|null>} Normalized link-card data, or null when Microlink returned invalid data.
  */
-async function requestLinkCardFromMicrolink(url) {
-  if (!canUseMicrolinkToday()) {
-    throw new Error(t("linkCardMicrolinkLimitReached"));
-  }
-
-  const endpoint = `https://api.microlink.io/?url=${encodeURIComponent(url)}`;
-  const response = await fetch(endpoint, {
-    method: "GET",
-  });
-  const payload = await response.json().catch(() => ({}));
-  await recordMicrolinkUsageAttempt();
-  if (!response.ok) {
-    throw new Error(getMicrolinkErrorMessage(response, payload));
-  }
-
-  const data = payload?.data;
-  if (!data || typeof data !== "object") {
-    throw new Error(t("linkCardMicrolinkFailed"));
-  }
-
-  let imageUrl = "";
-  if (typeof data.image === "string") {
-    imageUrl = data.image;
-  } else if (data.image && typeof data.image === "object" && data.image.url) {
-    imageUrl = String(data.image.url).trim();
-  }
-  let imageDataUrl = "";
-  let imageMimeType = "";
-  if (imageUrl) {
-    try {
-      const fetchedImage = await fetchLinkCardImageDataUrl(imageUrl);
-      imageDataUrl = fetchedImage.imageDataUrl;
-      imageMimeType = fetchedImage.imageMimeType;
-    } catch {
-      imageDataUrl = "";
-      imageMimeType = "";
-    }
-  }
-
-  const normalizedCard = normalizeLinkCard({
-    url: data.url || url,
-    title: data.title || data.url || url,
-    description: data.description || "",
-    imageUrl,
-    imageDataUrl,
-    imageMimeType,
-    standardSite: null,
-  });
-
-  if (!normalizedCard) {
-    throw new Error(t("linkCardMicrolinkFailed"));
-  }
-  return normalizedCard;
-}
+async function requestLinkCardFromMicrolink(url) { return composerLinkCardRequests.microlink(url); }
 
 /**
  * Requests link-card metadata from the currently active provider.
@@ -21291,14 +19533,11 @@ async function requestLinkCardFromMicrolink(url) {
  * @returns {Promise<object|null>} Normalized link-card data or null on invalid provider output.
  */
 async function requestLinkCard(url) {
-  const provider = getActiveLinkCardProvider();
-  if (provider === LINK_CARD_PROVIDER_PROXY) {
-    return await requestLinkCardFromProxy(url);
-  }
-  if (provider === LINK_CARD_PROVIDER_MICROLINK) {
-    return await requestLinkCardFromMicrolink(url);
-  }
-  return createBasicLinkCard(url);
+  return await requestComposerLinkCard(url, {
+    getProvider: getActiveLinkCardProvider,
+    providers: { proxy: LINK_CARD_PROVIDER_PROXY, microlink: LINK_CARD_PROVIDER_MICROLINK },
+    proxy: requestLinkCardFromProxy, microlink: requestLinkCardFromMicrolink, basic: createBasicLinkCard,
+  });
 }
 
 function getHistoryPreviewText(text) {
@@ -21309,446 +19548,39 @@ function normalizeReplyTarget(target = null) {
   return normalizeComposerReplyTarget(target, getHistoryPreviewText);
 }
 
-function setReplyTargetStatus(message = "", tone = "") {
-  if (!replyTargetStatus) {
-    return;
-  }
-  replyTargetStatus.textContent = message;
-  replyTargetStatus.hidden = !message;
-  if (tone) {
-    replyTargetStatus.dataset.tone = tone;
-  } else {
-    delete replyTargetStatus.dataset.tone;
-  }
-}
 
-function closeReplyTargetDialog() {
-  replyTargetDialog?.close();
-}
+/** Closes the reply-target dialog. @returns {void} */
+function closeReplyTargetDialog() { composerReplyDialog.close(); }
 
-function clearComposerReplyTarget({ render = true } = {}) {
-  replyTargetRequestToken += 1;
-  composerReplyTarget = null;
-  persistPendingComposerReplyTarget(null);
-  if (replyTargetUrlInput) {
-    replyTargetUrlInput.value = "";
-  }
-  setReplyTargetStatus("");
-  if (render) {
-    renderReplyTargetCard();
-    publishButton.textContent = getPublishButtonLabel();
-    updatePublishAvailability();
-  }
-}
+/** Clears the reply target. @param {object} options - Optional render flag. @returns {void} */
+function clearComposerReplyTarget(options = {}) { composerReplyController.clear(options); }
 
+/** Gets the normalized target account name. @param {object|null} target - Reply target. @returns {string} */
 function getReplyTargetDisplayName(target = composerReplyTarget) {
-  const normalized = normalizeReplyTarget(target);
-  if (!normalized) {
-    return "";
-  }
-  const actor = normalized.mode === "thread" ? normalized.rootAccount : normalized.targetAccount;
-  return actor.displayName || actor.handle || actor.did || "";
+  return getComposerReplyTargetDisplayName(normalizeReplyTarget(target));
 }
 
-function isOwnThreadReplyChoiceTarget(target = composerReplyTarget) {
-  const normalized = normalizeReplyTarget(target);
-  if (!normalized || normalized.mode !== "post") {
-    return false;
-  }
-  return Boolean(
-    authAccountDid
-    && normalized.rootAccount?.did
-    && normalized.rootAccount.did === authAccountDid
-    && normalized.lastOwnPost?.uri
-    && normalized.lastOwnPost?.cid,
-  );
-}
 
-function buildThreadContinuationTarget(target = composerReplyTarget) {
-  const normalized = normalizeReplyTarget(target);
-  return buildComposerThreadContinuationTarget(normalized);
-}
 
+/** Refreshes the reply-target preview card. @returns {void} */
 function renderReplyTargetCard() {
-  const target = normalizeReplyTarget(composerReplyTarget);
-  if (!replyTargetCard) {
-    return;
-  }
-  replyTargetCard.hidden = !target;
-  if (!target) {
-    return;
-  }
-  replyTargetCardEyebrow.textContent = target.mode === "thread"
-    ? t("replyTargetThreadCardEyebrow")
-    : t("replyTargetPostCardEyebrow");
-  const actor = target.mode === "thread" ? target.rootAccount : target.targetAccount;
-  setAvatarImage(replyTargetAvatar, actor.avatar, getReplyTargetDisplayName(target));
-  replyTargetName.textContent = getReplyTargetDisplayName(target);
-  replyTargetHandle.textContent = actor.handle ? `@${actor.handle}` : "";
-  const baseMeta = target.mode === "thread"
-    ? t("replyTargetThreadMeta", { count: target.threadLength })
-    : t("replyTargetPostMeta");
-  replyTargetMeta.textContent = target.replyHint ? `${baseMeta} ${target.replyHint}` : baseMeta;
-  if (replyTargetWarning) {
-    const showCounterWarning = target.mode === "thread" && counterToggle.checked;
-    if (showCounterWarning) {
-      replyTargetWarning.textContent = t("publishThreadContinuationCounterWarning");
-      replyTargetWarning.removeAttribute("hidden");
-      replyTargetWarning.style.display = "block";
-    } else {
-      replyTargetWarning.textContent = "";
-      replyTargetWarning.setAttribute("hidden", "");
-      replyTargetWarning.style.display = "none";
-    }
-  }
-  replyTargetText.textContent = target.mode === "thread"
-    ? (target.rootPost?.text || target.targetPost.text || "")
-    : (target.targetPost.text || "");
+  renderComposerReplyTargetCard(normalizeReplyTarget(composerReplyTarget), {
+    card: replyTargetCard, eyebrow: replyTargetCardEyebrow, avatar: replyTargetAvatar,
+    name: replyTargetName, handle: replyTargetHandle, meta: replyTargetMeta,
+    warning: replyTargetWarning, text: replyTargetText,
+  }, { withCounters: counterToggle.checked, translate: t, setAvatar: setAvatarImage });
 }
 
+/** Returns trimmed posting texts. @returns {string[]} Ordered section texts. */
 function getSegmentTextPayloads() {
-  return activeSegments.length > 0 ? activeSegments.map((entry) => entry.trim()) : [currentComposedText.trim()];
+  return getComposerPostingTexts(activeSegments, currentComposedText);
 }
 
+/** Builds current text/media payloads. @returns {object[]} Ordered posting payloads. */
 function getSegmentPayloads() {
-  const texts = getSegmentTextPayloads();
-  return texts.map((text, index) => ({
-    text,
-    images: Array.isArray(segmentImages[index]) ? segmentImages[index] : [],
-    externalCard: normalizeLinkCard(segmentLinkCards[index]),
-  }));
+  return buildComposerPostingPayloads({ segments: activeSegments, composedText: currentComposedText, images: segmentImages, cards: segmentLinkCards }, normalizeLinkCard);
 }
 
-async function loadImageDimensions(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
-    image.onerror = () => reject(new Error(t("imageLoadFailed")));
-    image.src = dataUrl;
-  });
-}
-
-async function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error(t("fileReadFailed"), { cause: reader.error }));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function dataUrlToBlob(dataUrl) {
-  const response = await fetch(dataUrl);
-  if (!response.ok) {
-    throw new Error(t("imageBlobCreateFailed"));
-  }
-  return response.blob();
-}
-
-async function createThreadImageFromFile(file) {
-  const dataUrl = await fileToDataUrl(file);
-  const dimensions = await loadImageDimensions(dataUrl);
-  return normalizeThreadImage({
-    id: crypto.randomUUID(),
-    name: file.name,
-    type: file.type || "image/jpeg",
-    dataUrl,
-    width: dimensions.width,
-    height: dimensions.height,
-    originalSizeBytes: file.size,
-    alt: "",
-    edit: createDefaultImageEdit(),
-  });
-}
-
-function getSourceDimensions(image, source = null) {
-  return getComposerSourceDimensions(image, source);
-}
-
-function getOrientedSourceDimensions(image, edit = image.edit, source = null) {
-  const normalizedEdit = normalizeImageEdit(edit);
-  return getComposerOrientedSourceDimensions(image, normalizedEdit, source);
-}
-
-function getImageEditorCanvasDimensions(image, edit = image.edit, source = null) {
-  const oriented = getOrientedSourceDimensions(image, edit, source);
-  const isPortrait = oriented.height > oriented.width;
-  return isPortrait
-    ? {
-        width: IMAGE_EDITOR_CANVAS_HEIGHT,
-        height: IMAGE_EDITOR_CANVAS_WIDTH,
-      }
-    : {
-        width: IMAGE_EDITOR_CANVAS_WIDTH,
-        height: IMAGE_EDITOR_CANVAS_HEIGHT,
-      };
-}
-
-function isPortraitEditorImage(image, edit = image.edit, source = null) {
-  const oriented = getOrientedSourceDimensions(image, edit, source);
-  return oriented.height > oriented.width;
-}
-
-function getEditedImageExportDimensions(image, edit = image.edit, source = null, exportScale = 1) {
-  const frame = getImageEditorCanvasDimensions(image, edit, source);
-  const baseScale = IMAGE_EXPORT_WIDTH / IMAGE_EDITOR_CANVAS_WIDTH;
-  return {
-    width: Math.max(320, Math.round(frame.width * baseScale * exportScale)),
-    height: Math.max(320, Math.round(frame.height * baseScale * exportScale)),
-  };
-}
-
-function getImagePreviewFrameDimensions(image) {
-  if (isImageUsingDefaultEdit(image)) {
-    return getOrientedSourceDimensions(image, image.edit);
-  }
-  return getEditedImageExportDimensions(image, image.edit);
-}
-
-function getContainedPreviewBox(frameWidth, frameHeight, maxWidth, maxHeight) {
-  return getComposerContainedPreviewBox(frameWidth, frameHeight, maxWidth, maxHeight);
-}
-
-function getImageMetrics(image, frameWidth, frameHeight, edit = image.edit, fit = null, source = null) {
-  const normalizedEdit = normalizeImageEdit(edit);
-  const effectiveFit = fit || normalizedEdit.fitMode || "cover";
-  const rotation = normalizedEdit.rotation;
-  const quarterTurn = rotation % 180 !== 0;
-  const sourceDimensions = getSourceDimensions(image, source);
-  const sourceWidth = quarterTurn ? sourceDimensions.height : sourceDimensions.width;
-  const sourceHeight = quarterTurn ? sourceDimensions.width : sourceDimensions.height;
-  const baseScale = effectiveFit === "contain"
-    ? Math.min(frameWidth / sourceWidth, frameHeight / sourceHeight)
-    : Math.max(frameWidth / sourceWidth, frameHeight / sourceHeight);
-  const drawWidth = sourceDimensions.width * baseScale * normalizedEdit.zoom;
-  const drawHeight = sourceDimensions.height * baseScale * normalizedEdit.zoom;
-  const rotatedDrawWidth = quarterTurn ? drawHeight : drawWidth;
-  const rotatedDrawHeight = quarterTurn ? drawWidth : drawHeight;
-  const maxOffsetX = effectiveFit === "cover"
-    ? Math.max(0, (rotatedDrawWidth - frameWidth) / 2)
-    : 0;
-  const maxOffsetY = effectiveFit === "cover"
-    ? Math.max(0, (rotatedDrawHeight - frameHeight) / 2)
-    : 0;
-  const offsetX = clamp(normalizedEdit.offsetX, -maxOffsetX, maxOffsetX);
-  const offsetY = clamp(normalizedEdit.offsetY, -maxOffsetY, maxOffsetY);
-  return {
-    ...normalizedEdit,
-    fitMode: effectiveFit,
-    drawWidth,
-    drawHeight,
-    rotatedDrawWidth,
-    rotatedDrawHeight,
-    maxOffsetX,
-    maxOffsetY,
-    offsetX,
-    offsetY,
-    centerX: frameWidth / 2 + offsetX,
-    centerY: frameHeight / 2 + offsetY,
-  };
-}
-
-function clampImageEditToFrame(image, frameWidth, frameHeight, edit = image.edit, fit = null, source = null) {
-  const metrics = getImageMetrics(image, frameWidth, frameHeight, edit, fit, source);
-  return {
-    zoom: metrics.zoom,
-    offsetX: metrics.offsetX,
-    offsetY: metrics.offsetY,
-    flipX: metrics.flipX,
-    flipY: metrics.flipY,
-    rotation: metrics.rotation,
-    fitMode: metrics.fitMode,
-  };
-}
-
-async function loadImageBitmapForDataUrl(dataUrl) {
-  const response = await fetch(dataUrl);
-  const blob = await response.blob();
-  return createImageBitmap(blob);
-}
-
-async function renderImageToCanvas(image, canvas, options = {}) {
-  return renderComposerImageToCanvas(image, canvas, {
-    ...options,
-    normalizeEdit,
-    getMetrics: getImageMetrics,
-    loadBitmap: loadImageBitmapForDataUrl,
-  });
-}
-
-function getPreviewRenderEdit(image, width, height, edit = image.edit) {
-  const normalizedEdit = normalizeImageEdit(edit);
-  if (isImageUsingDefaultEdit({ ...image, edit: normalizedEdit })) {
-    return normalizedEdit;
-  }
-  const currentEditorFrame = getImageEditorCanvasDimensions(image, normalizedEdit);
-  const widthScale = width / Math.max(1, currentEditorFrame.width);
-  const heightScale = height / Math.max(1, currentEditorFrame.height);
-  return {
-    ...normalizedEdit,
-    offsetX: normalizedEdit.offsetX * widthScale,
-    offsetY: normalizedEdit.offsetY * heightScale,
-  };
-}
-
-async function renderPreviewCanvas(image, canvas, options = {}) {
-  const rect = canvas.getBoundingClientRect();
-  const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
-  const cssWidth = Math.max(1, Math.round(options.cssWidth || rect.width || canvas.clientWidth || 220));
-  const cssHeight = Math.max(1, Math.round(options.cssHeight || rect.height || canvas.clientHeight || 150));
-  const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
-  const pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
-
-  if (canvas.width !== pixelWidth) {
-    canvas.width = pixelWidth;
-  }
-  if (canvas.height !== pixelHeight) {
-    canvas.height = pixelHeight;
-  }
-
-  await renderImageToCanvas(image, canvas, {
-    width: pixelWidth,
-    height: pixelHeight,
-    edit: getPreviewRenderEdit(image, pixelWidth, pixelHeight, options.edit || image.edit),
-    fit: normalizeImageEdit(image.edit).fitMode,
-  });
-}
-
-async function renderImageToBlob(image) {
-  if (!hasExplicitImageUploadTransform(image)) {
-    return {
-      blob: await dataUrlToBlob(image.dataUrl),
-      width: image.width,
-      height: image.height,
-    };
-  }
-
-  if (isImageUsingDefaultEdit(image)) {
-    const canvas = document.createElement("canvas");
-    const exportScale = Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image.exportScale) || 1));
-    canvas.width = Math.max(1, Math.round((image.width || 1) * exportScale));
-    canvas.height = Math.max(1, Math.round((image.height || 1) * exportScale));
-    await renderImageToCanvas(image, canvas, {
-      width: canvas.width,
-      height: canvas.height,
-      fit: "contain",
-    });
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", image.exportQuality || 0.88));
-    if (!blob) {
-      throw new Error(t("imageBlobCreateFailed"));
-    }
-    return {
-      blob,
-      width: canvas.width,
-      height: canvas.height,
-    };
-  }
-
-  const canvas = document.createElement("canvas");
-  const exportScale = Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image.exportScale) || 1));
-  const exportDimensions = getEditedImageExportDimensions(image, image.edit, null, exportScale);
-  const currentEditorFrame = getImageEditorCanvasDimensions(image, image.edit);
-  const scale = exportDimensions.width / currentEditorFrame.width;
-  const exportEdit = {
-    ...normalizeImageEdit(image.edit),
-    offsetX: (Number(image.edit?.offsetX) || 0) * scale,
-    offsetY: (Number(image.edit?.offsetY) || 0) * scale,
-  };
-  canvas.width = exportDimensions.width;
-  canvas.height = exportDimensions.height;
-  await renderImageToCanvas(image, canvas, {
-    width: canvas.width,
-    height: canvas.height,
-    edit: exportEdit,
-  });
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", image.exportQuality || 0.88));
-  if (!blob) {
-    throw new Error(t("imageBlobCreateFailed"));
-  }
-  return {
-    blob,
-    width: canvas.width,
-    height: canvas.height,
-  };
-}
-
-async function validateThreadImage(image) {
-  const rendered = await renderImageToBlob(image);
-  image.validation = {
-    sizeBytes: rendered.blob.size,
-    width: rendered.width,
-    height: rendered.height,
-    exceedsDimensions: rendered.width > IMAGE_MAX_DIMENSION || rendered.height > IMAGE_MAX_DIMENSION,
-    tooBig: rendered.blob.size > IMAGE_BLOB_LIMIT || rendered.width > IMAGE_MAX_DIMENSION || rendered.height > IMAGE_MAX_DIMENSION,
-  };
-  return image.validation;
-}
-
-async function autoFitImageToAllowedDimensions(image) {
-  const rendered = await renderImageToBlob(image);
-  const maxRenderedDimension = Math.max(rendered.width, rendered.height);
-  if (maxRenderedDimension <= IMAGE_MAX_DIMENSION) {
-    return false;
-  }
-  const currentScale = Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image.exportScale) || 1));
-  image.exportScale = Math.max(IMAGE_MIN_EXPORT_SCALE, currentScale * (IMAGE_MAX_DIMENSION / maxRenderedDimension));
-  return true;
-}
-
-async function autoApplyLossyResize(image) {
-  image.exportScale = Math.max(IMAGE_MIN_EXPORT_SCALE, (image.exportScale || 1) * 0.82);
-  image.exportQuality = Math.max(0.45, (image.exportQuality || 0.88) * 0.86);
-}
-
-async function prepareImageForUpload(image, autoMode = imageAutoResizeMode) {
-  const workingImage = normalizeThreadImage(image);
-  if (!workingImage) {
-    throw new Error(t("imageBlobCreateFailed"));
-  }
-  await validateThreadImage(workingImage);
-  const normalizedMode = normalizeImageAutoResizeMode(autoMode);
-  if (workingImage.validation?.tooBig && normalizedMode === "fit") {
-    await autoFitImageToAllowedDimensions(workingImage);
-    await validateThreadImage(workingImage);
-  }
-  if (workingImage.validation?.tooBig && normalizedMode === "lossy") {
-    await autoFitImageToAllowedDimensions(workingImage);
-    await validateThreadImage(workingImage);
-    let attempts = 0;
-    while (workingImage.validation?.tooBig && attempts < 8) {
-      await autoApplyLossyResize(workingImage);
-      await validateThreadImage(workingImage);
-      attempts += 1;
-    }
-  }
-  const rendered = await renderImageToBlob(workingImage);
-  return {
-    blob: rendered.blob,
-    width: rendered.width,
-    height: rendered.height,
-    validation: workingImage.validation,
-  };
-}
-
-async function validateSegmentImages() {
-  const token = ++imageValidationToken;
-  const images = segmentImages.flatMap((items) => items || []);
-  for (const image of images) {
-    await validateThreadImage(image);
-  }
-  if (token !== imageValidationToken) {
-    return;
-  }
-  preserveScrollPosition(() => {
-    renderSegments({ preserveOverrides: true });
-  });
-}
-
-function scheduleImageValidation() {
-  void validateSegmentImages().catch((error) => {
-    console.error(error);
-  });
-}
 
 function showProgressDialog(title, message) {
   showProgressModal({
@@ -21786,626 +19618,137 @@ function showErrorDialog(message, title = t("errorTitle"), options = {}) {
   });
 }
 
-function setAltTextCount() {
-  altTextCount.textContent = `${altTextInput.value.length}/${MAX_ALT_TEXT_LENGTH}`;
-}
+/**
+ * Updates the ALT-text dialog counter.
+ * @returns {void}
+ */
+function setAltTextCount() { composerAltTextDialog.count(); }
 
-function openAltTextDialog(segmentIndex, imageIndex) {
-  const image = segmentImages[segmentIndex]?.[imageIndex];
-  if (!image) {
-    return;
-  }
-  editingAltTarget = { segmentIndex, imageIndex };
-  altTextPreviewWrap.hidden = !image.dataUrl;
-  if (image.dataUrl) {
-    const previewFrame = getImagePreviewFrameDimensions(image);
-    const isPortrait = previewFrame.height > previewFrame.width;
-    const previewBox = getContainedPreviewBox(
-      previewFrame.width,
-      previewFrame.height,
-      isPortrait ? 220 : 320,
-      isPortrait ? 300 : 220,
-    );
-    altTextPreviewWrap.classList.toggle("is-portrait", isPortrait);
-    altTextPreviewCanvas.style.width = `${previewBox.width}px`;
-    altTextPreviewCanvas.style.height = `${previewBox.height}px`;
-    altTextPreviewCanvas.style.aspectRatio = `${previewFrame.width} / ${previewFrame.height}`;
-    void renderPreviewCanvas(image, altTextPreviewCanvas, {
-      cssWidth: previewBox.width,
-      cssHeight: previewBox.height,
-    });
-  }
-  altTextInput.value = image.alt || "";
-  setAltTextCount();
-  altTextDialog.showModal();
-  window.setTimeout(() => altTextInput.focus(), 0);
-}
+/**
+ * Opens the ALT-text dialog for a segment image.
+ * @param {number} segmentIndex - Image segment.
+ * @param {number} imageIndex - Image index.
+ * @returns {void}
+ */
+function openAltTextDialog(segmentIndex, imageIndex) { composerAltTextDialog.open(segmentIndex, imageIndex); }
 
-function closeAltTextDialog() {
-  editingAltTarget = null;
-  altTextPreviewWrap.hidden = true;
-  altTextPreviewWrap.classList.remove("is-portrait");
-  const context = altTextPreviewCanvas.getContext("2d");
-  context?.clearRect(0, 0, altTextPreviewCanvas.width, altTextPreviewCanvas.height);
-  altTextPreviewCanvas.style.removeProperty("width");
-  altTextPreviewCanvas.style.removeProperty("height");
-  altTextPreviewCanvas.style.removeProperty("aspect-ratio");
-  altTextDialog.close();
-}
+/**
+ * Clears and closes the ALT-text dialog.
+ * @returns {void}
+ */
+function closeAltTextDialog() { composerAltTextDialog.close(); }
 
-function updateSegmentImageAltDisplay(segmentIndex, imageIndex) {
-  const image = segmentImages[segmentIndex]?.[imageIndex];
-  const card = segmentsList.querySelector(
-    `.segment-image-card[data-segment-index="${segmentIndex}"][data-image-index="${imageIndex}"]`,
-  );
-  if (!image || !card) {
-    return;
-  }
-  const hasAlt = Boolean(String(image.alt || "").trim());
-  const preview = card.querySelector(".segment-image-preview");
-  const altState = card.querySelector(".segment-image-alt-state");
-  const altButton = card.querySelector('[data-image-action="alt"]');
-  if (preview) {
-    preview.title = hasAlt ? image.alt : t("altTextMissing");
-  }
-  if (altState) {
-    altState.textContent = hasAlt ? t("altTextAdded") : t("altTextMissing");
-    altState.classList.toggle("is-missing-alt", !hasAlt);
-  }
-  altButton?.classList.toggle("danger", !hasAlt);
-}
+/**
+ * Saves the current ALT text through the dialog controller.
+ * @returns {Promise<void>}
+ */
+async function saveAltText() { await composerAltTextDialog.save(); }
 
-async function saveAltText() {
-  if (!editingAltTarget) {
-    closeAltTextDialog();
-    return;
-  }
-  const { segmentIndex, imageIndex } = editingAltTarget;
-  const image = segmentImages[segmentIndex]?.[imageIndex];
-  if (!image) {
-    closeAltTextDialog();
-    return;
-  }
-  image.alt = altTextInput.value.slice(0, MAX_ALT_TEXT_LENGTH);
-  await persistSettings();
-  updateSegmentImageAltDisplay(segmentIndex, imageIndex);
-  updatePublishAvailability();
-  queueDraftSave();
-  closeAltTextDialog();
-}
-
-function cloneImageEdit(edit) {
-  return normalizeImageEdit({ ...edit });
-}
-
-function getImageEditorSourceDimensions() {
-  return imageEditorSourceBitmap
-    ? { width: imageEditorSourceBitmap.width, height: imageEditorSourceBitmap.height }
-    : null;
-}
-
-function clampImageEditorDraftToFrame(image, draft = imageEditorDraft) {
-  const canvasDimensions = getImageEditorCanvasDimensions(image, draft, getImageEditorSourceDimensions());
-  return clampImageEditToFrame(
-    image,
-    canvasDimensions.width,
-    canvasDimensions.height,
-    draft,
-    normalizeImageEdit(draft).fitMode,
-    getImageEditorSourceDimensions(),
-  );
-}
-
+/**
+ * Opens the image editor for a segment image.
+ * @param {number} segmentIndex - Segment index.
+ * @param {number} imageIndex - Image index.
+ * @returns {Promise<void>}
+ */
 async function openImageEditorDialog(segmentIndex, imageIndex) {
-  const image = segmentImages[segmentIndex]?.[imageIndex];
-  if (!image) {
-    return;
-  }
-  editingImageTarget = { segmentIndex, imageIndex };
-  imageEditorSourceBitmap = await loadImageBitmapForDataUrl(image.dataUrl);
-  imageEditorDraft = cloneImageEdit(image.edit);
-  const canvasDimensions = getImageEditorCanvasDimensions(image, imageEditorDraft, getImageEditorSourceDimensions());
-  imageEditorCanvas.width = canvasDimensions.width;
-  imageEditorCanvas.height = canvasDimensions.height;
-  imageEditorSheet?.classList.toggle("is-portrait-image", isPortraitEditorImage(image, imageEditorDraft, getImageEditorSourceDimensions()));
-  imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
-  imageZoomInput.value = String(imageEditorDraft.zoom);
-  setImageEditorStatus(getImageEditorValidationMessage(image), image.validation?.tooBig ? "error" : "");
-  updateImageEditorActionState(image);
-  drawImageEditor();
-  imageEditorDialog.showModal();
+  await composerImageEditor.open(segmentIndex, imageIndex);
 }
 
-function closeImageEditorDialog() {
-  editingImageTarget = null;
-  imageEditorSourceBitmap?.close?.();
-  imageEditorSourceBitmap = null;
-  imageEditorDraft = null;
-  window.clearTimeout(imageEditorMetricsTimer);
-  imageEditorMetricsRequestId += 1;
-  setImageEditorStatus("");
-  imageEditorSheet?.classList.remove("is-portrait-image");
-  imageEditorDialog.close();
-}
 
-function getEditedImage() {
-  if (!editingImageTarget) {
-    return null;
-  }
-  return segmentImages[editingImageTarget.segmentIndex]?.[editingImageTarget.imageIndex] || null;
-}
 
-function formatImageDimensions(width, height) {
-  const safeWidth = Math.max(0, Math.round(Number(width) || 0));
-  const safeHeight = Math.max(0, Math.round(Number(height) || 0));
-  return safeWidth && safeHeight ? `${safeWidth} x ${safeHeight} px` : "-";
-}
-
-function setImageEditorStatus(message = "", tone = "") {
-  if (!imageEditorStatus) {
-    return;
-  }
-  imageEditorStatus.textContent = message;
-  if (tone) {
-    imageEditorStatus.dataset.tone = tone;
-  } else {
-    delete imageEditorStatus.dataset.tone;
-  }
-}
-
-function getImageEditorDraftImage(image = getEditedImage()) {
-  if (!image || !imageEditorDraft) {
-    return null;
-  }
-  return {
-    ...image,
-    edit: clampImageEditorDraftToFrame(image, { ...imageEditorDraft }),
-  };
-}
-
-function updateImageEditorActionState(image = getEditedImage()) {
-  const validation = image?.validation || {};
-  const exceedsDimensions = Boolean(validation.exceedsDimensions);
-  imageFitDimensionsButton.disabled = !exceedsDimensions;
-  imageLossyResizeButton.hidden = !validation.tooBig;
-}
-
-function getImageEditorValidationMessage(image = getEditedImage()) {
-  const validation = image?.validation || {};
-  if (validation.exceedsDimensions) {
-    return t("imageEditorDimensionsTooLarge", {
-      width: validation.width || image?.width || 0,
-      height: validation.height || image?.height || 0,
-    });
-  }
-  if ((Number(validation.sizeBytes) || 0) > IMAGE_BLOB_LIMIT) {
-    return t("imageEditorFileTooLarge", {
-      size: formatImageSize(validation.sizeBytes),
-    });
-  }
-  return "";
-}
-
-async function updateImageEditorMetrics({ renderBlob = true } = {}) {
-  const image = getEditedImage();
-  const draftImage = getImageEditorDraftImage(image);
-  if (!image || !draftImage) {
-    return;
-  }
-  const requestId = ++imageEditorMetricsRequestId;
-  imageEditorOriginalDimensions.textContent = formatImageDimensions(image.width, image.height);
-  imageEditorOriginalSize.textContent = formatImageSize(image.originalSizeBytes);
-  const exportDimensions = isImageUsingDefaultEdit(draftImage)
-    ? {
-        width: Math.max(1, Math.round((draftImage.width || 1) * Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(draftImage.exportScale) || 1)))),
-        height: Math.max(1, Math.round((draftImage.height || 1) * Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(draftImage.exportScale) || 1)))),
-      }
-    : getEditedImageExportDimensions(draftImage, draftImage.edit, null, Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(draftImage.exportScale) || 1)));
-  imageEditorExportDimensions.textContent = formatImageDimensions(exportDimensions.width, exportDimensions.height);
-  imageEditorExportSize.textContent = renderBlob ? t("imageEditorCalculatingSize") : formatImageSize(image.validation?.sizeBytes);
-  updateImageEditorActionState(image);
-  if (!renderBlob) {
-    return;
-  }
-  try {
-    const rendered = await renderImageToBlob(draftImage);
-    if (requestId !== imageEditorMetricsRequestId) {
-      return;
-    }
-    imageEditorExportDimensions.textContent = formatImageDimensions(rendered.width, rendered.height);
-    imageEditorExportSize.textContent = formatImageSize(rendered.blob.size);
-  } catch {
-    if (requestId === imageEditorMetricsRequestId) {
-      imageEditorExportSize.textContent = t("imageEditorSizeUnknown");
-    }
-  }
-}
-
-function scheduleImageEditorMetricsUpdate() {
-  window.clearTimeout(imageEditorMetricsTimer);
-  imageEditorMetricsTimer = window.setTimeout(() => {
-    void updateImageEditorMetrics();
-  }, 180);
-}
-
-function drawImageEditor() {
-  const image = getEditedImage();
-  const ctx = imageEditorCanvas.getContext("2d");
-  ctx.clearRect(0, 0, imageEditorCanvas.width, imageEditorCanvas.height);
-  if (!image || !imageEditorSourceBitmap || !imageEditorDraft) {
-    return;
-  }
-
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  ctx.fillRect(0, 0, imageEditorCanvas.width, imageEditorCanvas.height);
-
-  const metrics = getImageMetrics(
-    { ...image, edit: imageEditorDraft },
-    imageEditorCanvas.width,
-    imageEditorCanvas.height,
-    imageEditorDraft,
-    normalizeImageEdit(imageEditorDraft).fitMode,
-    getImageEditorSourceDimensions(),
-  );
-  imageEditorDraft.offsetX = metrics.offsetX;
-  imageEditorDraft.offsetY = metrics.offsetY;
-  imageEditorDraft.fitMode = metrics.fitMode;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, imageEditorCanvas.width, imageEditorCanvas.height);
-  ctx.clip();
-  ctx.translate(metrics.centerX, metrics.centerY);
-  ctx.rotate((metrics.rotation * Math.PI) / 180);
-  ctx.scale(metrics.flipX ? -1 : 1, metrics.flipY ? -1 : 1);
-  ctx.drawImage(
-    imageEditorSourceBitmap,
-    -metrics.drawWidth / 2,
-    -metrics.drawHeight / 2,
-    metrics.drawWidth,
-    metrics.drawHeight,
-  );
-  ctx.restore();
-
-  ctx.strokeStyle = "rgba(20, 35, 61, 0.18)";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, imageEditorCanvas.width - 2, imageEditorCanvas.height - 2);
-  scheduleImageEditorMetricsUpdate();
-}
-
-function startImageEditorDrag(event) {
-  if (!imageEditorDraft) {
-    return;
-  }
-  imageEditorDragging = true;
-  imageEditorDragStart = {
-    x: event.clientX,
-    y: event.clientY,
-    offsetX: imageEditorDraft.offsetX,
-    offsetY: imageEditorDraft.offsetY,
-  };
-}
-
-function updateImageEditorDrag(event) {
-  if (!imageEditorDragging || !imageEditorDraft || !imageEditorDragStart) {
-    return;
-  }
-  const image = getEditedImage();
-  if (!image) {
-    return;
-  }
-  const nextDraft = {
-    ...imageEditorDraft,
-    fitMode: "cover",
-    offsetX: imageEditorDragStart.offsetX + (event.clientX - imageEditorDragStart.x),
-    offsetY: imageEditorDragStart.offsetY + (event.clientY - imageEditorDragStart.y),
-  };
-  imageEditorDraft = clampImageEditorDraftToFrame(image, nextDraft);
-  drawImageEditor();
-}
-
-function stopImageEditorDrag() {
-  imageEditorDragging = false;
-  imageEditorDragStart = null;
-}
-
-async function saveImageEditor() {
-  const image = getEditedImage();
-  if (!image || !imageEditorDraft) {
-    closeImageEditorDialog();
-    return;
-  }
-  image.edit = clampImageEditorDraftToFrame(image, {
-    ...imageEditorDraft,
-  });
-  await validateThreadImage(image);
-  await persistSettings();
-  preserveScrollPosition(() => {
-    renderSegments({ preserveOverrides: true });
-  });
-  queueDraftSave();
-  closeImageEditorDialog();
-}
-
-function resetImageEditor() {
-  const image = getEditedImage();
-  if (!image) {
-    return;
-  }
-  imageEditorDraft = clampImageEditorDraftToFrame(image, {
-    ...createDefaultImageEdit(),
-  });
-  imageZoomInput.value = String(imageEditorDraft.zoom);
-  drawImageEditor();
-}
-
-function transformImageEditorDraftForFlip(draft, axis = "x") {
-  const normalized = normalizeImageEdit(draft);
-  return {
-    ...normalized,
-    flipX: axis === "x" ? !normalized.flipX : normalized.flipX,
-    flipY: axis === "y" ? !normalized.flipY : normalized.flipY,
-    offsetX: axis === "x" ? -normalized.offsetX : normalized.offsetX,
-    offsetY: axis === "y" ? -normalized.offsetY : normalized.offsetY,
-  };
-}
-
-function transformImageEditorDraftForQuarterTurn(draft, direction = "left") {
-  const normalized = normalizeImageEdit(draft);
-  const rotateLeft = direction !== "right";
-  const nextRotation = (normalized.rotation + (rotateLeft ? 270 : 90)) % 360;
-  return {
-    ...normalized,
-    rotation: nextRotation,
-    offsetX: rotateLeft ? normalized.offsetY : -normalized.offsetY,
-    offsetY: rotateLeft ? -normalized.offsetX : normalized.offsetX,
-  };
-}
-
-async function applyLossyResize() {
-  const image = getEditedImage();
-  if (!image) {
-    return;
-  }
-  image.exportScale = Math.max(IMAGE_MIN_EXPORT_SCALE, (image.exportScale || 1) * 0.82);
-  image.exportQuality = Math.max(0.45, (image.exportQuality || 0.88) * 0.86);
-  await validateThreadImage(image);
-  updateImageEditorActionState(image);
-  setImageEditorStatus(
-    image.validation?.tooBig ? t("lossyResizeStillTooLarge") : t("lossyResizeApplied"),
-    image.validation?.tooBig ? "error" : "success",
-  );
-  await updateImageEditorMetrics();
-  await persistSettings();
-  preserveScrollPosition(() => {
-    renderSegments({ preserveOverrides: true });
-  });
-  queueDraftSave();
-}
-
-async function fitImageToAllowedDimensions() {
-  const image = getEditedImage();
-  if (!image || !imageEditorDraft) {
-    return;
-  }
-  const draftImage = getImageEditorDraftImage(image);
-  const rendered = await renderImageToBlob(draftImage);
-  const maxRenderedDimension = Math.max(rendered.width, rendered.height);
-  if (maxRenderedDimension <= IMAGE_MAX_DIMENSION) {
-    setImageEditorStatus(t("fitImageDimensionsNotNeeded"), "success");
-    updateImageEditorActionState(image);
-    await updateImageEditorMetrics();
-    return;
-  }
-  const currentScale = Math.min(1, Math.max(IMAGE_MIN_EXPORT_SCALE, Number(image.exportScale) || 1));
-  const nextScale = Math.max(IMAGE_MIN_EXPORT_SCALE, currentScale * (IMAGE_MAX_DIMENSION / maxRenderedDimension));
-  image.exportScale = nextScale;
-  await validateThreadImage(image);
-  updateImageEditorActionState(image);
-  setImageEditorStatus(
-    image.validation?.exceedsDimensions ? t("fitImageDimensionsStillTooLarge") : t("fitImageDimensionsApplied"),
-    image.validation?.exceedsDimensions ? "error" : "success",
-  );
-  await updateImageEditorMetrics();
-  await persistSettings();
-  preserveScrollPosition(() => {
-    renderSegments({ preserveOverrides: true });
-  });
-  queueDraftSave();
-}
-
-function encodeSvgDataUrl(svg) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function createToolIcon(label) {
-  return `<span class="sr-only">${label}</span>`;
-}
-
+/**
+ * Adds selected files through the Composer image collection controller.
+ * @param {number} segmentIndex - Target segment.
+ * @param {Array<File>|FileList} files - Selected files.
+ * @returns {Promise<void>}
+ */
 async function handleSegmentImageSelection(segmentIndex, files) {
-  if (normalizeLinkCard(segmentLinkCards[segmentIndex])) {
-    setStatus(t("linkCardBlocksImages"), "error");
-    return;
-  }
-  const items = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
-  if (items.length === 0) {
-    return;
-  }
-
-  const existingImages = Array.isArray(segmentImages[segmentIndex]) ? segmentImages[segmentIndex] : [];
-  const remainingSlots = MAX_IMAGES_PER_SEGMENT - existingImages.length;
-  const selectedItems = items.slice(0, Math.max(0, remainingSlots));
-
-  if (selectedItems.length === 0) {
-    setStatus(t("imagesLimitReached"), "error");
-    return;
-  }
-  if (items.length > selectedItems.length) {
-    setStatus(t("imagesSelectionTrimmed", { count: selectedItems.length }), "error");
-  }
-
-  const newImages = [];
-  for (const file of selectedItems) {
-    newImages.push(await createThreadImageFromFile(file));
-  }
-
-  segmentImages[segmentIndex] = [...existingImages, ...newImages].slice(0, MAX_IMAGES_PER_SEGMENT);
-  scheduleImageValidation();
-  await persistSettings();
-  preserveScrollPosition(() => {
-    renderSegments({ preserveOverrides: true });
-  });
-  queueDraftSave();
+  await composerImageCollection.select(segmentIndex, files);
 }
 
+/**
+ * Reorders an image using the image collection controller.
+ * @param {number} segmentIndex - Source segment.
+ * @param {number} imageIndex - Image position.
+ * @param {number} direction - Position offset.
+ * @returns {void}
+ */
 function moveSegmentImage(segmentIndex, imageIndex, direction) {
-  const images = segmentImages[segmentIndex];
-  if (!Array.isArray(images)) {
-    return;
-  }
-  const targetIndex = imageIndex + direction;
-  if (targetIndex < 0 || targetIndex >= images.length) {
-    return;
-  }
-  const nextImages = [...images];
-  const [image] = nextImages.splice(imageIndex, 1);
-  nextImages.splice(targetIndex, 0, image);
-  segmentImages[segmentIndex] = nextImages;
-  void persistSettings();
-  preserveScrollPosition(() => {
-    renderSegments({ preserveOverrides: true });
-  });
-  queueDraftSave();
+  composerImageCollection.move(segmentIndex, imageIndex, direction);
 }
 
+/**
+ * Clears image and file drop markers in the page.
+ * @returns {void}
+ */
 function clearSegmentImageDropMarkers() {
-  document.querySelectorAll(".segment-images.is-drop-target").forEach((element) => {
-    element.classList.remove("is-drop-target");
-  });
-  document.querySelectorAll(".segment-image-card.is-drop-before, .segment-image-card.is-drop-after").forEach((element) => {
-    element.classList.remove("is-drop-before", "is-drop-after");
-  });
-  document.querySelectorAll(".segment-card.is-file-drop-target").forEach((element) => {
-    element.classList.remove("is-file-drop-target");
-  });
+  clearComposerImageDropMarkers(document);
 }
 
+/**
+ * Resets the page-owned image drag state and removes drag styling.
+ * @returns {void}
+ */
 function clearSegmentImageDragState() {
   segmentImageDragState = null;
-  clearSegmentImageDropMarkers();
-  document.querySelectorAll(".segment-image-card.is-dragging").forEach((element) => {
-    element.classList.remove("is-dragging");
-  });
+  clearComposerImageDragVisuals(document);
 }
 
+/**
+ * Gets the insertion side for an image drop.
+ * @param {DragEvent} event - Drag event.
+ * @param {DOMRect} rect - Target card bounds.
+ * @returns {string} Before or after.
+ */
 function getSegmentImageDropPosition(event, rect) {
-  const offsetX = event.clientX - rect.left - (rect.width / 2);
-  const offsetY = event.clientY - rect.top - (rect.height / 2);
-  if (Math.abs(offsetX) > Math.abs(offsetY)) {
-    return offsetX >= 0 ? "after" : "before";
-  }
-  return offsetY >= 0 ? "after" : "before";
+  return getComposerImageDropPosition(event, rect);
 }
 
+/**
+ * Detects external file transfers.
+ * @param {DragEvent} event - Drag event.
+ * @returns {boolean} Whether files are transferred.
+ */
 function eventHasTransferFiles(event) {
-  const transfer = event.dataTransfer;
-  if (!transfer) {
-    return false;
-  }
-  if (transfer.files && transfer.files.length > 0) {
-    return true;
-  }
-  return Array.from(transfer.types || []).includes("Files");
+  return composerEventHasTransferFiles(event);
 }
 
+/**
+ * Gets image files from an external drop.
+ * @param {DragEvent} event - Drop event.
+ * @returns {Array<File>} Image files.
+ */
 function getDroppedImageFiles(event) {
-  const transfer = event.dataTransfer;
-  if (!transfer) {
-    return [];
-  }
-  return Array.from(transfer.files || []).filter((file) => file.type.startsWith("image/"));
+  return getComposerDroppedImageFiles(event);
 }
 
+/**
+ * Moves an image to a segment insertion position.
+ * @param {number} fromSegmentIndex - Source segment.
+ * @param {number} fromImageIndex - Source image.
+ * @param {number} toSegmentIndex - Target segment.
+ * @param {number} toImageIndex - Target insertion index.
+ * @returns {boolean} Whether the collection changed.
+ */
 function moveSegmentImageToPosition(fromSegmentIndex, fromImageIndex, toSegmentIndex, toImageIndex) {
-  const result = moveComposerImage({
-    segmentImages,
-    fromSegmentIndex,
-    fromImageIndex,
-    toSegmentIndex,
-    toImageIndex,
-    maxImagesPerSegment: MAX_IMAGES_PER_SEGMENT,
-    targetHasLinkCard: Boolean(normalizeLinkCard(segmentLinkCards[toSegmentIndex])),
-  });
-  if (!result.moved && result.reason === "link-card") {
-    setStatus(t("linkCardBlocksImages"), "error");
-    return false;
-  }
-  if (!result.moved && result.reason === "limit") {
-    setStatus(t("imagesLimitReached"), "error");
-    return false;
-  }
-  if (!result.moved) {
-    return false;
-  }
-
-  segmentImages = result.segmentImages;
-
-  void persistSettings();
-  preserveScrollPosition(() => {
-    renderSegments({ preserveOverrides: true });
-  });
-  queueDraftSave();
-  return true;
+  return composerImageCollection.moveTo(fromSegmentIndex, fromImageIndex, toSegmentIndex, toImageIndex);
 }
 
+/**
+ * Deletes an image using the image collection controller.
+ * @param {number} segmentIndex - Source segment.
+ * @param {number} imageIndex - Image to remove.
+ * @returns {void}
+ */
 function deleteSegmentImage(segmentIndex, imageIndex) {
-  if (!Array.isArray(segmentImages[segmentIndex])) {
-    return;
-  }
-  segmentImages = removeComposerImage(segmentImages, segmentIndex, imageIndex);
-  void persistSettings();
-  preserveScrollPosition(() => {
-    renderSegments({ preserveOverrides: true });
-  });
-  queueDraftSave();
+  composerImageCollection.remove(segmentIndex, imageIndex);
 }
 
-function openReplyTargetDialog(presetUrl = "") {
-  if (!replyTargetDialog) {
-    return;
-  }
-  replyTargetUrlInput.value = String(presetUrl || "").trim();
-  setReplyTargetStatus("");
-  replyTargetDialog.showModal();
-}
+/** Opens the reply-target dialog. @param {string} presetUrl - Optional preset. @returns {void} */
+function openReplyTargetDialog(presetUrl = "") { composerReplyDialog.open(presetUrl); }
 
-async function submitReplyTargetDialog() {
-  const url = String(replyTargetUrlInput?.value || "").trim();
-  if (!url) {
-    setReplyTargetStatus(t("replyTargetUrlMissing"), "error");
-    return;
-  }
-  try {
-    setBusy(replyTargetSubmitButton, true, t("replyTargetDialogCheckingButton"), t("replyTargetDialogConfirmButton"));
-    setReplyTargetStatus(t("replyTargetChecking"), "");
-    const target = await resolveComposerReplyTarget(url, "post");
-    if (!target) {
-      setReplyTargetStatus("");
-      return;
-    }
-    if (target?.mode === "thread") {
-      setStatus(t("replyTargetThreadReady"));
-    } else {
-      setStatus(t("replyTargetPostReady"));
-    }
-    closeReplyTargetDialog();
-  } catch (error) {
-    console.error(error);
-    setReplyTargetStatus(error.message || t("replyTargetResolveFailed"), "error");
-  } finally {
-    setBusy(replyTargetSubmitButton, false, t("replyTargetDialogCheckingButton"), t("replyTargetDialogConfirmButton"));
-  }
-}
+/** Submits the reply-target URL. @returns {Promise<void>} */
+async function submitReplyTargetDialog() { await composerReplyDialog.submit(); }
 
 async function openConfirmDialog({ title, message, confirmLabel, cancelLabel, preview = null, confirmValue = true, cancelValue = false, dismissValue = false }) {
   return confirmDialogController.open({
@@ -22422,122 +19765,12 @@ async function openConfirmDialog({ title, message, confirmLabel, cancelLabel, pr
   });
 }
 
-function buildThreadExportPayload() {
-  const segments = getSegmentPayloads();
-  return {
-    app: "Threadline",
-    exportedAt: new Date().toISOString(),
-    version: CURRENT_VERSION_INFO.appVersion,
-    cacheVersion: CURRENT_VERSION_INFO.cacheVersion,
-    schemaVersion: 1,
-    thread: {
-      sourceText: sourceText.value,
-      useCounters: counterToggle.checked,
-      appendThreadIntro,
-      appendThreadEmoji,
-      addMarkerSpacing,
-      postInteraction: getCurrentPostInteractionSettings(),
-      linkCardProxy: getLinkCardSettings(),
-      postLanguages: getNormalizedPostLanguagesOrDefault(),
-      localePreference,
-      hashtagPlacement,
-      hashtags,
-      selectedHashtags,
-      segments: segments.map((segment, index) => ({
-        text: segment.text,
-        images: normalizeSegmentImages([segment.images])[0] || [],
-        externalCard: normalizeLinkCard(segmentLinkCards[index]),
-      })),
-    },
-  };
-}
-
-function supportsCompressedThreadFiles() {
-  return typeof CompressionStream !== "undefined" && typeof DecompressionStream !== "undefined";
-}
-
-async function gzipText(text) {
-  const stream = new Blob([text], { type: "application/json" }).stream().pipeThrough(new CompressionStream("gzip"));
-  return new Response(stream).blob();
-}
-
-async function gunzipBlob(blob) {
-  const stream = blob.stream().pipeThrough(new DecompressionStream("gzip"));
-  return new Response(stream).text();
-}
-
-function isValidThreadImport(payload) {
-  return Boolean(payload?.thread && (typeof payload.thread.sourceText === "string" || Array.isArray(payload.thread.segments)));
-}
-
-async function exportThreadFile() {
-  const json = JSON.stringify(buildThreadExportPayload(), null, 2);
-  const datePart = new Date().toISOString().slice(0, 10);
-  const file = supportsCompressedThreadFiles()
-    ? new File([await gzipText(json)], `threadline-thread-${datePart}.threadline.gz`, { type: "application/gzip" })
-    : new File([json], `threadline-thread-${datePart}.json`, { type: "application/json" });
-  await shareOrDownloadFile(file, file.name);
-  setStatus(t("threadSaved"));
-}
-
-async function importThreadFile(file) {
-  const text = /\.gz$/i.test(file.name) ? await gunzipBlob(file) : await file.text();
-  const parsed = JSON.parse(text);
-  if (!isValidThreadImport(parsed)) {
-    throw new Error(t("threadImportInvalid"));
-  }
-
-  const confirmed = await openConfirmDialog({
-    title: t("threadImportConfirmTitle"),
-    message: t("threadImportConfirmText"),
-    confirmLabel: t("confirmYes"),
-    cancelLabel: t("confirmNo"),
-  });
-  if (!confirmed) {
-    return;
-  }
-
-  const thread = parsed.thread;
-  sourceText.value = thread.sourceText || "";
-  counterToggle.checked = thread.useCounters !== false;
-  appendThreadIntro = thread.appendThreadIntro === true;
-  threadIntroToggle.checked = appendThreadIntro;
-  appendThreadEmoji = thread.appendThreadEmoji === true;
-  threadEmojiToggle.checked = appendThreadEmoji;
-  addMarkerSpacing = thread.addMarkerSpacing === true;
-  markerSpacingToggle.checked = addMarkerSpacing;
-  applyPostInteractionSettings(thread.postInteraction || {});
-  selectedPostLanguages = normalizePostLanguageTags(thread.postLanguages);
-  localePreference = SUPPORTED_LOCALES.includes(thread.localePreference) || thread.localePreference === "auto"
-    ? thread.localePreference
-    : localePreference;
-  currentLocale = localePreference === "auto" ? detectBrowserLocale() : localePreference;
-  languageSelect.value = localePreference;
-  hashtags = normalizeHashtagEntries(thread.hashtags);
-  selectedHashtags = normalizeSelectedHashtagEntries(thread.selectedHashtags, hashtags);
-  hashtagPlacement = normalizeHashtagPlacement(thread.hashtagPlacement);
-  hashtagPlacementSelect.value = hashtagPlacement;
-  const importedSegments = Array.isArray(thread.segments) ? thread.segments : [];
-  segmentOverrides = normalizeSegmentOverrides(importedSegments.map((segment) => segment?.text || ""));
-  setComposerLocked(Boolean(segmentOverrides));
-  setComposerPosted(false);
-  segmentImages = importedSegments.length > 0
-    ? normalizeSegmentImages(importedSegments.map((segment) => segment?.images || []))
-    : normalizeSegmentImages(thread.segmentImages);
-  segmentLinkCards = importedSegments.length > 0
-    ? normalizeSegmentLinkCards(importedSegments.map((segment) => segment?.externalCard || null))
-    : normalizeSegmentLinkCards(thread.segmentLinkCards);
-
-  await persistSettings();
-  applyTranslations();
-  renderHashtagCloud();
-  renderSegments({ preserveOverrides: true });
-  if (segmentImages.some((images) => (images || []).length > 0)) {
-    scheduleImageValidation();
-  }
-  queueDraftSave();
-  setStatus(t("threadLoaded"));
-}
+/**
+ * Decodes compressed JSON files for thread and archive import.
+ * @param {Blob} blob - Gzip file.
+ * @returns {Promise<string>} JSON text.
+ */
+async function gunzipBlob(blob) { return composerThreadFileCodec.gunzip(blob); }
 
 async function shareOrDownloadFile(file, fallbackName, options = {}) {
   const preferDownload = options.preferDownload === true;
@@ -27414,151 +24647,13 @@ async function importArchiveThreadFromUrl() {
   });
 }
 
-function buildComposedText(baseText) {
-  const trimmedBase = baseText.trim();
-  const selectedText = getSelectedHashtagText();
 
-  if (!selectedText || hashtagPlacement === "all-top" || hashtagPlacement === "all-bottom") {
-    return trimmedBase;
-  }
+/** Rebuilds the active-context hashtag controls. @returns {void} */
+function renderHashtagCloud() { hashtagController.render(); }
 
-  if (!trimmedBase) {
-    return selectedText;
-  }
-
-  return hashtagPlacement === "last"
-    ? `${trimmedBase}\n\n${selectedText}`
-    : `${selectedText}\n\n${trimmedBase}`;
-}
-
-function renderHashtagCloud() {
-  hashtagCloud.innerHTML = "";
-  const isArchiveContext = isArchiveHashtagContext();
-  const isSearchContext = isSearchHashtagContext();
-  let activeSelectedHashtags = selectedHashtags;
-  if (isArchiveContext) {
-    activeSelectedHashtags = archiveSelectedHashtags;
-  } else if (isSearchContext) {
-    activeSelectedHashtags = searchSelectedHashtags;
-  }
-  const composerHashtagLocked = composerLocked && !isArchiveContext && !isSearchContext;
-
-  hashtags.forEach((tag) => {
-    const fragment = cloneTemplate("hashtag-item-template");
-    if (!fragment) {
-      return;
-    }
-
-    const button = fragment.querySelector(".hashtag-chip");
-    const editButton = fragment.querySelector(".hashtag-tool:not(.danger)");
-    const deleteButton = fragment.querySelector(".hashtag-tool.danger");
-
-    if (!button || !editButton || !deleteButton) {
-      return;
-    }
-
-    button.className = `hashtag-chip ${getHashtagFontClass(tag)}`;
-    if (activeSelectedHashtags.includes(tag.normalized)) {
-      button.classList.add("is-selected");
-    }
-    setSafeText(button, formatHashtag(tag.value));
-    button.disabled = composerHashtagLocked;
-
-    button.addEventListener("click", () => {
-      if (composerHashtagLocked) {
-        return;
-      }
-      let currentSelection = selectedHashtags;
-      if (isArchiveContext) {
-        currentSelection = archiveSelectedHashtags;
-      } else if (isSearchContext) {
-        currentSelection = searchSelectedHashtags;
-      }
-      const nextSelection = currentSelection.includes(tag.normalized)
-        ? currentSelection.filter((entry) => entry !== tag.normalized)
-        : [...currentSelection, tag.normalized];
-      if (isArchiveContext) {
-        archiveSelectedHashtags = normalizeSelectedHashtagEntries(nextSelection, hashtags);
-        if (archiveSelectedHashtags.length > 0 && archiveContentModeSelect.value === "posts") {
-          archiveContentModeSelect.value = "thread_roots";
-        }
-        renderHashtagCloud();
-        invalidateArchiveCatalog();
-        void persistArchivePreferences();
-      } else if (isSearchHashtagContext()) {
-        searchSelectedHashtags = normalizeSelectedHashtagEntries(nextSelection, hashtags);
-        renderHashtagCloud();
-        renderSearchWorkspace();
-        void persistSettings();
-      } else {
-        selectedHashtags = normalizeSelectedHashtagEntries(nextSelection, hashtags);
-        renderHashtagCloud();
-        void persistSettings();
-        segmentOverrides = null;
-        setComposerLocked(false);
-        renderSegments({ preserveOverrides: false });
-      }
-    });
-
-    setAttrs(editButton, {
-      "aria-label": t("editHashtagAria", { tag: formatHashtag(tag.value) }),
-    });
-    editButton.disabled = composerHashtagLocked;
-    editButton.addEventListener("click", async () => {
-      if (composerHashtagLocked) {
-        return;
-      }
-      openHashtagEditDialog(tag);
-    });
-
-    setAttrs(deleteButton, {
-      "aria-label": t("deleteHashtagAria", { tag: formatHashtag(tag.value) }),
-    });
-    deleteButton.disabled = composerHashtagLocked;
-    deleteButton.addEventListener("click", async () => {
-      if (composerHashtagLocked) {
-        return;
-      }
-      hashtags = hashtags.filter((entry) => entry.normalized !== tag.normalized);
-      selectedHashtags = selectedHashtags.filter((entry) => entry !== tag.normalized);
-      archiveSelectedHashtags = archiveSelectedHashtags.filter((entry) => entry !== tag.normalized);
-      searchSelectedHashtags = searchSelectedHashtags.filter((entry) => entry !== tag.normalized);
-      renderHashtagCloud();
-      if (!isArchiveContext && !isSearchContext) {
-        segmentOverrides = null;
-        setComposerLocked(false);
-        renderSegments({ preserveOverrides: false });
-      }
-      await persistSettings();
-      if (isArchiveContext) {
-        invalidateArchiveCatalog();
-      }
-      if (isSearchHashtagContext()) {
-        renderSearchWorkspace();
-      }
-      setStatus(t("hashtagDeleted"));
-    });
-
-    hashtagCloud.appendChild(fragment);
-  });
-
-  if (isArchiveContext) {
-    hashtagSelectionNote.textContent = activeSelectedHashtags.length > 0
-      ? t("archiveHashtagSelectionSome", { count: activeSelectedHashtags.length })
-      : t("archiveHashtagSelectionNone");
-  } else if (isSearchContext) {
-    hashtagSelectionNote.textContent = activeSelectedHashtags.length > 0
-      ? t("searchHashtagSelectionSome", { count: activeSelectedHashtags.length })
-      : t("searchHashtagSelectionNone");
-  } else {
-    hashtagSelectionNote.textContent = activeSelectedHashtags.length > 0
-      ? t("hashtagSelectionSome", { count: activeSelectedHashtags.length })
-      : t("hashtagSelectionNone");
-  }
-}
-
-async function persistSettings() {
-  const payload = {
+/** Reads all current settings for persistence and backup. @returns {object} Settings snapshot. */
+function getSettingsSnapshot() {
+  return {
     localePreference,
     tipsVisible,
     altTextRequired,
@@ -27593,427 +24688,38 @@ async function persistSettings() {
     archivePreferences: getArchivePreferences(),
     analysisState: getPersistableAnalysisState(),
   };
-  try {
-    await settingsSaveQueue.enqueue(() => {
-      return sendToServiceWorker("SAVE_SETTINGS", payload, { timeoutMs: 120000 });
-    });
-  } catch (error) {
-    console.error(error);
-    setStatus(error.message, "error");
-  }
 }
 
-function serializeBackupAssets(assets = []) {
-  return (Array.isArray(assets) ? assets : []).map((asset) => ({
-    path: String(asset.path || ""),
-    type: String(asset.type || "application/octet-stream"),
-    sizeBytes: Math.max(0, Number(asset.sizeBytes) || (asset.bytes?.length || 0)),
-    bytesBase64: bytesToBase64(asset.bytes instanceof Uint8Array ? asset.bytes : new Uint8Array(asset.bytes || [])),
-  })).filter((asset) => asset.path && asset.bytesBase64);
-}
+/** Persists the latest settings through the existing serialized queue. @returns {Promise<void>} Completion. */
+async function persistSettings() { await applicationStorage.persist(); }
 
-function deserializeBackupAssets(assets = []) {
-  return (Array.isArray(assets) ? assets : []).map((asset) => ({
-    path: String(asset.path || ""),
-    type: String(asset.type || "application/octet-stream"),
-    sizeBytes: Math.max(0, Number(asset.sizeBytes) || 0),
-    bytes: base64ToBytes(asset.bytesBase64 || ""),
-  })).filter((asset) => asset.path && asset.bytes.length > 0);
-}
 
-async function gzipBytes(bytes) {
-  if (typeof CompressionStream !== "function") {
-    throw new Error("GZIP-Komprimierung wird in diesem Browser nicht unterstützt.");
-  }
-  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
-  const chunks = [];
-  const reader = stream.getReader();
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    if (value) {
-      chunks.push(value);
-    }
-  }
-  return concatUint8Arrays(chunks);
-}
 
-async function gunzipBytes(bytes) {
-  if (typeof DecompressionStream !== "function") {
-    throw new Error("GZIP-Dekomprimierung wird in diesem Browser nicht unterstützt.");
-  }
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
-  const chunks = [];
-  const reader = stream.getReader();
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    if (value) {
-      chunks.push(value);
-    }
-  }
-  return concatUint8Arrays(chunks);
-}
 
-/**
- * Builds the serializable settings backup payload from the current local state.
- * @returns {Promise<object>} Backup payload ready for JSON serialization.
- */
-async function createSettingsBackupPayload() {
-  const accountAssets = Array.isArray(accountAvatarAssets) ? accountAvatarAssets : [];
-  const dmAssets = Array.isArray(dmRecentContactAssets) ? dmRecentContactAssets : [];
-  return {
-    exportedAt: new Date().toISOString(),
-    app: "Threadline",
-    version: CURRENT_VERSION_INFO.appVersion,
-    cacheVersion: CURRENT_VERSION_INFO.cacheVersion,
-    schemaVersion: 1,
-    excludesCredentials: true,
-    data: {
-      localePreference,
-      tipsVisible,
-      altTextRequired,
-      imageAutoResizeMode,
-      archiveExpertMode,
-      themeMode,
-      compactMode,
-      sidebarCollapsedDesktop,
-      desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
-      sidebarWidthDesktop,
-      composerWidthDesktop,
-      postLanguages: getNormalizedPostLanguagesOrDefault(),
-      appendThreadIntro,
-      appendThreadEmoji,
-      addMarkerSpacing,
-      postInteraction: getCurrentPostInteractionSettings(),
-      linkCardProxy: getLinkCardSettings(),
-      linkCardProvider: getActiveLinkCardProvider(),
-      linkCardMicrolinkUsage: getMicrolinkUsageState(),
-      savedAccounts: savedAccounts.map((account) => ({
-        did: account.did || "",
-        handle: account.handle || "",
-        identifier: account.identifier || "",
-        service: account.service || "",
-        avatar: account.avatar || "",
-        avatarPath: account.avatarPath || "",
-      })),
-      accountAvatarCache: {
-        assets: serializeBackupAssets(accountAssets),
-      },
-      dmPartnerCache: {
-        accountDid: dmPartnerCacheAccountDid,
-        updatedAt: dmPartnerCacheUpdatedAt,
-        recentContacts: Array.isArray(dmRecentContacts) ? dmRecentContacts : [],
-        conversations: Array.isArray(dmRecentConversations) ? dmRecentConversations : [],
-        assets: serializeBackupAssets(dmAssets),
-      },
-      hashtagPlacement,
-      hashtags,
-      selectedHashtags,
-      postingHistory,
-      threadExplorerFavorites,
-      savedSearches,
-      archivePreferences: getArchivePreferences(),
-      analysisState: getPersistableAnalysisState(),
-    },
-  };
-}
-
-/**
- * Checks whether an imported object looks like a Threadline settings backup.
- * @param {object} payload - Parsed backup payload.
- * @returns {boolean} True when the payload contains importable backup data.
- */
-function isValidSettingsBackup(payload) {
-  const data = payload?.data || payload;
-  return Boolean(data && typeof data === "object");
-}
 
 /**
  * Exports the current settings backup and records the successful export time.
  * @returns {Promise<void>} Resolves after the backup file handoff has completed.
  */
-async function exportSettingsBackup() {
-  const payload = await createSettingsBackupPayload();
-  const jsonBytes = new TextEncoder().encode(JSON.stringify(payload, null, 2));
-  const gzipPayload = await gzipBytes(jsonBytes);
-  const file = new File(
-    [gzipPayload],
-    `threadline-settings-${new Date().toISOString().slice(0, 10)}.json.gz`,
-    { type: "application/gzip" },
-  );
-
-  await shareOrDownloadFile(file, file.name);
-  markSettingsBackupExported();
-  setBackupStatus(t("backupExported"));
-}
+async function exportSettingsBackup() { await settingsBackup.exportFile(); }
 
 /**
  * Imports a Threadline settings backup file and merges it into local state.
  * @param {File} file - JSON or GZIP-compressed settings backup file.
  * @returns {Promise<void>} Resolves after local state and persistence are updated.
  */
-async function importSettingsBackup(file) {
-  const rawBytes = new Uint8Array(await file.arrayBuffer());
-  const payloadBytes = /\.gz$/i.test(file.name)
-    ? await gunzipBytes(rawBytes)
-    : rawBytes;
-  const text = new TextDecoder().decode(payloadBytes);
-  const parsed = JSON.parse(text);
+async function importSettingsBackup(file) { await settingsBackup.importFile(file); }
 
-  if (!isValidSettingsBackup(parsed)) {
-    throw new Error(t("backupImportInvalid"));
-  }
-
-  const imported = parsed.data || parsed;
-  const importedHashtags = normalizeHashtagEntries(imported.hashtags);
-  const mergedHashtags = mergeHashtagEntries(hashtags, importedHashtags);
-  const mergedSelectedHashtags = normalizeSelectedHashtagEntries(
-    [...selectedHashtags, ...(Array.isArray(imported.selectedHashtags) ? imported.selectedHashtags : [])],
-    mergedHashtags,
-  );
-  const mergedSearchSelectedHashtags = normalizeSelectedHashtagEntries(
-    [...searchSelectedHashtags, ...(Array.isArray(imported.searchSelectedHashtags) ? imported.searchSelectedHashtags : [])],
-    mergedHashtags,
-  );
-
-  hashtags = mergedHashtags;
-  selectedHashtags = mergedSelectedHashtags;
-  searchSelectedHashtags = mergedSearchSelectedHashtags;
-  postingHistory = mergePostingHistoryEntries(postingHistory, imported.postingHistory);
-  threadExplorerFavorites = normalizeThreadExplorerFavorites(imported.threadExplorerFavorites);
-  savedSearches = normalizeSavedSearches(imported.savedSearches);
-  applySearchPreferences(imported.searchPreferences || {});
-  hashtagPlacement = normalizeHashtagPlacement(imported.hashtagPlacement);
-  hashtagPlacementSelect.value = hashtagPlacement;
-  tipsVisible = imported.tipsVisible !== false;
-  altTextRequired = imported.altTextRequired === true;
-  imageAutoResizeMode = normalizeImageAutoResizeMode(imported.imageAutoResizeMode);
-  archiveExpertMode = imported.archiveExpertMode === true;
-  if (imported.themeMode === "dark") {
-    themeMode = "dark";
-  } else {
-    themeMode = "light";
-  }
-  compactMode = imported.compactMode === true;
-  persistAppearancePreferences();
-  sidebarCollapsedDesktop = imported.sidebarCollapsedDesktop === true;
-  ({
-    sidebarWidthDesktop,
-    composerWidthDesktop,
-  } = normalizeStoredDesktopLayout(
-    imported.sidebarWidthDesktop,
-    imported.composerWidthDesktop,
-    imported.desktopLayoutVersion,
-  ));
-  selectedPostLanguages = normalizePostLanguageTags(imported.postLanguages);
-  appendThreadIntro = imported.appendThreadIntro === true;
-  threadIntroToggle.checked = appendThreadIntro;
-  appendThreadEmoji = imported.appendThreadEmoji === true;
-  threadEmojiToggle.checked = appendThreadEmoji;
-  addMarkerSpacing = imported.addMarkerSpacing === true;
-  markerSpacingToggle.checked = addMarkerSpacing;
-  if (imageAutoResizeSelect) {
-    imageAutoResizeSelect.value = imageAutoResizeMode;
-  }
-  if (archiveExpertModeToggle) {
-    archiveExpertModeToggle.checked = archiveExpertMode;
-  }
-  applyPostInteractionSettings(imported.postInteraction || {});
-  if (imported.linkCardProxy && typeof imported.linkCardProxy === "object") {
-    linkCardEndpointInput.value = imported.linkCardProxy.endpoint || "";
-    linkCardSecretInput.value = imported.linkCardProxy.secret || "";
-  }
-  linkCardProvider = normalizeLinkCardProvider(imported.linkCardProvider);
-  linkCardMicrolinkUsage = normalizeMicrolinkUsage(imported.linkCardMicrolinkUsage);
-  syncLinkCardProviderUi();
-  localePreference = SUPPORTED_LOCALES.includes(imported.localePreference) || imported.localePreference === "auto"
-    ? imported.localePreference
-    : localePreference;
-  currentLocale = localePreference === "auto" ? detectBrowserLocale() : localePreference;
-  languageSelect.value = localePreference;
-  applyArchivePreferences(imported.archivePreferences || {});
-  restorePersistedAnalysisState(imported.analysisState);
-  applyDesktopLayoutState();
-  applySidebarState();
-
-  if (Array.isArray(imported.savedAccounts) && imported.savedAccounts.length > 0) {
-    const accountResult = await sendToServiceWorker("IMPORT_ACCOUNT_METADATA", { accounts: imported.savedAccounts });
-    savedAccounts = Array.isArray(accountResult.accounts) ? accountResult.accounts : savedAccounts;
-  }
-
-  if (imported.accountAvatarCache && typeof imported.accountAvatarCache === "object") {
-    const importedAccountAssets = Array.isArray(imported.accountAvatarCache.assets)
-      ? deserializeBackupAssets(imported.accountAvatarCache.assets)
-      : null;
-    if (importedAccountAssets) {
-      applyAccountAvatarCache({ assets: importedAccountAssets });
-      await sendToServiceWorker("SAVE_ACCOUNT_AVATAR_CACHE", {
-        cache: {
-          updatedAt: new Date().toISOString(),
-          assets: importedAccountAssets,
-        },
-      }, { timeoutMs: 120000 }).catch(() => {});
-    }
-  }
-
-  if (imported.dmPartnerCache && typeof imported.dmPartnerCache === "object") {
-    const importedDmAssets = Array.isArray(imported.dmPartnerCache.assets)
-      ? deserializeBackupAssets(imported.dmPartnerCache.assets)
-      : null;
-    applyDmPartnerCache({
-      accountDid: String(imported.dmPartnerCache.accountDid || ""),
-      updatedAt: String(imported.dmPartnerCache.updatedAt || ""),
-      recentContacts: Array.isArray(imported.dmPartnerCache.recentContacts) ? imported.dmPartnerCache.recentContacts : [],
-      conversations: Array.isArray(imported.dmPartnerCache.conversations) ? imported.dmPartnerCache.conversations : [],
-      assets: importedDmAssets ?? dmRecentContactAssets,
-    });
-    await sendToServiceWorker("SAVE_DM_PARTNER_CACHE", {
-      cache: {
-        accountDid: dmPartnerCacheAccountDid,
-        updatedAt: dmPartnerCacheUpdatedAt || new Date().toISOString(),
-        recentContacts: dmRecentContacts,
-        conversations: dmRecentConversations,
-        assets: importedDmAssets ?? dmRecentContactAssets,
-      },
-    }, { timeoutMs: 120000 }).catch(() => {});
-  }
-
-  await persistSettings();
-  applyTranslations();
-  applyTheme();
-  applyCompactMode();
-  renderAccountSwitcher();
-  segmentOverrides = null;
-  setComposerLocked(false);
-  renderSegments({ preserveOverrides: false });
-  setBackupStatus(t("backupImported", { count: importedHashtags.length }));
-}
-
-function setUpdateStatus(message, showReload = false, error = false) {
-  if (!updateStatus || !reloadAppButton) {
-    return;
-  }
-
-  updateStatus.textContent = message || "";
-  updateStatus.hidden = !message;
-  updateStatus.dataset.state = error ? "error" : (message ? "info" : "");
-  reloadAppButton.hidden = false;
-  reloadAppButton.disabled = Boolean(reloadInProgress);
-  reloadAppButton.classList.toggle("is-active", Boolean(showReload));
-}
-
-function renderVersionLabel() {
-  if (!versionLabel) {
-    return;
-  }
-
-  const parts = [
-    `${t("versionPrefix")} ${CURRENT_VERSION_INFO.appVersion}`,
-    `${t("offlineVersion")} ${CURRENT_VERSION_INFO.cacheVersion}`,
-  ];
-
-  if (CURRENT_VERSION_INFO.label) {
-    parts.push(CURRENT_VERSION_INFO.label);
-  }
-
-  versionLabel.textContent = parts.join(" · ");
-}
-
-async function performAppReload() {
-  if (reloadInProgress) {
-    return;
-  }
-
-  reloadInProgress = true;
-  setUpdateStatus(t("updateApplying"), true);
-  try {
-    await serviceWorkerRegistration?.update().catch(() => {});
-    serviceWorkerRegistration?.waiting?.postMessage?.({ type: "SKIP_WAITING" });
-  } catch (error) {
-    console.error(error);
-  }
-
-  window.setTimeout(() => {
-    const nextUrl = new URL(window.location.href);
-    nextUrl.searchParams.set("reload", String(Date.now()));
-    window.location.replace(nextUrl.toString());
-  }, 120);
-}
-
-async function checkForUpdates(options = {}) {
-  const {
-    showChecking = true,
-    silentNoChange = false,
-    silentError = false,
-  } = options;
-
-  if (updateInProgress) {
-    return;
-  }
-
-  updateInProgress = true;
-  checkUpdatesButton.disabled = true;
-
-  if (showChecking) {
-    setUpdateStatus(t("updateChecking"), false);
-  }
-
-  try {
-    await serviceWorkerRegistration?.update();
-    const remoteVersion = await fetchVersionInfo();
-
-      if (!remoteVersion.appVersion || !remoteVersion.cacheVersion) {
-        if (!silentError) {
-          setUpdateStatus(t("updateVersionIncomplete"), false, true);
-        }
-        return;
-      }
-
-    if (versionSignature(remoteVersion) === versionSignature(CURRENT_VERSION_INFO)) {
-      if (!silentNoChange) {
-        setUpdateStatus(t("updateNoChange"), false);
-      }
-      return;
-    }
-
-    const remoteLabel = remoteVersion.label ? ` · ${remoteVersion.label}` : "";
-    const message = `${t("updateAvailablePrefix")}: ${remoteVersion.appVersion} · ${remoteVersion.cacheVersion}${remoteLabel}. ${t("updateAvailableAction")}`;
-    setUpdateStatus(message, true);
-  } catch (error) {
-    console.error(error);
-    if (!silentError) {
-      setUpdateStatus(t("updateFailed"), false, true);
-    }
-  } finally {
-    updateInProgress = false;
-    checkUpdatesButton.disabled = false;
-  }
-}
-
-function shouldRunAutoUpdateCheck() {
-  const now = Date.now();
-  if (now - lastAutoUpdateCheckAt < AUTO_UPDATE_CHECK_INTERVAL_MS) {
-    return false;
-  }
-  lastAutoUpdateCheckAt = now;
-  return true;
-}
-
-function scheduleSilentUpdateCheck() {
-  if (!shouldRunAutoUpdateCheck()) {
-    return;
-  }
-  void checkForUpdates({
-    showChecking: false,
-    silentNoChange: true,
-    silentError: true,
-  });
-}
+/** Displays update feedback. @param {string} message - Label. @param {boolean} showReload - Highlight reload. @param {boolean} error - Error tone. @returns {void} */
+function setUpdateStatus(message, showReload = false, error = false) { applicationUpdates.status(message, showReload, error); }
+/** Renders app/cache version labels. @returns {void} */
+function renderVersionLabel() { applicationUpdates.renderVersion(); }
+/** Applies a guarded worker-assisted reload. @returns {Promise<void>} Update attempt completion. */
+async function performAppReload() { await applicationUpdates.reload(); }
+/** Checks remote versions. @param {object} options - Feedback flags. @returns {Promise<void>} Check completion. */
+async function checkForUpdates(options = {}) { await applicationUpdates.check(options); }
+/** Schedules a throttled silent update check. @returns {void} */
+function scheduleSilentUpdateCheck() { applicationUpdates.schedule(); }
 
 function updateStatusForAuth() {
   updateAuthButtons();
@@ -28043,77 +24749,10 @@ function updateStatusForAuth() {
   setStatus(t("statusNoAuth"));
 }
 
-async function verifySession(options = {}) {
-  const { silent = false } = options;
-
-  if (!authAccountDid) {
-    return false;
-  }
-
-  try {
-    const result = await sendToServiceWorker("VERIFY_SESSION");
-    savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
-    await restoreAccountAvatarCache();
-    renderAccountSwitcher();
-
-    if (!result.authenticated) {
-      const activeAccount = savedAccounts.find((entry) => entry.did && entry.did === authAccountDid) || null;
-      const accountLabel = activeAccount?.handle || activeAccount?.identifier || authAccount || "";
-      if (result.reason === "offline") {
-        if (!silent && accountLabel) {
-          setStatus(t("statusAccountOffline", { account: accountLabel }), "error");
-        }
-        updateAuthButtons();
-        return false;
-      }
-      if (result.reason === "invalid_password" || result.reason === "missing_password") {
-        const message = result.reason === "invalid_password"
-          ? t("statusAccountPasswordRejected", { account: accountLabel })
-          : t("statusAccountNeedsLogin", { account: accountLabel });
-        applyDisconnectedState(false);
-        if (activeAccount) {
-          openLoginDialog({
-            account: activeAccount,
-            mode: "repair",
-            note: message,
-            tone: "error",
-          });
-        }
-        setStatus(message, "error");
-        return false;
-      }
-
-      applyDisconnectedState(!silent);
-      return false;
-    }
-
-    authAccount = result.handle || result.identifier || authAccount;
-    authAccountDid = result.did || authAccountDid;
-    authAccountService = result.service || authAccountService;
-    authAccountWebApp = result.webApp || authAccountWebApp;
-
-    if (silent) {
-      updateAuthButtons();
-    } else {
-      setStatus(t("statusConnected", { account: authAccount }));
-    }
-
-    restorePreferredWorkspaceIfPossible();
-
-    return true;
-  } catch (error) {
-    console.error(error);
-    applyDisconnectedState(!silent);
-    return false;
-  }
-}
-
-function startSessionChecks() {
-  window.clearInterval(sessionCheckTimer);
-  sessionCheckTimer = window.setInterval(() => {
-    void verifySession({ silent: true });
-  }, 5 * 60 * 1000);
-}
+/** Verifies the active account. @param {object} options - Silent flag. @returns {Promise<boolean>} Authenticated status. */
+async function verifySession(options = {}) { return applicationSession.verify(options); }
+/** Restarts periodic session verification. @returns {void} */
+function startSessionChecks() { applicationSession.start(); }
 
 function resolvePostWebBase(serviceUrl = authAccountService) {
   try {
@@ -28162,88 +24801,31 @@ async function openPostUrlInThreadExplorer(url) {
 }
 
 /**
- * Returns the Thread Explorer button inside the publish-result dialog and creates it on demand.
- * @returns {HTMLButtonElement|null} Existing or newly created button.
- */
-function ensurePublishResultThreadExplorerButton() {
-  let button = publishResultDialog?.querySelector("#publish-result-thread-explorer-button");
-  if (button instanceof HTMLButtonElement) {
-    return button;
-  }
-
-  const actions = publishResultDialog?.querySelector(".settings-actions");
-  if (!actions) {
-    return null;
-  }
-
-  button = document.createElement("button");
-  button.type = "button";
-  button.id = "publish-result-thread-explorer-button";
-  button.className = "ghost-button history-link";
-  button.textContent = t("openPostInThreadExplorerButton");
-  actions.insertBefore(button, publishResultLink || null);
-  button.addEventListener("click", handlePublishResultThreadExplorerClick);
-  return button;
-}
-
-/**
  * Opens the most recently published post in Thread Explorer from the publish-result dialog.
  * @returns {Promise<void>} Resolves after the thread was opened or the dialog restored.
  */
 async function handlePublishResultThreadExplorerClick() {
-  const button = ensurePublishResultThreadExplorerButton();
-  const postUrl = String(button?.dataset.postUrl || "").trim();
-  if (!postUrl || !button) {
-    return;
-  }
-
-  try {
-    setBusy(
-      button,
-      true,
-      t("historyOpenThreadExplorerBusy"),
-      t("openPostInThreadExplorerButton"),
-    );
-    await openPostUrlInThreadExplorer(postUrl);
-    publishResultDialog.close();
-  } catch (error) {
-    console.error(error);
-    showErrorDialog(error.message || t("threadExplorerUrlFailed"));
-  } finally {
-    setBusy(
-      button,
-      false,
-      t("historyOpenThreadExplorerBusy"),
-      t("openPostInThreadExplorerButton"),
-    );
-  }
+  await openComposerPublishedPost({ explorerButton: publishResultThreadExplorerButton, dialog: publishResultDialog }, {
+    setBusy, translate: t, openPost: openPostUrlInThreadExplorer,
+    reportError: (error) => console.error(error), showError: showErrorDialog,
+  });
 }
 
+/**
+ * Presents the publication result using the shared Composer result renderer.
+ * @param {object} result - Worker publication result.
+ * @returns {void}
+ */
 function showPublishResult(result) {
-  const postCount = result.posts?.length || 0;
-  const handle = result.handle || authAccount;
-  const firstPost = result.posts?.[0];
-  const resultWebApp = result.webApp || authAccountWebApp;
-  const postTarget = getPostTargetName(resultWebApp);
-  const postUrl = buildBlueskyPostUrl(handle, firstPost?.uri, resultWebApp);
-  const rateLimitMessage = buildPublishRateLimitMessage(result.rateLimit, true);
-
-  publishResultText.textContent = postCount > 1
-    ? t("publishResultMessageManyTarget", { target: postTarget })
-    : t("publishResultMessageOneTarget", { target: postTarget });
-  if (publishResultRateLimitNote) {
-    publishResultRateLimitNote.hidden = !rateLimitMessage;
-    publishResultRateLimitNote.textContent = rateLimitMessage;
-  }
-  publishResultLink.href = postUrl || "#";
-  publishResultLink.hidden = !postUrl;
-  const threadExplorerButton = ensurePublishResultThreadExplorerButton();
-  if (threadExplorerButton) {
-    threadExplorerButton.disabled = !postUrl;
-    threadExplorerButton.dataset.postUrl = postUrl || "";
-    threadExplorerButton.textContent = t("openPostInThreadExplorerButton");
-  }
-  publishResultDialog.showModal();
+  const model = buildComposerPublishResultModel(result, {
+    account: authAccount, webApp: authAccountWebApp, translate: t,
+    getTargetName: getPostTargetName, buildPostUrl: buildBlueskyPostUrl,
+    formatRateLimit: buildPublishRateLimitMessage,
+  });
+  renderComposerPublishResult(model, {
+    dialog: publishResultDialog, text: publishResultText, rateLimitNote: publishResultRateLimitNote,
+    link: publishResultLink, explorerButton: publishResultThreadExplorerButton,
+  });
 }
 
 function formatHistoryTimestamp(value) {
@@ -28269,254 +24851,57 @@ function formatCompactArchiveTimestamp(value) {
   ].join(".") + ` ${String(date.getHours()).padStart(2, "0")}.${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-function updateHistoryAvailability() {
-  historyButton.disabled = postingHistory.length === 0;
-}
-
+/**
+ * Renders the saved publications with the Composer history templates.
+ * @returns {void}
+ */
 function renderHistoryList() {
-  historyList.innerHTML = "";
-
-  if (postingHistory.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "history-empty";
-    empty.textContent = t("historyEmpty");
-    historyList.appendChild(empty);
-    updateHistoryAvailability();
-    return;
-  }
-
-  postingHistory.forEach((entry) => {
-    const item = document.createElement("article");
-    item.className = "history-item";
-
-    const meta = document.createElement("div");
-    meta.className = "history-item-meta";
-
-    const eyebrow = document.createElement("p");
-    eyebrow.className = "history-item-eyebrow";
-    eyebrow.textContent = entry.threadCount > 1 ? t("historyThreadEyebrow") : t("historyPostEyebrow");
-
-    const timestamp = document.createElement("p");
-    timestamp.className = "history-timestamp";
-    timestamp.textContent = formatHistoryTimestamp(entry.createdAt);
-
-    const counts = document.createElement("p");
-    counts.className = "history-meta";
-    counts.textContent = formatHistoryMeta(entry.threadCount, entry.imageCount);
-
-    const accountLine = document.createElement("p");
-    accountLine.className = "history-meta";
-    accountLine.textContent = t("historyAccountMeta", {
-      account: entry.account || t("historyUnknownAccount"),
-    });
-
-    meta.append(eyebrow);
-
-    if (entry.firstSegmentText) {
-      const preview = document.createElement("p");
-      preview.className = "history-preview";
-      preview.textContent = entry.firstSegmentText;
-      preview.title = entry.firstSegmentText;
-      meta.append(preview);
-    }
-
-    const metaRow = document.createElement("div");
-    metaRow.className = "history-meta-row";
-    metaRow.append(timestamp, counts, accountLine);
-    meta.append(metaRow);
-
-    const actions = document.createElement("div");
-    actions.className = "history-item-actions";
-
-    const link = document.createElement("a");
-    link.className = "ghost-button link-button history-link";
-    link.href = entry.url;
-    link.target = "_blank";
-    link.rel = "noreferrer noopener";
-    link.textContent = t("historyOpenLink");
-
-    const threadExplorerButton = document.createElement("button");
-    threadExplorerButton.type = "button";
-    threadExplorerButton.className = "ghost-button history-link";
-    threadExplorerButton.textContent = t("openPostInThreadExplorerButton");
-    threadExplorerButton.addEventListener("click", async () => {
-      try {
-        setBusy(
-          threadExplorerButton,
-          true,
-          t("historyOpenThreadExplorerBusy"),
-          t("openPostInThreadExplorerButton"),
-        );
-        await openPostUrlInThreadExplorer(entry.url);
-        historyDialog.close();
-      } catch (error) {
-        console.error(error);
-        showErrorDialog(error.message || t("threadExplorerUrlFailed"));
-      } finally {
-        setBusy(
-          threadExplorerButton,
-          false,
-          t("historyOpenThreadExplorerBusy"),
-          t("openPostInThreadExplorerButton"),
-        );
-      }
-    });
-
-    const continueButton = document.createElement("button");
-    continueButton.type = "button";
-    continueButton.className = "ghost-button history-link";
-    continueButton.textContent = t("historyContinueThreadButton");
-    continueButton.addEventListener("click", async () => {
-      try {
-        setBusy(continueButton, true, t("historyContinueThreadBusy"), t("historyContinueThreadButton"));
-        const target = await requestReplyTarget(sendToServiceWorker, entry.url, "thread");
+  renderComposerHistoryList(postingHistory, {
+    list: historyList, button: historyButton,
+    itemTemplate: document.querySelector("#history-item-template"),
+    emptyTemplate: document.querySelector("#history-empty-template"),
+  }, {
+    translate: t, formatTimestamp: formatHistoryTimestamp, formatMeta: formatHistoryMeta,
+    createActions: (entry, controls) => createComposerHistoryItemActions(entry, controls, {
+      translate: t, setBusy, openPost: openPostUrlInThreadExplorer,
+      closeDialog: () => historyDialog.close(),
+      reportError: (error) => console.error(error), showError: showErrorDialog, setStatus,
+      requestTarget: (url, mode) => requestReplyTarget(sendToServiceWorker, url, mode),
+      applyTarget: (target) => {
         composerReplyTarget = normalizeReplyTarget(target);
         renderReplyTargetCard();
         publishButton.textContent = getPublishButtonLabel();
         updatePublishAvailability();
         queueDraftSave();
-        historyDialog.close();
-        showComposerWorkspace({ redirectPage: true });
-        setStatus(t("replyTargetThreadReady"));
-      } catch (error) {
-        console.error(error);
-        setStatus(error.message || t("replyTargetResolveFailed"), "error");
-        showErrorDialog(error.message || t("replyTargetResolveFailed"));
-      } finally {
-        setBusy(continueButton, false, t("historyContinueThreadBusy"), t("historyContinueThreadButton"));
-      }
-    });
-
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.className = "segment-image-tool danger history-delete-button";
-    deleteButton.setAttribute("aria-label", t("historyDeleteButton"));
-    deleteButton.innerHTML = createIconSvg("M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z");
-    deleteButton.addEventListener("click", async () => {
-      postingHistory = postingHistory.filter((itemEntry) => itemEntry.id !== entry.id);
-      renderHistoryList();
-      await persistSettings();
-      setStatus(t("historyDeleted"));
-    });
-
-    actions.append(link, threadExplorerButton, continueButton, deleteButton);
-    item.append(meta, actions);
-    historyList.appendChild(item);
+      },
+      showComposer: () => showComposerWorkspace({ redirectPage: true }),
+      remove: (id) => { postingHistory = postingHistory.filter((entry) => entry.id !== id); },
+      render: renderHistoryList, persist: persistSettings,
+    }),
   });
-
-  updateHistoryAvailability();
 }
 
+/**
+ * Records a completed publication and persists the updated posting history.
+ * @param {object} result - Publication result.
+ * @param {Array<object>} preparedSegments - Published upload-ready segments.
+ * @returns {Promise<void>}
+ */
 async function recordPublishedThread(result, preparedSegments) {
-  const handle = result.handle || authAccount;
-  const firstPost = result.posts?.[0];
-  const service = result.service || authAccountService;
-  const url = buildBlueskyPostUrl(handle, firstPost?.uri, result.webApp || authAccountWebApp || service);
-  if (!url) {
-    return;
-  }
-
-  postingHistory = normalizePostingHistory([
-    {
-      id: crypto.randomUUID(),
-      url,
-      createdAt: new Date().toISOString(),
-      account: handle || authAccount || "",
-      service,
-      firstSegmentText: getHistoryPreviewText(preparedSegments[0]?.text || ""),
-      threadCount: result.posts?.length || preparedSegments.length || 1,
-      imageCount: preparedSegments.reduce((total, segment) => total + (segment.images?.length || 0), 0),
-    },
-    ...postingHistory,
-  ]);
-
-  renderHistoryList();
-  await persistSettings();
+  const entry = buildComposerHistoryEntry(result, preparedSegments, {
+    account: authAccount, service: authAccountService, webApp: authAccountWebApp,
+    buildPostUrl: buildBlueskyPostUrl, preview: getHistoryPreviewText,
+    createId: () => crypto.randomUUID(), now: () => new Date().toISOString(),
+  });
+  await recordComposerHistoryEntry(entry, {
+    getHistory: () => postingHistory, normalize: normalizePostingHistory,
+    setHistory: (entries) => { postingHistory = entries; },
+    render: renderHistoryList, persist: persistSettings,
+  });
 }
 
-function autoSizeTextarea(textarea) {
-  textarea.style.height = "auto";
-  textarea.style.height = `${textarea.scrollHeight}px`;
-}
 
-/**
- * Extracts mention candidates from composer text in the same visible form as Bluesky mentions.
- * @param {string} text - Raw segment text.
- * @returns {Array<{ handle: string, raw: string }>} Normalized handles plus the original mention text.
- */
-function parseComposerMentionCandidates(text) {
-  return parseComposerMentionCandidatesFromData(text);
-}
 
-/**
- * Returns unique mention handles in the order they first appear.
- * @param {Array<{ handle: string, raw: string }>} candidates - Mention candidates extracted from text.
- * @returns {string[]} Unique normalized handles.
- */
-function getUniqueComposerMentionHandles(candidates) {
-  return getUniqueComposerMentionHandlesFromData(candidates);
-}
-
-/**
- * Resolves mention handles through the service worker and updates the local cache.
- * @param {string[]} handles - Normalized handles without leading at sign.
- * @returns {Promise<Map<string, string|null>>} Map of handles to resolved DIDs or null.
- */
-async function resolveComposerMentionHandles(handles) {
-  const resultMap = new Map();
-  const normalizedHandles = [];
-
-  for (const handle of Array.isArray(handles) ? handles : []) {
-    const normalizedHandle = String(handle || "").trim().toLowerCase();
-    if (!normalizedHandle) {
-      continue;
-    }
-    if (!normalizedHandles.includes(normalizedHandle)) {
-      normalizedHandles.push(normalizedHandle);
-    }
-  }
-
-  const missingHandles = [];
-  for (const handle of normalizedHandles) {
-    if (composerMentionResolutionCache.has(handle)) {
-      resultMap.set(handle, composerMentionResolutionCache.get(handle) || null);
-    } else {
-      missingHandles.push(handle);
-    }
-  }
-
-  if (missingHandles.length > 0) {
-    const response = await sendToServiceWorker("RESOLVE_COMPOSER_MENTIONS", {
-      handles: missingHandles,
-    }, { timeoutMs: 30000 }).catch(() => ({ mentions: [] }));
-    const resolvedMentions = Array.isArray(response?.mentions) ? response.mentions : [];
-    const resolvedMap = new Map();
-
-    for (const mention of resolvedMentions) {
-      const handle = String(mention?.handle || "").trim().toLowerCase();
-      const did = String(mention?.did || "").trim();
-      if (!handle) {
-        continue;
-      }
-      if (did) {
-        resolvedMap.set(handle, did);
-      } else {
-        resolvedMap.set(handle, null);
-      }
-    }
-
-    for (const handle of missingHandles) {
-      let did = null;
-      if (resolvedMap.has(handle)) {
-        did = resolvedMap.get(handle);
-      }
-      composerMentionResolutionCache.set(handle, did);
-      resultMap.set(handle, did);
-    }
-  }
-
-  return resultMap;
-}
 
 /**
  * Builds the public profile URL for a resolved mention.
@@ -28528,115 +24913,6 @@ function buildComposerMentionProfileUrl(handle, did) {
   return buildComposerMentionProfileUrlFromData(handle, did, DEFAULT_POST_WEB_APP);
 }
 
-/**
- * Checks whether a text currently contains a specific mention handle.
- * @param {string} text - Source text that may contain mentions.
- * @param {string} handle - Mention handle without leading at sign.
- * @returns {boolean} True when the mention exists with valid boundaries.
- */
-function textContainsMentionHandle(text, handle) {
-  return textContainsComposerMentionHandleFromData(text, handle);
-}
-
-/**
- * Replaces one mention handle inside a segment text while keeping surrounding punctuation intact.
- * @param {string} text - Raw segment text.
- * @param {string} fromHandle - Old handle without leading at sign.
- * @param {string} toHandle - New handle without leading at sign.
- * @returns {string} Updated segment text.
- */
-function replaceMentionHandleInSegmentText(text, fromHandle, toHandle) {
-  return replaceComposerMentionHandleFromData(text, fromHandle, toHandle);
-}
-
-/**
- * Stores or updates a pending source-text mention sync for one composer segment.
- * @param {number} segmentIndex - Zero-based segment index.
- * @param {string} fromHandle - Handle that still exists in the original text.
- * @param {string} toHandle - Handle that is already used in the edited segment.
- * @returns {void}
- */
-function queueMentionSourceSync(segmentIndex, fromHandle, toHandle) {
-  const normalizedFrom = String(fromHandle || "").trim().replace(/^@/, "").toLowerCase();
-  const normalizedTo = String(toHandle || "").trim().replace(/^@/, "").toLowerCase();
-  if (!normalizedFrom || !normalizedTo || normalizedFrom === normalizedTo) {
-    return;
-  }
-
-  const nextEntries = [];
-  const existingEntries = composerMentionSourceSyncBySegment.get(segmentIndex) || [];
-  let hasUpdatedEntry = false;
-
-  for (const entry of existingEntries) {
-    if (!entry || typeof entry !== "object") {
-      continue;
-    }
-
-    const entryFrom = String(entry.fromHandle || "").trim().toLowerCase();
-    const entryTo = String(entry.toHandle || "").trim().toLowerCase();
-    if (!entryFrom || !entryTo) {
-      continue;
-    }
-
-    if (entryTo === normalizedFrom || entryFrom === normalizedFrom) {
-      nextEntries.push({
-        fromHandle: entryFrom,
-        toHandle: normalizedTo,
-      });
-      hasUpdatedEntry = true;
-    } else {
-      nextEntries.push({
-        fromHandle: entryFrom,
-        toHandle: entryTo,
-      });
-    }
-  }
-
-  if (!hasUpdatedEntry) {
-    nextEntries.push({
-      fromHandle: normalizedFrom,
-      toHandle: normalizedTo,
-    });
-  }
-
-  composerMentionSourceSyncBySegment.set(segmentIndex, nextEntries);
-}
-
-/**
- * Returns only those pending source-sync entries that still differ between source and segment text.
- * @param {number} segmentIndex - Zero-based segment index.
- * @param {string} segmentText - Current edited segment text.
- * @returns {Array<{ fromHandle: string, toHandle: string }>} Valid pending sync entries.
- */
-function getPendingMentionSourceSyncEntries(segmentIndex, segmentText) {
-  const source = String(sourceText?.value || "");
-  const currentSegmentText = String(segmentText || "");
-  const pendingEntries = composerMentionSourceSyncBySegment.get(segmentIndex) || [];
-  const validEntries = [];
-
-  for (const entry of pendingEntries) {
-    const fromHandle = String(entry?.fromHandle || "").trim().toLowerCase();
-    const toHandle = String(entry?.toHandle || "").trim().toLowerCase();
-    if (!fromHandle || !toHandle || fromHandle === toHandle) {
-      continue;
-    }
-    if (!textContainsMentionHandle(source, fromHandle)) {
-      continue;
-    }
-    if (!textContainsMentionHandle(currentSegmentText, toHandle)) {
-      continue;
-    }
-    validEntries.push({ fromHandle, toHandle });
-  }
-
-  if (validEntries.length > 0) {
-    composerMentionSourceSyncBySegment.set(segmentIndex, validEntries);
-  } else {
-    composerMentionSourceSyncBySegment.delete(segmentIndex);
-  }
-
-  return validEntries;
-}
 
 /**
  * Applies one pending mention correction from a segment back to the original composer text.
@@ -28645,67 +24921,8 @@ function getPendingMentionSourceSyncEntries(segmentIndex, segmentText) {
  * @param {string} toHandle - Corrected handle that should replace it.
  * @returns {void}
  */
-function applyMentionSourceSync(segmentIndex, fromHandle, toHandle) {
-  const normalizedFrom = String(fromHandle || "").trim().replace(/^@/, "").toLowerCase();
-  const normalizedTo = String(toHandle || "").trim().replace(/^@/, "").toLowerCase();
-  if (!normalizedFrom || !normalizedTo || normalizedFrom === normalizedTo) {
-    return;
-  }
+function applyMentionSourceSync(segmentIndex, fromHandle, toHandle) { composerMentionSourceCorrection.apply(segmentIndex, fromHandle, toHandle); }
 
-  const nextSourceText = replaceMentionHandleInSegmentText(String(sourceText?.value || ""), normalizedFrom, normalizedTo);
-  if (sourceText) {
-    sourceText.value = nextSourceText;
-  }
-
-  const remainingEntries = [];
-  const pendingEntries = composerMentionSourceSyncBySegment.get(segmentIndex) || [];
-  for (const entry of pendingEntries) {
-    const entryFrom = String(entry?.fromHandle || "").trim().toLowerCase();
-    const entryTo = String(entry?.toHandle || "").trim().toLowerCase();
-    if (entryFrom === normalizedFrom && entryTo === normalizedTo) {
-      continue;
-    }
-    remainingEntries.push({
-      fromHandle: entryFrom,
-      toHandle: entryTo,
-    });
-  }
-
-  if (remainingEntries.length > 0) {
-    composerMentionSourceSyncBySegment.set(segmentIndex, remainingEntries);
-  } else {
-    composerMentionSourceSyncBySegment.delete(segmentIndex);
-  }
-
-  composerMentionResolutionCache.delete(normalizedFrom);
-  composerMentionResolutionCache.delete(normalizedTo);
-  setComposerLocked(true);
-  setComposerPosted(false);
-  renderSegments({
-    preserveOverrides: true,
-    preserveView: true,
-    animate: false,
-  });
-  queueDraftSave();
-}
-
-/**
- * Returns a short relation label for an account search hit relative to the active viewer.
- * @param {object} actor - Search result actor from the service worker.
- * @returns {string} Localized relation label or an empty string.
- */
-function getMentionSearchRelationLabel(actor = {}) {
-  if (actor.followingViewer === true && actor.followedByViewer === true) {
-    return t("mentionSearchRelationMutual");
-  }
-  if (actor.followedByViewer === true) {
-    return t("mentionSearchRelationFollowsYou");
-  }
-  if (actor.followingViewer === true) {
-    return t("mentionSearchRelationYouFollow");
-  }
-  return "";
-}
 
 /**
  * Writes a value into an input field and notifies existing listeners.
@@ -28818,243 +25035,75 @@ function enableAutoAccountPicker(input, label, options = {}) {
 }
 
 /**
- * Clears the mention search dialog state and visible results.
- * @returns {void}
+ * Delegates the mention dialog reset action to its controller.
+ * @returns {void} Completes the dialog action.
  */
 function resetMentionSearchDialogState() {
-  accountPickerController.reset();
-  mentionSearchRequestToken += 1;
-  mentionSearchSegmentIndex = -1;
-  mentionSearchOriginalHandle = "";
-  mentionSearchMode = "repair";
-  mentionSearchContext = "mention";
-  window.clearTimeout(mentionSearchInputTimer);
-  mentionSearchInputTimer = 0;
-  if (mentionSearchInput) {
-    mentionSearchInput.value = "";
-  }
-  if (mentionSearchStatus) {
-    mentionSearchStatus.textContent = "";
-    delete mentionSearchStatus.dataset.tone;
-  }
-  if (mentionSearchDialogEyebrow) {
-    mentionSearchDialogEyebrow.textContent = t("mentionSearchDialogEyebrow");
-  }
-  if (mentionSearchDialogTitle) {
-    mentionSearchDialogTitle.textContent = t("mentionSearchDialogTitle");
-  }
-  if (mentionSearchDialogNote) {
-    mentionSearchDialogNote.textContent = t("mentionSearchDialogNote");
-  }
-  if (mentionSearchResults) {
-    mentionSearchResults.replaceChildren();
-  }
+  return composerMentionSearchActions.reset();
 }
 
 /**
- * Closes the composer mention search dialog and clears its transient state.
- * @returns {void}
+ * Delegates the mention dialog close action to its controller.
+ * @returns {void} Completes the dialog action.
  */
 function closeMentionSearchDialog() {
-  resetMentionSearchDialogState();
-  if (mentionSearchDialog?.open) {
-    mentionSearchDialog.close();
-  }
+  return composerMentionSearchActions.close();
 }
 
 /**
- * Applies a selected account handle to the currently edited unresolved mention.
- * @param {string} selectedHandle - Chosen handle without leading at sign.
- * @returns {void}
+ * Delegates the mention dialog select action to its controller.
+ * @param {string} selectedHandle - Selected account handle.
+ * @returns {boolean} Whether the selection was applied.
  */
 function applyMentionSearchSelection(selectedHandle) {
-  const normalizedHandle = String(selectedHandle || "").trim().replace(/^@/, "");
-  if (!normalizedHandle) {
-    return;
-  }
-  if (mentionSearchSegmentIndex < 0 || mentionSearchSegmentIndex >= activeSegments.length) {
-    return;
-  }
-
-  const currentSegmentText = String(activeSegments[mentionSearchSegmentIndex] || "");
-  const nextText = replaceMentionHandleInSegmentText(currentSegmentText, mentionSearchOriginalHandle, normalizedHandle);
-  activeSegments[mentionSearchSegmentIndex] = nextText;
-  queueMentionSourceSync(mentionSearchSegmentIndex, mentionSearchOriginalHandle, normalizedHandle);
-  segmentOverrides = normalizeSegmentOverrides(activeSegments);
-  setComposerLocked(true);
-  setComposerPosted(false);
-  composerMentionResolutionCache.delete(String(mentionSearchOriginalHandle || "").trim().toLowerCase());
-  composerMentionResolutionCache.delete(normalizedHandle.toLowerCase());
-  closeMentionSearchDialog();
-  renderSegments({
-    preserveOverrides: true,
-    preserveView: true,
-    animate: false,
-  });
-  queueDraftSave();
+  return composerMentionSearchActions.select(selectedHandle);
 }
 
 /**
- * Renders one batch of account search hits inside the mention search dialog.
- * @param {object[]} actors - Normalized actor search results.
+ * Renders account search hits using the Composer mention renderer.
+ * @param {object[]} actors - Search result actors.
  * @returns {void}
  */
 function renderMentionSearchResults(actors) {
-  if (!mentionSearchResults) {
-    return;
-  }
-
-  mentionSearchResults.replaceChildren();
-  for (const actor of Array.isArray(actors) ? actors : []) {
-    const fragment = cloneTemplateContent(mentionSearchResultTemplate);
-    if (!fragment) {
-      continue;
-    }
-
-    const button = fragment.querySelector(".mention-search-result");
-    const avatar = fragment.querySelector(".mention-search-result-avatar");
-    const name = fragment.querySelector(".mention-search-result-name");
-    const handle = fragment.querySelector(".mention-search-result-handle");
-    const meta = fragment.querySelector(".mention-search-result-meta");
-
-    setAvatarImage(avatar, actor.avatar, actor.displayName || actor.handle || actor.did || "account");
-    name.textContent = actor.displayName || actor.handle || actor.did || "";
-    handle.textContent = actor.handle ? `@${actor.handle}` : actor.did || "";
-    meta.textContent = getMentionSearchRelationLabel(actor);
-    button.addEventListener("click", () => {
+  renderComposerMentionSearchResults(actors, {
+    container: mentionSearchResults, template: mentionSearchResultTemplate,
+    cloneTemplateContent, setAvatarImage, translate: t,
+    onSelect(actor) {
       if (mentionSearchContext === "account") {
         applyAccountPickerSelection(actor);
         return;
       }
       applyMentionSearchSelection(actor.handle || "");
-    });
-
-    mentionSearchResults.appendChild(fragment);
-  }
+    },
+  });
 }
 
 /**
- * Runs the live account search for the mention dialog through the service worker.
- * @param {string} rawQuery - Current dialog input value.
- * @returns {Promise<void>} Resolves after the UI has been updated.
+ * Searches mention actors through the shared request workflow.
+ * @param {string} rawQuery - Current search value.
+ * @returns {Promise<void>} Completes after current results are displayed.
  */
 async function runMentionSearch(rawQuery) {
-  if (!mentionSearchStatus || !mentionSearchResults) {
-    return;
-  }
-
-  const query = String(rawQuery || "").trim();
-  const normalizedQuery = query.replace(/^@/, "");
-  const requestToken = ++mentionSearchRequestToken;
-  mentionSearchStatus.textContent = "";
-  delete mentionSearchStatus.dataset.tone;
-
-  if (normalizedQuery.length < 2) {
-    mentionSearchResults.replaceChildren();
-    mentionSearchStatus.textContent = t("mentionSearchNeedQuery");
-    return;
-  }
-
-  mentionSearchStatus.textContent = t("mentionSearchLoading");
-
-  try {
-    const response = await sendToServiceWorker("SEARCH_MENTION_ACTORS", {
-      query: normalizedQuery,
-    }, { timeoutMs: 30000 });
-    if (requestToken !== mentionSearchRequestToken) {
-      return;
-    }
-
-    const actors = Array.isArray(response?.actors) ? response.actors : [];
-    if (actors.length === 0) {
-      mentionSearchResults.replaceChildren();
-      mentionSearchStatus.textContent = t("mentionSearchNoResults");
-      return;
-    }
-
-    renderMentionSearchResults(actors);
-    mentionSearchStatus.textContent = t("mentionSearchResultsLoaded", {
-      count: actors.length,
-    });
-  } catch (error) {
-    if (requestToken !== mentionSearchRequestToken) {
-      return;
-    }
-    mentionSearchStatus.textContent = error.message || t("mentionSearchFailed");
-    mentionSearchStatus.dataset.tone = "error";
-  }
+  return runComposerMentionSearch(rawQuery, {
+    status: mentionSearchStatus,
+    results: mentionSearchResults,
+    translate: t,
+    startRequest: composerMentionDialog.start,
+    isCurrent: composerMentionDialog.isCurrent,
+    request: (query) => sendToServiceWorker("SEARCH_MENTION_ACTORS", { query }, { timeoutMs: 30000 }),
+    render: renderMentionSearchResults,
+  });
 }
 
 /**
- * Opens the composer mention search dialog for one mention in repair or review mode.
- * @param {number} segmentIndex - Segment that contains the unresolved mention.
- * @param {string} handle - Mention handle without leading at sign.
- * @param {"repair"|"review"} mode - Dialog mode for unresolved or already resolved mentions.
+ * Opens the mention search dialog for a segment in review or repair mode.
+ * @param {number} segmentIndex - Target segment index.
+ * @param {string} handle - Target mention handle.
+ * @param {string} mode - Review or repair mode.
  * @returns {void}
  */
-function openMentionSearchDialog(segmentIndex, handle, mode = "repair") {
-  mentionSearchContext = "mention";
-  mentionSearchSegmentIndex = segmentIndex;
-  mentionSearchOriginalHandle = String(handle || "").trim().replace(/^@/, "").toLowerCase();
-  mentionSearchMode = mode === "review" ? "review" : "repair";
-  mentionSearchRequestToken += 1;
-  window.clearTimeout(mentionSearchInputTimer);
-  mentionSearchInputTimer = 0;
-  if (mentionSearchDialogEyebrow) {
-    mentionSearchDialogEyebrow.textContent = t("mentionSearchDialogEyebrow");
-  }
-  if (mentionSearchResults) {
-    mentionSearchResults.replaceChildren();
-  }
-  if (mentionSearchStatus) {
-    mentionSearchStatus.textContent = "";
-    delete mentionSearchStatus.dataset.tone;
-  }
-  if (mentionSearchInput) {
-    mentionSearchInput.value = mentionSearchOriginalHandle;
-  }
-  if (mentionSearchDialogTitle) {
-    mentionSearchDialogTitle.textContent = mentionSearchMode === "review"
-      ? t("mentionSearchDialogReviewTitle")
-      : t("mentionSearchDialogTitle");
-  }
-  if (mentionSearchDialogNote) {
-    mentionSearchDialogNote.textContent = mentionSearchMode === "review"
-      ? t("mentionSearchDialogReviewNote")
-      : t("mentionSearchDialogNote");
-  }
-  mentionSearchDialog?.showModal();
-  mentionSearchInput?.focus();
-  mentionSearchInput?.select();
-  void runMentionSearch(mentionSearchOriginalHandle);
-}
+function openMentionSearchDialog(segmentIndex, handle, mode = "repair") { composerMentionDialog.open(segmentIndex, handle, mode); }
 
-/**
- * Collects known local handles that can be used for typo suggestions.
- * @returns {string[]} Unique normalized handles known to the current app state.
- */
-function getKnownComposerMentionHandles() {
-  const handles = [];
-  const seen = new Set();
-  const rawValues = [];
-
-  rawValues.push(authAccount);
-  for (const account of Array.isArray(savedAccounts) ? savedAccounts : []) {
-    rawValues.push(account?.handle);
-    rawValues.push(account?.identifier);
-  }
-
-  for (const rawValue of rawValues) {
-    const normalizedHandle = String(rawValue || "").trim().replace(/^@/, "").toLowerCase();
-    if (!normalizedHandle || seen.has(normalizedHandle)) {
-      continue;
-    }
-    seen.add(normalizedHandle);
-    handles.push(normalizedHandle);
-  }
-
-  return handles;
-}
 
 /**
  * Finds the nearest known local handle suggestion when the typo distance is small enough.
@@ -29062,187 +25111,47 @@ function getKnownComposerMentionHandles() {
  * @returns {string} Suggested known handle or an empty string.
  */
 function findComposerMentionSuggestion(handle) {
-  return findComposerMentionSuggestionFromData(handle, getKnownComposerMentionHandles());
+  return findComposerMentionSuggestionFromData(handle, getKnownComposerMentionHandles(authAccount, savedAccounts));
 }
 
 /**
- * Renders resolved mention facets below one composer segment.
- * @param {number} segmentIndex - Zero-based segment index for follow-up actions.
- * @param {HTMLElement|null} container - Target mention container inside the segment card.
+ * Renders resolved mentions through the display controller.
+ * @param {number} segmentIndex - Zero-based segment index.
+ * @param {HTMLElement|null} container - Mention container.
  * @param {string} text - Current segment text.
- * @param {number} version - Render/update version guard.
- * @returns {Promise<void>} Resolves when the UI has been updated.
+ * @param {number} version - Render version guard.
+ * @returns {Promise<void>} Completes after rendering.
  */
 async function updateSegmentMentionDisplay(segmentIndex, container, text, version) {
-  if (!container) {
-    return;
-  }
-
-  const candidates = parseComposerMentionCandidates(text);
-  const uniqueHandles = getUniqueComposerMentionHandles(candidates);
-
-  container.replaceChildren();
-  container.hidden = true;
-
-  if (uniqueHandles.length === 0) {
-    return;
-  }
-
-  const resolutionMap = await resolveComposerMentionHandles(uniqueHandles);
-  if (version !== segmentMentionUpdateVersion) {
-    return;
-  }
-
-  const resolvedEntries = [];
-  const unresolvedEntries = [];
-
-  for (const handle of uniqueHandles) {
-    let did = null;
-    if (resolutionMap.has(handle)) {
-      did = resolutionMap.get(handle);
-    }
-    if (did) {
-      resolvedEntries.push({ handle, did });
-    } else {
-      unresolvedEntries.push({
-        handle,
-        suggestion: findComposerMentionSuggestion(handle),
-      });
-    }
-  }
-
-  if (resolvedEntries.length === 0 && unresolvedEntries.length === 0) {
-    return;
-  }
-
-  const label = document.createElement("span");
-  label.className = "segment-mentions-label";
-  label.textContent = t("segmentMentionsLabel");
-  container.appendChild(label);
-
-  for (const entry of resolvedEntries) {
-    const chip = document.createElement("span");
-    const bodyButton = document.createElement("button");
-    const bodyContent = document.createElement("span");
-    const link = document.createElement("a");
-    const handleText = document.createElement("span");
-    const didText = document.createElement("small");
-
-    chip.className = "segment-mention-chip";
-    bodyButton.type = "button";
-    bodyButton.className = "segment-mention-chip-body-button";
-    bodyContent.className = "segment-mention-chip-body";
-    link.className = "thread-explorer-view-link segment-mention-open-link";
-    link.href = buildComposerMentionProfileUrl(entry.handle, entry.did);
-    link.target = "_blank";
-    link.rel = "noreferrer noopener";
-    link.textContent = "↗";
-    applyTranslatedTitle(link, "mentionOpenAccountButton");
-    link.setAttribute("aria-label", t("mentionOpenAccountButton"));
-    handleText.textContent = `@${entry.handle}`;
-    didText.textContent = entry.did;
-    bodyContent.append(handleText, didText);
-    bodyButton.appendChild(bodyContent);
-    bodyButton.addEventListener("click", () => {
-      openMentionSearchDialog(segmentIndex, entry.handle, "review");
-    });
-    chip.append(bodyButton, link);
-    container.appendChild(chip);
-  }
-
-  if (unresolvedEntries.length > 0) {
-    for (const entry of unresolvedEntries) {
-      const chip = document.createElement("button");
-      const handleText = document.createElement("strong");
-      const messageText = document.createElement("small");
-
-      chip.type = "button";
-      chip.className = "segment-mention-chip segment-mention-chip-warning segment-mention-chip-button";
-      handleText.textContent = `@${entry.handle}`;
-      if (entry.suggestion) {
-        messageText.textContent = t("segmentMentionsUnresolvedWithSuggestion", {
-          handle: `@${entry.handle}`,
-          suggestion: `@${entry.suggestion}`,
-        });
-      } else {
-        messageText.textContent = t("segmentMentionsUnresolvedHandle", {
-          handle: `@${entry.handle}`,
-        });
-      }
-      chip.append(handleText, messageText);
-      chip.addEventListener("click", () => {
-        openMentionSearchDialog(segmentIndex, entry.handle, "repair");
-      });
-      container.appendChild(chip);
-    }
-  }
-
-  const pendingSourceSyncEntries = getPendingMentionSourceSyncEntries(segmentIndex, text);
-  for (const entry of pendingSourceSyncEntries) {
-    const syncBox = document.createElement("div");
-    const syncMessage = document.createElement("small");
-    const syncButton = document.createElement("button");
-
-    syncBox.className = "segment-mention-sync";
-    syncMessage.textContent = t("segmentMentionsSourceSyncMessage", {
-      fromHandle: `@${entry.fromHandle}`,
-      toHandle: `@${entry.toHandle}`,
-    });
-    syncButton.type = "button";
-    syncButton.className = "segment-mention-sync-button";
-    syncButton.textContent = t("segmentMentionsSourceSyncButton");
-    syncButton.addEventListener("click", () => {
-      applyMentionSourceSync(segmentIndex, entry.fromHandle, entry.toHandle);
-    });
-    syncBox.append(syncMessage, syncButton);
-    container.appendChild(syncBox);
-  }
-
-  container.hidden = false;
+  return composerMentionDisplay.render(segmentIndex, container, text, version);
 }
 
 /**
- * Debounces mention resolution for one composer segment after edits.
+ * Schedules the latest mention update for one segment.
  * @param {number} segmentIndex - Zero-based segment index.
- * @param {HTMLElement|null} container - Mention container inside the segment card.
+ * @param {HTMLElement|null} container - Mention container.
  * @param {string} text - Current segment text.
  * @returns {void}
  */
 function scheduleSegmentMentionDisplayUpdate(segmentIndex, container, text) {
-  const previousTimer = segmentMentionResolveTimerByIndex.get(segmentIndex);
-  if (previousTimer) {
-    window.clearTimeout(previousTimer);
-  }
-
-  const timerId = window.setTimeout(() => {
-    segmentMentionResolveTimerByIndex.delete(segmentIndex);
-    const currentVersion = segmentMentionUpdateVersion;
-    void updateSegmentMentionDisplay(segmentIndex, container, text, currentVersion);
-  }, COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS);
-
-  segmentMentionResolveTimerByIndex.set(segmentIndex, timerId);
+  composerMentionDisplay.schedule(segmentIndex, container, text);
 }
 
-function resizeAllSegmentTextareas() {
-  segmentsList.querySelectorAll(".segment-text").forEach((textarea) => {
-    autoSizeTextarea(textarea);
-  });
-}
+/**
+ * Resizes all currently rendered Composer textareas to their content.
+ * @returns {void}
+ */
+function resizeAllSegmentTextareas() { resizeComposerTextareas(segmentsList); }
 
+/**
+ * Delegates coalesced textarea resizing to the Composer scheduler.
+ * @returns {void}
+ */
 function scheduleSegmentTextareaResize() {
-  if (segmentTextareaResizeFrame) {
-    cancelAnimationFrame(segmentTextareaResizeFrame);
-  }
-  segmentTextareaResizeFrame = requestAnimationFrame(() => {
-    segmentTextareaResizeFrame = 0;
-    resizeAllSegmentTextareas();
-  });
+  composerRenderScheduler.resize();
 }
 
-function getHelpReadmePath() {
-  return currentLocale === "de" ? "./README.de.md" : "./README.md";
-}
-
+/** Escapes plain text for controlled HTML exports. @param {unknown} value - Text. @returns {string} Escaped HTML. */
 function escapeHtml(value) {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -29251,698 +25160,11 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-function decodeMinimalHtmlEntities(value) {
-  return String(value || "")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-}
+/** Opens contextual help. @param {string} topicId - Topic identifier. @returns {void} */
+function openInlineHelpTopic(topicId) { helpController.openTopic(topicId); }
 
-function sanitizeHelpUrl(rawUrl, type = "link") {
-  const trimmed = String(rawUrl || "").trim();
-  if (!trimmed || /^\/\//.test(trimmed)) {
-    return "";
-  }
 
-  const decoded = decodeMinimalHtmlEntities(trimmed);
-  if (decoded.startsWith("#")) {
-    return escapeHtml(decoded);
-  }
 
-  try {
-    const parsed = new URL(decoded, window.location.href);
-    const protocol = parsed.protocol.toLowerCase();
-    const isAllowedProtocol = protocol === "https:" || protocol === "http:" || (type === "link" && protocol === "mailto:");
-    if (!isAllowedProtocol) {
-      return "";
-    }
-    return escapeHtml(parsed.href);
-  } catch {
-    const normalized = decoded.toLowerCase();
-    const looksLikeRelativePath = !/^[a-z][a-z0-9+.-]*:/i.test(normalized);
-    if (!looksLikeRelativePath) {
-      return "";
-    }
-    if (/[\u0000-\u001f]/.test(decoded)) {
-      return "";
-    }
-    return escapeHtml(decoded);
-  }
-}
-
-function renderInlineMarkdown(text) {
-  let html = escapeHtml(text);
-  html = html.replace(/\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)/g, (_, alt, imageUrl, linkUrl) => {
-    const safeImageUrl = sanitizeHelpUrl(imageUrl, "image");
-    const safeLinkUrl = sanitizeHelpUrl(linkUrl, "link");
-    if (!safeImageUrl || !safeLinkUrl) {
-      return escapeHtml(alt);
-    }
-    return `<a href="${safeLinkUrl}" target="_blank" rel="noreferrer noopener"><img src="${safeImageUrl}" alt="${alt}"></a>`;
-  });
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, imageUrl) => {
-    const safeImageUrl = sanitizeHelpUrl(imageUrl, "image");
-    return safeImageUrl ? `<img src="${safeImageUrl}" alt="${alt}">` : escapeHtml(alt);
-  });
-  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, linkUrl) => {
-    const safeLinkUrl = sanitizeHelpUrl(linkUrl, "link");
-    return safeLinkUrl ? `<a href="${safeLinkUrl}" target="_blank" rel="noreferrer noopener">${label}</a>` : label;
-  });
-  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  return html;
-}
-
-function convertHtmlBlocks(markdown) {
-  return markdown
-    .replace(/<p\s+align="center">\s*<img\s+src="([^"]+)"\s+alt="([^"]*)"\s+width="([^"]+)"\s*>\s*<\/p>/gi, (_, src, alt, width) => {
-      const safeImageUrl = sanitizeHelpUrl(src, "image");
-      return safeImageUrl
-        ? `<p class="help-centered"><img src="${safeImageUrl}" alt="${escapeHtml(alt)}" width="${width}"></p>`
-        : `<p class="help-centered">${escapeHtml(alt)}</p>`;
-    })
-    .replace(/<p\s+align="center">\s*([\s\S]*?)\s*<\/p>/gi, (_, content) =>
-      `<p class="help-centered">${renderInlineMarkdown(content.trim())}</p>`);
-}
-
-function renderMarkdownAsHtml(markdown) {
-  const prepared = convertHtmlBlocks(markdown.replace(/\r\n/g, "\n"));
-  const lines = prepared.split("\n");
-  const html = [];
-  let inList = false;
-  let listTag = "";
-  let inCode = false;
-  let codeLines = [];
-  let paragraph = [];
-
-  const flushParagraph = () => {
-    if (!paragraph.length) {
-      return;
-    }
-    html.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
-    paragraph = [];
-  };
-
-  const flushList = () => {
-    if (!inList) {
-      return;
-    }
-    html.push(`</${listTag}>`);
-    inList = false;
-    listTag = "";
-  };
-
-  const flushCode = () => {
-    if (!inCode) {
-      return;
-    }
-    html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
-    inCode = false;
-    codeLines = [];
-  };
-
-  for (const line of lines) {
-    if (line.trim().startsWith("```")) {
-      flushParagraph();
-      flushList();
-      if (inCode) {
-        flushCode();
-      } else {
-        inCode = true;
-      }
-      continue;
-    }
-
-    if (inCode) {
-      codeLines.push(line);
-      continue;
-    }
-
-    if (!line.trim()) {
-      flushParagraph();
-      flushList();
-      continue;
-    }
-
-    if (line.trim().startsWith("<p class=\"help-centered\">")) {
-      flushParagraph();
-      flushList();
-      html.push(line.trim());
-      continue;
-    }
-
-    const heading = line.match(/^(#{1,3})\s+(.*)$/);
-    if (heading) {
-      flushParagraph();
-      flushList();
-      const level = heading[1].length;
-      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
-      continue;
-    }
-
-    const ordered = line.match(/^\d+\.\s+(.*)$/);
-    const unordered = line.match(/^-\s+(.*)$/);
-    if (ordered || unordered) {
-      flushParagraph();
-      const nextTag = ordered ? "ol" : "ul";
-      if (!inList || listTag !== nextTag) {
-        flushList();
-        inList = true;
-        listTag = nextTag;
-        html.push(`<${listTag}>`);
-      }
-      html.push(`<li>${renderInlineMarkdown((ordered || unordered)[1])}</li>`);
-      continue;
-    }
-
-    paragraph.push(line.trim());
-  }
-
-  flushParagraph();
-  flushList();
-  flushCode();
-
-  return html.join("");
-}
-
-async function loadReadmeContent() {
-  const path = getHelpReadmePath();
-
-  if (helpCache.path === path && helpCache.text) {
-    helpStatus.textContent = "";
-    helpContent.innerHTML = renderMarkdownAsHtml(helpCache.text);
-    return;
-  }
-
-  helpStatus.textContent = t("helpLoading");
-  helpContent.innerHTML = "";
-
-  try {
-    const response = await fetch(path, { cache: "no-cache" });
-    if (!response.ok) {
-      throw new Error("README unavailable");
-    }
-
-    const text = await response.text();
-    helpCache = { path, text };
-    helpStatus.textContent = "";
-    helpContent.innerHTML = renderMarkdownAsHtml(text);
-  } catch (error) {
-    console.error(error);
-    helpStatus.textContent = t("helpFailed");
-    if (!(helpCache.path === path && helpCache.text)) {
-      helpContent.innerHTML = "";
-    }
-  }
-}
-
-function getInlineHelpTopic(topicId = "") {
-  switch (String(topicId || "").trim()) {
-    case "composer_workspace":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicComposerWorkspaceTitle"),
-        text: t("helpTopicComposerWorkspaceText"),
-        bullets: [
-          t("helpTopicComposerWorkspaceBullet1"),
-          t("helpTopicComposerWorkspaceBullet2"),
-          t("helpTopicComposerWorkspaceBullet3"),
-        ],
-      };
-    case "composer_input":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicComposerInputTitle"),
-        text: t("helpTopicComposerInputText"),
-        bullets: [
-          t("helpTopicComposerInputBullet1"),
-          t("helpTopicComposerInputBullet2"),
-          t("helpTopicComposerInputBullet3"),
-        ],
-      };
-    case "composer_post_settings":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicComposerPostSettingsTitle"),
-        text: t("helpTopicComposerPostSettingsText"),
-        bullets: [
-          t("helpTopicComposerPostSettingsBullet1"),
-          t("helpTopicComposerPostSettingsBullet2"),
-          t("helpTopicComposerPostSettingsBullet3"),
-          t("helpTopicComposerPostSettingsBullet4"),
-          t("helpTopicComposerPostSettingsBullet5"),
-          t("helpTopicComposerPostSettingsBullet6"),
-        ],
-      };
-    case "composer_hashtags":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicComposerHashtagsTitle"),
-        text: t("helpTopicComposerHashtagsText"),
-        bullets: [
-          t("helpTopicComposerHashtagsBullet1"),
-          t("helpTopicComposerHashtagsBullet2"),
-          t("helpTopicComposerHashtagsBullet3"),
-        ],
-      };
-    case "composer_segments":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicComposerSegmentsTitle"),
-        text: t("helpTopicComposerSegmentsText"),
-        bullets: [
-          t("helpTopicComposerSegmentsBullet1"),
-          t("helpTopicComposerSegmentsBullet2"),
-          t("helpTopicComposerSegmentsBullet3"),
-          t("helpTopicComposerSegmentsBullet4"),
-        ],
-      };
-    case "image_editor":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicImageEditorTitle"),
-        text: t("helpTopicImageEditorText"),
-        bullets: [
-          t("helpTopicImageEditorBullet1"),
-          t("helpTopicImageEditorBullet2"),
-          t("helpTopicImageEditorBullet3"),
-        ],
-      };
-    case "segment_images":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicSegmentImagesTitle"),
-        text: t("helpTopicSegmentImagesText"),
-        bullets: [
-          t("helpTopicSegmentImagesBullet1"),
-          t("helpTopicSegmentImagesBullet2"),
-          t("helpTopicSegmentImagesBullet3"),
-          t("helpTopicSegmentImagesBullet4"),
-        ],
-      };
-    case "archive_workspace":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicArchiveWorkspaceTitle"),
-        text: t("helpTopicArchiveWorkspaceText"),
-        bullets: [
-          t("helpTopicArchiveWorkspaceBullet1"),
-          t("helpTopicArchiveWorkspaceBullet2"),
-          t("helpTopicArchiveWorkspaceBullet3"),
-        ],
-      };
-    case "archive_scope":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicArchiveScopeTitle"),
-        text: t("helpTopicArchiveScopeText"),
-        bullets: [
-          t("helpTopicArchiveScopeBullet1"),
-          t("helpTopicArchiveScopeBullet2"),
-          t("helpTopicArchiveScopeBullet3"),
-          t("helpTopicArchiveScopeBullet4"),
-          t("helpTopicArchiveScopeBullet5"),
-          t("helpTopicArchiveScopeBullet6"),
-        ],
-      };
-    case "archive_actions":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicArchiveActionsTitle"),
-        text: t("helpTopicArchiveActionsText"),
-        bullets: [
-          t("helpTopicArchiveActionsBullet1"),
-          t("helpTopicArchiveActionsBullet2"),
-          t("helpTopicArchiveActionsBullet3"),
-          t("helpTopicArchiveActionsBullet4"),
-        ],
-      };
-    case "archive_media":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicArchiveMediaTitle"),
-        text: t("helpTopicArchiveMediaText"),
-        bullets: [
-          t("helpTopicArchiveMediaBullet1"),
-          t("helpTopicArchiveMediaBullet2"),
-          t("helpTopicArchiveMediaBullet3"),
-        ],
-      };
-    case "archive_unroll":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicArchiveUnrollTitle"),
-        text: t("helpTopicArchiveUnrollText"),
-        bullets: [
-          t("helpTopicArchiveUnrollBullet1"),
-          t("helpTopicArchiveUnrollBullet2"),
-          t("helpTopicArchiveUnrollBullet3"),
-          t("helpTopicArchiveUnrollBullet4"),
-          t("helpTopicArchiveUnrollBullet5"),
-        ],
-      };
-    case "archive_progress":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicArchiveProgressTitle"),
-        text: t("helpTopicArchiveProgressText"),
-        bullets: [
-          t("helpTopicArchiveProgressBullet1"),
-          t("helpTopicArchiveProgressBullet2"),
-          t("helpTopicArchiveProgressBullet3"),
-        ],
-      };
-    case "search_workspace":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicSearchWorkspaceTitle"),
-        text: t("helpTopicSearchWorkspaceText"),
-        bullets: [
-          t("helpTopicSearchWorkspaceBullet1"),
-          t("helpTopicSearchWorkspaceBullet2"),
-          t("helpTopicSearchWorkspaceBullet3"),
-          t("helpTopicSearchWorkspaceBullet4"),
-          t("helpTopicSearchWorkspaceBullet5"),
-          t("helpTopicSearchWorkspaceBullet6"),
-          t("helpTopicSearchWorkspaceBullet7"),
-          t("helpTopicSearchWorkspaceBullet8"),
-          t("helpTopicSearchWorkspaceBullet9"),
-          t("helpTopicSearchWorkspaceBullet10"),
-          t("helpTopicSearchWorkspaceBullet11"),
-          t("helpTopicSearchWorkspaceBullet12"),
-        ],
-      };
-    case "network_workspace":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicNetworkWorkspaceTitle"),
-        text: t("helpTopicNetworkWorkspaceText"),
-        bullets: [
-          t("helpTopicNetworkWorkspaceBullet1"),
-          t("helpTopicNetworkWorkspaceBullet2"),
-          t("helpTopicNetworkWorkspaceBullet3"),
-          t("helpTopicNetworkWorkspaceBullet4"),
-        ],
-      };
-    case "thread_explorer_workspace":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicThreadExplorerWorkspaceTitle"),
-        text: t("helpTopicThreadExplorerWorkspaceText"),
-        bullets: [
-          t("helpTopicThreadExplorerWorkspaceBullet1"),
-          t("helpTopicThreadExplorerWorkspaceBullet2"),
-          t("helpTopicThreadExplorerWorkspaceBullet3"),
-          t("helpTopicThreadExplorerWorkspaceBullet4"),
-        ],
-      };
-    case "thread_explorer_entry":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicThreadExplorerEntryTitle"),
-        text: t("helpTopicThreadExplorerEntryText"),
-        bullets: [
-          t("helpTopicThreadExplorerEntryBullet1"),
-          t("helpTopicThreadExplorerEntryBullet2"),
-          t("helpTopicThreadExplorerEntryBullet3"),
-          t("helpTopicThreadExplorerEntryBullet4"),
-        ],
-      };
-    case "thread_explorer_thread":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicThreadExplorerThreadTitle"),
-        text: t("helpTopicThreadExplorerThreadText"),
-        bullets: [
-          t("helpTopicThreadExplorerThreadBullet1"),
-          t("helpTopicThreadExplorerThreadBullet2"),
-          t("helpTopicThreadExplorerThreadBullet3"),
-          t("helpTopicThreadExplorerThreadBullet4"),
-          t("helpTopicThreadExplorerThreadBullet5"),
-        ],
-      };
-    case "network_stage":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicNetworkStageTitle"),
-        text: t("helpTopicNetworkStageText"),
-        bullets: [
-          t("helpTopicNetworkStageBullet1"),
-          t("helpTopicNetworkStageBullet2"),
-          t("helpTopicNetworkStageBullet3"),
-        ],
-      };
-    case "analysis_scores":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicAnalysisScoresTitle"),
-        text: t("helpTopicAnalysisScoresText"),
-        bullets: [
-          t("helpTopicAnalysisScoresBullet1"),
-          t("helpTopicAnalysisScoresBullet2"),
-          t("helpTopicAnalysisScoresBullet3"),
-          t("helpTopicAnalysisScoresBullet4"),
-          t("helpTopicAnalysisScoresBullet5"),
-          t("helpTopicAnalysisScoresBullet6"),
-          t("helpTopicAnalysisScoresBullet7"),
-        ],
-      };
-    case "analysis_patterns":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicAnalysisPatternsTitle"),
-        text: t("helpTopicAnalysisPatternsText"),
-        bullets: [
-          t("helpTopicAnalysisPatternsBullet1"),
-          t("helpTopicAnalysisPatternsBullet2"),
-          t("helpTopicAnalysisPatternsBullet3"),
-        ],
-      };
-    case "dm_workspace":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicDmWorkspaceTitle"),
-        text: t("helpTopicDmWorkspaceText"),
-        bullets: [
-          t("helpTopicDmWorkspaceBullet1"),
-          t("helpTopicDmWorkspaceBullet2"),
-          t("helpTopicDmWorkspaceBullet3"),
-        ],
-      };
-    case "dm_scope":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicDmScopeTitle"),
-        text: t("helpTopicDmScopeText"),
-        bullets: [
-          t("helpTopicDmScopeBullet1"),
-          t("helpTopicDmScopeBullet2"),
-          t("helpTopicDmScopeBullet3"),
-        ],
-      };
-    case "dm_actions":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicDmActionsTitle"),
-        text: t("helpTopicDmActionsText"),
-        bullets: [
-          t("helpTopicDmActionsBullet1"),
-          t("helpTopicDmActionsBullet2"),
-          t("helpTopicDmActionsBullet3"),
-        ],
-      };
-    case "dm_progress":
-      return {
-        eyebrow: t("helpEyebrow"),
-        title: t("helpTopicDmProgressTitle"),
-        text: t("helpTopicDmProgressText"),
-        bullets: [
-          t("helpTopicDmProgressBullet1"),
-          t("helpTopicDmProgressBullet2"),
-          t("helpTopicDmProgressBullet3"),
-        ],
-      };
-    default:
-      return null;
-  }
-}
-
-function renderInlineHelpHtml(topic) {
-  if (!topic) {
-    return "";
-  }
-  const textHtml = topic.text ? `<p>${escapeHtml(topic.text)}</p>` : "";
-  const bulletsHtml = Array.isArray(topic.bullets) && topic.bullets.length
-    ? `<ul class="help-topic-list">${topic.bullets.filter(Boolean).map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>`
-    : "";
-  return `${textHtml}${bulletsHtml}`;
-}
-
-function applyHelpDialogHeader(eyebrow, title) {
-  if (helpDialogEyebrow) {
-    helpDialogEyebrow.textContent = eyebrow || t("helpEyebrow");
-  }
-  if (helpDialogTitle) {
-    helpDialogTitle.textContent = title || t("helpTitle");
-  }
-}
-
-function openInlineHelpTopic(topicId) {
-  const topic = getInlineHelpTopic(topicId);
-  if (!topic) {
-    return;
-  }
-  applyHelpDialogHeader(topic.eyebrow, topic.title);
-  helpStatus.textContent = "";
-  helpContent.innerHTML = renderInlineHelpHtml(topic);
-  helpDialog.showModal();
-}
-
-/**
- * Applies shared composer follow-up work after the source text changed.
- * @param {boolean} showTruncationWarning - Whether a truncation message should be shown.
- * @returns {void} No return value.
- */
-function handleComposerTextInput(showTruncationWarning = false) {
-  const clamped = clampComposerTextLength(sourceText.value, MAX_COMPOSER_GRAPHEME_LENGTH);
-  if (clamped.truncated) {
-    sourceText.value = clamped.text;
-  }
-  composerInputWasTruncated = showTruncationWarning && clamped.truncated;
-  updateComposerInputWarning(composerInputWasTruncated);
-
-  segmentOverrides = null;
-  setComposerLocked(false);
-  setComposerPosted(false);
-  scheduleComposerSegmentRender(COMPOSER_SEGMENT_RENDER_DEBOUNCE_MS);
-  queueDraftSave();
-}
-
-/**
- * Shows an immediate one-off alert when a paste had to be truncated.
- * @param {void} - No parameters.
- * @returns {void} No return value.
- */
-function showComposerTruncationAlert() {
-  const now = Date.now();
-  if ((now - lastComposerTruncationAlertAt) < 400) {
-    return;
-  }
-
-  lastComposerTruncationAlertAt = now;
-  const message = t("composerTextTruncated", { count: getComposerLimitLabel() });
-  if (composerTruncationDialogTimer) {
-    window.clearTimeout(composerTruncationDialogTimer);
-  }
-  composerTruncationDialogTimer = window.setTimeout(() => {
-    composerTruncationDialogTimer = 0;
-    showErrorDialog(message, t("composerTruncationTitle"));
-  }, 0);
-}
-
-/**
- * Inserts text into the composer while respecting the Bluesky-aware composer limit.
- * @param {string} insertedText - Text to insert at the current selection.
- * @param {boolean} showTruncationWarning - Whether a truncation message should be shown if clamping was needed.
- * @returns {void} No return value.
- */
-function insertTextIntoComposer(insertedText, showTruncationWarning = false) {
-  const selectionStart = sourceText.selectionStart ?? sourceText.value.length;
-  const selectionEnd = sourceText.selectionEnd ?? sourceText.value.length;
-  const prefix = sourceText.value.slice(0, selectionStart);
-  const suffix = sourceText.value.slice(selectionEnd);
-  const fixedGraphemeCount = countGraphemes(prefix) + countGraphemes(suffix);
-  const remainingBudget = Math.max(0, MAX_COMPOSER_GRAPHEME_LENGTH - fixedGraphemeCount);
-  const normalizedInsertedText = String(insertedText || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const insertedGraphemes = splitIntoGraphemes(normalizedInsertedText);
-  let nextInsertedText = normalizedInsertedText;
-  let wasTruncated = false;
-  let wasShortenedAtLimit = false;
-
-  if (insertedGraphemes.length > remainingBudget) {
-    nextInsertedText = insertedGraphemes.slice(0, remainingBudget).join("");
-    wasTruncated = true;
-  } else if (normalizedInsertedText !== String(insertedText || "") && insertedGraphemes.length >= remainingBudget) {
-    wasShortenedAtLimit = true;
-  }
-
-  if (showTruncationWarning && (wasTruncated || wasShortenedAtLimit)) {
-    showComposerTruncationAlert();
-  }
-
-  composerInputWarningPendingTruncation = false;
-  if (showTruncationWarning && (wasTruncated || wasShortenedAtLimit)) {
-    composerInputWarningPendingTruncation = true;
-  }
-  composerInputEventSuppressed = true;
-  sourceText.setRangeText(nextInsertedText, selectionStart, selectionEnd, "end");
-  handleComposerTextInput(composerInputWarningPendingTruncation);
-  composerInputWarningPendingTruncation = false;
-}
-
-/**
- * Detects whether text contains emoji-like or combined grapheme sequences.
- * @param {string} text - Source text to inspect.
- * @returns {boolean} True when emoji or joined graphemes are present.
- */
-function hasEmojiLikeGraphemes(text) {
-  return /[\p{Extended_Pictographic}\u200d\uFE0F]/u.test(String(text || ""));
-}
-
-/**
- * Detects Chinese or Japanese scripts that consume the limit one visible sign at a time.
- * @param {string} text - Source text to inspect.
- * @returns {boolean} True when Han, Hiragana, or Katakana characters are present.
- */
-function hasCjkGraphemes(text) {
-  return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(String(text || ""));
-}
-
-/**
- * Splits a single token into Bluesky-sized chunks based on grapheme and byte limits.
- * @param {string} text - Token that may exceed the per-segment limits.
- * @param {Function} limitFactory - Returns the limit object for the next chunk index.
- * @param {number} initialChunkIndex - Current global chunk index before splitting.
- * @returns {string[]} Post-safe token slices.
- */
-function splitTokenByPostLimit(text, limitFactory, initialChunkIndex) {
-  const graphemes = splitIntoGraphemes(text);
-  const slices = [];
-  let start = 0;
-  let chunkIndex = initialChunkIndex;
-
-  while (start < graphemes.length) {
-    const rawLimit = limitFactory(chunkIndex);
-    const limit = createPostTextLimit(
-      Math.max(1, rawLimit.graphemeLimit),
-      Math.max(1, rawLimit.utf8ByteLimit),
-    );
-    let end = start;
-    let slice = "";
-
-    while (end < graphemes.length) {
-      const nextSlice = `${slice}${graphemes[end]}`;
-      if (!fitsPostTextLimit(nextSlice, limit)) {
-        break;
-      }
-      slice = nextSlice;
-      end += 1;
-    }
-
-    if (!slice) {
-      slice = graphemes[start];
-      end = start + 1;
-    }
-
-    slices.push(slice);
-    start = end;
-    chunkIndex += 1;
-  }
-
-  return slices;
-}
 
 /**
  * Builds length diagnostics and advice for one segment in Bluesky terms.
@@ -29972,121 +25194,25 @@ function formatSegmentLengthLabel(diagnostics) {
   });
 }
 
-/**
- * Builds a segment-specific warning message when Bluesky length deserves extra attention.
- * @param {object} diagnostics - Result from getSegmentLengthDiagnostics.
- * @returns {string} Warning text, or an empty string when no warning is needed.
- */
-function buildSegmentLengthWarning(diagnostics) {
-  const parts = [];
-
-  if (diagnostics.exceedsGraphemeLimit && diagnostics.exceedsByteLimit) {
-    parts.push(t("segmentLengthWarningOverflowBoth", {
-      graphemeCount: diagnostics.graphemeCount,
-      graphemeLimit: MAX_POST_LENGTH,
-      byteCount: diagnostics.utf8ByteCount,
-      byteLimit: MAX_POST_UTF8_BYTES,
-    }));
-  } else if (diagnostics.exceedsGraphemeLimit) {
-    parts.push(t("segmentLengthWarningOverflow", {
-      count: diagnostics.graphemeCount,
-      limit: MAX_POST_LENGTH,
-    }));
-  } else if (diagnostics.exceedsByteLimit) {
-    parts.push(t("segmentLengthWarningOverflowBytes", {
-      count: diagnostics.utf8ByteCount,
-      limit: MAX_POST_UTF8_BYTES,
-    }));
-  } else if (diagnostics.isNearLimit && diagnostics.hasComplexDifference) {
-    parts.push(t("segmentLengthWarningComplexNearLimit", {
-      count: diagnostics.graphemeCount,
-      limit: MAX_POST_LENGTH,
-    }));
-  } else if (diagnostics.isNearByteLimit) {
-    parts.push(t("segmentLengthWarningByteNearLimit", {
-      count: diagnostics.utf8ByteCount,
-      limit: MAX_POST_UTF8_BYTES,
-    }));
-  } else if (diagnostics.hasComplexDifference && diagnostics.graphemeCount >= (MAX_POST_LENGTH - 5)) {
-    parts.push(t("segmentLengthWarningComplex", {
-      count: diagnostics.graphemeCount,
-      limit: MAX_POST_LENGTH,
-    }));
-  }
-
-  if (parts.length === 0) {
-    return "";
-  }
-
-  if (diagnostics.isNearByteLimit && !diagnostics.exceedsLimit) {
-    return parts.join(" ");
-  }
-
-  const advice = diagnostics.adviceKeys.map((key) => t(key)).join(" ");
-  parts.push(advice);
-  return parts.join(" ");
-}
 
 /**
- * Updates one segment card with Bluesky-aware length labels and warnings.
- * @param {HTMLElement|null} lengthLabel - Badge element that shows the segment length.
- * @param {HTMLElement|null} warningLabel - Note element for extra guidance.
- * @param {string} text - Current segment text.
- * @returns {object} Segment diagnostics used for additional aggregate warnings.
+ * Updates the segment length presentation through its controller.
+ * @param {HTMLElement|null} lengthLabel - Segment counter.
+ * @param {HTMLElement|null} warningLabel - Segment warning.
+ * @param {string} text - Segment text.
+ * @returns {object} Segment diagnostics.
  */
 function updateSegmentLengthPresentation(lengthLabel, warningLabel, text) {
-  const diagnostics = getSegmentLengthDiagnostics(text);
-  const warningText = buildSegmentLengthWarning(diagnostics);
-
-  if (lengthLabel) {
-    lengthLabel.textContent = formatSegmentLengthLabel(diagnostics);
-    lengthLabel.dataset.tone = diagnostics.exceedsLimit ? "error" : "neutral";
-  }
-
-  if (warningLabel) {
-    warningLabel.hidden = warningText.length === 0;
-    warningLabel.textContent = warningText;
-    warningLabel.dataset.tone = diagnostics.exceedsLimit ? "error" : "neutral";
-  }
-
-  return diagnostics;
+  return composerLengthPresentation.segment(lengthLabel, warningLabel, text);
 }
 
 /**
- * Updates the composer-wide note when one or more segments are risky in Bluesky counting.
+ * Updates the aggregate thread length warning.
  * @param {string[]} segments - Current thread segments.
- * @returns {void} No return value.
+ * @returns {void}
  */
 function updateComposerLengthWarning(segments) {
-  if (!composerLengthWarning) {
-    return;
-  }
-
-  const diagnosticsList = segments.map((segment) => getSegmentLengthDiagnostics(segment));
-  const overflowCount = diagnosticsList.filter((entry) => entry.exceedsLimit).length;
-  const nearComplexCount = diagnosticsList.filter((entry) => !entry.exceedsLimit && entry.isNearLimit && entry.hasComplexDifference).length;
-  const nearByteCount = diagnosticsList.filter((entry) => !entry.exceedsLimit && entry.isNearByteLimit).length;
-  const notes = [];
-
-  if (overflowCount > 0) {
-    notes.push(t("composerLengthWarningOverflow", { count: overflowCount }));
-  }
-
-  if (nearComplexCount > 0) {
-    notes.push(t("composerLengthWarningNearLimit", { count: nearComplexCount }));
-  }
-
-  if (nearByteCount > 0) {
-    notes.push(t("composerLengthWarningNearByteLimit", { count: nearByteCount }));
-  }
-
-  if (overflowCount > 0 || nearComplexCount > 0 || nearByteCount > 0) {
-    notes.push(t("composerLengthWarningAdvice"));
-  }
-
-  composerLengthWarning.hidden = notes.length === 0;
-  composerLengthWarning.dataset.tone = overflowCount > 0 ? "error" : "neutral";
-  composerLengthWarning.textContent = notes.join(" ");
+  composerLengthPresentation.thread(segments);
 }
 
 /**
@@ -30094,738 +25220,66 @@ function updateComposerLengthWarning(segments) {
  * @param {string} text - Current composer text.
  * @returns {string} Localized counter label for the composer header.
  */
-function formatComposerCharacterCount(text) {
-  const normalizedText = String(text || "");
-  const graphemeCount = countGraphemes(normalizedText);
-  return t("charCount", { count: graphemeCount });
-}
+function formatComposerCharacterCount(text) { return formatComposerCharacterCountFromModule(text, countGraphemes, t); }
 
-function reserveForCounters(segmentCount) {
-  const normalizedCount = Math.max(segmentCount, 1);
-  return getPostTextMetrics(`\n${normalizedCount}/${normalizedCount}`);
-}
-
-function reserveForThreadEmoji() {
-  return getPostTextMetrics("\n⤵️");
-}
-
-function reserveForThreadIntro() {
-  return getPostTextMetrics(`\n${getThreadIntroText()}`);
-}
-
-function reserveForRepeatedHashtags(selectedText, placementMode) {
-  if (!selectedText) {
-    return getPostTextMetrics("");
-  }
-
-  if (placementMode === "all-bottom") {
-    return getPostTextMetrics(`\n\n${selectedText}`);
-  }
-
-  return getPostTextMetrics(`\n${selectedText}`);
-}
-
-function splitChunksGreedy(chunks, limitFactory) {
-  let globalOffset = 0;
-  return chunks.flatMap((chunk) => {
-    const split = greedySplit(chunk, (chunkIndex) => limitFactory(globalOffset + chunkIndex));
-    globalOffset += split.length;
-    return split;
-  });
-}
-
-function decorateSegments(segments, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText) {
-  return segments.map((segment, segmentIndex) => {
-    let content = segment;
-    let suffix = "";
-    const isLastSegment = segmentIndex === segments.length - 1;
-    const isThread = segments.length > 1;
-    const hasRepeatedHashtags = selectedHashtagText && (repeatedHashtagMode === "all-top" || repeatedHashtagMode === "all-bottom");
-
-    if (hasRepeatedHashtags && repeatedHashtagMode === "all-top") {
-      content = `${selectedHashtagText}\n${content}`;
-    }
-
-    if (hasRepeatedHashtags && repeatedHashtagMode === "all-bottom") {
-      content = `${content}\n\n${selectedHashtagText}`;
-    }
-
-    if (isThread && withThreadIntro && segmentIndex === 0) {
-      suffix += `\n${getThreadIntroText()}`;
-    }
-
-    if (isThread && withThreadEmoji && !isLastSegment) {
-      suffix += "\n⤵️";
-    }
-
-    if (isThread && withCounters) {
-      suffix += `\n${segmentIndex + 1}/${segments.length}`;
-    }
-
-    if (withMarkerSpacing && suffix) {
-      suffix = `\n${suffix}`;
-    }
-
-    return `${content}${suffix}`;
-  });
-}
-
-function splitIntoSegments(text, withCounters, withThreadIntro, withThreadEmoji, withMarkerSpacing, repeatedHashtagMode, selectedHashtagText) {
-  return splitComposerIntoSegments(text, {
-    manualMarker: MANUAL_SPLIT_MARKER,
-    maxPostLength: MAX_POST_LENGTH,
-    maxPostUtf8Bytes: MAX_POST_UTF8_BYTES,
-    withCounters,
-    withThreadIntro,
-    withThreadEmoji,
-    withMarkerSpacing,
-    repeatedHashtagMode,
-    selectedHashtagText,
-  }, {
-    createPostTextLimit,
-    getPostTextMetrics,
-    reserveForCounters,
-    reserveForThreadEmoji,
-    reserveForThreadIntro,
-    reserveForRepeatedHashtags,
-    splitChunksGreedy,
-    decorateSegments(segments, options) {
-      return decorateSegments(
-        segments,
-        options.withCounters,
-        options.withThreadIntro,
-        options.withThreadEmoji,
-        options.withMarkerSpacing,
-        options.repeatedHashtagMode,
-        options.selectedHashtagText,
-      );
-    },
-  });
-}
-
-function greedySplit(text, limitFactory) {
-  const tokens = tokenizeText(text);
-  const segments = [];
-  let current = "";
-
-  for (const token of tokens) {
-    const chunkIndex = segments.length;
-    const rawLimit = limitFactory(chunkIndex);
-    const limit = createPostTextLimit(
-      Math.max(1, rawLimit.graphemeLimit),
-      Math.max(1, rawLimit.utf8ByteLimit),
-    );
-    const nextValue = current + token;
-
-    if (token === "\n") {
-      if (fitsPostTextLimit(nextValue, limit)) {
-        current = nextValue;
-      } else if (current) {
-        segments.push(trimSegment(current));
-        current = "";
-      }
-      continue;
-    }
-
-    if (/^[ \t]+$/.test(token)) {
-      if (current && fitsPostTextLimit(nextValue, limit)) {
-        current = nextValue;
-      }
-      continue;
-    }
-
-    if (!fitsPostTextLimit(token, limit)) {
-      if (current) {
-        segments.push(trimSegment(current));
-        current = "";
-      }
-
-      const slices = splitTokenByPostLimit(token, limitFactory, segments.length);
-      for (const slice of slices) {
-        segments.push(slice);
-      }
-      continue;
-    }
-
-    if (fitsPostTextLimit(nextValue, limit)) {
-      current = nextValue;
-      continue;
-    }
-
-    if (current) {
-      segments.push(trimSegment(current));
-    }
-    current = token;
-  }
-
-  if (current) {
-    segments.push(trimSegment(current));
-  }
-
-  return segments;
-}
 
 function createIconSvg(path) {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"></path></svg>`;
 }
 
+/**
+ * Renders segment images through the template-based Composer image module.
+ * @param {HTMLElement} container - Segment image container.
+ * @param {number} segmentIndex - Segment index.
+ * @returns {void}
+ */
 function renderSegmentImages(container, segmentIndex) {
-  container.innerHTML = "";
-  container.dataset.segmentIndex = String(segmentIndex);
-  const images = Array.isArray(segmentImages[segmentIndex]) ? segmentImages[segmentIndex] : [];
-
-  container.addEventListener("dragover", (event) => {
-    if (!segmentImageDragState && eventHasTransferFiles(event)) {
-      event.preventDefault();
-      container.closest(".segment-card")?.classList.add("is-file-drop-target");
-      return;
-    }
-    if (!segmentImageDragState) {
-      return;
-    }
-    event.preventDefault();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = "move";
-    }
-    clearSegmentImageDropMarkers();
-    container.classList.add("is-drop-target");
-  });
-
-  container.addEventListener("drop", (event) => {
-    if (!segmentImageDragState && eventHasTransferFiles(event)) {
-      event.preventDefault();
-      event.stopPropagation();
-      const files = getDroppedImageFiles(event);
-      clearSegmentImageDropMarkers();
-      if (files.length > 0) {
-        void handleSegmentImageSelection(segmentIndex, files);
-      }
-      return;
-    }
-    if (!segmentImageDragState) {
-      return;
-    }
-    event.preventDefault();
-    if (event.target.closest(".segment-image-card")) {
-      return;
-    }
-    moveSegmentImageToPosition(
-      segmentImageDragState.segmentIndex,
-      segmentImageDragState.imageIndex,
-      segmentIndex,
-      images.length,
-    );
-    clearSegmentImageDragState();
-  });
-  container.addEventListener("dragleave", (event) => {
-    const rect = container.getBoundingClientRect();
-    if (
-      event.clientX < rect.left ||
-      event.clientX > rect.right ||
-      event.clientY < rect.top ||
-      event.clientY > rect.bottom
-    ) {
-      container.closest(".segment-card")?.classList.remove("is-file-drop-target");
-    }
-  });
-
-  images.forEach((image, imageIndex) => {
-    const card = document.createElement("div");
-    card.className = "segment-image-card";
-    card.draggable = true;
-    card.dataset.segmentIndex = String(segmentIndex);
-    card.dataset.imageIndex = String(imageIndex);
-    const highlightOversizedImage = image.validation?.tooBig && !isImageAutoResizeEnabled();
-    if (highlightOversizedImage) {
-      card.classList.add("is-too-large");
-    }
-
-    card.addEventListener("dragstart", (event) => {
-      segmentImageDragState = { segmentIndex, imageIndex };
-      card.classList.add("is-dragging");
-      if (event.dataTransfer) {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", `${segmentIndex}:${imageIndex}`);
-      }
-    });
-    card.addEventListener("dragend", () => {
-      clearSegmentImageDragState();
-    });
-    card.addEventListener("dragover", (event) => {
-      if (!segmentImageDragState) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = "move";
-      }
-      const dropPosition = getSegmentImageDropPosition(event, card.getBoundingClientRect());
-      clearSegmentImageDropMarkers();
-      container.classList.add("is-drop-target");
-      card.classList.add(dropPosition === "after" ? "is-drop-after" : "is-drop-before");
-    });
-    card.addEventListener("drop", (event) => {
-      if (!segmentImageDragState) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      const dropPosition = getSegmentImageDropPosition(event, card.getBoundingClientRect());
-      moveSegmentImageToPosition(
-        segmentImageDragState.segmentIndex,
-        segmentImageDragState.imageIndex,
-        segmentIndex,
-        imageIndex + (dropPosition === "after" ? 1 : 0),
-      );
-      clearSegmentImageDragState();
-    });
-
-    const preview = document.createElement("div");
-    preview.className = "segment-image-preview";
-    const previewFrame = getImagePreviewFrameDimensions(image);
-    const isPortrait = previewFrame.height > previewFrame.width;
-    const previewBox = getContainedPreviewBox(
-      previewFrame.width,
-      previewFrame.height,
-      140,
-      140,
-    );
-    if (isPortrait) {
-      card.classList.add("is-portrait");
-      preview.classList.add("is-portrait");
-    }
-    preview.style.width = `${previewBox.width}px`;
-    preview.style.height = `${previewBox.height}px`;
-    preview.style.aspectRatio = `${previewFrame.width} / ${previewFrame.height}`;
-    preview.title = image.alt || t("altTextMissing");
-    preview.setAttribute("role", "button");
-    preview.setAttribute("tabindex", "0");
-    preview.setAttribute("aria-label", t("editImageButton"));
-    const canvas = document.createElement("canvas");
-    preview.appendChild(canvas);
-    void renderPreviewCanvas(image, canvas, {
-      cssWidth: previewBox.width,
-      cssHeight: previewBox.height,
-    });
-    preview.addEventListener("click", () => {
-      void openImageEditorDialog(segmentIndex, imageIndex);
-    });
-    preview.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        void openImageEditorDialog(segmentIndex, imageIndex);
-      }
-    });
-
-    const meta = document.createElement("div");
-    meta.className = "segment-image-meta";
-    const name = document.createElement("span");
-    name.textContent = image.name;
-    const altState = document.createElement("span");
-    altState.className = "segment-image-alt-state";
-    altState.textContent = image.alt ? t("altTextAdded") : t("altTextMissing");
-    if (!image.alt) {
-      altState.classList.add("is-missing-alt");
-    }
-    const originalSize = document.createElement("span");
-    originalSize.textContent = t("originalSizeLabel", {
-      size: formatImageSize(image.originalSizeBytes),
-    });
-    const exportSize = document.createElement("span");
-    exportSize.textContent = t("exportSizeLabel", {
-      size: formatImageSize(image.validation?.sizeBytes),
-    });
-    if (highlightOversizedImage) {
-      exportSize.classList.add("is-too-large");
-    }
-    const exportDimensions = document.createElement("span");
-    exportDimensions.textContent = t("exportDimensionsLabel", {
-      width: image.validation?.width || image.width || 0,
-      height: image.validation?.height || image.height || 0,
-    });
-    if (image.validation?.exceedsDimensions && !isImageAutoResizeEnabled()) {
-      exportDimensions.classList.add("is-too-large");
-    }
-    meta.append(name, altState, originalSize, exportSize, exportDimensions);
-
-    const tools = document.createElement("div");
-    tools.className = "segment-image-tools";
-
-    const toolConfigs = [
-      {
-        className: `segment-image-tool${imageIndex === 0 ? " is-disabled" : ""}`,
-        icon: "M15 6l-6 6 6 6-1.4 1.4L6.2 12l7.4-7.4z",
-        label: t("moveImageLeft"),
-        handler: () => moveSegmentImage(segmentIndex, imageIndex, -1),
-      },
-      {
-        className: `segment-image-tool${imageIndex === images.length - 1 ? " is-disabled" : ""}`,
-        icon: "M9 6l1.4-1.4 7.4 7.4-7.4 7.4L9 18l6-6z",
-        label: t("moveImageRight"),
-        handler: () => moveSegmentImage(segmentIndex, imageIndex, 1),
-      },
-      {
-        action: "alt",
-        className: `segment-image-tool${!image.alt ? " danger" : ""}`,
-        icon: "M4 16.75V20h3.25L18.4 8.84l-3.24-3.24L4 16.75zm14.71-9.04a1 1 0 0 0 0-1.42l-1-1a1 1 0 0 0-1.42 0l-.88.88 3.24 3.24.06-.06z",
-        label: t("editAltTextButton"),
-        handler: () => openAltTextDialog(segmentIndex, imageIndex),
-      },
-      {
-        className: `segment-image-tool${highlightOversizedImage ? " danger" : ""}`,
-        icon: "M3 5h18v14H3V5zm2 2v10h14V7H5zm2 8 2.5-3 2 2.5 3-4L19 15H7z",
-        label: t("editImageButton"),
-        handler: () => void openImageEditorDialog(segmentIndex, imageIndex),
-      },
-      {
-        className: "segment-image-tool danger",
-        icon: "M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z",
-        label: t("deleteImageButton"),
-        handler: () => deleteSegmentImage(segmentIndex, imageIndex),
-      },
-    ];
-
-    toolConfigs.forEach((config) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = config.className;
-      if (config.action) {
-        button.dataset.imageAction = config.action;
-      }
-      button.setAttribute("aria-label", config.label);
-      button.title = config.label;
-      button.innerHTML = createIconSvg(config.icon);
-      button.addEventListener("click", config.handler);
-      tools.appendChild(button);
-    });
-
-    card.append(preview, meta, tools);
-    container.appendChild(card);
+  let images = [];
+  if (Array.isArray(segmentImages[segmentIndex])) {
+    images = segmentImages[segmentIndex];
+  }
+  renderComposerSegmentImages(container, segmentIndex, images, {
+    template: document.querySelector("#composer-segment-image-template"),
+    autoResize: isImageAutoResizeEnabled(), translate: t,
+    getPreviewFrame: getImagePreviewFrameDimensions, getContainedBox: getContainedPreviewBox,
+    renderCanvas: renderPreviewCanvas, formatSize: formatImageSize,
+    actions: {
+      getDragState: () => segmentImageDragState,
+      setDragState: (state) => { segmentImageDragState = state; },
+      hasFiles: eventHasTransferFiles, getFiles: getDroppedImageFiles,
+      selectFiles: handleSegmentImageSelection,
+      clearMarkers: clearSegmentImageDropMarkers, clearDragState: clearSegmentImageDragState,
+      moveTo: moveSegmentImageToPosition, getDropPosition: getSegmentImageDropPosition,
+      editImage: openImageEditorDialog, editAlt: openAltTextDialog,
+      move: moveSegmentImage, remove: deleteSegmentImage,
+    },
   });
 }
 
-function renderSegments(options = {}) {
-  const {
-    preserveOverrides = Boolean(segmentOverrides),
-    preserveView = true,
-    animate = false,
-  } = options;
-  const previousScrollTop = preserveView && segmentsPane ? segmentsPane.scrollTop : 0;
-  segmentMentionUpdateVersion += 1;
-  const currentMentionVersion = segmentMentionUpdateVersion;
-  const text = sourceText.value;
-  const useCounters = counterToggle.checked;
-  appendThreadIntro = threadIntroToggle.checked;
-  appendThreadEmoji = threadEmojiToggle.checked;
-  addMarkerSpacing = markerSpacingToggle.checked;
-  currentComposedText = buildComposedText(text);
-  const selectedHashtagText = getSelectedHashtagText();
-  const generatedSegments = currentComposedText.trim()
-    ? splitIntoSegments(
-      currentComposedText,
-      useCounters,
-      appendThreadIntro,
-      appendThreadEmoji,
-      addMarkerSpacing,
-      hashtagPlacement,
-      selectedHashtagText,
-    )
-    : [];
-  if (!preserveOverrides) {
-    composerMentionSourceSyncBySegment.clear();
-  }
-  activeSegments = preserveOverrides ? (normalizeSegmentOverrides(segmentOverrides) || generatedSegments) : generatedSegments;
-  segmentOverrides = preserveOverrides ? normalizeSegmentOverrides(activeSegments) : null;
-  syncSegmentImages(activeSegments.length);
-  syncSegmentLinkCards(activeSegments.length);
+/**
+ * Rebuilds the Composer sections through the render controller.
+ * @param {object} options - Override, scroll and animation settings.
+ * @returns {void}
+ */
+function renderSegments(options = {}) { composerSegmentRenderer.render(options); }
 
-  characterCount.textContent = formatComposerCharacterCount(text);
-
-  if (!text.trim()) {
-    segmentSummary.textContent = t("summarySingle");
-  } else if (activeSegments.length > 1) {
-    segmentSummary.textContent = t("summaryMultiple", { count: activeSegments.length });
-  } else {
-    segmentSummary.textContent = t("summarySingle");
-  }
-
-  segmentsPane.hidden = activeSegments.length === 0;
-  updateComposerLengthWarning(activeSegments);
-  segmentsList.innerHTML = "";
-
-  activeSegments.forEach((segment, index) => {
-    const segmentContext = createComposerSegmentRenderContext(segmentTemplate, document);
-    const fragment = segmentContext.fragment;
-    const card = segmentContext.card;
-    const indexLabel = segmentContext.indexLabel;
-    const lengthLabel = segmentContext.lengthLabel;
-    const warningLabel = segmentContext.warningLabel;
-    const textarea = segmentContext.textarea;
-    const mentionContainer = segmentContext.mentionContainer;
-    const addImagesButton = segmentContext.addImagesButton;
-    const linkCardButton = segmentContext.linkCardButton;
-    const linkCardManualButton = segmentContext.linkCardManualButton;
-    const linkCardManageButton = segmentContext.linkCardManageButton;
-    const linkCardContainer = segmentContext.linkCardContainer;
-    const imageContainer = segmentContext.imageContainer;
-    const segmentRenderState = buildComposerSegmentRenderState(
-      segment,
-      index,
-      segmentImages[index],
-      normalizeLinkCard(segmentLinkCards[index]),
-      getFirstHttpUrl(segment),
-      MAX_IMAGES_PER_SEGMENT,
-    );
-    const existingImages = segmentRenderState.existingImages;
-    const remainingSlots = segmentRenderState.remainingImageSlots;
-    const input = segmentContext.fileInput;
-    input.multiple = remainingSlots > 1;
-    input.className = "is-hidden";
-
-    if (animate) {
-      card.classList.add("is-entering");
-      card.style.animationDelay = `${index * 55}ms`;
-    } else {
-      card.classList.remove("is-entering");
-      card.style.animationDelay = "0ms";
-    }
-    indexLabel.textContent = t("segmentPart", { index: index + 1 });
-    textarea.value = segment;
-    updateSegmentLengthPresentation(lengthLabel, warningLabel, segment);
-    addImagesButton.textContent = t("addImagesButton");
-    addImagesButton.hidden = existingImages.length >= MAX_IMAGES_PER_SEGMENT || Boolean(normalizeLinkCard(segmentLinkCards[index]));
-    bindComposerSegmentInteractions(segmentContext, {
-      index,
-      activeSegments,
-      segmentImageDragState: () => segmentImageDragState,
-      eventHasTransferFiles,
-      getDroppedImageFiles,
-      handleSegmentImageSelection,
-      updateSegmentLengthPresentation,
-      updateComposerLengthWarning,
-      scheduleSegmentMentionDisplayUpdate,
-      normalizeSegmentOverrides: (segments) => {
-        segmentOverrides = normalizeSegmentOverrides(segments);
-        return segmentOverrides;
-      },
-      setComposerLocked,
-      setComposerPosted,
-      updatePublishAvailability,
-      queueDraftSave,
-      autoSizeTextarea,
-    });
-    if (index === 0) {
-      const imageHelpButton = document.createElement("button");
-      imageHelpButton.type = "button";
-      imageHelpButton.className = "help-trigger segment-image-help-trigger";
-      imageHelpButton.textContent = "?";
-      imageHelpButton.setAttribute("aria-label", t("contextHelpButtonLabel"));
-      imageHelpButton.setAttribute("title", t("contextHelpButtonLabel"));
-      imageHelpButton.addEventListener("click", () => {
-        openInlineHelpTopic("segment_images");
-      });
-      addImagesButton.insertAdjacentElement("afterend", imageHelpButton);
-    }
-    bindComposerSegmentLinkCardInteractions(segmentContext, segmentRenderState, {
-      translate: t,
-      openLinkCardDialog,
-      canCreateLinkCards: canCreateLinkCardsWithCurrentProvider(),
-      linkCardTargetEntries: getLinkCardTargetEntries(index),
-    });
-    renderSegmentLinkCard(linkCardContainer, index);
-    renderSegmentImages(imageContainer, index);
-    void updateSegmentMentionDisplay(index, mentionContainer, segment, currentMentionVersion);
-
-    segmentsList.appendChild(fragment);
-    autoSizeTextarea(segmentsList.lastElementChild.querySelector(".segment-text"));
-  });
-
-  if (preserveView && segmentsPane) {
-    segmentsPane.scrollTop = previousScrollTop;
-  }
-  scheduleSegmentTextareaResize();
-  if (preserveView && segmentsPane) {
-    requestAnimationFrame(() => {
-      if (segmentsPane) {
-        segmentsPane.scrollTop = previousScrollTop;
-      }
-    });
-  }
-  updatePublishAvailability();
-}
-
+/**
+ * Delegates debounced segment rendering to the Composer scheduler.
+ * @param {number} delayMs - Render debounce duration.
+ * @returns {void}
+ */
 function scheduleComposerSegmentRender(delayMs = 0) {
-  window.clearTimeout(composerSegmentRenderTimer);
-  if (composerSegmentRenderFrame) {
-    cancelAnimationFrame(composerSegmentRenderFrame);
-  }
-  const render = () => {
-    composerSegmentRenderTimer = 0;
-    composerSegmentRenderFrame = requestAnimationFrame(() => {
-      composerSegmentRenderFrame = 0;
-      renderSegments({
-        preserveOverrides: false,
-        preserveView: true,
-        animate: false,
-      });
-    });
-  };
-  if (delayMs > 0) {
-    composerSegmentRenderTimer = window.setTimeout(render, delayMs);
-    return;
-  }
-  render();
+  composerRenderScheduler.render(delayMs);
 }
 
-async function hydrateAppState() {
-  try {
-    const browserLocale = detectBrowserLocale();
-    const [state, savedArchiveSession, savedArchiveCatalog, savedDmPartnerCache, savedAccountAvatarCache] = await Promise.all([
-      sendToServiceWorker("GET_APP_STATE", { browserLocale }),
-      sendToServiceWorker("GET_ARCHIVE_SESSION", {}, { timeoutMs: 30000 }).catch(() => null),
-      sendToServiceWorker("GET_ARCHIVE_CATALOG", {}, { timeoutMs: 120000 }).catch(() => null),
-      sendToServiceWorker("GET_DM_PARTNER_CACHE", {}, { timeoutMs: 120000 }).catch(() => null),
-      sendToServiceWorker("GET_ACCOUNT_AVATAR_CACHE", {}, { timeoutMs: 120000 }).catch(() => null),
-    ]);
-    localePreference = state.localePreference || "auto";
-    tipsVisible = state.tipsVisible !== false;
-    altTextRequired = state.altTextRequired !== false;
-    imageAutoResizeMode = normalizeImageAutoResizeMode(state.imageAutoResizeMode);
-    archiveExpertMode = state.archiveExpertMode === true;
-    const storedAppearancePreferences = getStoredAppearancePreferences();
-    if (storedAppearancePreferences.hasThemeMode) {
-      themeMode = storedAppearancePreferences.themeMode;
-    } else if (state.themeMode === "dark") {
-      themeMode = "dark";
-    } else if (state.themeMode === "light") {
-      themeMode = "light";
-    } else {
-      themeMode = storedAppearancePreferences.themeMode;
-    }
-    if (storedAppearancePreferences.hasCompactMode) {
-      compactMode = storedAppearancePreferences.compactMode;
-    } else if (state.compactMode === true) {
-      compactMode = true;
-    } else if (state.compactMode === false) {
-      compactMode = false;
-    } else {
-      compactMode = storedAppearancePreferences.compactMode;
-    }
-    sidebarCollapsedDesktop = state.sidebarCollapsedDesktop === true;
-    const needsDesktopLayoutMigration = state.desktopLayoutVersion !== DESKTOP_LAYOUT_STATE_VERSION;
-    ({
-      sidebarWidthDesktop,
-      composerWidthDesktop,
-    } = normalizeStoredDesktopLayout(
-      state.sidebarWidthDesktop,
-      state.composerWidthDesktop,
-      state.desktopLayoutVersion,
-    ));
-    hashtags = normalizeHashtagEntries(state.hashtags);
-    selectedHashtags = normalizeSelectedHashtagEntries(state.selectedHashtags, hashtags);
-    searchSelectedHashtags = normalizeSelectedHashtagEntries(state.searchSelectedHashtags, hashtags);
-    const persistedSearchPreferences = normalizeSearchPreferencesForStorage(state.searchPreferences || {});
-    applySearchPreferences(persistedSearchPreferences);
-    restorePersistedSearchResultState(state.searchResultState, persistedSearchPreferences);
-    renderSearchResults();
-    restoreSearchStatusFromResultState();
-    hashtagPlacement = normalizeHashtagPlacement(state.hashtagPlacement);
-    segmentImages = normalizeSegmentImages(state.segmentImages);
-    segmentLinkCards = normalizeSegmentLinkCards(state.segmentLinkCards);
-    segmentOverrides = normalizeSegmentOverrides(state.segmentOverrides);
-    const pendingComposerReplyTargetFromUrl = consumeComposerReplyTargetFromUrl();
-    const pendingComposerReplyTarget = pendingComposerReplyTargetFromUrl || consumePendingComposerReplyTarget();
-    composerReplyTarget = normalizeReplyTarget(state.replyTarget);
-    if (pendingComposerReplyTarget) {
-      composerReplyTarget = pendingComposerReplyTarget;
-    }
-    restorePersistedAnalysisState(state.analysisState);
-    selectedPostLanguages = normalizePostLanguageTags(state.postLanguages);
-    appendThreadIntro = state.appendThreadIntro === true;
-    appendThreadEmoji = state.appendThreadEmoji === true;
-    addMarkerSpacing = state.addMarkerSpacing === true;
-    applyPostInteractionSettings(state.postInteraction || {});
-    linkCardEndpointInput.value = state.linkCardProxy?.endpoint || "";
-    linkCardSecretInput.value = state.linkCardProxy?.secret || "";
-    linkCardProvider = normalizeLinkCardProvider(state.linkCardProvider);
-    linkCardMicrolinkUsage = normalizeMicrolinkUsage(state.linkCardMicrolinkUsage);
-    syncLinkCardProviderUi();
-    if (imageAutoResizeSelect) {
-      imageAutoResizeSelect.value = imageAutoResizeMode;
-    }
-    if (archiveExpertModeToggle) {
-      archiveExpertModeToggle.checked = archiveExpertMode;
-    }
-    setComposerLocked(Boolean(segmentOverrides));
-    postingHistory = normalizePostingHistory(state.postingHistory);
-    threadExplorerFavorites = normalizeThreadExplorerFavorites(state.threadExplorerFavorites);
-    restorePersistedThreadExplorerState(state.threadExplorerState || {});
-    savedSearches = normalizeSavedSearches(state.savedSearches);
-    archiveSession = savedArchiveSession || null;
-    archiveCatalog = savedArchiveCatalog ? normalizeImportedArchiveCatalog(savedArchiveCatalog) : null;
-    currentLocale = localePreference === "auto"
-      ? (browserLocale || DEFAULT_LOCALE)
-      : state.locale || browserLocale || DEFAULT_LOCALE;
-    savedAccounts = Array.isArray(state.accounts) ? state.accounts : [];
-    applyAccountAvatarCache(savedAccountAvatarCache || { assets: state.accountAvatarAssets || [] });
-    identifierField.value = state.identifier || "";
-    sourceText.value = state.draft || "";
-    authAccount = state.handle || state.identifier || null;
-    authAccountDid = state.did || "";
-    authAccountService = state.service || LOGIN_SERVICE_PRESETS["bsky.social"];
-    authAccountWebApp = state.webApp || resolvePostWebBase(authAccountService);
-    applyDmPartnerCache(savedDmPartnerCache);
-    passwordField.value = "";
-    applyLoginServiceSelection(authAccountService);
-    hashtagPlacementSelect.value = hashtagPlacement;
-    threadIntroToggle.checked = appendThreadIntro;
-    threadEmojiToggle.checked = appendThreadEmoji;
-    markerSpacingToggle.checked = addMarkerSpacing;
-    applyArchivePreferences(state.archivePreferences || {});
-    syncArchiveTransientNoticeFromCatalog();
-    applyDesktopLayoutState();
-    applySidebarState();
-    applyHashtagPaneContext();
-    applyTranslations();
-    persistAppearancePreferences();
-    if (segmentImages.some((images) => (images || []).length > 0)) {
-      scheduleImageValidation();
-    }
-    if (needsDesktopLayoutMigration) {
-      await persistSettings();
-    }
-    appStateHydrated = true;
-    restorePreferredWorkspaceIfPossible();
-    window.setTimeout(showSettingsBackupReminderIfNeeded, 0);
-  } catch (error) {
-    console.error(error);
-    setStatus(error.message, "error");
-    appStateHydrated = true;
-    restorePreferredWorkspaceIfPossible();
-  }
-}
+/** Restores persisted application domains. @returns {Promise<void>} Hydration completion. */
+async function hydrateAppState() { await applicationHydration.hydrate(); }
 
-function queueDraftSave() {
-  window.clearTimeout(draftSaveTimer);
-  draftSaveTimer = window.setTimeout(async () => {
-    const payload = {
-      draft: sourceText.value,
-      segmentImages,
-      segmentLinkCards,
-      segmentOverrides,
-      replyTarget: composerReplyTarget,
-    };
-    try {
-      await draftSaveQueue.enqueue(() => {
-        return sendToServiceWorker("SAVE_DRAFT", payload, { timeoutMs: 120000 });
-      });
-    } catch (error) {
-      console.error(error);
-      setStatus(error.message, "error");
-    }
-  }, 250);
-}
+/**
+ * Schedules persistence of the current Composer document.
+ * @returns {void}
+ */
+function queueDraftSave() { composerDocument.scheduleDraft(); }
 
 async function persistLocale(locale) {
   localePreference = locale;
@@ -30835,180 +25289,26 @@ async function persistLocale(locale) {
   await persistSettings();
 }
 
-bindAuthenticationEvents({
-  addAccountButton,
-  loginDialogCloseTop,
-  loginDialogCancelButton,
-  loginDialog,
-  window,
-  loginForm,
-}, {
-  addAccountClick: () => {
-    openLoginDialog({
-      mode: "add",
-      service: authAccountService || LOGIN_SERVICE_PRESETS["bsky.social"],
-    });
-  },
-  closeClick: closeLoginDialog,
-  cancelClick: closeLoginDialog,
-  cancelEvent: (event) => {
-    event.preventDefault();
-    closeLoginDialog();
-  },
-  online: () => {
-    appOnline = true;
-    renderAccountSwitcher();
-    updateStatusForAuth();
-  },
-  offline: () => {
-    appOnline = false;
-    renderAccountSwitcher();
-    updateStatusForAuth();
-  },
-  submit: async (event) => {
-  event.preventDefault();
 
-  try {
-    setBusy(loginButton, true, t("loginBusy"), t("loginButton"));
-    const identifier = identifierField.value.trim();
-    const appPassword = passwordField.value.trim();
-    const service = getSelectedLoginService();
-
-    const result = await sendToServiceWorker("LOGIN", {
-      identifier,
-      appPassword,
-      service,
-      webApp: serverPresetField.value === "mu.social" ? LOGIN_SERVICE_PRESETS["mu.social"] : undefined,
-    });
-
-    passwordField.value = "";
-    authAccount = result.handle || result.identifier;
-    authAccountDid = result.did || "";
-    authAccountService = result.service || service;
-    authAccountWebApp = result.webApp || resolvePostWebBase(service);
-    savedAccounts = Array.isArray(result.accounts) ? result.accounts : savedAccounts;
-    await restoreAccountAvatarCache();
-    identifierField.value = result.identifier || identifier;
-    applyLoginServiceSelection(authAccountService);
-    closeLoginDialog();
-    updateStatusForAuth();
-  } catch (error) {
-    const message = localizeLoginErrorMessage(error);
-    const isExpectedLoginError = message !== (error?.message || "");
-    if (!isExpectedLoginError) {
-      console.error(error);
-    }
-    setLoginDialogNote(message, "error");
-    setStatus(message, "error");
-  } finally {
-    setBusy(loginButton, false, t("loginBusy"), t("loginButton"));
-  }
-});
-
-publishButton.addEventListener("click", async () => {
-  const baseText = sourceText.value.trim();
-
-  if (!baseText) {
-    setStatus(t("statusNeedText"), "error");
-    return;
-  }
-
-  if (countGraphemes(sourceText.value) > MAX_COMPOSER_GRAPHEME_LENGTH) {
-    updateComposerInputWarning(false);
-    setStatus(t("composerTextTooLong", { count: getComposerLimitLabel() }), "error");
-    return;
-  }
-
-  const segments = getSegmentPayloads();
-
-  if (segments.some((entry) => !entry.text)) {
-    setStatus(t("statusEmptySegments"), "error");
-    return;
-  }
-
-  if (segments.some((entry) => {
-    const metrics = getPostTextMetrics(entry.text);
-    return metrics.graphemeCount > MAX_POST_LENGTH || metrics.utf8ByteCount > MAX_POST_UTF8_BYTES;
-  })) {
-    setStatus(t("statusSegmentTooLong"), "error");
-    return;
-  }
-
-  if (altTextRequired && segments.some((entry) => entry.images.some((image) => !String(image.alt || "").trim()))) {
-    setStatus(t("statusAltTextRequired"), "error");
-    return;
-  }
-
-  if (!isImageAutoResizeEnabled() && segments.some((entry) => entry.images.some((image) => image.validation?.tooBig))) {
-    setStatus(t("statusImageTooLarge"), "error");
-    showErrorDialog(t("statusImageTooLarge"));
-    return;
-  }
-
-  if (!navigator.onLine) {
-    setStatus(t("statusOfflineBeforePublish"), "error");
-    showErrorDialog(t("statusOfflineBeforePublish"));
-    return;
-  }
-
-  if (selectedHashtags.length === 0) {
-    const continueWithoutHashtag = await openConfirmDialog({
-      title: t("publishNoHashtagTitle"),
-      message: t("publishNoHashtagText"),
-      confirmLabel: t("confirmYes"),
-      cancelLabel: t("cancelButton"),
-    });
-    if (!continueWithoutHashtag) {
-      return;
-    }
-  }
-
-  if (composerReplyTarget?.mode === "thread") {
-    const continueThread = await openConfirmDialog({
-      title: t("publishConfirmThreadContinuationTitle"),
-      message: t("publishConfirmThreadContinuationText"),
-      confirmLabel: t("confirmYes"),
-      cancelLabel: t("cancelButton"),
-    });
-    if (!continueThread) {
-      return;
-    }
-  }
-
-  if (composerReplyTarget?.mode === "post") {
-    const replyConfirmed = await openConfirmDialog({
-      title: t("publishConfirmReplyTargetTitle"),
-      message: t("publishConfirmReplyTargetText", {
-        target: getReplyTargetDisplayName() || "?",
-      }),
-      confirmLabel: t("confirmYes"),
-      cancelLabel: t("cancelButton"),
-      preview: {
-        avatar: composerReplyTarget.targetAccount.avatar,
-        name: getReplyTargetDisplayName(),
-        handle: composerReplyTarget.targetAccount.handle,
-      },
-    });
-    if (!replyConfirmed) {
-      return;
-    }
-  }
-
-  const publishAccount = authAccount || identifierField.value.trim();
-  const confirmed = await openConfirmDialog({
-    title: t("publishConfirmTitle"),
-    message: t("publishConfirmText", {
-      account: publishAccount || "?",
-      target: getPostTargetName(),
-    }),
-    confirmLabel: t("confirmYes"),
-    cancelLabel: t("cancelButton"),
-  });
-  if (!confirmed) {
-    return;
-  }
-
-  await runComposerPublishWorkflow({
+const composerPublishController = createComposerPublishController({
+  translate: t, getLimitLabel: getComposerLimitLabel, updateInputWarning: updateComposerInputWarning,
+  setStatus, showError: showErrorDialog, showProgress: showProgressDialog,
+  validate: () => validateComposerPublishInput({
+    sourceText: sourceText.value,
+    countGraphemes, composerLimit: MAX_COMPOSER_GRAPHEME_LENGTH,
+    getSegments: getSegmentPayloads, getMetrics: getPostTextMetrics,
+    postLimit: MAX_POST_LENGTH, byteLimit: MAX_POST_UTF8_BYTES,
+    altTextRequired, autoResize: isImageAutoResizeEnabled(), online: navigator.onLine,
+  }),
+  getConfirmationOptions: () => ({
+    translate: t, confirm: openConfirmDialog,
+    hasHashtags: () => selectedHashtags.length > 0,
+    getReplyTarget: () => composerReplyTarget,
+    getReplyTargetName: getReplyTargetDisplayName,
+    getAccount: () => authAccount || identifierField.value.trim(),
+    getPostTargetName,
+  }),
+  getWorkflowOptions: (segments) => ({
     setBusy: (busy) => setBusy(publishButton, busy, getPublishBusyLabel(), getPublishButtonLabel()),
     showProgress: (title, message) => showProgressDialog(title, message),
     hideProgress: hideProgressDialog,
@@ -31024,56 +25324,25 @@ publishButton.addEventListener("click", async () => {
       maxDimension: IMAGE_MAX_DIMENSION,
       linkCardImageConflictMessage: t("linkCardImageConflictPublish"),
       imageTooLargeMessage: t("statusImageTooLarge"),
-      onProgress(progress) {
-        if (progress.type === "segment") {
-          showProgressDialog(t("progressTitle"), t("progressPreparingSegment", { index: progress.segmentIndex + 1, count: progress.segmentCount }));
-        } else {
-          showProgressDialog(t("progressTitle"), t("progressPreparingImage", { image: progress.imageIndex + 1, imageCount: progress.imageCount, index: progress.segmentIndex + 1 }));
-        }
-      },
+      onProgress: (progress) => composerPublishController.preparationProgress(progress),
       onTooLarge() {
         renderSegments({ preserveOverrides: true });
       },
     }),
-    publish: (preparedSegments) => requestThreadPublish(sendToServiceWorker, {
-      segments: preparedSegments,
+    publish: (preparedSegments) => requestThreadPublish(sendToServiceWorker, buildComposerPublishPayload(preparedSegments, {
       langs: getNormalizedPostLanguagesOrDefault(),
       postInteraction: getCurrentPostInteractionSettings(),
-      replyTarget: composerReplyTarget
-        ? {
-            mode: composerReplyTarget.mode,
-            replyRoot: composerReplyTarget.replyRoot,
-            replyParent: composerReplyTarget.replyParent,
-          }
-        : null,
-    }, {
+      replyTarget: composerReplyTarget,
+    }), {
       onProgress(progress) {
         showProgressDialog(t("progressTitle"), progress.message || t("progressUploading"));
       },
     }),
-    onSuccess: async (result, preparedSegments) => {
-      lastPublishRateLimit = normalizePublishRateLimit(result.rateLimit);
-      await recordPublishedThread(result, preparedSegments);
-      clearComposerReplyTarget();
-      setComposerPosted(true);
-      queueDraftSave();
-      if (result.posts.length === 1) {
-        setStatus(t("statusPublishedOne"));
-      } else {
-        setStatus(t("statusPublishedMany", { count: result.posts.length }));
-      }
-      showPublishResult(result);
-    },
-    onError: async (error) => {
-    console.error(error);
-    lastPublishRateLimit = normalizePublishRateLimit(error?.details?.rateLimit);
-    const message = buildPublishErrorMessage(error);
-    setStatus(message, "error");
-    showErrorDialog(message);
-    },
-  });
-  },
+    onSuccess: composerPublishResults.success,
+    onError: composerPublishResults.failure,
+  }),
 });
+publishButton.addEventListener("click", composerPublishController.click);
 
 bindComposerCoreEvents({
   sourceText,
@@ -31087,103 +25356,10 @@ bindComposerCoreEvents({
   replyAllowMentionedInput,
   quotePostsToggle,
 }, {
-  sourceInput: () => {
-    if (composerInputEventSuppressed) {
-      composerInputEventSuppressed = false;
-      return;
-    }
-    const showTruncationWarning = composerInputWarningPendingTruncation;
-    composerInputWarningPendingTruncation = false;
-    handleComposerTextInput(showTruncationWarning);
-  },
-  sourceBeforeInput: (event) => {
-    if (event.inputType !== "insertFromPaste" && event.inputType !== "insertFromDrop") {
-      return;
-    }
-    const insertedText = event.dataTransfer?.getData("text/plain") || event.data || "";
-    if (typeof insertedText !== "string") {
-      return;
-    }
-    event.preventDefault();
-    insertTextIntoComposer(insertedText, true);
-  },
-  sourcePaste: (event) => {
-    const pastedText = event.clipboardData?.getData("text/plain");
-    if (typeof pastedText !== "string") {
-      return;
-    }
-    event.preventDefault();
-    insertTextIntoComposer(pastedText, true);
-  },
-  counterChange: () => {
-    segmentOverrides = null;
-    setComposerLocked(false);
-    setComposerPosted(false);
-    renderSegments({ preserveOverrides: false });
-    renderReplyTargetCard();
-    renderPostLanguageSummary();
-    void persistSettings();
-    queueDraftSave();
-  },
-  threadIntroChange: () => {
-    appendThreadIntro = threadIntroToggle.checked;
-    segmentOverrides = null;
-    setComposerLocked(false);
-    setComposerPosted(false);
-    renderSegments({ preserveOverrides: false });
-    renderPostLanguageSummary();
-    void persistSettings();
-    queueDraftSave();
-  },
-  threadEmojiChange: () => {
-    appendThreadEmoji = threadEmojiToggle.checked;
-    segmentOverrides = null;
-    setComposerLocked(false);
-    setComposerPosted(false);
-    renderSegments({ preserveOverrides: false });
-    renderPostLanguageSummary();
-    void persistSettings();
-    queueDraftSave();
-  },
-  markerSpacingChange: () => {
-    addMarkerSpacing = markerSpacingToggle.checked;
-    segmentOverrides = null;
-    setComposerLocked(false);
-    setComposerPosted(false);
-    renderSegments({ preserveOverrides: false });
-    renderPostLanguageSummary();
-    void persistSettings();
-    queueDraftSave();
-  },
-  replyModeChange: async (event) => {
-    if (!event.currentTarget.checked) {
-      return;
-    }
-    replyMode = event.currentTarget.value;
-    renderPostInteractionControls();
-    renderPostLanguageSummary();
-    await persistSettings();
-  },
-  replyAllowFollowersChange: async () => {
-    replyAllowFollowers = replyAllowFollowersInput.checked;
-    renderPostLanguageSummary();
-    await persistSettings();
-  },
-  replyAllowFollowingChange: async () => {
-    replyAllowFollowing = replyAllowFollowingInput.checked;
-    renderPostLanguageSummary();
-    await persistSettings();
-  },
-  replyAllowMentionedChange: async () => {
-    replyAllowMentioned = replyAllowMentionedInput.checked;
-    renderPostLanguageSummary();
-    await persistSettings();
-  },
-  quotePostsChange: async () => {
-    quotePostsAllowed = quotePostsToggle.checked;
-    renderPostLanguageSummary();
-    await persistSettings();
-  },
+  sourceInput: composerInputEvents.input,
+  sourceBeforeInput: composerInputEvents.beforeInput,
+  sourcePaste: composerInputEvents.paste,
+  ...composerPostSettings.handlers,
 });
 
 enableAutoAccountPicker(searchActorInput, t("searchActorLabel"));
@@ -31200,63 +25376,18 @@ enableAutoAccountPicker(dmContactSearchInput, t("dmContactSearchLabel"), {
   noteKey: "accountPickerDialogDmNote",
   onSelect: applyDmContactPickerSelection,
 });
-bindApplicationEvents(sidebarToggleButton, [{ type: "click", handler: async () => {
-  sidebarCollapsedDesktop = !sidebarCollapsedDesktop;
-  applySidebarState();
-  await persistSettings();
-} }]);
-bindApplicationEvents(sidebarResizeHandle, [{ type: "pointerdown", handler: (event) => {
-  event.preventDefault();
-  startDesktopColumnResize("sidebar");
-} }]);
-bindApplicationEvents(composerResizeHandle, [{ type: "pointerdown", handler: (event) => {
-  event.preventDefault();
-  startDesktopColumnResize("composer");
-} }]);
-bindApplicationEvents(DESKTOP_LAYOUT_MEDIA, [{ type: "change", handler: () => {
-  applyDesktopLayoutState();
-  applySidebarState();
-} }]);
 
-serverPresetField.addEventListener("change", () => {
+bindComposerCoreEvents({
+  serverPresetField,
+  clearButton,
+}, {
+  serverPresetChange: () => {
   customServerWrap.hidden = serverPresetField.value !== "custom";
   if (serverPresetField.value !== "custom") {
     customServerField.value = "";
   }
-});
-
-clearButton.addEventListener("click", async () => {
-  const confirmed = await openConfirmDialog({
-    title: t("clearTextConfirmTitle"),
-    message: t("clearTextConfirmText"),
-    confirmLabel: t("confirmYes"),
-    cancelLabel: t("confirmNo"),
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
-  sourceText.value = "";
-  activeSegments = [];
-  segmentImages = [];
-  segmentLinkCards = [];
-  segmentOverrides = null;
-  clearComposerReplyTarget({ render: false });
-  setComposerLocked(false);
-  setComposerPosted(false);
-  renderSegments({ preserveOverrides: false });
-  renderReplyTargetCard();
-  publishButton.textContent = getPublishButtonLabel();
-
-  try {
-    await sendToServiceWorker("SAVE_DRAFT", { draft: "", segmentImages: [], segmentLinkCards: [], segmentOverrides: null, replyTarget: null }, { timeoutMs: 120000 });
-    await persistSettings();
-    setStatus(t("clearConfirm"));
-  } catch (error) {
-    console.error(error);
-    setStatus(error.message, "error");
-  }
+  },
+  clearClick: composerDocument.handlers.clear,
 });
 
 bindApplicationEvents(settingsButton, [{ type: "click", handler: () => {
@@ -32246,63 +26377,25 @@ async function runArchiveCatalogExport(button, labelKey, errorKey, exportAction)
   }
 }
 
+/** Resolves and commits a reply target. @param {string} url - Post URL. @param {string} mode - Target mode. @returns {Promise<object|null>} */
 async function resolveComposerReplyTarget(url, mode = "post") {
-  const requestToken = ++replyTargetRequestToken;
-  const target = normalizeReplyTarget(await requestReplyTarget(sendToServiceWorker, url, mode));
-  if (requestToken !== replyTargetRequestToken) {
-    return null;
-  }
-  let nextTarget = target;
-  if (isOwnThreadReplyChoiceTarget(target)) {
-    const pointsToThreadRoot = target.targetPost?.uri && target.targetPost.uri === target.rootPost?.uri;
-    const chosenMode = await openConfirmDialog({
-      title: t("replyTargetOwnThreadChoiceTitle"),
-      message: pointsToThreadRoot
-        ? t("replyTargetOwnThreadChoiceRootText")
-        : t("replyTargetOwnThreadChoiceMiddleText"),
-      confirmLabel: t("publishButtonThreadContinuation"),
-      cancelLabel: t("publishButtonReplyTarget"),
-      confirmValue: "thread",
-      cancelValue: "post",
-      dismissValue: null,
-      preview: {
-        avatar: target.rootAccount.avatar,
-        name: getReplyTargetDisplayName(target),
-        handle: target.rootAccount.handle,
-      },
-    });
-    if (chosenMode === null) {
-      return null;
-    }
-    if (requestToken !== replyTargetRequestToken) {
-      return null;
-    }
-    nextTarget = chosenMode === "thread"
-      ? buildThreadContinuationTarget(target)
-      : target;
-  }
-  if (requestToken !== replyTargetRequestToken) {
-    return null;
-  }
-  composerReplyTarget = nextTarget;
-  renderReplyTargetCard();
-  publishButton.textContent = getPublishButtonLabel();
-  updatePublishAvailability();
-  queueDraftSave();
-  return composerReplyTarget;
+  return await composerReplyController.resolve(url, mode);
 }
 
-if (postEditCheckUrlInput) {
-  postEditCheckUrlInput.addEventListener("keydown", (event) => {
+bindPostEditCheckDialogEvents({
+  urlInput: postEditCheckUrlInput,
+  submitButton: postEditCheckSubmitButton,
+  closeTopButton: postEditCheckCloseTop,
+  closeButton: postEditCheckCloseButton,
+  dialog: postEditCheckDialog,
+}, {
+  urlKeydown: (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
       postEditCheckSubmitButton?.click();
     }
-  });
-}
-
-if (postEditCheckSubmitButton) {
-  postEditCheckSubmitButton.addEventListener("click", async () => {
+  },
+  submitClick: async () => {
     try {
       setBusy(postEditCheckSubmitButton, true, t("postEditCheckBusy"), t("postEditCheckButton"));
       await checkPostEditMetadata();
@@ -32314,14 +26407,12 @@ if (postEditCheckSubmitButton) {
     } finally {
       setBusy(postEditCheckSubmitButton, false, t("postEditCheckBusy"), t("postEditCheckButton"));
     }
-  });
-}
-
-postEditCheckCloseTop?.addEventListener("click", closePostEditCheckDialog);
-postEditCheckCloseButton?.addEventListener("click", closePostEditCheckDialog);
-postEditCheckDialog?.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  closePostEditCheckDialog();
+  },
+  close: closePostEditCheckDialog,
+  cancel: (event) => {
+    event.preventDefault();
+    closePostEditCheckDialog();
+  },
 });
 
 bindComposerDialogEvents({
@@ -32340,33 +26431,13 @@ bindComposerDialogEvents({
   postLanguagesDisclosure,
   postLanguagesCloseTop,
   postLanguagesCloseButton,
+  postLanguagesDialog,
   helpButton,
 }, {
-  unlock: () => {
-    segmentOverrides = null;
-    setComposerLocked(false);
-    sourceText.focus();
-  },
-  postedDismiss: () => {
-    setComposerPosted(false);
-    sourceText.focus();
-  },
-  postSettings: () => {
-    activeLanguageDialogContext = "composer";
-    renderPostLanguageDialog();
-    postLanguagesDialog.showModal();
-    if (postLanguagesDisclosure.open) {
-      window.setTimeout(() => postLanguagesSearch.focus(), 0);
-    }
-  },
-  searchLanguage: () => {
-    activeLanguageDialogContext = "search";
-    renderPostLanguageDialog();
-    postLanguagesDialog.showModal();
-    if (postLanguagesDisclosure.open) {
-      window.setTimeout(() => postLanguagesSearch.focus(), 0);
-    }
-  },
+  unlock: composerUiState.unlock,
+  postedDismiss: composerUiState.dismissPosted,
+  postSettings: () => composerPostSettings.open("composer"),
+  searchLanguage: () => composerPostSettings.open("search"),
   replyTargetOpen: () => {
     openReplyTargetDialog(replyTargetUrlInput?.value || composerReplyTarget?.sourceUrl || "");
   },
@@ -32391,94 +26462,52 @@ bindComposerDialogEvents({
     event.preventDefault();
     closeReplyTargetDialog();
   },
-  languagesSearch: () => {
-    renderPostLanguageDialog();
-  },
-  languagesToggle: () => {
-    if (postLanguagesDisclosure.open) {
-      window.setTimeout(() => postLanguagesSearch.focus(), 0);
-    }
-  },
-  languagesClose: () => {
-    postLanguagesDialog.close();
-  },
-  help: () => {
-    applyHelpDialogHeader(t("helpEyebrow"), t("helpTitle"));
-    helpDialog.showModal();
-    void loadReadmeContent();
-  },
+  languagesSearch: composerPostSettings.renderDialog,
+  languagesToggle: composerPostSettings.focusSearch,
+  languagesClose: composerPostSettings.close,
+  languagesDialogClose: composerPostSettings.resetDialog,
+  help: () => { helpController.openReadme(); },
 });
 
-document.addEventListener("click", (event) => {
-  const button = event.target instanceof Element ? event.target.closest("[data-help-topic]") : null;
-  if (!(button instanceof HTMLElement)) {
-    return;
-  }
-  openInlineHelpTopic(button.dataset.helpTopic || "");
+bindWorkspaceUtilityEvents({ installButton, loadThreadButton, saveThreadButton }, {
+  installClick: async () => { await applicationInstall.install(); },
+  loadThreadClick: composerDocument.handlers.loadClick,
+  saveThreadClick: composerDocument.handlers.saveClick,
 });
 
-installButton.addEventListener("click", async () => {
-  if (isIosDevice()) {
-    installDialog.showModal();
-    return;
-  }
-
-  if (!deferredInstallPrompt) {
-    updateInstallButtonVisibility();
-    return;
-  }
-
-  deferredInstallPrompt.prompt();
-
-  try {
-    await deferredInstallPrompt.userChoice;
-  } catch (error) {
-    console.error(error);
-  }
-
-  deferredInstallPrompt = null;
-  updateInstallButtonVisibility();
-});
-
-loadThreadButton.addEventListener("click", () => {
-  threadImportInput.click();
-});
-
-saveThreadButton.addEventListener("click", async () => {
-  try {
-    await exportThreadFile();
-  } catch (error) {
-    console.error(error);
-    setStatus(t("threadSaveFailed"), "error");
-  }
-});
-
-languageSelect.addEventListener("change", async () => {
+bindPreferenceEvents({
+  languageSelect,
+  tipsVisibleToggle,
+  altTextRequiredToggle,
+  imageAutoResizeSelect,
+  themeToggleButton,
+  compactModeToggleButtons,
+  resetColumnWidthsButton,
+  nextTipButton,
+  hideTipsButton,
+}, {
+  languageChange: async () => {
   await persistLocale(languageSelect.value);
-});
-
-tipsVisibleToggle.addEventListener("change", async () => {
+  },
+  tipsVisibleChange: async () => {
   tipsVisible = tipsVisibleToggle.checked;
   updateTipsVisibility();
   await persistSettings();
-});
-
-altTextRequiredToggle.addEventListener("change", async () => {
+  },
+  altTextRequiredChange: async () => {
   altTextRequired = altTextRequiredToggle.checked;
   renderSegments({ preserveOverrides: true });
   await persistSettings();
-});
-
-imageAutoResizeSelect?.addEventListener("change", async () => {
+  },
+  imageAutoResizeChange: async () => {
   imageAutoResizeMode = normalizeImageAutoResizeMode(imageAutoResizeSelect.value);
   preserveScrollPosition(() => {
     renderSegments({ preserveOverrides: true });
   });
   updatePublishAvailability();
   await persistSettings();
-});
-
-themeToggleButton.addEventListener("click", async () => {
+  },
+  themeClick: async () => {
   if (themeMode === "dark") {
     themeMode = "light";
   } else {
@@ -32486,9 +26515,8 @@ themeToggleButton.addEventListener("click", async () => {
   }
   applyTheme();
   await persistSettings();
-});
-compactModeToggleButtons.forEach((button) => {
-  button.addEventListener("click", async () => {
+  },
+  compactModeClick: async () => {
     if (compactMode === true) {
       compactMode = false;
     } else {
@@ -32496,110 +26524,55 @@ compactModeToggleButtons.forEach((button) => {
     }
     applyCompactMode();
     await persistSettings();
-  });
-});
-resetColumnWidthsButton.addEventListener("click", () => {
-  void resetDesktopColumnWidths();
-});
-
-nextTipButton.addEventListener("click", () => {
-  nextTip();
-});
-
-hideTipsButton.addEventListener("click", async () => {
+  },
+  resetColumnWidthsClick: () => {
+    void resetDesktopColumnWidths();
+  },
+  nextTipClick: nextTip,
+  hideTipsClick: async () => {
   tipsVisible = false;
   updateTipsVisibility();
   await persistSettings();
+  },
 });
 
-hashtagForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (composerLocked && !isArchiveHashtagContext() && !isSearchHashtagContext()) {
-    return;
-  }
-  const parsed = parseHashtagValue(hashtagInput.value);
-  if (!parsed) {
-    setStatus(t("hashtagInvalid"), "error");
-    return;
-  }
+bindComposerHashtagEvents({ form: hashtagForm, placementSelect: hashtagPlacementSelect }, hashtagController.handlers);
 
-  if (!findHashtag(parsed.normalized)) {
-    hashtags = [...hashtags, parsed];
-  }
-  if (isArchiveHashtagContext()) {
-    if (!archiveSelectedHashtags.includes(parsed.normalized)) {
-      archiveSelectedHashtags = [...archiveSelectedHashtags, parsed.normalized];
-    }
-  } else if (isSearchHashtagContext()) {
-    if (!searchSelectedHashtags.includes(parsed.normalized)) {
-      searchSelectedHashtags = [...searchSelectedHashtags, parsed.normalized];
-    }
-  } else if (!selectedHashtags.includes(parsed.normalized)) {
-    selectedHashtags = [...selectedHashtags, parsed.normalized];
-  }
-
-  hashtagInput.value = "";
-  renderHashtagCloud();
-  if (isSearchHashtagContext()) {
-    renderSearchWorkspace();
-  } else if (!isArchiveHashtagContext()) {
-    segmentOverrides = null;
-    setComposerLocked(false);
-    renderSegments({ preserveOverrides: false });
-  }
-  await persistSettings();
-  setStatus(t("hashtagAdded"));
-});
-
-hashtagPlacementSelect.addEventListener("change", async () => {
-  if (composerLocked && !isArchiveHashtagContext() && !isSearchHashtagContext()) {
-    return;
-  }
-  hashtagPlacement = normalizeHashtagPlacement(hashtagPlacementSelect.value);
-  segmentOverrides = null;
-  setComposerLocked(false);
-  renderSegments({ preserveOverrides: false });
-  await persistSettings();
-});
-
-exportSettingsButton.addEventListener("click", async () => {
+bindSettingsDataEvents({
+  exportButton: exportSettingsButton,
+  backupSaveButton: backupReminderSaveButton,
+  backupLaterButton: backupReminderLaterButton,
+  backupCloseButton: backupReminderCloseTop,
+  shareButton: shareAppButton,
+  importButton: importSettingsButton,
+  clearHistoryButton,
+  importInput: importSettingsInput,
+  threadImportInput,
+}, {
+  exportClick: async () => {
   try {
     await exportSettingsBackup();
   } catch (error) {
     console.error(error);
     setBackupStatus(t("backupExportFailed"), "error");
   }
-});
-
-if (backupReminderSaveButton) {
-  backupReminderSaveButton.addEventListener("click", async () => {
+  },
+  backupSaveClick: async () => {
     await handleBackupReminderSaveClick();
-  });
-}
-
-if (backupReminderLaterButton) {
-  backupReminderLaterButton.addEventListener("click", () => {
+  },
+  backupLaterClick: () => {
     closeSettingsBackupReminder(true);
-  });
-}
-
-if (backupReminderCloseTop) {
-  backupReminderCloseTop.addEventListener("click", () => {
+  },
+  backupCloseClick: () => {
     closeSettingsBackupReminder(true);
-  });
-}
-
-if (shareAppButton) {
-  shareAppButton.addEventListener("click", async () => {
+  },
+  shareClick: async () => {
     await shareAppRecommendation();
-  });
-}
-
-importSettingsButton.addEventListener("click", () => {
+  },
+  importClick: () => {
   importSettingsInput.click();
-});
-
-clearHistoryButton.addEventListener("click", async () => {
+  },
+  clearHistoryClick: async () => {
   const confirmed = await openConfirmDialog({
     title: t("clearHistoryConfirmTitle"),
     message: t("clearHistoryConfirmText"),
@@ -32613,9 +26586,8 @@ clearHistoryButton.addEventListener("click", async () => {
   renderHistoryList();
   await persistSettings();
   setStatus(t("historyCleared"));
-});
-
-importSettingsInput.addEventListener("change", async (event) => {
+  },
+  importChange: async (event) => {
   const [file] = event.target.files || [];
   event.target.value = "";
 
@@ -32629,58 +26601,37 @@ importSettingsInput.addEventListener("change", async (event) => {
     console.error(error);
     setBackupStatus(error.message || t("backupImportFailed"), "error");
   }
+  },
+  threadImportChange: composerDocument.handlers.importChange,
 });
 
-threadImportInput.addEventListener("change", async (event) => {
-  const [file] = event.target.files || [];
-  event.target.value = "";
-  if (!file) {
-    return;
-  }
-  try {
-    await importThreadFile(file);
-  } catch (error) {
-    console.error(error);
-    setStatus(error.message || t("threadImportFailed"), "error");
-  }
-});
-
-hashtagEditSaveButton.addEventListener("click", async () => {
-  await saveEditedHashtag();
-});
-
-hashtagEditCancelButton.addEventListener("click", () => {
-  closeHashtagEditDialog();
-});
-
-hashtagEditCancelTop.addEventListener("click", () => {
-  closeHashtagEditDialog();
-});
-
-hashtagEditInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    void saveEditedHashtag();
-  }
-});
-
-hashtagEditDialog.addEventListener("close", () => {
-  editingHashtagNormalized = null;
-});
-
-altTextInput.addEventListener("input", setAltTextCount);
-altTextSaveButton.addEventListener("click", async () => {
+bindEditorDialogEvents({
+  hashtagSaveButton: hashtagEditSaveButton,
+  hashtagCancelButton: hashtagEditCancelButton,
+  hashtagCancelTop: hashtagEditCancelTop,
+  hashtagInput: hashtagEditInput,
+  hashtagDialog: hashtagEditDialog,
+  altTextInput,
+  altTextSaveButton,
+  altTextCancelButton,
+  altTextCloseTop,
+  altTextDialog,
+}, {
+  hashtagSaveClick: hashtagController.saveEdit,
+  hashtagCancelClick: hashtagController.closeEdit,
+  hashtagKeydown: hashtagController.handlers.editKeydown,
+  hashtagDialogClose: hashtagController.handlers.editClosed,
+  altTextInput: setAltTextCount,
+  altTextSaveClick: async () => {
   await saveAltText();
-});
-altTextCancelButton.addEventListener("click", () => {
+  },
+  altTextCancelClick: () => {
   closeAltTextDialog();
-});
-altTextCloseTop.addEventListener("click", () => {
-  closeAltTextDialog();
-});
-altTextDialog.addEventListener("cancel", (event) => {
+  },
+  altTextCancelEvent: (event) => {
   event.preventDefault();
   closeAltTextDialog();
+  },
 });
 
 bindComposerImageEditorEvents({
@@ -32696,133 +26647,33 @@ bindComposerImageEditorEvents({
   closeTopButton: imageEditorCloseTop,
   dialog: imageEditorDialog,
   canvas: imageEditorCanvas,
-}, {
-  zoomInput: () => {
-    if (!imageEditorDraft) {
-      return;
-    }
-    const image = getEditedImage();
-    if (!image) {
-      return;
-    }
-    imageEditorDraft = clampImageEditorDraftToFrame(image, {
-      ...imageEditorDraft,
-      fitMode: "cover",
-      zoom: Number(imageZoomInput.value) || 1,
-    });
-    drawImageEditor();
-  },
-  flipHorizontal: () => {
-    if (!imageEditorDraft) {
-      return;
-    }
-    imageEditorDraft = transformImageEditorDraftForFlip(imageEditorDraft, "x");
-    const image = getEditedImage();
-    if (image) {
-      imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
-    }
-    drawImageEditor();
-  },
-  flipVertical: () => {
-    if (!imageEditorDraft) {
-      return;
-    }
-    imageEditorDraft = transformImageEditorDraftForFlip(imageEditorDraft, "y");
-    const image = getEditedImage();
-    if (image) {
-      imageEditorDraft = clampImageEditorDraftToFrame(image, imageEditorDraft);
-    }
-    drawImageEditor();
-  },
-  rotateLeft: () => {
-    if (!imageEditorDraft) {
-      return;
-    }
-    imageEditorDraft = transformImageEditorDraftForQuarterTurn(imageEditorDraft, "left");
-    const image = getEditedImage();
-    if (image) {
-      imageEditorDraft = clampImageEditorDraftToFrame(image, {
-        ...imageEditorDraft,
-        fitMode: "cover",
-      });
-    }
-    drawImageEditor();
-  },
-  reset: resetImageEditor,
-  save: async () => {
-    await saveImageEditor();
-  },
-  fitDimensions: async () => {
-    await fitImageToAllowedDimensions();
-  },
-  lossyResize: async () => {
-    await applyLossyResize();
-  },
-  cancel: closeImageEditorDialog,
-  dialogCancel: (event) => {
-    event.preventDefault();
-    closeImageEditorDialog();
-  },
-  pointerDown: (event) => {
-    imageEditorCanvas.setPointerCapture(event.pointerId);
-    startImageEditorDrag(event);
-  },
-  pointerMove: updateImageEditorDrag,
-  pointerUp: stopImageEditorDrag,
-  pointerCancel: stopImageEditorDrag,
-  wheel: (event) => {
-    if (!imageEditorDraft) {
-      return;
-    }
-    const image = getEditedImage();
-    if (!image) {
-      return;
-    }
-    event.preventDefault();
-    const delta = -event.deltaY;
-    const factor = 1 + delta * 0.0015;
-    imageEditorDraft = clampImageEditorDraftToFrame(image, {
-      ...imageEditorDraft,
-      fitMode: "cover",
-      zoom: (imageEditorDraft.zoom || 1) * factor,
-    });
-    imageZoomInput.value = String(imageEditorDraft.zoom);
-    drawImageEditor();
-  },
-});
-errorDialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  errorDialog.close();
-});
-confirmDialogConfirmButton.addEventListener("click", () => {
-  confirmDialogController.confirm();
-});
-confirmDialogCancelButton.addEventListener("click", () => {
-  confirmDialogController.cancel();
-});
-confirmDialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  confirmDialogController.dismiss();
-});
-confirmDialog.addEventListener("close", () => {
-  confirmDialogController.handleNativeClose();
+}, composerImageEditor.handlers);
+bindConfirmationDialogEvents({ errorDialog, confirmButton: confirmDialogConfirmButton, cancelButton: confirmDialogCancelButton, confirmDialog }, {
+  errorCancel: (event) => { event.preventDefault(); errorDialog.close(); },
+  confirmClick: () => { confirmDialogController.confirm(); },
+  cancelClick: () => { confirmDialogController.cancel(); },
+  dialogCancel: (event) => { event.preventDefault(); confirmDialogController.dismiss(); },
+  dialogClose: () => { confirmDialogController.handleNativeClose(); },
 });
 
-[linkCardEndpointInput, linkCardSecretInput].forEach((input) => {
-  input?.addEventListener("input", () => {
+bindLinkCardSettingsEvents({
+  endpointInput: linkCardEndpointInput,
+  secretInput: linkCardSecretInput,
+  noneInput: linkCardProviderNoneInput,
+  microlinkInput: linkCardProviderMicrolinkInput,
+  proxyInput: linkCardProviderProxyInput,
+}, {
+  input: () => {
     updateLinkCardSettingsStatus();
     renderSegments({ preserveOverrides: true, preserveView: true });
-  });
-  input?.addEventListener("change", async () => {
+  },
+  change: async () => {
     normalizeLinkCardSettingsInputs();
     updateLinkCardSettingsStatus();
     await persistSettings();
     renderSegments({ preserveOverrides: true, preserveView: true });
-  });
-});
-
-[linkCardProviderNoneInput, linkCardProviderMicrolinkInput, linkCardProviderProxyInput].forEach((input) => {
-  input?.addEventListener("change", async () => {
+  },
+  providerChange: async () => {
     if (linkCardProviderNoneInput?.checked) {
       linkCardProvider = LINK_CARD_PROVIDER_NONE;
     } else if (linkCardProviderProxyInput?.checked) {
@@ -32833,110 +26684,62 @@ confirmDialog.addEventListener("close", () => {
     syncLinkCardProviderUi();
     await persistSettings();
     renderSegments({ preserveOverrides: true, preserveView: true });
-  });
+  },
 });
 
-settingsCloseTop?.addEventListener("click", () => {
-  closeSettingsDialog();
-});
-
-linkCardCreateButton?.addEventListener("click", () => {
-  void createLinkCardForPendingSegment();
-});
-linkCardCancelButton?.addEventListener("click", closeLinkCardDialog);
-linkCardCloseTop?.addEventListener("click", closeLinkCardDialog);
-linkCardUrlInput?.addEventListener("input", () => {
-  linkCardStatus.textContent = "";
-  delete linkCardStatus.dataset.tone;
-});
-linkCardUrlInput?.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    void createLinkCardForPendingSegment();
-  }
-});
-
-mentionSearchCloseTop?.addEventListener("click", closeMentionSearchDialog);
-mentionSearchCloseButton?.addEventListener("click", closeMentionSearchDialog);
-mentionSearchInput?.addEventListener("input", () => {
-  window.clearTimeout(mentionSearchInputTimer);
-  mentionSearchInputTimer = window.setTimeout(() => {
-    mentionSearchInputTimer = 0;
-    void runMentionSearch(mentionSearchInput.value);
-  }, COMPOSER_MENTION_RESOLVE_DEBOUNCE_MS);
-});
-mentionSearchInput?.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    void runMentionSearch(mentionSearchInput.value);
-  }
-});
-mentionSearchDialog?.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  closeMentionSearchDialog();
-});
-mentionSearchDialog?.addEventListener("close", () => {
-  resetMentionSearchDialogState();
-});
-
-postLanguagesDialog.addEventListener("close", () => {
-  postLanguagesSearch.value = "";
-  postLanguagesDisclosure.open = false;
-  postInteractionDisclosure.open = false;
-  renderPostLanguageDialog();
-});
-
-checkUpdatesButton.addEventListener("click", async () => {
-  await checkForUpdates();
-});
-
-reloadAppButton.addEventListener("click", async () => {
-  await performAppReload();
-});
-
-bindGlobalApplicationEvents({
-  displayModeMediaQuery: window.matchMedia("(display-mode: standalone)"),
+bindHelpAndSettingsEvents({
+  settingsCloseTop,
+  helpTarget: document,
 }, {
-  visibilityChange: () => {
-    if (document.visibilityState === "visible") {
-      void verifySession({ silent: true });
-      scheduleSilentUpdateCheck();
-      syncAppearanceFromLocalStorage();
+  settingsClose: closeSettingsDialog,
+  helpClick: (event) => {
+    helpController.topicClick(event);
+  },
+});
+
+bindComposerContentDialogEvents({
+  linkCardCreateButton,
+  linkCardCancelButton,
+  linkCardCloseTop,
+  linkCardUrlInput,
+  mentionSearchCloseTop,
+  mentionSearchCloseButton,
+  mentionSearchInput,
+  mentionSearchDialog,
+}, {
+  linkCardCreate: () => {
+    void createLinkCardForPendingSegment();
+  },
+  linkCardClose: closeLinkCardDialog,
+  linkCardInput: () => {
+    linkCardStatus.textContent = "";
+    delete linkCardStatus.dataset.tone;
+  },
+  linkCardKeydown: (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void createLinkCardForPendingSegment();
     }
   },
-  focus: () => {
-    void verifySession({ silent: true });
-    scheduleSilentUpdateCheck();
-    syncAppearanceFromLocalStorage();
-  },
-  hashChange: () => {
-    void applyDmAccessGateFromLocation();
-  },
-  resize: () => {
-    scheduleSegmentTextareaResize();
-  },
-  visualViewportResize: () => {
-    scheduleSegmentTextareaResize();
-  },
-  beforeInstallPrompt: (event) => {
+  mentionClose: closeMentionSearchDialog,
+  mentionInput: composerMentionDialog.input,
+  mentionKeydown: composerMentionDialog.keydown,
+  mentionCancel: (event) => {
     event.preventDefault();
-    deferredInstallPrompt = event;
-    updateInstallButtonVisibility();
+    closeMentionSearchDialog();
   },
-  appInstalled: () => {
-    deferredInstallPrompt = null;
-    updateInstallButtonVisibility();
+  mentionDialogClose: resetMentionSearchDialogState,
+});
+
+bindApplicationUpdateEvents({ checkUpdatesButton, reloadAppButton }, {
+  checkUpdatesClick: async () => {
+  await checkForUpdates();
   },
-  displayModeChange: () => {
-    updateInstallButtonVisibility();
-  },
-  pageShow: () => {
-    syncAppearanceFromLocalStorage();
-  },
-  pageHide: () => {
-    syncAppearanceFromLocalStorage();
+  reloadClick: async () => {
+  await performAppReload();
   },
 });
+
 
 bindApplicationNavigationEvents({ pageSwitchLinks, privacyPageLinks }, {
   pageSwitchClick: (event) => {
@@ -32953,6 +26756,217 @@ bindApplicationNavigationEvents({ pageSwitchLinks, privacyPageLinks }, {
   },
 });
 
+/**
+ * Applies normalized startup patches to the shared application state.
+ * @param {object} patch - Fields emitted by the hydration controller.
+ * @returns {void}
+ */
+function applyHydratedApplicationState(patch) {
+  if ("localePreference" in patch) { localePreference = patch.localePreference; }
+  if ("tipsVisible" in patch) { tipsVisible = patch.tipsVisible; }
+  if ("altTextRequired" in patch) { altTextRequired = patch.altTextRequired; }
+  if ("imageAutoResizeMode" in patch) { imageAutoResizeMode = patch.imageAutoResizeMode; }
+  if ("archiveExpertMode" in patch) { archiveExpertMode = patch.archiveExpertMode; }
+  if ("themeMode" in patch) { themeMode = patch.themeMode; }
+  if ("compactMode" in patch) { compactMode = patch.compactMode; }
+  if ("sidebarCollapsedDesktop" in patch) { sidebarCollapsedDesktop = patch.sidebarCollapsedDesktop; }
+  if ("sidebarWidthDesktop" in patch) { sidebarWidthDesktop = patch.sidebarWidthDesktop; }
+  if ("composerWidthDesktop" in patch) { composerWidthDesktop = patch.composerWidthDesktop; }
+  if ("hashtags" in patch) { hashtags = patch.hashtags; }
+  if ("selectedHashtags" in patch) { selectedHashtags = patch.selectedHashtags; }
+  if ("searchSelectedHashtags" in patch) { searchSelectedHashtags = patch.searchSelectedHashtags; }
+  if ("hashtagPlacement" in patch) { hashtagPlacement = patch.hashtagPlacement; }
+  if ("segmentImages" in patch) { segmentImages = patch.segmentImages; }
+  if ("segmentLinkCards" in patch) { segmentLinkCards = patch.segmentLinkCards; }
+  if ("segmentOverrides" in patch) { segmentOverrides = patch.segmentOverrides; }
+  if ("composerReplyTarget" in patch) { composerReplyTarget = patch.composerReplyTarget; }
+  if ("selectedPostLanguages" in patch) { selectedPostLanguages = patch.selectedPostLanguages; }
+  if ("appendThreadIntro" in patch) { appendThreadIntro = patch.appendThreadIntro; }
+  if ("appendThreadEmoji" in patch) { appendThreadEmoji = patch.appendThreadEmoji; }
+  if ("addMarkerSpacing" in patch) { addMarkerSpacing = patch.addMarkerSpacing; }
+  if ("linkCardProvider" in patch) { linkCardProvider = patch.linkCardProvider; }
+  if ("linkCardMicrolinkUsage" in patch) { linkCardMicrolinkUsage = patch.linkCardMicrolinkUsage; }
+  if ("postingHistory" in patch) { postingHistory = patch.postingHistory; }
+  if ("threadExplorerFavorites" in patch) { threadExplorerFavorites = patch.threadExplorerFavorites; }
+  if ("savedSearches" in patch) { savedSearches = patch.savedSearches; }
+  if ("archiveSession" in patch) { archiveSession = patch.archiveSession; }
+  if ("archiveCatalog" in patch) { archiveCatalog = patch.archiveCatalog; }
+  if ("currentLocale" in patch) { currentLocale = patch.currentLocale; }
+  if ("savedAccounts" in patch) { savedAccounts = patch.savedAccounts; }
+  if ("authAccount" in patch) { authAccount = patch.authAccount; }
+  if ("authAccountDid" in patch) { authAccountDid = patch.authAccountDid; }
+  if ("authAccountService" in patch) { authAccountService = patch.authAccountService; }
+  if ("authAccountWebApp" in patch) { authAccountWebApp = patch.authAccountWebApp; }
+}
+const helpController = createHelpController({
+  dialog: helpDialog, eyebrow: helpDialogEyebrow, title: helpDialogTitle, status: helpStatus,
+  content: helpContent, template: document.querySelector("#help-topic-template"),
+}, {
+  locale: () => currentLocale, t, catalog: HELP_TOPICS,
+  markdown: createHelpMarkdownRenderer({ href: () => window.location.href, escapeHtml }),
+  fetch: (url, options) => window.fetch(url, options), report: (error) => console.error(error),
+});
+const applicationUpdates = createApplicationUpdateController({
+  status: updateStatus, reload: reloadAppButton, check: checkUpdatesButton, version: versionLabel,
+}, {
+  version: CURRENT_VERSION_INFO, fetchVersion: fetchVersionInfo, registration: () => serviceWorkerRegistration,
+  t, report: (error) => console.error(error), intervalMs: AUTO_UPDATE_CHECK_INTERVAL_MS,
+  now: () => Date.now(), href: () => window.location.href, navigate: (url) => window.location.replace(url),
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+});
+/** Applies an authentication result to application state. @param {object} identity - Account, DID, service and web app. @returns {void} */
+function applyAuthenticationIdentity(identity) {
+  authAccount = identity.account;
+  authAccountDid = identity.did;
+  authAccountService = identity.service;
+  authAccountWebApp = identity.webApp;
+}
+const loginController = createLoginController({
+  preset: serverPresetField, custom: customServerField, customWrap: customServerWrap,
+  note: loginDialogNote, identifier: identifierField, password: passwordField, dialog: loginDialog,
+}, {
+  presets: LOGIN_SERVICE_PRESETS, getState: () => ({ service: authAccountService }),
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay), request: sendToServiceWorker, t,
+  setBusy: (busy) => setBusy(loginButton, busy, t("loginBusy"), t("loginButton")),
+  setIdentity: applyAuthenticationIdentity, setAccounts: (accounts) => { savedAccounts = accounts; },
+  restoreAvatars: restoreAccountAvatarCache, resolveWebApp: resolvePostWebBase, updateStatus: updateStatusForAuth,
+  report: (error) => console.error(error), setStatus, setOnline: (online) => { appOnline = online; },
+  renderAccounts: renderAccountSwitcher,
+});
+const savedAccountActions = createSavedAccountActions({
+  defaultService: LOGIN_SERVICE_PRESETS["bsky.social"], setIdentity: applyAuthenticationIdentity,
+  setAccounts: (accounts) => { savedAccounts = accounts; },
+  switchAccount: (did) => requestAccountSwitch(sendToServiceWorker, did),
+  logout: (did) => requestAccountLogout(sendToServiceWorker, did),
+  remove: (did) => requestAccountRemoval(sendToServiceWorker, did),
+  restoreAvatars: restoreAccountAvatarCache, renderAccounts: renderAccountSwitcher, resolveWebApp: resolvePostWebBase,
+  setLoginFields: (identifier, clearPassword) => {
+    identifierField.value = identifier;
+    applyLoginServiceSelection(authAccountService);
+    if (clearPassword) { passwordField.value = ""; }
+  },
+  updateStatus: updateStatusForAuth, setStatus, openLogin: openLoginDialog, verify: verifySession,
+  confirm: openConfirmDialog, t, report: (error) => console.error(error),
+});
+const savedAccountRenderer = createSavedAccountRenderer({
+  panel: accountSwitcherPanel, list: accountSwitcherList,
+  template: document.querySelector("#account-switcher-item-template"),
+}, {
+  getState: () => ({ accounts: savedAccounts, online: appOnline, did: authAccountDid }),
+  setAvatar: setAvatarImage, avatar: getStoredAccountAvatarUri, t,
+  bind: bindAccountSwitcherItemEvents, actions: savedAccountActions,
+});
+bindAuthenticationEvents({ addAccountButton, loginDialogCloseTop, loginDialogCancelButton,
+  loginDialog, window, loginForm }, loginController.handlers);
+const applicationSession = createApplicationSessionController({
+  getState: () => ({ account: authAccount, did: authAccountDid, service: authAccountService,
+    webApp: authAccountWebApp, accounts: savedAccounts }),
+  setAccounts: (accounts) => { savedAccounts = accounts; },
+  setIdentity: applyAuthenticationIdentity,
+  request: sendToServiceWorker, restoreAvatars: restoreAccountAvatarCache, renderAccounts: renderAccountSwitcher,
+  disconnect: applyDisconnectedState, openLogin: openLoginDialog, updateAuthButtons,
+  setStatus, t, restoreWorkspace: restorePreferredWorkspaceIfPossible, report: (error) => console.error(error),
+  clearInterval: (timer) => window.clearInterval(timer), setInterval: (callback, delay) => window.setInterval(callback, delay),
+});
+const applicationInstall = createApplicationInstallController({ button: installButton, dialog: installDialog }, {
+  isIos: isIosDevice, isStandalone: isStandaloneMode, report: (error) => console.error(error),
+});
+const desktopLayout = createDesktopLayoutController({
+  root: document.documentElement, body: document.body, toggle: sidebarToggleButton,
+  glyph: sidebarToggleGlyph, sidebarHandle: sidebarResizeHandle, composerHandle: composerResizeHandle,
+}, {
+  getState: () => ({ sidebarWidthDesktop, composerWidthDesktop, sidebarCollapsedDesktop }),
+  setState: (patch) => {
+    if ("sidebarWidthDesktop" in patch) { sidebarWidthDesktop = patch.sidebarWidthDesktop; }
+    if ("composerWidthDesktop" in patch) { composerWidthDesktop = patch.composerWidthDesktop; }
+    if ("sidebarCollapsedDesktop" in patch) { sidebarCollapsedDesktop = patch.sidebarCollapsedDesktop; }
+  },
+  widths: {
+    sidebar: { min: MIN_SIDEBAR_WIDTH_DESKTOP, max: MAX_SIDEBAR_WIDTH_DESKTOP, default: DEFAULT_SIDEBAR_WIDTH_DESKTOP },
+    composer: { min: MIN_COMPOSER_WIDTH_DESKTOP, max: MAX_COMPOSER_WIDTH_DESKTOP, default: DEFAULT_COMPOSER_WIDTH_DESKTOP },
+  },
+  collapsedWidth: DESKTOP_SIDEBAR_COLLAPSED_WIDTH, media: DESKTOP_LAYOUT_MEDIA, events: window,
+  computedStyle: (element) => window.getComputedStyle(element), bind: bindApplicationEvents, resizeTextareas: scheduleSegmentTextareaResize,
+  persist: persistSettings, setStatus, t,
+});
+desktopLayout.bind();
+desktopLayout.apply();
+desktopLayout.renderSidebar();
+const appearanceController = createAppearanceController({
+  body: document.body, themeNote: themeStatusNote, themeButton: themeToggleButton,
+  densityNote: compactModeStatusNote, densityButtons: compactModeToggleButtons,
+}, {
+  storage: () => window.localStorage,
+  read: readBrowserStorageValue, write: writeBrowserStorageValue,
+  themeKey: THEME_MODE_STORAGE_KEY, densityKey: COMPACT_MODE_STORAGE_KEY,
+  getState: () => ({ themeMode, compactMode }),
+  setState: (patch) => {
+    if ("themeMode" in patch) { themeMode = patch.themeMode; }
+    if ("compactMode" in patch) { compactMode = patch.compactMode; }
+  },
+  href: () => window.location.href,
+  replaceUrl: (url) => window.history.replaceState({}, document.title, url),
+  t, applyLayout: applyDesktopLayoutState,
+});
+const pendingNavigation = createPendingNavigationController({
+  storage: () => window.sessionStorage, key: PENDING_PAGE_SWITCH_URL_SESSION_KEY,
+  read: readBrowserStorageValue, write: writeBrowserStorageValue, remove: removeBrowserStorageValue,
+  href: () => window.location.href,
+});
+const applicationStorage = createApplicationStorage({
+  request: sendToServiceWorker, queue: settingsSaveQueue, snapshot: getSettingsSnapshot,
+  report: (error) => console.error(error), setStatus,
+});
+const applicationHydration = createApplicationHydrationController({
+  proxyEndpoint: linkCardEndpointInput, proxySecret: linkCardSecretInput, resize: imageAutoResizeSelect,
+  expert: archiveExpertModeToggle, identifier: identifierField, source: sourceText, password: passwordField,
+  placement: hashtagPlacementSelect, intro: threadIntroToggle, emoji: threadEmojiToggle, spacing: markerSpacingToggle,
+}, {
+  detectLocale: detectBrowserLocale, load: applicationStorage.load, getAppearance: getStoredAppearancePreferences,
+  preferences: { normalizeResize: normalizeImageAutoResizeMode, normalizeLayout: normalizeStoredDesktopLayout,
+    layoutVersion: DESKTOP_LAYOUT_STATE_VERSION },
+  normalize: { hashtags: normalizeHashtagEntries, selection: normalizeSelectedHashtagEntries,
+    search: normalizeSearchPreferencesForStorage, placement: normalizeHashtagPlacement,
+    images: normalizeSegmentImages, cards: normalizeSegmentLinkCards, overrides: normalizeSegmentOverrides,
+    reply: normalizeReplyTarget, languages: normalizePostLanguageTags, provider: normalizeLinkCardProvider,
+    usage: normalizeMicrolinkUsage, history: normalizePostingHistory, favorites: normalizeThreadExplorerFavorites,
+    searches: normalizeSavedSearches },
+  setState: applyHydratedApplicationState,
+  applySearch: applySearchPreferences, restoreSearch: restorePersistedSearchResultState,
+  renderSearch: renderSearchResults, restoreSearchStatus: restoreSearchStatusFromResultState,
+  consumeReplyUrl: consumeComposerReplyTargetFromUrl, consumeReplyStorage: consumePendingComposerReplyTarget,
+  restoreAnalysis: restorePersistedAnalysisState, applyInteraction: applyPostInteractionSettings,
+  syncProvider: syncLinkCardProviderUi, setLocked: setComposerLocked, restoreExplorer: restorePersistedThreadExplorerState,
+  defaultLocale: DEFAULT_LOCALE, defaultService: LOGIN_SERVICE_PRESETS["bsky.social"], resolveWebApp: resolvePostWebBase,
+  normalizeArchiveCatalog: (catalog) => { if (catalog) { return normalizeImportedArchiveCatalog(catalog); } return null; },
+  normalizeAccounts: (accounts) => { if (Array.isArray(accounts)) { return accounts; } return []; },
+  applyAvatarCache: applyAccountAvatarCache, applyDmCache: applyDmPartnerCache, applyService: applyLoginServiceSelection,
+  applyArchive: applyArchivePreferences,
+  finalRender: [syncArchiveTransientNoticeFromCatalog, applyDesktopLayoutState, applySidebarState,
+    applyHashtagPaneContext, applyTranslations, persistAppearancePreferences],
+  validateImages: scheduleImageValidation, persist: persistSettings,
+  setHydrated: (value) => { appStateHydrated = value; }, restoreWorkspace: restorePreferredWorkspaceIfPossible,
+  scheduleReminder: () => window.setTimeout(showSettingsBackupReminderIfNeeded, 0),
+  report: (error) => console.error(error), setStatus,
+});
+const applicationBootstrap = createApplicationBootstrap({
+  isSupported: () => "serviceWorker" in navigator, translate: t, setStatus,
+  isPrivacyNavigation: () => privacyPageNavigationInProgress,
+  consumeNavigation: consumePendingPageSwitchUrl, getHref: () => window.location.href,
+  now: () => Date.now(), navigate: (href) => window.location.replace(href),
+  bindControllerChange: (handler) => navigator.serviceWorker.addEventListener("controllerchange", handler),
+  register: () => navigator.serviceWorker.register("./sw.js", { scope: "./" }),
+  setRegistration: (registration) => { serviceWorkerRegistration = registration; },
+  ready: () => navigator.serviceWorker.ready, hydrate: hydrateAppState,
+  verifySession, startSessionChecks, checkUpdates: checkForUpdates, report: (error) => console.error(error),
+});
+bindGlobalApplicationEvents({ displayModeMediaQuery: window.matchMedia("(display-mode: standalone)") },
+  createApplicationLifecycleHandlers({
+    isVisible: () => document.visibilityState === "visible", verifySession,
+    checkUpdates: scheduleSilentUpdateCheck, syncAppearance: syncAppearanceFromLocalStorage,
+    applyAccessGate: applyDmAccessGateFromLocation, resizeTextareas: scheduleSegmentTextareaResize,
+    install: applicationInstall,
+  }));
 currentLocale = detectBrowserLocale();
 localePreference = "auto";
 currentTipIndex = pickRandomTipIndex();
