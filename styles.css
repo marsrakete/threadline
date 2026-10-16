@@ -5485,6 +5485,13 @@ body.thread-explorer-fullscreen-active {
   display: grid;
   gap: 12px;
   align-content: start;
+  overflow-wrap: anywhere;
+}
+
+.network-focus-shell,
+.network-focus-summary,
+.network-avatar-copy {
+  min-width: 0;
 }
 
 .network-focus-actions {

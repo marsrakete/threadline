@@ -4,6 +4,617 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { importProjectModule } = require("./module-test-helpers.cjs");
 
+/** Builds deterministic archive controls and preference adapters. @returns {Promise<object>} Module, controller, state and controls. */
+async function archivePreferencesFixture() {
+  const module = await importProjectModule("js/tools/archive-preferences.js"); const elements = {};
+  for (const key of ["from", "to", "source", "content", "context", "band", "image", "metrics", "threads", "indent", "wave", "preview", "importMode", "scope", "year", "hashtagScope"]) {
+    elements[key] = { value: "", checked: false, options: [{ value: "100" }, { value: "200" }, { value: "500" }] };
+  }
+  const state = { sourceProfile: null, selectedHashtags: [], hashtagScope: "thread", savedSearchId: "", hashtags: [] }; const calls = [];
+  const options = { state, now: () => new Date(2026, 9, 16), maxMonths: 3,
+    normalizeTags: (values) => { if (Array.isArray(values)) { return values; } return []; },
+    scopeFields: () => calls.push("scope"), renderSource: () => calls.push("source"), renderSavedSearch: () => calls.push("saved"), renderTags: () => calls.push("tags") };
+  return { module, controller: module.createArchivePreferencesController(elements, options), elements, state, calls, options };
+}
+
+test("archive calendar helpers preserve local dates, leap days and month-end clamping", async () => {
+  const { module: m } = await archivePreferencesFixture();
+  assert.equal(m.formatArchiveDateInputValue(new Date(2024, 1, 29)), "2024-02-29"); assert.equal(m.parseArchiveDateInputValue("2024-02-29").getDate(), 29);
+  for (const value of ["2023-02-29", "2026-13-01", "2026-1-1", null, "bad"]) { assert.equal(m.parseArchiveDateInputValue(value), null); }
+  assert.equal(m.formatArchiveDateInputValue(new Date(NaN)), ""); assert.equal(m.formatArchiveDateInputValue("bad"), "");
+  assert.equal(m.getArchiveDateAtLocalMidnight(null), null); assert.equal(m.addArchiveMonths(null, 1), null);
+  assert.equal(m.formatArchiveDateInputValue(m.addArchiveMonths(new Date(2024, 0, 31), 1)), "2024-02-29");
+  assert.equal(m.formatArchiveDateInputValue(m.addArchiveMonths(new Date(2026, 0, 31), -1)), "2025-12-31");
+  assert.equal(m.getArchiveDateAtLocalMidnight(new Date(2026, 1, 1, 19)).getHours(), 0);
+});
+
+test("archive date controller preserves defaults, edge-specific clamping and input bounds", async () => {
+  const { controller: c, elements: e } = await archivePreferencesFixture(); assert.deepEqual(c.defaults(), { from: "2026-07-16", to: "2026-10-16" });
+  c.ensure(); assert.equal(e.from.value, "2026-07-16"); assert.equal(c.clamp().changed, false);
+  e.from.value = "2026-01-01"; e.to.value = "2026-10-01";
+  assert.deepEqual(c.clamp("to"), { from: "2026-07-01", to: "2026-10-01", changed: true });
+  e.from.value = "2026-01-31"; e.to.value = "2026-10-01"; c.clamp("from"); assert.equal(e.to.value, "2026-04-30");
+  c.bounds(); assert.equal(e.to.min, "2026-01-31"); assert.equal(e.to.max, "2026-04-30"); assert.equal(e.from.max, "2026-04-30");
+  e.to.value = "2027-01-01"; c.clamp("to"); assert.equal(e.to.value, "2026-10-16");
+  e.from.value = "invalid"; c.ensure(); assert.equal(e.from.value, "2026-07-16"); assert.equal(e.to.value, "2026-10-16");
+});
+
+test("archive preference snapshot retains filters, numeric limits and absent-control defaults", async () => {
+  const { controller: c, elements: e, state } = await archivePreferencesFixture();
+  e.source.value = " @a.test "; e.band.value = "9000"; e.wave.value = "20"; e.content.value = "threads";
+  state.sourceProfile = { did: " did:a ", handle: " a.test " }; state.hashtagScope = "startpost"; state.selectedHashtags = [{ name: "tag" }];
+  const filters = c.filters(); assert.equal(filters.sourceActor, "a.test"); assert.equal(filters.sourceDid, "did:a"); assert.equal(filters.scope, "range"); assert.equal(filters.hashtagScope, "startpost");
+  assert.equal(c.pdf().bandSize, 1000); assert.equal(c.wave(), 100); e.wave.value = "invalid"; assert.equal(c.wave(), 500);
+  delete e.indent; delete e.preview; assert.equal(c.pdf().indentThreads, true); assert.equal(c.snapshot().livePreview, true);
+  e.importMode.value = "author"; assert.equal(c.snapshot().threadImportMode, "author"); e.importMode.value = "unknown"; assert.equal(c.snapshot().threadImportMode, "path");
+  e.source.value = ""; state.sourceProfile = null; assert.equal(c.source(), null);
+});
+
+test("archive preferences restore supported choices and refresh dependent UI in order", async () => {
+  const { controller: c, elements: e, state, calls } = await archivePreferencesFixture();
+  c.restore({ source: { input: " @a ", did: " did:a ", handle: "a.test" }, filters: { contentMode: "full", from: "2026-09-01", to: "2026-10-01", hashtagScope: "startpost", hashtagTags: ["tag"] },
+    waveSize: 500, savedSearchId: " saved ", pdfOptions: { bandSize: 200, imageSize: "large", includeMetrics: false, indentThreads: false }, threadImportMode: "tree", livePreview: false });
+  assert.equal(state.sourceProfile.did, "did:a"); assert.equal(state.sourceProfile.displayName, "a.test"); assert.equal(state.savedSearchId, "saved");
+  assert.equal(e.content.value, "full"); assert.equal(e.wave.value, "500"); assert.equal(e.band.value, "200"); assert.equal(e.image.value, "large");
+  assert.equal(e.metrics.checked, false); assert.equal(e.indent.checked, false); assert.equal(e.threads.checked, true); assert.equal(e.preview.checked, false);
+  assert.deepEqual(calls, ["scope", "source", "saved", "tags"]);
+  c.restore({ filters: { contentMode: "bad" }, waveSize: 999, pdfOptions: { imageSize: "bad" } });
+  assert.equal(e.content.value, "posts"); assert.equal(e.image.value, "medium"); assert.equal(e.wave.value, "500"); assert.equal(state.sourceProfile, null);
+});
+
+/** Builds an explicit network focus state/transport fixture. @returns {Promise<object>} Controller, state, observations and mutable response. */
+async function networkFocusFixture() {
+  const { createNetworkFocusController } = await importProjectModule("js/tools/network.js");
+  const state = { viewer: { did: "viewer" }, accountDid: "viewer", authDid: "auth", nodes: new Map(), details: new Map(),
+    selectedDid: "", loadingDid: "", commonTargetDid: "", commonDids: new Set(), commonLoadingDid: "", filterMode: "all" };
+  const calls = []; const response = { result: null, error: null };
+  const options = { getState: () => state, setState: (patch) => Object.assign(state, patch),
+    request: async (...args) => { calls.push(["request", ...args]); if (response.error) { throw response.error; } return response.result; },
+    render: () => calls.push(["render"]), setStatus: (message) => calls.push(["status", message]),
+    label: (profile) => profile.handle, t: (key, params) => { calls.push(["translation", key, params]); return key; },
+    formatCount: (count) => String(count), report: (error) => calls.push(["error", error]), clearQuery: () => calls.push(["query"]) };
+  return { controller: createNetworkFocusController(options), state, calls, response, options };
+}
+
+/** Creates state/transport adapters for the network loader. @returns {Promise<object>} Loader, mutable state/response and observations. */
+async function networkDataFixture() {
+  const { createNetworkDataController } = await importProjectModule("js/tools/network.js");
+  const state = { authAccount: "viewer", authDid: "viewer", accountDid: "viewer", viewer: { did: "viewer", handle: "viewer.test" },
+    nodes: new Map([["old", { did: "old" }]]), loading: false, followerCursor: "f1", followCursor: "g1", waveIndex: 1 };
+  const calls = []; const response = { result: null, error: null }; let actor = "viewer.test";
+  const options = { getState: () => state, setState: (patch) => Object.assign(state, patch), requestedActor: () => actor,
+    ensureAccount: () => calls.push(["ensure"]), reset: () => { calls.push(["reset"]); state.nodes = new Map(); state.followerCursor = ""; state.followCursor = ""; state.waveIndex = 0; state.viewer = null; },
+    clearQuery: () => calls.push(["query"]), setActorInput: (value) => calls.push(["actor", value]), note: (value) => calls.push(["note", value]),
+    updateControls: () => calls.push(["controls"]), busy: (value) => calls.push(["busy", value]),
+    request: async (...args) => { calls.push(["request", ...args]); if (response.error) { throw response.error; } return response.result; },
+    status: (value) => calls.push(["status", value]), ingest: (profiles) => { for (const profile of profiles) { state.nodes.set(profile.did, profile); } },
+    t: (key, params) => { calls.push(["translation", key, params]); return key; }, formatCount: String,
+    report: (error) => calls.push(["error", error]), showError: (...args) => calls.push(["dialog", ...args]), render: () => calls.push(["render"]) };
+  return { controller: createNetworkDataController(options), state, calls, response, options, actor: (value) => { actor = value; } };
+}
+
+test("network data loader preserves cursor loading, progress and loaded-count contracts", async () => {
+  const { controller, state, calls, response } = await networkDataFixture();
+  response.result = { viewer: state.viewer, followers: [{ did: "f" }], follows: [{ did: "g" }], followerCursor: "f2", followCursor: "g2", hasMoreFollowers: true, hasMoreFollows: "true", wave: { followers: 1, follows: 1 } };
+  await controller.load(); const request = calls.find((entry) => entry[0] === "request");
+  assert.equal(request[1], "LOAD_NETWORK_SLICE"); assert.deepEqual(request[2], { actor: "viewer.test", followerCursor: "f1", followCursor: "g1", limit: 500 });
+  assert.equal(request[3].timeoutMs, 180000); assert.equal(state.waveIndex, 2); assert.equal(state.nodes.size, 3);
+  assert.equal(state.hasMoreFollowers, true); assert.equal(state.hasMoreFollows, false); assert.equal(state.loading, false);
+  assert.deepEqual(calls.filter((entry) => entry[0] === "busy"), [["busy", true], ["busy", false]]);
+  request[3].onProgress({ step: " Step ", detail: " Detail " }); assert.equal(calls.at(-1)[1], "Step \u00b7 Detail");
+  assert.ok(calls.some((entry) => entry[0] === "translation" && entry[2]?.loaded === "3"));
+});
+
+test("network loader switches actors, preserves append behavior and ignores disabled loads", async () => {
+  const { controller, state, calls, response, actor } = await networkDataFixture();
+  response.result = { viewer: { did: "new", handle: "new.test" } }; await controller.load({ actor: " new.test " });
+  assert.equal(state.accountDid, "new"); assert.equal(state.waveIndex, 1); assert.equal(state.filterMode, "all"); assert.equal(state.query, "");
+  assert.ok(calls.some((entry) => entry[0] === "reset")); assert.equal(calls.find((entry) => entry[0] === "request")[2].followerCursor, "");
+  calls.length = 0; await controller.load({ append: true });
+  assert.equal(calls.find((entry) => entry[0] === "request")[2].actor, "new"); assert.equal(calls.some((entry) => entry[0] === "reset"), false);
+  calls.length = 0; state.loading = true; await controller.load(); state.loading = false; state.authAccount = null; await controller.load();
+  assert.deepEqual(calls, []); state.authAccount = "viewer"; actor(""); await controller.load(); assert.deepEqual(calls, []);
+});
+
+test("network loader releases busy state after errors and keeps silent error behavior", async () => {
+  const { controller, state, calls, response } = await networkDataFixture(); response.error = new Error("failed");
+  await controller.load({ silentErrors: true }); assert.equal(state.loading, false); assert.equal(calls.some((entry) => entry[0] === "dialog"), false);
+  assert.ok(calls.some((entry) => entry[0] === "note" && entry[1] === "failed")); assert.deepEqual(calls.at(-1), ["render"]);
+  calls.length = 0; await controller.load(); assert.ok(calls.some((entry) => entry[0] === "dialog"));
+  response.error = null; response.result = null; await controller.load(); assert.equal(state.followerCursor, ""); assert.equal(state.hasMoreFollowers, false);
+});
+
+test("network layout retains circle/squircle geometry, stable slots and focus dimensions", async () => {
+  const { createNetworkLayoutController } = await importProjectModule("js/tools/network-layout.js");
+  const { getNetworkRelationType } = await importProjectModule("js/tools/network.js");
+  const state = { shape: "round", slots: new Map(), counts: {} };
+  const controller = createNetworkLayoutController({ getState: () => state, relation: getNetworkRelationType, clamp: (value, min, max) => Math.min(max, Math.max(min, value)) });
+  assert.deepEqual(controller.point(10, 20, 5, 0), { x: 15, y: 20 }); assert.equal(controller.path(0, 0, 10), null); assert.equal(controller.slot(null), null);
+  const node = { did: "a", followingViewer: true }; const slot = controller.slot(node);
+  assert.equal(controller.slot(node), slot); assert.equal(state.counts.following, 1);
+  const changed = controller.slot({ ...node, followedByViewer: true }); assert.equal(changed.relation, "mutual"); assert.equal(changed.index, 0);
+  const empty = controller.layout([]); assert.equal(empty.width, 1224); assert.equal(empty.height, 1144); assert.equal(empty.centerY, 572);
+  const focus = controller.layout([{ ...node, followedByViewer: true }], "a");
+  assert.equal(focus.height, 1092); assert.equal(focus.centerY, 350); assert.equal(focus.focusCenterY, 902);
+  assert.equal(focus.positions.get("a").y, 174); assert.deepEqual(controller.labels([{ ...node, followedByViewer: true }, { did: "b" }], "a"), ["a", "b"]);
+  state.shape = "squircle"; assert.equal(controller.point(0, 0, 10, 0).x, 11.799999999999999);
+  const path = controller.path(0, 0, 10); assert.ok(path.startsWith("M ")); assert.ok(path.endsWith(" Z")); assert.equal((path.match(/L /g) || []).length, 72);
+  assert.deepEqual(controller.layout([]).positions.size, 0);
+});
+
+test("network layout handles additional lanes, filtering and reset maps without moving stable slots", async () => {
+  const { createNetworkLayoutController } = await importProjectModule("js/tools/network-layout.js");
+  const { getNetworkRelationType } = await importProjectModule("js/tools/network.js");
+  const state = { shape: "round", slots: new Map(), counts: {} }; const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const controller = createNetworkLayoutController({ getState: () => state, relation: getNetworkRelationType, clamp });
+  const nodes = Array.from({ length: 25 }, (_, index) => ({ did: String(index), followingViewer: true, followedByViewer: true }));
+  const initial = controller.layout(nodes); assert.equal(initial.ringRadii.followers, 300);
+  assert.equal(state.slots.get("24").index, 24); controller.layout([nodes[24]]); assert.equal(state.slots.get("24").index, 24);
+  state.slots = new Map(); state.counts = {}; controller.layout([nodes[24]]); assert.equal(state.slots.get("24").index, 0);
+  assert.equal(controller.layout(Array.from({ length: 500 }, (_, index) => ({ did: `many-${index}` }))).densityFactor, 1.35);
+});
+
+test("network load controls preserve empty, loading, finished and authenticated states", async () => {
+  const { renderNetworkLoadControls } = await importProjectModule("js/tools/network-ui.js");
+  const elements = { load: {}, reset: {}, own: {}, account: {} }; const state = { authenticated: true, nodeCount: 0, loading: false, filterMode: "all", actor: "viewer", ownNetwork: true };
+  renderNetworkLoadControls(elements, state, (key) => key); assert.equal(elements.load.disabled, false); assert.equal(elements.reset.disabled, true); assert.equal(elements.own.disabled, true);
+  state.nodeCount = 1; renderNetworkLoadControls(elements, state, (key) => key); assert.equal(elements.load.title, "networkLoadFinishedTitle"); assert.equal(elements.load.disabled, true);
+  state.hasMoreFollowers = true; renderNetworkLoadControls(elements, state, (key) => key); assert.equal(elements.load.textContent, "networkLoadMoreButton");
+  state.loading = true; renderNetworkLoadControls(elements, state, (key) => key); assert.equal(elements.load.textContent, "networkLoadingButton"); assert.equal(elements.account.disabled, true);
+  state.authenticated = false; renderNetworkLoadControls(elements, state, (key) => key); assert.equal(elements.load.title, "networkLoadButton");
+  renderNetworkLoadControls({ load: {}, reset: {} }, { filterMode: "common" }, (key) => key);
+});
+
+/** Creates a stage controller with explicit geometry/native adapters. @returns {Promise<object>} Controller, state, DOM doubles and observations. */
+async function networkStageFixture() {
+  const { createNetworkStageController } = await importProjectModule("js/tools/network-ui.js");
+  const state = { workspace: "network", zoom: 1, fitAll: false, panX: 0, panY: 0, drag: null, shape: "round", mode: false,
+    focusVisible: false, listsVisible: false, selectedDid: "a", collapsed: false, scrollTop: 12, restorePending: false };
+  const calls = []; const frames = []; const elements = {
+    stage: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }), setPointerCapture: (id) => calls.push(["capture", id]) },
+    body: { classList: { toggle: (...args) => calls.push(["class", ...args]) } },
+    document: { fullscreenEnabled: false, fullscreenElement: null, exitFullscreen: async () => calls.push(["exit"]) },
+    fullscreenTarget: { requestFullscreen: async () => calls.push(["fullscreen"]) }, results: { scrollTop: 0 } };
+  const options = { getState: () => state, setState: (patch) => Object.assign(state, patch),
+    clamp: (value, min, max) => Math.min(max, Math.max(min, value)), minZoom: 0.5, maxZoom: 4,
+    layout: () => ({ width: 800, height: 600, contentBounds: { minX: 0, minY: 0, maxX: 800, maxY: 600 } }),
+    viewport: () => ({ x: state.panX, y: state.panY, width: 800 / state.zoom, height: 600 / state.zoom }),
+    renderStage: () => calls.push(["stage"]), renderWorkspace: () => calls.push(["workspace"]), persistShape: (shape) => calls.push(["shape", shape]), frame: (callback) => frames.push(callback) };
+  return { controller: createNetworkStageController(elements, options), state, elements, calls, frames };
+}
+
+test("network stage zoom preserves anchor, clamp/reset behavior and shape persistence", async () => {
+  const { controller, state, calls } = await networkStageFixture();
+  controller.zoomAtPoint(2, 200, 150); assert.equal(state.zoom, 2); assert.equal(state.panX, 0); assert.equal(state.panY, 0);
+  controller.zoom(100); assert.equal(state.zoom, 4); controller.zoom(0.001); assert.equal(state.zoom, 0.5);
+  controller.resetZoom(); assert.equal(state.fitAll, true); assert.equal(state.zoom, 1); assert.equal(state.panX, 0);
+  controller.zoomAtPoint(2, 0, 0); assert.equal(state.panX, -200); assert.equal(state.panY, -150);
+  controller.toggleShape(); assert.equal(state.shape, "squircle"); assert.ok(calls.some((entry) => entry[0] === "shape"));
+  controller.toggleShape(); assert.equal(state.shape, "round"); assert.equal(state.fitAll, true);
+});
+
+test("network stage pointer/wheel handlers gate workspaces and preserve pointer identity", async () => {
+  const { controller, state, calls } = await networkStageFixture(); let prevented = 0;
+  const event = { pointerId: 1, clientX: 10, clientY: 20, deltaY: -1, preventDefault: () => { prevented += 1; } };
+  state.workspace = "search"; controller.interactionHandlers.wheel(event); controller.interactionHandlers.pointerDown(event); assert.equal(prevented, 0);
+  state.workspace = "network"; controller.interactionHandlers.wheel(event); assert.equal(state.zoom, 1.12);
+  controller.resetZoom(); controller.interactionHandlers.pointerDown(event); assert.deepEqual(state.drag, { pointerId: 1, x: 10, y: 20 });
+  controller.interactionHandlers.pointerMove({ ...event, pointerId: 2, clientX: 30 }); assert.equal(state.panX, 0);
+  controller.interactionHandlers.pointerMove({ ...event, clientX: 30, clientY: 50 }); assert.equal(state.panX, -40); assert.equal(state.panY, -60);
+  controller.interactionHandlers.pointerUp({ pointerId: 2 }); assert.ok(state.drag);
+  controller.interactionHandlers.pointerUp({ pointerId: 1 }); assert.equal(state.drag, null); assert.ok(calls.some((entry) => entry[0] === "capture"));
+  controller.interactionHandlers.wheel({ ...event, deltaY: 1 }); assert.ok(state.zoom < 1);
+});
+
+test("network stage native/fallback mode and panel controls retain lifecycle semantics", async () => {
+  const { controller, state, elements, calls } = await networkStageFixture();
+  await controller.enter(); assert.equal(state.mode, true); assert.equal(calls.some((entry) => entry[0] === "fullscreen"), false);
+  controller.modeHandlers.focusClick(); controller.modeHandlers.listsClick(); assert.equal(state.focusVisible, true); assert.equal(state.listsVisible, true);
+  controller.insightHandlers.focusToggleClick(); assert.equal(state.collapsed, true);
+  state.selectedDid = ""; controller.insightHandlers.focusToggleClick(); assert.equal(state.collapsed, true);
+  controller.insightHandlers.groupClick({ currentTarget: { dataset: { networkInsightsGroup: " followers " } } }); assert.equal(state.group, "followers"); assert.equal(state.scrollTop, 0);
+  controller.insightHandlers.groupClick({ currentTarget: null }); assert.equal(state.group, "followers");
+  controller.lifecycleHandlers.keydown({ key: "Escape", preventDefault() {} }); assert.equal(state.mode, false);
+  elements.document.fullscreenEnabled = true; await controller.enter(); assert.ok(calls.some((entry) => entry[0] === "fullscreen"));
+  elements.fullscreenTarget.requestFullscreen = async () => { throw new Error("denied"); }; await controller.enter(); assert.equal(state.mode, true);
+  elements.document.fullscreenElement = {}; controller.lifecycleHandlers.fullscreenChange(); assert.equal(state.mode, true);
+  elements.document.exitFullscreen = async () => { throw new Error("denied"); }; await controller.exit(); assert.equal(state.mode, false);
+  await controller.enter(); elements.document.fullscreenElement = null; controller.lifecycleHandlers.fullscreenChange(); assert.equal(state.mode, false);
+});
+
+test("network stage scroll restoration ignores generated scroll events until both frames complete", async () => {
+  const { controller, state, elements, frames } = await networkStageFixture();
+  controller.restoreScroll(); assert.equal(elements.results.scrollTop, 12); assert.equal(state.restorePending, true);
+  elements.results.scrollTop = 999; controller.lifecycleHandlers.resultsScroll(); assert.equal(state.scrollTop, 12);
+  frames.shift()(); assert.equal(elements.results.scrollTop, 12); assert.equal(state.restorePending, true);
+  frames.shift()(); assert.equal(state.restorePending, false);
+  elements.results.scrollTop = 40; controller.lifecycleHandlers.resultsScroll(); assert.equal(state.scrollTop, 40);
+  state.scrollTop = -4; controller.restoreScroll(); assert.equal(elements.results.scrollTop, 0);
+});
+
+/** Creates a minimal UI control for renderer contracts. @returns {object} Mutable classes, attributes and presentation fields. */
+function networkRenderControl() {
+  const classes = new Set(); const attributes = {};
+  return { classes, attributes, hidden: false, value: "", dataset: {},
+    classList: { toggle(name, active) { if (active) { classes.add(name); } else { classes.delete(name); } } },
+    setAttribute(name, value) { attributes[name] = value; }, toggleAttribute(name, active) { attributes[name] = active; },
+    matches: () => false, replaceChildren: (...args) => { attributes.children = args; } };
+}
+
+test("network renderer filter/summary contracts retain common availability and count behavior", async () => {
+  const { createNetworkWorkspaceRenderer } = await importProjectModule("js/tools/network-rendering.js");
+  const all = networkRenderControl(); all.dataset.networkFilter = "all";
+  const common = networkRenderControl(); common.dataset.networkFilter = "common";
+  const state = { selectedDid: "a", commonTargetDid: "a", commonDids: new Set(["b"]), filterMode: "common" };
+  const elements = { commonFilter: common, filterButtons: [all, common], loaded: {}, mutuals: {}, visible: {} };
+  const renderer = createNetworkWorkspaceRenderer(elements, { getState: () => state, setFilter: (mode) => { state.filterMode = mode; },
+    allNodes: () => [{ relation: "mutual" }, { relation: "followers" }], visibleNodes: () => [{}], relation: (node) => node.relation, formatCount: String });
+  renderer.filters(); assert.equal(common.hidden, false); assert.equal(common.attributes["aria-pressed"], "true");
+  state.selectedDid = "other"; renderer.filters(); assert.equal(common.hidden, true); assert.equal(common.classes.has("is-active"), false);
+  assert.equal(state.filterMode, "all"); assert.equal(all.attributes["aria-pressed"], "true");
+  renderer.summary(); assert.equal(elements.loaded.textContent, "2"); assert.equal(elements.mutuals.textContent, "1"); assert.equal(elements.visible.textContent, "1");
+  state.commonDids = new Set(); state.filterMode = "common"; renderer.filters(); assert.equal(state.filterMode, "all");
+});
+
+test("network renderer presentation retains optional controls, focus modes and template icons", async () => {
+  const { createNetworkWorkspaceRenderer } = await importProjectModule("js/tools/network-rendering.js");
+  const elements = { templates: {}, groupButtons: [], body: networkRenderControl() };
+  for (const name of ["actor", "canvas", "stageCard", "insightsCard", "focusPanel", "shape", "collapse", "enter", "exit", "focus", "lists", "sortField", "sortDirection", "groupToggles"]) { elements[name] = networkRenderControl(); }
+  const path = {}; const state = { stageMode: false, selectedDid: "a", viewer: { handle: "viewer.test" }, collapsed: false, shape: "squircle", focusVisible: false, listsVisible: false, sortField: "handle", sortDirection: "desc" };
+  const renderer = createNetworkWorkspaceRenderer(elements, { getState: () => state, t: (key) => key,
+    cloneTemplate: () => ({ querySelector: () => ({ setAttribute: (name, value) => { path[name] = value; } }) }) });
+  renderer.presentation(); assert.equal(elements.canvas.classes.has("has-focus"), true); assert.equal(elements.actor.value, "viewer.test");
+  assert.equal(elements.collapse.attributes["aria-expanded"], "true"); assert.equal(elements.shape.attributes["aria-pressed"], "true");
+  assert.equal(elements.sortDirection.value, "desc"); assert.equal(elements.exit.hidden, true);
+  state.stageMode = true; state.collapsed = true; renderer.presentation(); assert.equal(elements.canvas.classes.has("has-focus"), false);
+  assert.equal(elements.focusPanel.attributes.hidden, true); assert.equal(elements.collapse.attributes["aria-expanded"], "false"); assert.match(path.d, /M7\.4 8\.6/);
+  state.focusVisible = true; state.listsVisible = true; renderer.presentation(); assert.equal(elements.canvas.classes.has("has-focus-collapsed"), true);
+  assert.equal(elements.focus.textContent, "networkStageModeHideFocus"); assert.equal(elements.groupToggles.hidden, false);
+  const minimal = createNetworkWorkspaceRenderer({ body: networkRenderControl(), groupButtons: [] }, { getState: () => state }); minimal.presentation();
+});
+
+test("network renderer empty-result and missing-template boundaries fail explicitly", async () => {
+  const { createNetworkWorkspaceRenderer } = await importProjectModule("js/tools/network-rendering.js");
+  const notes = []; const paragraph = {}; const fragment = { querySelector: () => paragraph };
+  const elements = { templates: { empty: {} }, results: { scrollTop: 0, replaceChildren() { notes.length = 0; }, append: (value) => notes.push(value) } };
+  const options = { getState: () => ({ scrollTop: 12 }), allNodes: () => [], t: (key) => key, cloneTemplate: () => fragment };
+  const renderer = createNetworkWorkspaceRenderer(elements, options); renderer.results();
+  assert.equal(paragraph.textContent, "networkResultsEmpty"); assert.deepEqual(notes, [fragment]);
+  options.cloneTemplate = () => null; assert.throws(() => renderer.results(), /Missing network template: empty/);
+});
+
+/** Supplies deterministic adapters for focus display-model tests. @param {object} state - Profile maps. @param {boolean} own - Own-account flag. @returns {object} Display adapters. */
+function networkFocusModelOptions(state, own = true) {
+  return { known: (did) => state.nodes.get(did) || null, ownNetwork: () => own, avatar: (profile) => profile.avatar || "cached-avatar",
+    relation: () => "mutual", score: () => 120, breakdown: () => ({ total: 120, relationScore: 120, followersScore: 0, postsScore: 0 }),
+    centerLabel: () => "viewer", locale: "en", formatCount: (value) => String(Number(value) || 0),
+    t: (key, params = {}) => `${key}:${JSON.stringify(params)}` };
+}
+
+test("network focus date/activity adapters retain valid, empty and malformed-data behavior", async () => {
+  const { formatNetworkFocusDate, getNetworkFocusActivityWindow } = await importProjectModule("js/tools/network-focus-rendering.js");
+  assert.equal(formatNetworkFocusDate("invalid", "en"), ""); assert.equal(formatNetworkFocusDate(null, "en"), "");
+  for (const locale of ["en", "de", "fr"]) {
+    assert.equal(formatNetworkFocusDate("2026-10-12T12:00:00Z", locale), new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date("2026-10-12T12:00:00Z")));
+  }
+  assert.equal(getNetworkFocusActivityWindow(null, 14), null); assert.equal(getNetworkFocusActivityWindow({ windows: "invalid" }, 14), null);
+  assert.equal(getNetworkFocusActivityWindow({ windows: { 14: "invalid" } }, 14), null);
+  assert.deepEqual(getNetworkFocusActivityWindow({ windows: { 14: { postsCount: "3", likesReceivedCount: "bad" } } }, "14"), { postsCount: 3, likesReceivedCount: 0 });
+  assert.deepEqual(getNetworkFocusActivityWindow({ windows: { 60: {} } }, 60), { postsCount: 0, likesReceivedCount: 0 });
+});
+
+test("network focus model preserves own-account metadata order, action gates and counters", async () => {
+  const { buildNetworkFocusCardModel } = await importProjectModule("js/tools/network-focus-rendering.js");
+  const profile = { did: "a", handle: "alpha.test", displayName: "Alpha", description: "<img>not markup", followersCount: 10 };
+  const detail = { profile, relationshipDates: { youFollowSince: "2026-10-10T12:00:00Z", followsYouSince: "2026-10-12T12:00:00Z" },
+    activityStats: { latestPostAt: "2026-10-13T12:00:00Z", samplePosts: 6, windows: { 14: { postsCount: 2, likesReceivedCount: 5 }, 60: { postsCount: 7 } } },
+    likeStats: { mutualLikesCount: 8, youLikeCount: 3, likesYouCount: 5, ownPostsSampled: 10, actorPostsSampled: 12, totalSample: 22 }, followersPreview: [{ did: "p" }], followsPreview: [] };
+  const state = { selectedDid: "a", nodes: new Map([["a", profile]]), details: new Map([["a", detail]]), commonTargetDid: "a", commonDids: new Set(["p"]), commonLoadingDid: "", accountDid: "viewer", focusLoadingDid: "a", loading: false };
+  const model = buildNetworkFocusCardModel(state, networkFocusModelOptions(state));
+  assert.equal(model.title, "Alpha"); assert.equal(model.handle, "@alpha.test"); assert.equal(model.stats[0][1], "10"); assert.equal(model.stats[3][1], "120");
+  assert.equal(model.commonActive, true); assert.equal(model.loadDisabled, false);
+  assert.deepEqual(model.sections.map((section) => section.kind), ["line", "group", "group", "group", "group", "description", "note", "line"]);
+  assert.match(model.sections[2].lines[0].text, /^networkMutualSince/); assert.match(model.sections[3].lines.at(-1).text, /"count":"6"/);
+  assert.equal(model.sections[5].text, profile.description); assert.match(model.sections.at(-1).text, /"followers":"1"/);
+  state.accountDid = "a"; const ownCenter = buildNetworkFocusCardModel(state, networkFocusModelOptions(state)); assert.equal(ownCenter.loadDisabled, true); assert.equal(ownCenter.commonDisabled, true);
+  assert.equal(profile.description, "<img>not markup");
+});
+
+test("network focus model handles empty selection, unknown/viewer fallbacks and foreign metadata", async () => {
+  const { buildNetworkFocusCardModel } = await importProjectModule("js/tools/network-focus-rendering.js");
+  const state = { selectedDid: "", nodes: new Map(), details: new Map(), commonTargetDid: "", commonDids: new Set() };
+  assert.deepEqual(buildNetworkFocusCardModel(state, networkFocusModelOptions(state)), { emptyKey: "networkEmpty" });
+  state.nodes.set("a", { did: "a", handle: "alpha" }); assert.deepEqual(buildNetworkFocusCardModel(state, networkFocusModelOptions(state)), { emptyKey: "networkFocusEmpty" });
+  state.selectedDid = "unknown"; assert.equal(buildNetworkFocusCardModel(state, networkFocusModelOptions(state)).emptyKey, "networkFocusEmpty");
+  state.viewer = { handle: "viewer" }; assert.equal(buildNetworkFocusCardModel(state, networkFocusModelOptions(state)).stats[3][1], "\u2014");
+  state.selectedDid = "a"; state.commonLoadingDid = "a";
+  state.details.set("a", { likeStats: {}, relationshipDates: { youFollowSince: "2026-10-12" }, activityStats: { windows: { 14: {} } } });
+  const foreign = buildNetworkFocusCardModel(state, networkFocusModelOptions(state, false));
+  assert.match(foreign.sections[0].text, /^networkScoreExplainOther/); assert.match(foreign.sections[1].text, /^networkCommonMutualsLoading/);
+  assert.equal(foreign.sections.some((section) => section.lines?.some((line) => line.text.startsWith("networkYouFollowSince") || line.text.startsWith("networkMutualLikesTotal"))), false);
+  assert.ok(foreign.sections.some((section) => section.lines?.some((line) => line.text.startsWith("networkActivityTitle"))));
+});
+
+test("network focus renderer exposes empty-state and missing-template contracts", async () => {
+  const { createNetworkFocusCardRenderer } = await importProjectModule("js/tools/network-focus-rendering.js");
+  const paragraph = {}; let rendered;
+  const options = { getState: () => ({}), model: () => ({ emptyKey: "networkEmpty" }), t: (key) => key, cloneTemplate: () => ({ querySelector: () => paragraph }) };
+  const renderer = createNetworkFocusCardRenderer({ templates: {}, card: { replaceChildren: (fragment) => { rendered = fragment; } } }, options);
+  renderer.render(); assert.equal(paragraph.textContent, "networkEmpty"); assert.ok(rendered);
+  options.cloneTemplate = () => null; assert.throws(() => renderer.render(), /Missing network focus template: empty/);
+});
+
+test("network SVG node styles retain relationship colors and selection radii", async () => {
+  const { getNetworkStageNodeStyle } = await importProjectModule("js/tools/network-stage-rendering.js");
+  for (const [type, radius, color] of [["mutual", 18, "#5ce7cf"], ["followers", 15, "#69a9ff"], ["following", 15, "#f8c26c"], ["other", 15, "#bac6d6"]]) {
+    assert.deepEqual(getNetworkStageNodeStyle({ did: "a" }, "", () => type), { radius, color, selected: false });
+    assert.deepEqual(getNetworkStageNodeStyle({ did: "a" }, "a", () => type), { radius: 22, color, selected: true });
+  }
+  assert.equal(getNetworkStageNodeStyle({ did: "a" }, "", () => "unknown").color, "#bac6d6");
+  assert.throws(() => getNetworkStageNodeStyle(null, "", () => "mutual"), TypeError);
+});
+
+test("network SVG node binding preserves hover ownership, keyboard activation and preview context", async () => {
+  const { bindNetworkSvgNode } = await importProjectModule("js/tools/network-stage-rendering.js");
+  const handlers = {}; const element = { addEventListener: (type, handler) => { handlers[type] = handler; } }; const calls = [];
+  let hovered = ""; let stopped = 0; let prevented = 0;
+  const event = { key: "Enter", stopPropagation: () => { stopped += 1; }, preventDefault: () => { prevented += 1; } };
+  assert.equal(bindNetworkSvgNode(element, "a", { hovered: () => hovered, hover: (did) => { hovered = did; }, select: (...args) => calls.push(args) }), element);
+  handlers.pointerdown(event); assert.equal(stopped, 1); handlers.mouseenter(); assert.equal(hovered, "a");
+  hovered = "b"; handlers.mouseleave(); assert.equal(hovered, "b"); handlers.focus(); handlers.blur(); assert.equal(hovered, "");
+  handlers.click(event); handlers.keydown(event); handlers.keydown({ ...event, key: " " }); handlers.keydown({ ...event, key: "Escape" });
+  assert.deepEqual(calls, [["a"], ["a"], ["a"]]); assert.equal(prevented, 2);
+  const settings = { previewTab: "following", loadDetails: true };
+  bindNetworkSvgNode(element, "p", { hovered: () => "", hover() {}, select: (...args) => calls.push(args) }, settings);
+  handlers.keydown(event); assert.deepEqual(calls.at(-1), ["p", settings]);
+  assert.throws(() => bindNetworkSvgNode(null, "", {}), TypeError);
+});
+
+test("network SVG renderer exposes missing-template failures without hidden DOM dependencies", async () => {
+  const { createNetworkStageRenderer } = await importProjectModule("js/tools/network-stage-rendering.js");
+  const renderer = createNetworkStageRenderer({ stage: { setAttribute() {} }, empty: {}, templates: {} }, {
+    allNodes: () => [], slot() {}, visibleNodes: () => [], getState: () => ({}), hover() {}, preferred: () => "",
+    layout: () => ({}), contentBounds: () => ({}), viewport: () => ({ x: 0, y: 0, width: 1, height: 1 }), common: () => new Set(), cloneTemplate: () => null });
+  assert.throws(() => renderer.render(), /Missing network SVG template: scene/);
+});
+
+/** Builds explicit workspace state/render/navigation adapters. @returns {Promise<object>} Controller, elements, state and observed actions. */
+async function networkWorkspaceFixture() {
+  const { createNetworkWorkspaceController } = await importProjectModule("js/tools/network-controller.js");
+  const state = { authAccount: "auth.test", authDid: "auth", accountDid: "auth", viewer: null, nodes: new Map(), details: new Map(),
+    selectedDid: "", loadingDid: "", loading: false, statusLine: "", filterMode: "all", zoom: 2, shape: "squircle" };
+  const elements = { search: { value: " query " }, account: { value: " actor.test " }, sortField: { value: "handle" }, sortDirection: { value: "desc" }, status: {}, hover: {} };
+  const calls = []; let navigated = false;
+  const options = { getState: () => state, setState: (patch) => Object.assign(state, patch), clearCommon: () => calls.push("clearCommon"),
+    relation: (node) => node.relation, t: (key, params) => { if (params) { return `${key}:${params.account}`; } return key; },
+    known: (did) => state.nodes.get(did), label: (profile) => profile.handle, load: async (value) => calls.push(["load", value]), loadFocus: async (did) => calls.push(["focus", did]),
+    note: (value) => calls.push(["note", value]), updateControls: () => calls.push("controls"), navigate: () => { calls.push("navigate"); return navigated; },
+    applyExplorerFullscreen: () => calls.push("fullscreen"), persistWorkspace: (value) => calls.push(["persist", value]), showWorkspace: (value) => calls.push(["visible", value]),
+    applyHashtagContext: () => calls.push("hashtags"), updateAuth: () => calls.push("auth"),
+    renderers: [() => calls.push("presentation"), () => calls.push("filters"), () => calls.push("content")], restoreScroll: () => calls.push("scroll") };
+  return { controller: createNetworkWorkspaceController(elements, options), state, elements, calls, options, navigate: (value) => { navigated = value; } };
+}
+
+test("network workspace data reset rebuilds maps/cursors while presentation reset retains data and zoom", async () => {
+  const { controller, state, elements, calls } = await networkWorkspaceFixture();
+  state.nodes.set("a", { did: "a" }); state.selectedDid = "a"; state.details.set("a", {});
+  const nodes = state.nodes; controller.handlers.reset(); assert.equal(state.nodes, nodes); assert.equal(state.zoom, 2); assert.equal(state.selectedDid, ""); assert.equal(elements.search.value, "");
+  state.accountDid = "foreign"; controller.reset(); assert.notEqual(state.nodes, nodes); assert.equal(state.nodes.size, 0); assert.equal(state.details.size, 0);
+  assert.equal(state.accountDid, "foreign"); assert.equal(state.zoom, 1); assert.equal(state.shape, "squircle"); assert.equal(state.followerCursor, "");
+  assert.equal(state.followCursor, ""); assert.equal(state.fitAll, true); assert.deepEqual(state.counts, { mutual: 0, followers: 0, following: 0, other: 0 });
+  assert.ok(calls.includes("clearCommon")); const first = state.nodes; controller.reset(); assert.notEqual(state.nodes, first);
+  state.accountDid = ""; controller.ensure(); assert.equal(state.accountDid, "auth"); state.authDid = ""; controller.ensure(); assert.equal(state.nodes.size, 0);
+});
+
+test("network workspace context resolves labels, relationships, typed actors and group pagination", async () => {
+  const { controller, state, elements, calls } = await networkWorkspaceFixture();
+  assert.equal(controller.own(), true); assert.equal(controller.requested(), "actor.test"); assert.equal(controller.center(), null); assert.equal(controller.centerLabel(), "auth.test");
+  state.viewer = { did: "foreign", handle: "foreign.test", displayName: "Foreign" }; state.accountDid = "foreign"; elements.account.value = "";
+  assert.equal(controller.own(), false); assert.equal(controller.requested(), "foreign.test"); assert.equal(controller.centerLabel(), "Foreign");
+  assert.equal(controller.relationLabel({ relation: "followers" }), "networkRelationFollowerOther:Foreign");
+  state.accountDid = "auth"; assert.equal(controller.relationLabel({ relation: "following" }), "networkRelationFollowing");
+  assert.equal(controller.relationLabel({ relation: "mutual" }), "networkRelationMutual"); assert.equal(controller.relationLabel({ relation: "other" }), "networkRelationLoose");
+  state.viewer = null; state.accountDid = ""; assert.equal(controller.requested(), "auth"); state.authDid = ""; state.authAccount = null; assert.equal(controller.centerLabel(), "networkViewerFallback");
+  state.hasMoreFollowers = false; state.hasMoreFollows = true; assert.equal(controller.pending("followers"), false); assert.equal(controller.pending("following"), true); assert.equal(controller.pending("unknown"), true);
+  await controller.loadMore("mutual"); assert.equal(calls.length, 0);
+  state.authAccount = "auth.test"; await controller.loadMore("mutual"); assert.deepEqual(calls.at(-1), ["load", { triggerGroup: "mutual" }]);
+  state.loading = true; const count = calls.length; await controller.loadMore(); assert.equal(calls.length, count);
+});
+
+test("network workspace controls preserve exact load payloads, sort normalization and input feedback", async () => {
+  const { controller, state, elements, calls } = await networkWorkspaceFixture(); let prevented = 0;
+  controller.handlers.accountKeydown({ key: "Escape" }); assert.equal(calls.length, 0);
+  controller.handlers.accountKeydown({ key: "Enter", preventDefault: () => { prevented += 1; } }); assert.equal(prevented, 1);
+  assert.deepEqual(calls.at(-1), ["load", { actor: "actor.test", append: false, silentErrors: false }]);
+  await controller.handlers.accountLoad(); await controller.handlers.ownLoad(); await controller.handlers.load();
+  assert.deepEqual(calls.filter(Array.isArray).slice(-3), [["load", { actor: "actor.test", append: false, silentErrors: false }], ["load", { actor: "auth", append: false, silentErrors: false }], ["load", { append: true }]]);
+  assert.equal(elements.account.value, "auth.test"); controller.handlers.accountInput(); assert.deepEqual(calls.slice(-2), [["note", ""], "controls"]);
+  controller.handlers.sortFieldChange(); assert.equal(state.sortField, "handle"); elements.sortField.value = "invalid"; controller.handlers.sortFieldChange(); assert.equal(state.sortField, "displayName");
+  controller.handlers.sortDirectionChange(); assert.equal(state.sortDirection, "desc"); elements.sortDirection.value = "invalid"; controller.handlers.sortDirectionChange(); assert.equal(state.sortDirection, "asc");
+  controller.handlers.filterClick({ currentTarget: { dataset: {} } }); assert.equal(state.filterMode, "all"); controller.handlers.searchInput(); assert.equal(state.query, "query");
+});
+
+test("network workspace navigation/render orchestration preserves gates, order and pending-focus suppression", async () => {
+  const { controller, state, calls, navigate } = await networkWorkspaceFixture();
+  navigate(true); controller.show(); assert.deepEqual(calls, ["navigate"]);
+  navigate(false); calls.length = 0; state.authAccount = null; controller.show(); assert.deepEqual(calls, ["navigate"]);
+  state.authAccount = "auth.test"; calls.length = 0; controller.show(); assert.equal(state.workspace, "network");
+  assert.deepEqual(calls.slice(0, 8), ["navigate", "fullscreen", ["persist", "network"], ["visible", "network"], "hashtags", "auth", "presentation", "filters"]);
+  assert.deepEqual(calls.at(-1), ["load", { silentErrors: false }]);
+  state.nodes.set("a", { did: "a" }); state.selectedDid = "a"; calls.length = 0; controller.render(); assert.deepEqual(calls, ["presentation", "filters", "content", "scroll", ["focus", "a"]]);
+  state.loadingDid = "a"; calls.length = 0; controller.render(); assert.equal(calls.some((entry) => Array.isArray(entry) && entry[0] === "focus"), false);
+  state.loadingDid = ""; state.details.set("a", {}); calls.length = 0; controller.render(); assert.equal(calls.some(Array.isArray), false);
+});
+
+test("network status/hover and optional shape storage preserve failure fallbacks", async () => {
+  const { controller, state, elements } = await networkWorkspaceFixture();
+  controller.status(" ready "); assert.equal(state.statusLine, "ready"); assert.equal(elements.status.textContent, "ready"); controller.status(null); assert.equal(state.statusLine, "networkProgressIdle");
+  state.nodes.set("a", { handle: "<img>plain text" }); controller.hover(" a "); assert.equal(state.hoveredDid, "a"); assert.equal(elements.hover.textContent, "<img>plain text");
+  controller.hover("missing"); assert.equal(elements.hover.hidden, true); assert.equal(elements.hover.textContent, "");
+  const { normalizeNetworkShape, readNetworkShapePreference, writeNetworkShapePreference } = await importProjectModule("js/tools/network-controller.js");
+  const values = new Map(); const storage = () => ({ getItem: (key) => values.get(key), setItem: (key, value) => values.set(key, value) });
+  assert.equal(normalizeNetworkShape(null), "round"); assert.equal(normalizeNetworkShape("SQUIRCLE"), "round");
+  writeNetworkShapePreference("squircle", storage, "shape"); assert.equal(readNetworkShapePreference(storage, "shape"), "squircle");
+  values.set("shape", " squircle "); assert.equal(readNetworkShapePreference(storage, "shape"), "squircle");
+  writeNetworkShapePreference(" squircle ", storage, "shape"); assert.equal(readNetworkShapePreference(storage, "shape"), "round");
+  const unavailable = () => { throw new Error("denied"); }; assert.equal(readNetworkShapePreference(unavailable, "shape"), "round"); assert.doesNotThrow(() => writeNetworkShapePreference("squircle", unavailable, "shape"));
+});
+
+test("network focus profile store preserves lookup priority, self exclusion and bounded deduplicated previews", async () => {
+  const { controller, state } = await networkFocusFixture();
+  controller.ingest([null, {}, { did: "viewer" }, { did: "a", handle: "alpha", followingViewer: true }, { did: "a", followedByViewer: true }]);
+  assert.equal(state.nodes.size, 1); assert.equal(controller.known(" a ").handle, "alpha");
+  assert.equal(controller.known("a").followingViewer, true); assert.equal(controller.known("a").followedByViewer, true);
+  state.nodes.set("viewer", { did: "viewer", handle: "not viewer" }); assert.equal(controller.known("viewer"), state.viewer);
+  state.details.set("a", { profile: { did: "a", handle: "focus" },
+    followersPreview: [{ did: "p" }, { did: "a" }, {}, { did: "q" }, { did: "excluded" }],
+    followsPreview: [{ did: "p" }, { did: "r" }] });
+  assert.equal(controller.known("a").handle, "alpha"); assert.equal(controller.known("p").did, "p");
+  assert.equal(controller.known(""), null); assert.equal(controller.known("unknown"), null);
+  assert.deepEqual(controller.previews("a").map((entry) => [entry.did, entry.previewRelation]), [["p", "followers"], ["q", "followers"], ["r", "following"]]);
+  assert.deepEqual(controller.previews(""), []); assert.deepEqual(controller.previews("missing"), []);
+  state.nodes.delete("a"); assert.equal(controller.known("a").handle, "focus");
+});
+
+test("network focus selection resets foreign common filtering but retains same-target sets", async () => {
+  const { controller, state, calls } = await networkFocusFixture();
+  state.commonTargetDid = "old"; state.commonDids = new Set(["p"]); state.filterMode = "common";
+  controller.select(" a ", { loadDetails: false, previewTab: "following" });
+  assert.equal(state.selectedDid, "a"); assert.equal(state.previewTab, "following"); assert.equal(state.collapsed, false);
+  assert.equal(state.commonTargetDid, ""); assert.equal(state.filterMode, "all"); assert.equal(calls.some((entry) => entry[0] === "request"), false);
+  state.nodes.set("a", { did: "a" }); assert.equal(controller.preferred([{ did: "a" }]), "a"); assert.equal(controller.preferred([]), "");
+  state.commonTargetDid = "a"; state.commonDids = new Set(["p"]); controller.select("a", { loadDetails: false });
+  const active = controller.activeCommon(); active.clear(); assert.equal(state.commonDids.size, 1);
+  assert.equal(controller.activeCommon("other").size, 0); controller.select(""); assert.equal(state.selectedDid, "a");
+  controller.clearCommon(); assert.equal(state.commonDids.size, 0);
+});
+
+test("network focus loading suppresses duplicate targets, normalizes responses and isolates progress/errors", async () => {
+  const { controller, state, calls, response } = await networkFocusFixture();
+  state.selectedDid = "a"; state.nodes.set("a", { did: "a", handle: "alpha", followingViewer: true });
+  response.result = { profile: { did: "a", followedByViewer: true }, followersPreview: "invalid", followsPreview: [{}] };
+  await controller.loadFocus(" a ");
+  const request = calls.find((entry) => entry[0] === "request");
+  assert.equal(request[1], "LOAD_NETWORK_ACTOR_FOCUS"); assert.deepEqual(request[2], { actor: "a" }); assert.equal(request[3].timeoutMs, 120000);
+  assert.deepEqual(state.details.get("a").followersPreview, []); assert.deepEqual(state.details.get("a").followsPreview, [{}]);
+  assert.equal(state.nodes.get("a").followingViewer, true); assert.equal(state.loadingDid, "");
+  request[3].onProgress({ step: "Step", detail: "detail" }); assert.equal(calls.at(-1)[1], "Step \u00b7 alpha");
+  state.selectedDid = "other"; const count = calls.length; request[3].onProgress({ step: "Ignored" }); assert.equal(calls.length, count);
+  state.loadingDid = "a"; await controller.loadFocus("a"); await controller.loadFocus(""); assert.equal(calls.length, count);
+  state.loadingDid = ""; response.error = new Error("failed"); state.selectedDid = "a";
+  await controller.loadFocus("a"); assert.ok(calls.some((entry) => entry[0] === "status" && entry[1] === "failed")); assert.equal(state.loadingDid, "");
+  state.selectedDid = "other"; calls.length = 0; await controller.loadFocus("a");
+  assert.equal(calls.some((entry) => entry[0] === "status"), false); assert.ok(calls.some((entry) => entry[0] === "error"));
+});
+
+test("network focus completion does not clear a newer request's loading marker", async () => {
+  const { controller, state, options, calls } = await networkFocusFixture(); const pending = new Map();
+  options.request = (type, payload) => new Promise((resolve) => pending.set(payload.actor, resolve));
+  const first = controller.loadFocus("a"); const second = controller.loadFocus("b");
+  pending.get("a")({ profile: { did: "a" } }); await first; assert.equal(state.loadingDid, "b");
+  pending.get("b")(null); await second; assert.equal(state.loadingDid, ""); assert.equal(state.nodes.has("a"), true);
+  calls.length = 0; controller.select("a"); assert.equal(state.loadingDid, "a");
+  pending.get("a")(null); await Promise.resolve(); await Promise.resolve(); assert.equal(state.loadingDid, "");
+});
+
+test("common mutual loading guards center/targets, merges results, resets viewport and handles failure", async () => {
+  const { controller, state, calls, response } = await networkFocusFixture();
+  await controller.loadCommon(""); await controller.loadCommon("viewer"); assert.equal(calls.length, 0);
+  response.result = { commonProfiles: [{ did: "p", handle: "partner" }, { did: "viewer" }], commonDids: [" p ", "p", null, ""] };
+  state.selectedDid = "a"; state.query = "old"; state.filterMode = "common";
+  await controller.loadCommon(" a ");
+  const request = calls.find((entry) => entry[0] === "request");
+  assert.deepEqual(request[2], { centerActor: "viewer", focusActor: "a" }); assert.equal(request[3].timeoutMs, 420000);
+  assert.equal(state.commonDids.size, 1); assert.equal(state.nodes.size, 1); assert.equal(state.query, ""); assert.equal(state.filterMode, "all");
+  assert.equal(state.fitAll, true); assert.equal(state.zoom, 1); assert.equal(state.panX, 0); assert.equal(state.panY, 0); assert.equal(state.commonLoadingDid, "");
+  assert.ok(calls.some((entry) => entry[0] === "query")); assert.ok(calls.some((entry) => entry[0] === "translation" && entry[2]?.count === "1"));
+  request[3].onProgress({ step: "Common", detail: "Detail" }); assert.equal(calls.at(-1)[1], "Common \u00b7 Detail");
+  state.commonLoadingDid = "a"; const count = calls.length; await controller.loadCommon("a"); assert.equal(calls.length, count);
+  state.commonLoadingDid = ""; response.result = { commonDids: "invalid" }; await controller.loadCommon("a"); assert.equal(state.commonDids.size, 0);
+  response.error = new Error("common failed"); state.filterMode = "common"; await controller.loadCommon("a");
+  assert.equal(state.commonTargetDid, ""); assert.equal(state.filterMode, "all"); assert.equal(state.commonLoadingDid, "");
+  assert.ok(calls.some((entry) => entry[0] === "status" && entry[1] === "common failed"));
+  state.viewer = null; state.accountDid = ""; state.authDid = ""; calls.length = 0;
+  await controller.loadCommon("a"); assert.equal(calls.length, 0);
+  state.authDid = "fallback"; response.error = null; response.result = null;
+  await controller.loadCommon("a");
+  assert.equal(calls.find((entry) => entry[0] === "request")[2].centerActor, "fallback");
+  assert.equal(state.commonDids.size, 0);
+});
+
+test("network profile merges preserve known metadata, counts and relationship unions", async () => {
+  const { mergeNetworkNode } = await importProjectModule("js/tools/network.js");
+  const previous = { did: "a", handle: "alice", displayName: "Alice", avatar: "avatar", description: "bio", followersCount: 9, followsCount: 4, postsCount: 7, followingViewer: true };
+  const incoming = { did: "a", handle: "", displayName: "", avatar: "", followersCount: 0, followsCount: "bad", followedByViewer: true };
+  const merged = mergeNetworkNode(previous, incoming);
+  assert.equal(merged.handle, "alice"); assert.equal(merged.avatar, "avatar"); assert.equal(merged.description, "bio");
+  assert.equal(merged.followersCount, 9); assert.equal(merged.followsCount, 4); assert.equal(merged.postsCount, 7);
+  assert.equal(merged.followingViewer, true); assert.equal(merged.followedByViewer, true);
+  assert.equal(previous.followedByViewer, undefined); assert.equal(incoming.followersCount, 0);
+  assert.deepEqual(mergeNetworkNode(null), { followingViewer: false, followedByViewer: false });
+  assert.equal(mergeNetworkNode(null, { followingViewer: "true" }).followingViewer, false);
+  assert.throws(() => mergeNetworkNode(null, null), TypeError);
+});
+
+test("network ranking, threshold, relation/text filters and limits keep legacy semantics", async () => {
+  const { rankNetworkNodes, calculateStrongNetworkThreshold, selectNetworkNodes } = await importProjectModule("js/tools/network.js");
+  const nodes = [{ did: "f", handle: "follower", followedByViewer: true },
+    { did: "m", handle: "mutual", displayName: "Mixed Name", followedByViewer: true, followingViewer: true },
+    { did: "g", handle: "following", followingViewer: true }, { did: "o", handle: "other" }];
+  assert.deepEqual(rankNetworkNodes(nodes).map((node) => node.did), ["m", "f", "g", "o"]);
+  assert.equal(nodes[0].did, "f"); assert.equal(calculateStrongNetworkThreshold([]), 0);
+  assert.equal(calculateStrongNetworkThreshold(nodes), 100);
+  for (const [mode, did] of [["mutual", "m"], ["followers", "f"], ["following", "g"], ["strong", "m"]]) {
+    assert.deepEqual(selectNetworkNodes(nodes, { mode }).map((node) => node.did), [did]);
+  }
+  assert.deepEqual(selectNetworkNodes(nodes, { mode: "common", commonDids: new Set(["f"]) }).map((node) => node.did), ["f"]);
+  assert.deepEqual(selectNetworkNodes(nodes, { mode: "common" }), []);
+  assert.deepEqual(selectNetworkNodes(nodes, { query: "  MIXED  " }).map((node) => node.did), ["m"]);
+  assert.equal(selectNetworkNodes(nodes, { limit: -2 }).length, 0);
+  assert.equal(selectNetworkNodes(nodes, { limit: 2 }).length, 2);
+  assert.equal(selectNetworkNodes(nodes, { mode: "unknown", limit: NaN }).length, 4);
+  assert.deepEqual(selectNetworkNodes(), []);
+  const tied = [{ handle: "z" }, { handle: "a" }]; assert.deepEqual(rankNetworkNodes(tied).map((node) => node.handle), ["a", "z"]);
+  const strong = Array.from({ length: 30 }, (_, index) => ({ followersCount: index }));
+  assert.equal(calculateStrongNetworkThreshold(strong), 100);
+  const mutuals = strong.map((node) => ({ ...node, followingViewer: true, followedByViewer: true }));
+  assert.equal(calculateStrongNetworkThreshold(mutuals), 132);
+});
+
+test("network alphabetical sorting keeps locale, direction, name/handle/DID ties and input order", async () => {
+  const { sortNetworkProfiles } = await importProjectModule("js/tools/network.js");
+  const nodes = [{ did: "b", displayName: "Same", handle: "same" }, { did: "a", displayName: "same", handle: "same" }, { did: "c", displayName: "Alice", handle: "z" }];
+  assert.deepEqual(sortNetworkProfiles(nodes, { locale: "en" }).map((node) => node.did), ["c", "a", "b"]);
+  assert.deepEqual(sortNetworkProfiles(nodes, { locale: "en", direction: "desc" }).map((node) => node.did), ["b", "a", "c"]);
+  assert.deepEqual(sortNetworkProfiles(nodes, { field: "handle" }).map((node) => node.did), ["a", "b", "c"]);
+  assert.equal(nodes[0].did, "b"); assert.deepEqual(sortNetworkProfiles(), []);
+  assert.deepEqual(sortNetworkProfiles([{ did: "z" }, {}]).map((node) => node.did), [undefined, "z"]);
+});
+
+test("network viewport fit and manual zoom clamp pan without mutating layout or state", async () => {
+  const { calculateNetworkViewport } = await importProjectModule("js/tools/network.js");
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const layout = { width: 800, height: 600, contentBounds: { minX: 100, maxX: 900, minY: 50, maxY: 650 } };
+  const state = { fitAll: true, zoom: 99, panX: 12, panY: -7 }; const limits = { min: 0.5, max: 4, clamp };
+  assert.deepEqual(calculateNetworkViewport(layout, state, limits), { viewport: { x: 28, y: -22, width: 944, height: 744, zoom: 1 }, panX: 12, panY: -7 });
+  const manual = calculateNetworkViewport(layout, { fitAll: false, zoom: 99, panX: 1e6, panY: -1e6 }, limits);
+  assert.deepEqual(manual, { viewport: { x: 780, y: -30, width: 200, height: 150, zoom: 4 }, panX: 380, panY: -305 });
+  assert.equal(state.zoom, 99); assert.equal(layout.contentBounds.minX, 100);
+  assert.equal(calculateNetworkViewport(layout, { fitAll: false, zoom: -1, panX: 0, panY: 0 }, limits).viewport.zoom, 0.5);
+  const fallback = calculateNetworkViewport({ width: 0, height: 0 }, state, limits);
+  assert.equal(fallback.viewport.width, 145); assert.equal(fallback.viewport.height, 145);
+});
+
+test("network content bounds include selection and focus island while ignoring missing positions", async () => {
+  const { calculateNetworkContentBounds } = await importProjectModule("js/tools/network.js");
+  const layout = { centerX: 100, centerY: 100, positions: new Map([["a", { x: 400, y: -50 }]]) };
+  assert.deepEqual(calculateNetworkContentBounds(layout, [], ""), { minX: 36, maxX: 164, minY: 36, maxY: 192 });
+  assert.deepEqual(calculateNetworkContentBounds(layout, [{ did: "missing" }, { did: "a" }], "a"), { minX: 36, maxX: 455, minY: -105, maxY: 192 });
+  const focus = calculateNetworkContentBounds({ ...layout, hasFocusIsland: true, focusCenterY: 500 }, [], "a", [{ did: "preview" }]);
+  assert.deepEqual(focus, { minX: -78, maxX: 278, minY: 36, maxY: 678 });
+  assert.equal(layout.hasFocusIsland, undefined); assert.equal(layout.positions.get("a").x, 400);
+});
+
 test("account picker uses the shared dialog and returns the selected account", async () => {
   const pickerModule = await importProjectModule("js/tools/account-picker.js");
   const dialog = {

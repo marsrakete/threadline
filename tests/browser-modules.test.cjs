@@ -4,6 +4,553 @@ const { expect, test } = require("@playwright/test");
 
 test.describe("Composer image editor application integration", () => {
   test.use({ serviceWorkers: "block" });
+  test("analysis templates render safe summary, result and list components on both pages", async ({ page }) => {
+    const errors = []; page.on("pageerror", (error) => errors.push(error.message));
+    await blockExternalRequests(page); await page.setViewportSize({ width: 390, height: 900 });
+    await page.addInitScript(() => {
+      localStorage.setItem("threadline:settings-backup-reminder-dismissed-at", String(Date.now()));
+      const registration = { update: async () => {}, active: { postMessage(message, ports) {
+        let result = null;
+        if (message.type === "GET_APP_STATE") { result = { localePreference: "en", locale: "en", desktopLayoutVersion: 2 }; }
+        ports[0].postMessage({ ok: true, result });
+      } } };
+      Object.defineProperty(navigator.serviceWorker, "register", { value: async () => registration });
+      Object.defineProperty(navigator.serviceWorker, "ready", { value: Promise.resolve(registration) });
+    });
+    for (const pathname of ["/", "/tools.html"]) {
+      await page.goto(pathname, { waitUntil: "domcontentloaded" }); await expect(page.locator("#language-select")).toHaveValue("en");
+      for (const compact of [false, true]) {
+        const report = await page.evaluate(async (compact) => {
+          document.body.classList.toggle("ui-density-compact", compact);
+          const { createAnalysisRenderer } = await import("/js/tools/analysis-rendering.js");
+          const { cloneTemplateContent } = await import("/js/shared/shared-templates.js");
+          const templates = {};
+          for (const name of ["note", "span", "tokens", "token", "stats", "stat", "bars", "bar", "pattern", "account", "result",
+            "heatmap", "heatmap-grid", "axis", "heatmap-cell", "timeline", "timeline-tick", "timeline-row", "timeline-point",
+            "profiles", "profile", "table", "table-head", "table-row", "temporal-comparison", "network-summary"]) {
+            templates[name] = document.querySelector(`#analysis-${name}-template`);
+          }
+          const host = document.createElement("section");
+          Object.assign(host.style, { position: "fixed", width: "360px", top: "0", left: "0", zIndex: "99999" });
+          const summary = document.createElement("div"); const result = document.createElement("div");
+          result.className = "analysis-result-card"; host.append(summary, result); document.body.append(host);
+          const options = { cloneTemplate: cloneTemplateContent, setAvatar: (image, src, alt) => { image.alt = alt; },
+            t: (key) => key, count: String, timestamp: String, number: (value) => String(value),
+            percent: (value) => String(Math.round((Number(value) || 0) * 100)) + "%" };
+          const temporal = document.createElement("div"); const metrics = document.createElement("div");
+          const { createAnalysisTemporalAnalyzer } = await import("/js/tools/analysis-temporal.js");
+          const { shareArray } = await import("/js/tools/analysis-similarity.js");
+          const config = await import("/js/tools/analysis-config.js");
+          const time = createAnalysisTemporalAnalyzer({ locale: () => "en", now: () => Date.parse("2026-10-14T12:00Z"), shares: shareArray,
+            gapBuckets: config.ANALYSIS_TEMPORAL_GAP_BUCKETS, weekdayAnchors: config.ANALYSIS_WEEKDAY_ANCHORS, weekdayFallbacks: config.ANALYSIS_WEEKDAY_FALLBACKS });
+          Object.assign(options, { weekday: time.weekdayLabel, hour: time.hourLabel, overlapHeatmap: time.overlapHeatmap,
+            networkPatterns: config.ANALYSIS_NETWORK_PATTERNS, corpusPatterns: config.ANALYSIS_CORPUS_PATTERNS });
+          const network = document.createElement("div"); const patterns = document.createElement("div");
+          const renderer = createAnalysisRenderer({ templates, summary, result, temporal, metrics, network, patterns }, options);
+          const hostile = "<img src=x onerror=window.analysisUnsafe=1>";
+          const account = { profile: { did: "a", handle: "a.test", displayName: hostile }, filters: { rangeDays: 0 },
+            posts: [], corpus: { wordCount: 42 }, stats: { pages: 1 } };
+          renderer.summary(account, null); renderer.summary(account, null);
+          const title = summary.querySelector("strong").textContent;
+          const accountCount = summary.children.length;
+          const empty = summary.children[1].textContent;
+          renderer.result({ score: 92, labelKey: hostile, confidenceKey: "confidence", burrowsDelta: { delta: NaN } });
+          renderer.result({ score: 93, labelKey: hostile, confidenceKey: "confidence", burrowsDelta: { delta: 0, similarity: 1 } });
+          const score = result.querySelector(".analysis-result-score").textContent;
+          const details = result.querySelectorAll(".analysis-result-details span").length;
+          const tokens = renderer.tokens([{ label: hostile, share: 0.25 }]);
+          const stats = renderer.stats([{ label: "text", value: "zero", formatter: "text" }, { labelKey: "number", value: 2, formatter: "number" }, { label: "share", share: 0.5 }]);
+          const bars = renderer.bars([{ label: "high", share: 2 }, { label: "low", share: -1 }, { labelKey: "zero", value: 0 }]);
+          host.append(renderer.pattern(hostile, [null, tokens, stats, bars]));
+          const widths = [...bars.querySelectorAll(".analysis-bar-fill")].map((node) => node.style.width);
+          const values = [...stats.querySelectorAll("strong")].map((node) => node.textContent);
+          const bounds = host.getBoundingClientRect();
+          const fits = [...host.querySelectorAll(".analysis-account-card, .analysis-bar-track")].every((node) => node.getBoundingClientRect().right <= bounds.right + 1);
+          const safe = !window.analysisUnsafe && host.querySelectorAll("img").length === 1 && host.querySelectorAll("script").length === 0;
+          const chipText = tokens.textContent;
+          const invalidEmpty = renderer.stats(null).textContent;
+          const profile = time.profile([{ createdAt: "2026-10-12T00:00Z" }, { createdAt: "2026-10-12T06:30Z" }]);
+          const chart = renderer.heatmap(profile); const overlap = renderer.overlapHeatmap(profile, profile);
+          const emptyOverlap = renderer.overlapHeatmap(null, null);
+          const line = renderer.timeline({ recentDays: [{ label: "12.10", weekdayLabel: "Mon", hours: [-1, 0, 12, 25] }] });
+          const ticks = [...line.querySelectorAll(".analysis-temporal-timeline-tick")].map((node) => node.style.left);
+          const points = [...line.querySelectorAll(".analysis-temporal-timeline-point")].map((node) => node.style.left);
+          const cells = [...chart.querySelectorAll(".analysis-temporal-heatmap-cell")].map((node) => node.style.getPropertyValue("--heat"));
+          const charts = { cells: cells.length, finite: cells.every((value) => Number(value) >= 0.08 && Number(value) <= 1),
+            overlap: overlap.querySelectorAll(".analysis-temporal-heatmap-cell-overlap").length,
+            empty: emptyOverlap.childNodes.length, ticks, points, noTimeline: renderer.timeline(null).childNodes.length };
+          const people = renderer.profiles([{ displayName: hostile, handle: " a.test ", deleted: true, share: 0.5 }, { did: "did:b", share: 0 }]);
+          const profileReport = { names: [...people.querySelectorAll("strong")].map((node) => node.textContent),
+            status: people.querySelectorAll(".analysis-profile-chip-status").length, handle: people.querySelector(".reply-target-handle").textContent,
+            lazy: [...people.querySelectorAll("img")].every((node) => node.loading === "lazy"), empty: renderer.profiles(null).textContent };
+          const metricRows = [{ labelKey: hostile, leftValue: 2, rightValue: 3, normalizedDifference: 2 }];
+          renderer.metrics({ metricRows }); renderer.metrics({ metricRows });
+          const metricReport = { rows: metrics.querySelectorAll("tbody tr").length, head: metrics.querySelectorAll("th").length,
+            values: [...metrics.querySelectorAll("td")].map((node) => node.textContent), empty: "" };
+          renderer.metrics(null); metricReport.empty = metrics.textContent;
+          renderer.temporal(null, null, null); const emptyTemporal = temporal.textContent;
+          renderer.temporal({ temporal: profile }, null, null); const partialCards = temporal.children.length;
+          renderer.temporal({ temporal: profile }, { temporal: profile }, {}, [{ label: hostile, left: "A", right: "B", diff: "same" }]);
+          renderer.temporal({ temporal: profile }, { temporal: profile }, {}, [{ label: hostile, left: "A", right: "B", diff: "same" }]);
+          const temporalReport = { empty: emptyTemporal, partialCards, cards: temporal.children.length,
+            comparisons: temporal.querySelectorAll(".analysis-temporal-comparison-card").length,
+            rows: temporal.querySelectorAll("tbody tr").length, cells: temporal.querySelectorAll(".analysis-temporal-heatmap-cell").length };
+          renderer.network(null, null, null); const networkEmpty = network.textContent;
+          renderer.network(account, null, null, [], "analysisNetworkReloadNeeded"); const reloadNote = network.textContent;
+          account.network = { warnings: [hostile, "second warning"] };
+          account.markers = { topMentions: [{ displayName: hostile, did: "a", deleted: true, share: 0.5 }], mediaPostShare: 0.25 };
+          const comparison = { relationshipSimilarity: 0.5, interactionSimilarity: 0.75, moderationSimilarity: null };
+          const rows = [{ label: hostile, left: "A", right: "B", diff: "same" }];
+          renderer.network(account, account, comparison, rows); renderer.network(account, account, comparison, rows);
+          const networkReport = { empty: networkEmpty, reload: reloadNote, cards: network.querySelectorAll(".analysis-pattern-card").length,
+            summaries: network.querySelectorAll(".analysis-account-card").length, rows: network.querySelectorAll("tbody tr").length,
+            deleted: network.querySelectorAll(".analysis-profile-chip-status").length, warning: network.firstElementChild.lastElementChild.textContent,
+            unavailable: network.firstElementChild.textContent.includes("analysisSimilarityModerationUnavailable") };
+          comparison.moderationSimilarity = 0; renderer.network(account, account, comparison, rows);
+          networkReport.available = !network.firstElementChild.textContent.includes("analysisSimilarityModerationUnavailable");
+          renderer.patterns(null, null); const patternsEmpty = patterns.textContent;
+          renderer.patterns(account, null); const partialEmpty = patterns.querySelectorAll(".analysis-pattern-card:nth-child(even) .settings-note");
+          const patternReport = { empty: patternsEmpty, partialNotes: [...partialEmpty].every((node) => node.textContent === "analysisAccountBEmpty"),
+            partialCards: patterns.children.length };
+          renderer.patterns(account, account); renderer.patterns(account, account);
+          patternReport.cards = patterns.children.length;
+          patternReport.headings = [...patterns.querySelectorAll(".analysis-pattern-card > strong")].map((node) => node.textContent);
+          patternReport.startsEndsLists = patterns.children[14].querySelectorAll(".analysis-token-list").length;
+          patternReport.emojiEmpty = patterns.children[10].textContent.includes("analysisPatternsNoEmoji");
+          host.append(network, patterns);
+          host.append(chart, overlap, line, people, temporal, metrics);
+          const chartBounds = chart.getBoundingClientRect();
+          charts.fits = [...chart.querySelectorAll(".analysis-temporal-heatmap-cell")].every((node) => node.getBoundingClientRect().right <= chartBounds.right + 1);
+          const extraSafe = !window.analysisUnsafe && !host.querySelector("script") && people.querySelectorAll("img").length === 2;
+          renderer.result(null); const cleared = result.hidden && result.childNodes.length === 0;
+          host.remove(); return { title, accountCount, empty, score, details, widths, values, fits, safe, chipText, invalidEmpty, cleared,
+            charts, profileReport, metricReport, temporalReport, networkReport, patternReport, extraSafe };
+        }, compact);
+        expect(report.title).toBe("<img src=x onerror=window.analysisUnsafe=1>"); expect(report.accountCount).toBe(2);
+        expect(report.empty).toBe("analysisAccountBEmpty"); expect(report.score).toBe("93/100"); expect(report.details).toBe(8);
+        expect(report.widths).toEqual(["100%", "0%", "0%"]); expect(report.values).toEqual(["zero", "2", "50%"]);
+        expect(report.fits).toBe(true); expect(report.safe).toBe(true); expect(report.chipText).toContain("25%");
+        expect(report.invalidEmpty).toBe("analysisPatternsEmpty"); expect(report.cleared).toBe(true);
+        expect(report.charts.cells).toBe(84); expect(report.charts.finite).toBe(true); expect(report.charts.overlap).toBe(84);
+        expect(report.charts.empty).toBe(0); expect(report.charts.noTimeline).toBe(0); expect(report.charts.fits).toBe(true);
+        expect(report.charts.ticks).toEqual(["0%", "25%", "50%", "75%", "100%"]);
+        expect(report.charts.points).toEqual(["0%", "0%", "50%", "100%"]);
+        expect(report.profileReport.names).toEqual(["<img src=x onerror=window.analysisUnsafe=1>", "did:b"]);
+        expect(report.profileReport.status).toBe(1); expect(report.profileReport.handle).toBe("@a.test");
+        expect(report.profileReport.lazy).toBe(true); expect(report.profileReport.empty).toBe("analysisPatternsNoData");
+        expect(report.metricReport.rows).toBe(1); expect(report.metricReport.head).toBe(4);
+        expect(report.metricReport.values).toEqual(["<img src=x onerror=window.analysisUnsafe=1>", "2", "3", "100%"]);
+        expect(report.metricReport.empty).toBe("analysisMetricsEmpty"); expect(report.temporalReport.empty).toBe("analysisTemporalEmpty");
+        expect(report.temporalReport.partialCards).toBe(2); expect(report.temporalReport.cards).toBe(3);
+        expect(report.temporalReport.comparisons).toBe(1); expect(report.temporalReport.rows).toBe(1);
+        expect(report.temporalReport.cells).toBe(252); expect(report.extraSafe).toBe(true);
+        expect(report.networkReport.empty).toBe("analysisNetworkEmpty"); expect(report.networkReport.reload).toBe("analysisNetworkReloadNeeded");
+        expect(report.networkReport.cards).toBe(14); expect(report.networkReport.summaries).toBe(1); expect(report.networkReport.rows).toBe(1);
+        expect(report.networkReport.deleted).toBe(2); expect(report.networkReport.warning).toContain("<img src=x onerror=window.analysisUnsafe=1>");
+        expect(report.networkReport.unavailable).toBe(true); expect(report.networkReport.available).toBe(true);
+        expect(report.patternReport.empty).toBe("analysisPatternsEmpty"); expect(report.patternReport.partialCards).toBe(24);
+        expect(report.patternReport.partialNotes).toBe(true); expect(report.patternReport.cards).toBe(24);
+        expect(report.patternReport.headings[0]).toBe("analysisAccountALabel - analysisPatternWordsTitle");
+        expect(report.patternReport.headings[23]).toBe("analysisAccountBLabel - analysisPatternStructureTitle");
+        expect(report.patternReport.startsEndsLists).toBe(2); expect(report.patternReport.emojiEmpty).toBe(true);
+      }
+    }
+    expect(errors).toEqual([]);
+  });
+  test("analysis calculation modules integrate account loading and comparison on both pages", async ({ page }, testInfo) => {
+    test.setTimeout(120000);
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await blockExternalRequests(page);
+    await page.addInitScript(() => {
+      localStorage.setItem("threadline:settings-backup-reminder-dismissed-at", String(Date.now()));
+      window.analysisLoads = [];
+      const account = { did: "did:example:viewer", handle: "viewer.test", identifier: "viewer.test", service: "https://bsky.social" };
+      const words = ["the", "and", "with", "this", "that", "from", "there", "when", "where", "which", "have", "will"];
+      const posts = Array.from({ length: 8 }, (_, index) => ({
+        text: Array.from({ length: 100 }, (_, offset) => words[(offset + index * offset) % words.length]).join(" ") + " #hello!",
+        createdAt: new Date(Date.UTC(2026, 9, 1, 12, index * 10)).toISOString(),
+      }));
+      const registration = { update: async () => {}, active: { postMessage(message, ports) {
+        let result = null;
+        if (message.type === "GET_APP_STATE") {
+          result = { ...account, accounts: [account], localePreference: "en", locale: "en", desktopLayoutVersion: 2,
+            analysisState: JSON.parse(sessionStorage.getItem("test:analysis-state") || "null"),
+            archivePreferences: JSON.parse(sessionStorage.getItem("test:archive-preferences") || "null") };
+        }
+        if (message.type === "SAVE_SETTINGS") {
+          sessionStorage.setItem("test:analysis-state", JSON.stringify(message.payload.analysisState));
+          sessionStorage.setItem("test:archive-preferences", JSON.stringify(message.payload.archivePreferences));
+        }
+        if (message.type === "VERIFY_SESSION") { result = { ...account, accounts: [account], authenticated: true }; }
+        if (message.type === "CHECK_ANALYSIS_ACCOUNT") { result = { handle: message.payload.actor }; }
+        if (message.type === "LOAD_ANALYSIS_ACCOUNT") {
+          window.analysisLoads.push(message.payload);
+          result = { profile: { did: message.payload.actor, handle: message.payload.actor, displayName: message.payload.actor }, posts,
+            stats: { pages: 1 }, filters: message.payload.options,
+            network: { followerDids: ["common"], followDids: ["common"], mutualDids: ["common"], loadState: "complete" },
+            markers: { topHashtags: [{ label: "hello", count: 8 }], topLanguages: [{ label: "en", count: 8 }] } };
+        }
+        ports[0].postMessage({ ok: true, result });
+      } } };
+      Object.defineProperty(navigator.serviceWorker, "register", { value: async () => registration });
+      Object.defineProperty(navigator.serviceWorker, "ready", { value: Promise.resolve(registration) });
+    });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    await page.goto("/tools.html", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#analysis-button")).toBeEnabled();
+    await page.locator("#analysis-button").click();
+    await page.locator("#analysis-account-a-own-button").click();
+    await expect(page.locator("#analysis-account-a-input")).toHaveValue("viewer.test");
+    await page.locator("#analysis-account-b-own-button").click();
+    await expect(page.locator("#analysis-account-b-input")).toHaveValue("viewer.test");
+    for (const [slot, actor] of [["a", "alpha.test"], ["b", "beta.test"]]) {
+      await page.locator(`#analysis-account-${slot}-input`).fill(actor);
+      await page.locator(`#analysis-account-${slot}-load-button`).click();
+      await expect(page.locator("#analysis-summary")).toContainText(actor);
+      await expect(page.locator(`#analysis-account-${slot}-load-button`)).toBeEnabled();
+    }
+    await page.locator("#analysis-account-b-input").press("Enter");
+    await expect(page.locator("#analysis-result-card")).toBeVisible();
+    await expect(page.locator(".analysis-result-score")).toHaveText(/^\d+\/100$/);
+    await expect(page.locator("#analysis-result-card .analysis-result-details span")).toHaveCount(8);
+    await expect(page.locator("#analysis-export-pdf-button")).toBeEnabled();
+    const result = await page.locator("#analysis-result-card").textContent();
+    expect(result).not.toMatch(/NaN|undefined|Infinity/);
+    expect(result).toContain("100");
+    await expect(page.locator("#analysis-temporal .analysis-temporal-comparison-card")).toBeVisible();
+    await expect(page.locator("#analysis-network tbody tr")).toHaveCount(13);
+    await expect(page.locator("#analysis-network .analysis-pattern-card")).toHaveCount(14);
+    await expect(page.locator("#analysis-patterns .analysis-pattern-card")).toHaveCount(24);
+    expect(await page.evaluate(() => window.analysisLoads.map((load) => load.actor))).toEqual(["alpha.test", "beta.test", "alpha.test", "beta.test"]);
+    const score = await page.locator(".analysis-result-score").textContent();
+    await expect.poll(() => page.evaluate(() => JSON.parse(sessionStorage.getItem("test:analysis-state") || "null")?.comparison?.score)).toBe(Number(score.split("/")[0]));
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.locator("#analysis-button")).toBeEnabled();
+    await page.locator("#analysis-button").click();
+    await expect(page.locator(".analysis-result-score")).toHaveText(score);
+    await expect(page.locator("#analysis-summary")).toContainText("alpha.test");
+    await expect(page.locator("#analysis-summary")).toContainText("beta.test");
+    expect(await page.evaluate(() => window.analysisLoads)).toEqual([]);
+    const downloadPromise = page.waitForEvent("download");
+    await page.locator("#analysis-export-pdf-button").click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^threadline-analysis-alpha\.test-vs-beta\.test-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(await download.failure()).toBeNull();
+    await download.saveAs(testInfo.outputPath("analysis-report.pdf"));
+    const pdf = require("node:fs").readFileSync(await download.path());
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdf.length).toBeGreaterThan(10000);
+    expect(pdf.toString("latin1")).toContain("%%EOF");
+    await page.locator("#analysis-account-a-input").fill("changed.test");
+    await expect(page.locator("#analysis-result-card")).toBeHidden();
+    await expect(page.locator("#analysis-export-pdf-button")).toBeDisabled();
+    await page.locator("#analysis-reset-button").click();
+    await expect(page.locator("#analysis-result-card")).toBeHidden();
+    await page.locator("#archive-button").click();
+    await page.evaluate(() => {
+      document.querySelector("#archive-from-input").value = "2026-01-31";
+      document.querySelector("#archive-to-input").value = "2026-04-01";
+      document.querySelector("#archive-from-input").dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await expect(page.locator("#archive-to-input")).toHaveAttribute("max", "2026-04-30");
+    await expect(page.locator("#archive-to-input")).toHaveAttribute("min", "2026-01-31");
+    await page.locator("#archive-content-mode-select").selectOption("threads");
+    await page.locator("#archive-image-size-select").selectOption("large");
+    await expect.poll(() => page.evaluate(() => JSON.parse(sessionStorage.getItem("test:archive-preferences") || "null")?.pdfOptions?.imageSize)).toBe("large");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.locator("#archive-button")).toBeEnabled();
+    await page.locator("#archive-button").click();
+    await expect(page.locator("#archive-from-input")).toHaveValue("2026-01-31");
+    await expect(page.locator("#archive-to-input")).toHaveValue("2026-04-01");
+    await expect(page.locator("#archive-content-mode-select")).toHaveValue("threads");
+    await expect(page.locator("#archive-image-size-select")).toHaveValue("large");
+    expect(errors).toEqual([]);
+  });
+  test("network result templates render safe labels and independent actions on both pages", async ({ page }) => {
+    const errors = []; page.on("pageerror", (error) => errors.push(error.message)); await blockExternalRequests(page);
+    await page.addInitScript(() => {
+      localStorage.setItem("threadline:settings-backup-reminder-dismissed-at", String(Date.now()));
+      const registration = { update: async () => {}, active: { postMessage(message, ports) {
+        let result = null;
+        if (message.type === "GET_APP_STATE") { result = { localePreference: "en", locale: "en", desktopLayoutVersion: 2 }; }
+        ports[0].postMessage({ ok: true, result });
+      } } };
+      Object.defineProperty(navigator.serviceWorker, "register", { value: async () => registration });
+      Object.defineProperty(navigator.serviceWorker, "ready", { value: Promise.resolve(registration) });
+    });
+    for (const pathname of ["/", "/tools.html"]) {
+      await page.goto(pathname, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#language-select")).toHaveValue("en");
+      const report = await page.evaluate(async () => {
+        const { createNetworkWorkspaceRenderer } = await import("/js/tools/network-rendering.js");
+        const { cloneTemplateContent } = await import("/js/shared/shared-templates.js");
+        const host = document.createElement("div"); host.className = "archive-results network-results";
+        Object.assign(host.style, { position: "fixed", left: "0", top: "0", width: "360px", zIndex: "99999" }); document.body.append(host);
+        const calls = []; const state = { scrollTop: 12, stageMode: false, loading: false, listsVisible: false, group: "following" };
+        let nodes = [{ did: "a", handle: "a.test", displayName: "<img src=x onerror=window.networkUnsafe=1>" }, { did: "b", handle: "b.test", displayName: "Beta" }];
+        const elements = { results: host, templates: {} };
+        for (const name of ["intro", "group", "item", "more", "empty"]) { elements.templates[name] = document.querySelector(`#network-result-${name}-template`); }
+        const renderer = createNetworkWorkspaceRenderer(elements, { getState: () => state, cloneTemplate: cloneTemplateContent,
+          allNodes: () => nodes, visibleNodes: () => nodes, relation: () => "mutual", sort: (items) => [...items].reverse(), score: () => 120,
+          ownNetwork: () => false, centerLabel: () => "<script>not markup</script>", formatCount: String,
+          t: (key, params = {}) => `${key} ${params.account || ""}`.trim(), pending: () => true,
+          setScroll: (top) => { state.scrollTop = top; }, restoreScroll: () => calls.push("restore"),
+          select: (did) => calls.push(did), loadMore: async (group) => calls.push(group) });
+        renderer.results(); const initialGroups = host.querySelectorAll(".network-group-card:not(.network-group-card-intro)").length;
+        const labels = [...host.querySelectorAll(".network-list-button strong")].map((node) => node.textContent);
+        const images = host.querySelectorAll("img, script").length; const note = host.querySelectorAll(".network-card-explainer")[1].textContent;
+        const bounds = host.getBoundingClientRect();
+        const fits = [...host.querySelectorAll(".network-list-button")].every((button) => button.getBoundingClientRect().right <= bounds.right + 1);
+        host.querySelector(".network-list-button").click(); host.querySelector(".network-more-button").click();
+        renderer.results(); host.querySelector(".network-list-button").click();
+        state.loading = true; renderer.results(); const disabled = [...host.querySelectorAll(".network-more-button")].every((button) => button.disabled);
+        state.stageMode = true; state.listsVisible = true; renderer.results();
+        const stageGroups = host.querySelectorAll(".network-group-card").length; const intro = host.querySelectorAll(".network-group-card-intro").length;
+        nodes = []; renderer.results(); const empty = host.textContent;
+        host.remove(); return { initialGroups, labels, images, note, fits, selected: calls.filter((value) => value === "b").length,
+          more: calls.filter((value) => value === "mutual").length, disabled, stageGroups, intro, empty, unsafe: window.networkUnsafe || false };
+      });
+      expect(report.initialGroups).toBe(3); expect(report.labels).toEqual(["Beta", "<img src=x onerror=window.networkUnsafe=1>"]);
+      expect(report.images).toBe(0); expect(report.unsafe).toBe(false); expect(report.note).toContain("<script>not markup</script>");
+      expect(report.fits).toBe(true); expect(report.selected).toBe(2); expect(report.more).toBe(1); expect(report.disabled).toBe(true);
+      expect(report.stageGroups).toBe(1); expect(report.intro).toBe(0); expect(report.empty).toBe("networkResultsEmpty");
+      const focus = await page.evaluate(async () => {
+        const { buildNetworkFocusCardModel, createNetworkFocusCardRenderer } = await import("/js/tools/network-focus-rendering.js");
+        const { cloneTemplateContent } = await import("/js/shared/shared-templates.js");
+        const { setAvatarImage } = await import("/js/shared/shared-accounts.js");
+        const card = document.createElement("div"); card.className = "network-focus-card";
+        Object.assign(card.style, { position: "fixed", top: "0", left: "0", width: "260px", zIndex: "99999" }); document.body.append(card);
+        const calls = []; let own = true;
+        const profile = { did: "a", handle: "alpha.test", displayName: "<img src=x onerror=window.focusUnsafe=1>", description: "<script>plain description</script>" };
+        const state = { selectedDid: "a", nodes: new Map([["a", profile]]), details: new Map([["a", { profile,
+          relationshipDates: { youFollowSince: "2026-10-10T12:00:00Z", followsYouSince: "2026-10-12T12:00:00Z" },
+          activityStats: { latestPostAt: "2026-10-13T12:00:00Z", windows: { 14: { postsCount: 2, likesReceivedCount: 5 } } },
+          likeStats: { mutualLikesCount: 3 }, followersPreview: [], followsPreview: [] }]]), accountDid: "viewer", commonTargetDid: "", commonDids: new Set() };
+        const t = (key) => key; const templates = {};
+        for (const name of ["shell", "stat", "line", "meta", "description"]) { templates[name] = document.querySelector(`#network-focus-${name}-template`); }
+        templates.empty = document.querySelector("#network-result-empty-template");
+        const renderer = createNetworkFocusCardRenderer({ card, templates }, { getState: () => state, cloneTemplate: cloneTemplateContent, setAvatar: setAvatarImage, t,
+          model: (value) => buildNetworkFocusCardModel(value, { known: () => profile, ownNetwork: () => own, avatar: () => "", relation: () => "mutual",
+            score: () => 120, breakdown: () => ({ total: 120, relationScore: 120, followersScore: 0, postsScore: 0 }), centerLabel: () => "viewer", locale: "en", formatCount: (number) => String(Number(number) || 0), t }),
+          setActorInput: (value) => calls.push(["input", value]), load: (value) => calls.push(["load", value]), loadCommon: (did) => calls.push(["common", did]),
+          clearCommon: () => { calls.push(["clear"]); state.commonTargetDid = ""; }, renderWorkspace: () => calls.push(["workspace"]) });
+        renderer.render(); const name = card.querySelector(".network-avatar-copy strong").textContent;
+        const description = card.querySelector("details p").textContent;
+        const safe = card.querySelectorAll("img").length === 1 && card.querySelectorAll("script").length === 0 && !window.focusUnsafe;
+        const counts = [...card.querySelectorAll(".network-stat-card strong")].map((node) => node.textContent);
+        const bounds = card.getBoundingClientRect(); const fits = [...card.querySelectorAll(".network-stat-card")].every((node) => node.getBoundingClientRect().right <= bounds.right + 1);
+        const ownText = card.textContent;
+        card.querySelector('[data-network-focus-action="load"]').click(); card.querySelector('[data-network-focus-action="common"]').click();
+        renderer.render(); card.querySelector('[data-network-focus-action="load"]').click();
+        state.commonTargetDid = "a"; state.commonDids = new Set(["p"]); renderer.render(); card.querySelector('[data-network-focus-action="common"]').click();
+        own = false; renderer.render(); const foreignText = card.textContent;
+        state.selectedDid = ""; renderer.render(); const empty = card.textContent; card.remove();
+        return { name, description, safe, counts, fits, ownText, foreignText, empty, calls };
+      });
+      expect(focus.name).toBe("<img src=x onerror=window.focusUnsafe=1>"); expect(focus.description).toBe("<script>plain description</script>");
+      expect(focus.safe).toBe(true); expect(focus.counts).toEqual(["0", "0", "0", "120"]); expect(focus.fits).toBe(true);
+      expect(focus.ownText).toContain("networkMutualSince"); expect(focus.ownText).toContain("networkMutualLikesTotal");
+      expect(focus.foreignText).not.toContain("networkMutualSince"); expect(focus.foreignText).not.toContain("networkMutualLikesTotal");
+      expect(focus.calls.filter((call) => call[0] === "load")).toEqual([["load", { actor: "a", append: false, silentErrors: false }], ["load", { actor: "a", append: false, silentErrors: false }]]);
+      expect(focus.calls.filter((call) => call[0] === "common")).toEqual([["common", "a"]]);
+      expect(focus.calls.filter((call) => call[0] === "clear")).toHaveLength(1); expect(focus.empty).toBe("networkFocusEmpty");
+      const svgReport = await page.evaluate(async () => {
+        const { createNetworkStageRenderer } = await import("/js/tools/network-stage-rendering.js");
+        const { createNetworkLayoutController } = await import("/js/tools/network-layout.js");
+        const { getNetworkRelationType, calculateNetworkContentBounds, calculateNetworkViewport } = await import("/js/tools/network.js");
+        const { cloneTemplateContent } = await import("/js/shared/shared-templates.js");
+        const stage = document.createElementNS("http://www.w3.org/2000/svg", "svg"); document.body.append(stage);
+        const profiles = [{ did: "a", handle: "alpha.test", displayName: "<img src=x onerror=window.svgUnsafe=1>", followingViewer: true, followedByViewer: true },
+          { did: "b", handle: "beta.test", followedByViewer: true }];
+        const preview = { did: "p", handle: "preview.test", displayName: "<script>preview text</script>", previewRelation: "followers" };
+        const state = { selectedDid: "a", hoveredDid: "", viewer: { did: "v", handle: "viewer.test" }, accountDid: "v", authDid: "v", nodes: new Map(profiles.map((node) => [node.did, node])) };
+        const slots = new Map(); const counts = {}; const calls = []; const common = new Set(["b"]);
+        const geometry = createNetworkLayoutController({ getState: () => ({ shape: "round", slots, counts }), relation: getNetworkRelationType, clamp: (value, min, max) => Math.min(max, Math.max(min, value)) });
+        const templates = {}; for (const key of ["scene", "node", "focus", "preview", "primitive"]) { templates[key] = document.querySelector(`#network-svg-${key}-template`); }
+        const empty = { hidden: false };
+        const renderer = createNetworkStageRenderer({ stage, empty, templates }, {
+          getState: () => state, allNodes: () => profiles, visibleNodes: () => profiles, slot: geometry.slot, preferred: () => "",
+          hover: (did) => { state.hoveredDid = did; }, select: (...args) => calls.push(args), known: (did) => state.nodes.get(did),
+          label: (profile) => profile.displayName || profile.handle, initials: (profile) => String(profile.handle || "?").slice(0, 2), relation: getNetworkRelationType, relationLabel: getNetworkRelationType,
+          previews: () => [preview], layout: geometry.layout, contentBounds: (layout, nodes, did) => calculateNetworkContentBounds(layout, nodes, did, [preview]),
+          viewport: (layout) => calculateNetworkViewport(layout, { fitAll: true, panX: 0, panY: 0 }, {}).viewport,
+          common: () => common, orbitPath: geometry.path, labels: geometry.labels, cloneTemplate: cloneTemplateContent, t: (key) => key,
+        });
+        renderer.render();
+        const order = [...stage.children].map((node) => node.dataset.networkLayer || node.tagName);
+        const namespaces = [...stage.querySelectorAll("*")].every((node) => node.namespaceURI === "http://www.w3.org/2000/svg");
+        const safe = !stage.querySelector("img, script") && !window.svgUnsafe;
+        const original = stage.querySelector('[data-network-layer="nodes"] .network-node-button');
+        original.dispatchEvent(new Event("mouseenter")); const hovered = state.hoveredDid;
+        original.dispatchEvent(new Event("mouseleave")); const cleared = state.hoveredDid;
+        let propagated = 0; stage.addEventListener("pointerdown", () => { propagated += 1; });
+        original.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        original.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+        renderer.render(); stage.querySelector('[data-network-layer="nodes"] .network-node-button').dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        stage.querySelector(".network-node-button-preview").dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+        const commonLinks = stage.querySelectorAll(".network-common-mutual-layer line").length;
+        const rings = stage.querySelectorAll("[data-network-common-ring]").length;
+        const titles = [...stage.querySelectorAll("title")].map((node) => node.textContent);
+        state.selectedDid = ""; profiles.length = 0; state.viewer = null; state.authDid = ""; renderer.render();
+        const noData = !empty.hidden && stage.querySelectorAll(".network-focus-island").length === 0 && stage.textContent.includes("networkEmpty");
+        stage.remove(); return { order, namespaces, safe, hovered, cleared, propagated, calls, commonLinks, rings, titles, noData };
+      });
+      expect(svgReport.order).toEqual(["defs", "background", "edges", "viewer", "nodes", "g"]);
+      expect(svgReport.namespaces).toBe(true); expect(svgReport.safe).toBe(true); expect(svgReport.hovered).toBe("a"); expect(svgReport.cleared).toBe("");
+      expect(svgReport.propagated).toBe(0); expect(svgReport.calls).toEqual([["a"], ["a"], ["p", { previewTab: "followers", loadDetails: true }]]);
+      expect(svgReport.commonLinks).toBe(1); expect(svgReport.rings).toBe(3); expect(svgReport.titles).toContain("<script>preview text</script>"); expect(svgReport.noData).toBe(true);
+    }
+    expect(errors).toEqual([]);
+  });
+  test("network calculations integrate merging, filters, sorting, zoom and focus bounds", async ({ page }) => {
+    test.setTimeout(90000);
+    const errors = []; page.on("pageerror", (error) => errors.push(error.message));
+    await blockExternalRequests(page);
+    await page.addInitScript(() => {
+      localStorage.setItem("threadline:settings-backup-reminder-dismissed-at", String(Date.now()));
+      window.networkWaveRequests = [];
+      localStorage.setItem("threadline:network-stage-shape", "squircle");
+      const account = { did: "did:example:viewer", handle: "viewer.test", identifier: "viewer.test", service: "https://bsky.social" };
+      const profiles = [
+        { did: "a", handle: "z.test", displayName: "Alpha", followedByViewer: true },
+        { did: "b", handle: "a.test", displayName: "Beta", followedByViewer: true },
+        { did: "c", handle: "c.test", displayName: "Charlie", followedByViewer: true },
+      ];
+      const registration = { update: async () => {}, active: { postMessage(message, ports) {
+        let result = null;
+        if (message.type === "GET_APP_STATE") { result = { ...account, accounts: [account], localePreference: "en", locale: "en", desktopLayoutVersion: 2 }; }
+        if (message.type === "VERIFY_SESSION") { result = { ...account, accounts: [account], authenticated: true }; }
+        if (message.type === "LOAD_NETWORK_SLICE") {
+          window.networkWaveRequests.push(message.payload);
+          result = { viewer: account, followers: profiles, follows: [
+            { did: "a", handle: "", displayName: "", followingViewer: true },
+            { did: "b", followingViewer: true }, { did: "d", handle: "d.test", displayName: "Delta", followingViewer: true },
+          ], followerCursor: "next-followers", hasMoreFollowers: true, hasMoreFollows: false };
+          if (message.payload.followerCursor) {
+            result = { viewer: account, followers: [{ did: "e", handle: "extra.test", displayName: "Extra", followedByViewer: true }], follows: [], hasMoreFollowers: false, hasMoreFollows: false };
+          }
+          if (message.payload.actor === "foreign.test") {
+            result = { viewer: { did: "did:foreign", handle: "foreign.test", displayName: "Foreign" },
+              followers: [{ did: "f-only", handle: "foreign-follower.test", displayName: "Foreign follower", followedByViewer: true }], follows: [], hasMoreFollowers: false, hasMoreFollows: false };
+          }
+        }
+        if (message.type === "LOAD_NETWORK_ACTOR_FOCUS") {
+          result = { profile: profiles.find((profile) => profile.did === message.payload.actor) || { did: message.payload.actor, handle: "foreign-follower.test", displayName: "Foreign follower", followedByViewer: true }, followersPreview: [{ did: "preview", handle: "preview.test" }] };
+        }
+        if (message.type === "LOAD_NETWORK_COMMON_MUTUALS") {
+          result = { commonDids: [" b ", "b"], commonProfiles: [{ did: "b", handle: "", followingViewer: true, followedByViewer: true }] };
+        }
+        ports[0].postMessage({ ok: true, result });
+      } } };
+      Object.defineProperty(navigator.serviceWorker, "register", { value: async () => registration });
+      Object.defineProperty(navigator.serviceWorker, "ready", { value: Promise.resolve(registration) });
+    });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    await page.goto("/tools.html", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#network-button")).toBeEnabled(); await page.locator("#network-button").click();
+    await expect(page.locator("#network-summary-loaded")).toHaveText("4");
+    await expect(page.locator("#network-summary-mutuals")).toHaveText("2");
+    await expect(page.locator("#network-summary-visible")).toHaveText("4");
+    for (const [mode, count] of [["mutual", "2"], ["followers", "1"], ["following", "1"], ["strong", "2"], ["all", "4"]]) {
+      await page.locator(`#network-filter-${mode}`).click(); await expect(page.locator("#network-summary-visible")).toHaveText(count);
+    }
+    await page.locator("#network-search-input").fill("  ALPHA  ");
+    await expect(page.locator("#network-summary-visible")).toHaveText("1");
+    await page.locator("#network-search-input").fill("");
+    await expect(page.locator("#network-summary-visible")).toHaveText("4");
+    const names = page.locator("#network-results .network-list-button strong");
+    expect((await names.allTextContents()).slice(0, 2)).toEqual(["Alpha", "Beta"]);
+    await page.locator("#network-sort-field-select").selectOption("handle");
+    expect((await names.allTextContents()).slice(0, 2)).toEqual(["Beta", "Alpha"]);
+    await page.locator("#network-sort-direction-select").selectOption("desc");
+    expect((await names.allTextContents()).slice(0, 2)).toEqual(["Alpha", "Beta"]);
+    const stage = page.locator("#network-stage-svg"); const fit = await stage.getAttribute("viewBox");
+    await page.locator("#network-zoom-in-button").click(); expect(await stage.getAttribute("viewBox")).not.toBe(fit);
+    await page.locator("#network-zoom-reset-button").click(); await expect(stage).toHaveAttribute("viewBox", fit);
+    await page.locator("#network-results .network-list-button").filter({ hasText: "Alpha" }).click();
+    await expect(page.locator(".network-node-button-preview")).toHaveCount(1);
+    await expect(page.locator("#network-shape-toggle-button")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#network-stage-svg path").first()).toHaveAttribute("d", /^M /);
+    await page.locator("#network-zoom-reset-button").click();
+    const geometry = await stage.evaluate((svg) => {
+      const box = svg.viewBox.baseVal;
+      const circles = [...svg.querySelectorAll(".network-node-button circle")];
+      return { finite: [box.x, box.y, box.width, box.height].every(Number.isFinite), width: box.width, height: box.height,
+        included: circles.every((circle) => {
+          const x = circle.cx.baseVal.value; const y = circle.cy.baseVal.value; const radius = circle.r.baseVal.value;
+          return x - radius >= box.x && y - radius >= box.y && x + radius <= box.x + box.width && y + radius <= box.y + box.height;
+        }), circles: circles.length };
+    });
+    expect(geometry.finite).toBe(true); expect(geometry.width).toBeGreaterThan(0); expect(geometry.height).toBeGreaterThan(0);
+    expect(geometry.circles).toBeGreaterThan(0); expect(geometry.included).toBe(true);
+    await page.locator("#network-search-input").fill("Alpha");
+    await page.locator(".network-focus-actions button").nth(1).click();
+    await expect(page.locator("#network-filter-common")).toBeVisible();
+    await expect(page.locator("#network-search-input")).toHaveValue("");
+    await page.locator("#network-filter-common").click();
+    await expect(page.locator("#network-summary-visible")).toHaveText("1");
+    await page.locator("#network-results .network-list-button").filter({ hasText: "Beta" }).click();
+    await expect(page.locator("#network-filter-common")).not.toBeVisible();
+    await expect(page.locator("#network-summary-visible")).toHaveText("4");
+    await expect(page.locator("#network-load-button")).toBeEnabled();
+    await page.locator("#network-load-button").click();
+    await expect(page.locator("#network-summary-loaded")).toHaveText("5");
+    await expect(page.locator("#network-load-button")).toBeDisabled();
+    const waves = await page.evaluate(() => window.networkWaveRequests);
+    expect(waves).toHaveLength(2); expect(waves[1].followerCursor).toBe("next-followers");
+    expect(waves[1].actor).toBe("did:example:viewer");
+    await stage.scrollIntoViewIfNeeded(); const box = await stage.boundingBox();
+    const beforeWheel = await stage.getAttribute("viewBox");
+    await page.mouse.move(box.x + 10, box.y + 10); await page.mouse.wheel(0, -100);
+    await expect(stage).not.toHaveAttribute("viewBox", beforeWheel);
+    const beforePan = await stage.getAttribute("viewBox");
+    const dragPoint = await stage.evaluate((svg) => {
+      const bounds = svg.getBoundingClientRect();
+      for (let y = Math.max(160, bounds.top + 140); y < Math.min(window.innerHeight - 80, bounds.bottom - 80); y += 40) {
+        for (let x = bounds.left + 40; x < Math.min(window.innerWidth - 80, bounds.right - 80); x += 40) {
+          const target = document.elementFromPoint(x, y);
+          if (target?.closest("#network-stage-svg") && !target.closest(".network-node-button, .network-focus-island")) { return { x, y }; }
+        }
+      }
+      return null;
+    });
+    expect(dragPoint).not.toBeNull();
+    await page.mouse.move(dragPoint.x, dragPoint.y); await page.mouse.down();
+    await page.mouse.move(dragPoint.x + 30, dragPoint.y + 25); await page.mouse.up();
+    if (await stage.getAttribute("viewBox") === beforePan) {
+      await page.mouse.move(dragPoint.x, dragPoint.y); await page.mouse.down();
+      await page.mouse.move(dragPoint.x - 30, dragPoint.y - 25); await page.mouse.up();
+    }
+    await expect(stage).not.toHaveAttribute("viewBox", beforePan);
+    await page.evaluate(() => Object.defineProperty(document, "fullscreenEnabled", { value: false, configurable: true }));
+    await page.locator("#network-stage-mode-button").click();
+    await expect(page.locator("body")).toHaveClass(/network-stage-mode/);
+    await page.locator("#network-stage-mode-focus-button").click();
+    await expect(page.locator("#network-stage-mode-focus-button")).toHaveAttribute("aria-pressed", "true");
+    await page.locator("#network-stage-mode-lists-button").click();
+    await expect(page.locator("#network-stage-mode-lists-button")).toHaveAttribute("aria-pressed", "true");
+    await page.locator("#network-stage-mode-exit-button").click();
+    await expect(page.locator("body")).not.toHaveClass(/network-stage-mode/);
+    await page.locator("#network-stage-mode-button").click(); await page.keyboard.press("Escape");
+    await expect(page.locator("body")).not.toHaveClass(/network-stage-mode/);
+    await page.locator("#network-search-input").fill("Alpha");
+    await expect(page.locator("#network-summary-visible")).toHaveText("1");
+    await page.locator("#network-reset-button").click();
+    await expect(page.locator("#network-search-input")).toHaveValue(""); await expect(page.locator("#network-summary-loaded")).toHaveText("5");
+    await expect(page.locator("#network-summary-visible")).toHaveText("5"); await expect(page.locator(".network-focus-island")).toHaveCount(0);
+    expect(await page.evaluate(() => window.networkWaveRequests.length)).toBe(2);
+    await page.locator("#network-account-input").fill("foreign.test"); await page.locator("#network-account-input").press("Enter");
+    await expect(page.locator("#network-summary-loaded")).toHaveText("1"); await expect(page.locator("#network-own-load-button")).toBeEnabled();
+    await page.locator("#network-results .network-list-button").filter({ hasText: "Foreign follower" }).click();
+    await expect(page.locator("#network-focus-card .network-relation-pill")).toContainText("Foreign");
+    await page.locator("#network-own-load-button").click(); await expect(page.locator("#network-summary-loaded")).toHaveText("4");
+    await expect(page.locator("#network-own-load-button")).toBeDisabled(); await expect(page.locator("#network-account-input")).toHaveValue("viewer.test");
+    expect((await page.evaluate(() => window.networkWaveRequests)).slice(-2).map((wave) => wave.actor)).toEqual(["foreign.test", "did:example:viewer"]);
+    expect(errors).toEqual([]);
+  });
   test("account templates and login/actions work on composer and tools without page errors", async ({ page }) => {
     test.setTimeout(90000);
     const errors = [];

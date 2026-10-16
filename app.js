@@ -151,8 +151,35 @@ import {
   getNetworkNodeScore,
   getNetworkRelationType,
   getNetworkScoreBreakdown,
+  createNetworkFocusController,
+  createNetworkDataController,
+  rankNetworkNodes,
+  selectNetworkNodes,
+  sortNetworkProfiles,
+  calculateNetworkViewport,
+  calculateNetworkContentBounds,
 } from "./js/tools/network.js";
-import { normalizeAnalysisActor, bindAnalysisWorkspaceEvents } from "./js/tools/analysis.js";
+import { createNetworkLayoutController } from "./js/tools/network-layout.js";
+import { createNetworkWorkspaceRenderer } from "./js/tools/network-rendering.js";
+import { buildNetworkFocusCardModel, createNetworkFocusCardRenderer } from "./js/tools/network-focus-rendering.js";
+import { createNetworkStageRenderer } from "./js/tools/network-stage-rendering.js";
+import { createNetworkWorkspaceController, readNetworkShapePreference, writeNetworkShapePreference } from "./js/tools/network-controller.js";
+import { normalizeAnalysisActor, bindAnalysisWorkspaceEvents, createAnalysisWorkspaceController } from "./js/tools/analysis.js";
+import { ANALYSIS_METRIC_DEFINITIONS, ANALYSIS_FUNCTION_WORDS, ANALYSIS_NUMBER_WORDS, ANALYSIS_TEMPORAL_GAP_BUCKETS, ANALYSIS_WEEKDAY_ANCHORS, ANALYSIS_WEEKDAY_FALLBACKS } from "./js/tools/analysis-config.js";
+import { createAnalysisAccountNormalizer, getPersistableAnalysisAccount, analysisAccountNeedsNetworkRefresh } from "./js/tools/analysis-accounts.js";
+import { createAnalysisAccountComparator } from "./js/tools/analysis-comparison.js";
+import { createAnalysisRenderer, buildAnalysisMetricTableModel } from "./js/tools/analysis-rendering.js";
+import { createAnalysisReportModels } from "./js/tools/analysis-report-models.js";
+import { createAnalysisReportLayout } from "./js/tools/analysis-report-layout.js";
+import { createAnalysisPdfRenderer } from "./js/tools/analysis-pdf-rendering.js";
+import { createArchivePreferencesController } from "./js/tools/archive-preferences.js";
+import { ANALYSIS_NETWORK_PATTERNS, ANALYSIS_CORPUS_PATTERNS, ANALYSIS_DELTA_REPORT_LABEL } from "./js/tools/analysis-config.js";
+import { createAnalysisTableModels } from "./js/tools/analysis-table-models.js";
+import { createAnalysisController } from "./js/tools/analysis-controller.js";
+import { createAnalysisCorpusAnalyzer } from "./js/tools/analysis-corpus.js";
+import { cosineSimilarityFromMaps, jaccardSimilarityFromSets, overlapSummaryFromSets, frequencyMapFromEntries, cosineSimilarityFromArrays, shareArray } from "./js/tools/analysis-similarity.js";
+import { createAnalysisTemporalAnalyzer } from "./js/tools/analysis-temporal.js";
+import { createAnalysisStylometryAnalyzer } from "./js/tools/analysis-stylometry.js";
 import {
   buildArchiveMediaFileBaseName as buildArchiveMediaFileBaseNameFromData,
   buildArchiveMediaPartFileName,
@@ -163,7 +190,7 @@ import {
   bindPostEditCheckDialogEvents,
 } from "./js/tools/archive.js";
 import { createAccountPickerController, bindAccountSwitcherItemEvents } from "./js/tools/account-picker.js";
-import { bindNetworkViewportControls, bindNetworkWorkspaceEvents, bindNetworkStageModeEvents, bindNetworkInsightEvents, bindNetworkStageInteractionEvents, bindNetworkLifecycleEvents } from "./js/tools/network-ui.js";
+import { createNetworkStageController, renderNetworkLoadControls, bindNetworkViewportControls, bindNetworkWorkspaceEvents, bindNetworkStageModeEvents, bindNetworkInsightEvents, bindNetworkStageInteractionEvents, bindNetworkLifecycleEvents } from "./js/tools/network-ui.js";
 import {
   normalizeThreadExplorerOrientation as normalizeThreadExplorerOrientationFromTools,
   normalizeThreadExplorerSource as normalizeThreadExplorerSourceFromTools,
@@ -2150,39 +2177,6 @@ let appStateHydrated = false;
 const MAX_PERSISTED_SEARCH_RESULTS = 50;
 const NETWORK_STAGE_MIN_ZOOM = 0.42;
 const NETWORK_STAGE_MAX_ZOOM = 5.6;
-const ANALYSIS_METRIC_DEFINITIONS = [
-  { key: "avgWordLength", labelKey: "analysisMetricAvgWordLength", scale: 4, formatter: "number" },
-  { key: "avgSentenceLength", labelKey: "analysisMetricAvgSentenceLength", scale: 18, formatter: "number" },
-  { key: "uniqueWordShare", labelKey: "analysisMetricUniqueWordShare", scale: 0.35, formatter: "percent" },
-  { key: "uppercaseRate", labelKey: "analysisMetricUppercaseRate", scale: 0.3, formatter: "percent" },
-  { key: "emojiRate", labelKey: "analysisMetricEmojiRate", scale: 0.2, formatter: "percent" },
-  { key: "exclamationRate", labelKey: "analysisMetricExclamationRate", scale: 0.25, formatter: "percent" },
-  { key: "questionRate", labelKey: "analysisMetricQuestionRate", scale: 0.2, formatter: "percent" },
-  { key: "commaRate", labelKey: "analysisMetricCommaRate", scale: 0.35, formatter: "percent" },
-  { key: "shortWordShare", labelKey: "analysisMetricShortWordShare", scale: 0.35, formatter: "percent" },
-  { key: "longWordShare", labelKey: "analysisMetricLongWordShare", scale: 0.25, formatter: "percent" },
-];
-const ANALYSIS_TEMPORAL_GAP_BUCKETS = [
-  { key: "underTenMinutes", maxMinutes: 10, labelKey: "analysisTemporalGapUnderTenMinutes" },
-  { key: "underOneHour", maxMinutes: 60, labelKey: "analysisTemporalGapUnderOneHour" },
-  { key: "underSixHours", maxMinutes: 360, labelKey: "analysisTemporalGapUnderSixHours" },
-  { key: "underOneDay", maxMinutes: 1440, labelKey: "analysisTemporalGapUnderOneDay" },
-  { key: "overOneDay", maxMinutes: Number.POSITIVE_INFINITY, labelKey: "analysisTemporalGapOverOneDay" },
-];
-const ANALYSIS_FUNCTION_WORDS = [
-  "ich", "du", "wir", "ihr", "er", "sie", "es", "man", "aber", "oder", "und", "denn", "doch", "halt", "eben",
-  "auch", "schon", "noch", "nur", "mal", "nicht", "kein", "eine", "einer", "einem", "einen", "der", "die", "das",
-  "dass", "weil", "wenn", "als", "wie", "so", "hier", "da", "dann", "eigentlich", "irgendwie",
-  "i", "you", "we", "they", "he", "she", "it", "and", "or", "but", "the", "a", "an", "to", "for", "with", "that",
-  "this", "these", "those", "because", "if", "then", "just", "really", "maybe", "still",
-  "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "et", "ou", "mais", "donc", "car", "pour", "avec",
-  "que", "qui", "dans", "sur", "pas", "plus", "encore", "comme", "alors",
-];
-const ANALYSIS_NUMBER_WORDS = new Set([
-  "null", "eins", "ein", "eine", "zwei", "drei", "vier", "fuenf", "funf", "sechs", "sieben", "acht", "neun", "zehn",
-  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-  "zero", "un", "une", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix",
-]);
 const LOGIN_SERVICE_PRESETS = {
   "bsky.social": "https://bsky.social",
   "eurosky.social": "https://eurosky.social",
@@ -2408,671 +2402,173 @@ function getProfileLabel(profile) {
   return name || String(profile?.did || "").trim();
 }
 
+/** Finds a known network profile. @param {string} did - Profile DID. @returns {object|null} Profile. */
 function getKnownNetworkProfile(did) {
-  const actorDid = String(did || "").trim();
-  if (!actorDid) {
-    return null;
-  }
-  if (actorDid === networkViewerProfile?.did) {
-    return networkViewerProfile;
-  }
-  const direct = networkNodes.get(actorDid);
-  if (direct) {
-    return direct;
-  }
-  for (const detail of networkFocusDetails.values()) {
-    if (detail?.profile?.did === actorDid) {
-      return detail.profile;
-    }
-    const previewHit = [...(detail?.followersPreview || []), ...(detail?.followsPreview || [])]
-      .find((entry) => entry?.did === actorDid);
-    if (previewHit) {
-      return previewHit;
-    }
-  }
-  return null;
+  return networkFocusController.known(did);
 }
 
+/** Resets loaded network state. @returns {void} */
 function resetNetworkState() {
-  networkAccountDid = networkAccountDid || authAccountDid || "";
-  networkViewerProfile = null;
-  networkNodes = new Map();
-  networkFollowerCursor = "";
-  networkFollowCursor = "";
-  networkHasMoreFollowers = false;
-  networkHasMoreFollows = false;
-  networkLoading = false;
-  networkSelectedDid = "";
-  networkStatusLine = t("networkProgressIdle");
-  networkWaveIndex = 0;
-  networkFocusDetails = new Map();
-  networkFocusLoadingDid = "";
-  networkStageSlots = new Map();
-  networkStageRelationCounts = {
-    mutual: 0,
-    followers: 0,
-    following: 0,
-    other: 0,
-  };
-  networkStageZoom = 1;
-  networkStagePanX = 0;
-  networkStagePanY = 0;
-  networkStageDrag = null;
-  networkStageFitAll = true;
-  networkHoveredDid = "";
-  networkFocusPreviewTab = "followers";
-  clearNetworkCommonMutuals();
+  networkWorkspaceController.reset();
 }
 
+/** Establishes the authenticated network context. @returns {void} */
 function ensureNetworkStateForAccount() {
-  if (!authAccountDid) {
-    resetNetworkState();
-    return;
-  }
-  if (!networkAccountDid) {
-    networkAccountDid = authAccountDid;
-  }
+  networkWorkspaceController.ensure();
 }
 
-function mergeNetworkNode(existing, incoming) {
-  if (!existing) {
-    return {
-      ...incoming,
-      followingViewer: incoming.followingViewer === true,
-      followedByViewer: incoming.followedByViewer === true,
-    };
-  }
 
-  return {
-    ...existing,
-    ...incoming,
-    handle: incoming.handle || existing.handle || "",
-    displayName: incoming.displayName || existing.displayName || incoming.handle || existing.handle || "",
-    avatar: incoming.avatar || existing.avatar || "",
-    description: incoming.description || existing.description || "",
-    followersCount: Number(incoming.followersCount) || Number(existing.followersCount) || 0,
-    followsCount: Number(incoming.followsCount) || Number(existing.followsCount) || 0,
-    postsCount: Number(incoming.postsCount) || Number(existing.postsCount) || 0,
-    followingViewer: existing.followingViewer || incoming.followingViewer === true,
-    followedByViewer: existing.followedByViewer || incoming.followedByViewer === true,
-  };
-}
-
+/** Merges loaded network profiles. @param {object[]} profiles - Partial profiles. @returns {void} */
 function ingestNetworkProfiles(profiles = []) {
-  profiles.forEach((profile) => {
-    if (!profile?.did || profile.did === networkAccountDid) {
-      return;
-    }
-    const existing = networkNodes.get(profile.did) || null;
-    networkNodes.set(profile.did, mergeNetworkNode(existing, profile));
-  });
+  networkFocusController.ingest(profiles);
 }
 
+/** Localizes a profile relationship. @param {object} node - Profile. @returns {string} Label. */
 function getNetworkRelationLabel(node) {
-  const relation = getNetworkRelationType(node);
-  const account = getNetworkCenterLabel();
-  if (relation === "mutual") {
-    return t("networkRelationMutual");
-  }
-  if (relation === "followers") {
-    return isViewingOwnNetwork()
-      ? t("networkRelationFollower")
-      : t("networkRelationFollowerOther", { account });
-  }
-  if (relation === "following") {
-    return isViewingOwnNetwork()
-      ? t("networkRelationFollowing")
-      : t("networkRelationFollowingOther", { account });
-  }
-  return t("networkRelationLoose");
+  return networkWorkspaceController.relationLabel(node);
 }
 
+/** Checks own network context. @returns {boolean} Own context. */
 function isViewingOwnNetwork() {
-  return Boolean(authAccountDid) && Boolean(networkAccountDid) && networkAccountDid === authAccountDid;
+  return networkWorkspaceController.own();
 }
 
+/** Reads the viewed profile. @returns {object|null} Profile. */
 function getNetworkCenterProfile() {
-  return networkViewerProfile || null;
+  return networkWorkspaceController.center();
 }
 
+/** Resolves the viewed account label. @returns {string} Label. */
 function getNetworkCenterLabel() {
-  const profile = getNetworkCenterProfile();
-  return profile?.displayName || profile?.handle || authAccount || t("networkViewerFallback");
+  return networkWorkspaceController.centerLabel();
 }
 
-function getStrongNetworkScoreThreshold(nodes = getAllNetworkNodes()) {
-  if (!nodes.length) {
-    return 0;
-  }
 
-  const scores = nodes
-    .map((node) => getNetworkNodeScore(node))
-    .sort((left, right) => right - left);
-  const preferredCount = Math.max(18, Math.ceil(scores.length * 0.14));
-  const thresholdIndex = Math.min(scores.length - 1, preferredCount - 1);
-  return Math.max(100, scores[thresholdIndex] || 0);
-}
-
+/** Returns score-ranked network profiles. @returns {object[]} Ranked profiles. */
 function getAllNetworkNodes() {
-  return Array.from(networkNodes.values()).sort((left, right) => {
-    const scoreDelta = getNetworkNodeScore(right) - getNetworkNodeScore(left);
-    if (scoreDelta !== 0) {
-      return scoreDelta;
-    }
-    return String(left.handle || left.displayName || "").localeCompare(String(right.handle || right.displayName || ""));
-  });
+  return rankNetworkNodes(Array.from(networkNodes.values()));
 }
 
-function matchesNetworkFilter(node, filterMode = networkFilterMode, strongThreshold = getStrongNetworkScoreThreshold()) {
-  const relation = getNetworkRelationType(node);
-  if (filterMode === "common") {
-    return getActiveNetworkCommonMutualDids().has(String(node?.did || "").trim());
-  }
-  if (filterMode === "mutual") {
-    return relation === "mutual";
-  }
-  if (filterMode === "followers") {
-    return relation === "followers";
-  }
-  if (filterMode === "following") {
-    return relation === "following";
-  }
-  if (filterMode === "strong") {
-    return getNetworkNodeScore(node) >= strongThreshold;
-  }
-  return true;
-}
 
+/** Selects visible profiles using the current network filters. @param {number} limit - Optional result limit. @returns {object[]} Visible profiles. */
 function getVisibleNetworkNodes(limit = Number.POSITIVE_INFINITY) {
-  const query = String(networkSearchQuery || "").trim().toLowerCase();
-  const allNodes = getAllNetworkNodes();
-  const strongThreshold = getStrongNetworkScoreThreshold(allNodes);
-  const nodes = allNodes
-    .filter((node) => matchesNetworkFilter(node, networkFilterMode, strongThreshold))
-    .filter((node) => {
-      if (!query) {
-        return true;
-      }
-      return `${node.displayName || ""} ${node.handle || ""}`.toLowerCase().includes(query);
-    });
-
-  if (!Number.isFinite(limit)) {
-    return nodes;
-  }
-  return nodes.slice(0, Math.max(0, limit));
+  return selectNetworkNodes(Array.from(networkNodes.values()), {
+    mode: networkFilterMode, query: networkSearchQuery, limit,
+    commonDids: getActiveNetworkCommonMutualDids(),
+  });
 }
 
-function getNetworkSortValue(node, field = networkSortField) {
-  if (field === "handle") {
-    return String(node?.handle || node?.did || "").trim();
-  }
-  return String(node?.displayName || node?.handle || node?.did || "").trim();
-}
 
+/** Sorts profiles using the current alphabetical preferences. @param {object[]} nodes - Profiles. @returns {object[]} Sorted profiles. */
 function sortNetworkNodes(nodes = []) {
-  const directionFactor = networkSortDirection === "desc" ? -1 : 1;
-  return [...nodes].sort((left, right) => {
-    const primary = getNetworkSortValue(left).localeCompare(
-      getNetworkSortValue(right),
-      currentLocale || undefined,
-      { sensitivity: "base" },
-    );
-    if (primary !== 0) {
-      return primary * directionFactor;
-    }
-    const secondary = String(left?.handle || left?.did || "").localeCompare(
-      String(right?.handle || right?.did || ""),
-      currentLocale || undefined,
-      { sensitivity: "base" },
-    );
-    if (secondary !== 0) {
-      return secondary * directionFactor;
-    }
-    return String(left?.did || "").localeCompare(String(right?.did || "")) * directionFactor;
-  });
+  return sortNetworkProfiles(nodes, { field: networkSortField, direction: networkSortDirection, locale: currentLocale });
 }
 
+/** Allocates a stable relation slot. @param {object} node - Network profile. @returns {object|null} Relation/index slot. */
 function ensureNetworkStageSlot(node) {
-  if (!node?.did) {
-    return null;
-  }
-
-  const relation = getNetworkRelationType(node);
-  const existing = networkStageSlots.get(node.did);
-  if (existing && existing.relation === relation) {
-    return existing;
-  }
-
-  const slot = {
-    relation,
-    index: networkStageRelationCounts[relation] || 0,
-  };
-  networkStageRelationCounts[relation] = slot.index + 1;
-  networkStageSlots.set(node.did, slot);
-  return slot;
+  return networkLayoutController.slot(node);
 }
 
+/** Checks group pagination. @param {string} groupKey - Relation group. @returns {boolean} More data available. */
 function hasPendingNetworkDataForGroup(groupKey) {
-  if (groupKey === "followers") {
-    return networkHasMoreFollowers;
-  }
-  if (groupKey === "following") {
-    return networkHasMoreFollows;
-  }
-  if (groupKey === "mutual") {
-    return networkHasMoreFollowers || networkHasMoreFollows;
-  }
-  return networkHasMoreFollowers || networkHasMoreFollows;
+  return networkWorkspaceController.pending(groupKey);
 }
 
+/** Loads a group wave. @param {string} groupKey - Relation group. @returns {Promise<void>} Completion. */
 async function loadMoreNetworkGroup(groupKey = "all") {
-  if (!authAccount || networkLoading) {
-    return;
-  }
-
-  await loadNetworkWave({
-    triggerGroup: groupKey,
-  });
+  await networkWorkspaceController.loadMore(groupKey);
 }
 
+/** Computes the viewport and applies its clamped pan state. @param {object} layout - Stage layout. @returns {object} SVG viewport. */
 function getNetworkStageViewport(layout) {
-  const bounds = layout.contentBounds || {
-    minX: 0,
-    minY: 0,
-    maxX: layout.width,
-    maxY: layout.height,
-  };
-  const boundsWidth = Math.max(1, bounds.maxX - bounds.minX);
-  const boundsHeight = Math.max(1, bounds.maxY - bounds.minY);
-  const fitPadding = 72;
-  if (networkStageFitAll) {
-    return {
-      x: bounds.minX - fitPadding,
-      y: bounds.minY - fitPadding,
-      width: boundsWidth + (fitPadding * 2),
-      height: boundsHeight + (fitPadding * 2),
-      zoom: 1,
-    };
-  }
-
-  const zoom = clamp(networkStageZoom, NETWORK_STAGE_MIN_ZOOM, NETWORK_STAGE_MAX_ZOOM);
-  const viewWidth = layout.width / zoom;
-  const viewHeight = layout.height / zoom;
-  const boundsCenterX = (bounds.minX + bounds.maxX) / 2;
-  const boundsCenterY = (bounds.minY + bounds.maxY) / 2;
-  const baseX = boundsCenterX - (viewWidth / 2);
-  const baseY = boundsCenterY - (viewHeight / 2);
-  const panPaddingX = Math.max(80, viewWidth * 0.12);
-  const panPaddingY = Math.max(80, viewHeight * 0.12);
-  const rawPanMinX = (bounds.maxX + panPaddingX) - (baseX + viewWidth);
-  const rawPanMaxX = (bounds.minX - panPaddingX) - baseX;
-  const rawPanMinY = (bounds.maxY + panPaddingY) - (baseY + viewHeight);
-  const rawPanMaxY = (bounds.minY - panPaddingY) - baseY;
-  const panMinX = Math.min(rawPanMinX, rawPanMaxX);
-  const panMaxX = Math.max(rawPanMinX, rawPanMaxX);
-  const panMinY = Math.min(rawPanMinY, rawPanMaxY);
-  const panMaxY = Math.max(rawPanMinY, rawPanMaxY);
-  networkStagePanX = clamp(networkStagePanX, panMinX, panMaxX);
-  networkStagePanY = clamp(networkStagePanY, panMinY, panMaxY);
-
-  return {
-    x: baseX + networkStagePanX,
-    y: baseY + networkStagePanY,
-    width: viewWidth,
-    height: viewHeight,
-    zoom,
-  };
+  const result = calculateNetworkViewport(layout, {
+    fitAll: networkStageFitAll, zoom: networkStageZoom, panX: networkStagePanX, panY: networkStagePanY,
+  }, { min: NETWORK_STAGE_MIN_ZOOM, max: NETWORK_STAGE_MAX_ZOOM, clamp });
+  networkStagePanX = result.panX;
+  networkStagePanY = result.panY;
+  return result.viewport;
 }
 
+/** Calculates bounds including the selected focus previews. @param {object} layout - Stage layout. @param {object[]} visibleNodes - Visible profiles. @param {string} selectedDid - Focus DID. @returns {object} Content bounds. */
 function computeNetworkStageContentBounds(layout, visibleNodes, selectedDid) {
-  const padding = 28;
-  let minX = layout.centerX - 64;
-  let maxX = layout.centerX + 64;
-  let minY = layout.centerY - 64;
-  let maxY = layout.centerY + 92;
-
-  visibleNodes.forEach((node) => {
-    const point = layout.positions.get(node.did);
-    if (!point) {
-      return;
-    }
-    const relation = getNetworkRelationType(node);
-    const isSelected = node.did === selectedDid;
-    const radius = isSelected ? 27 : (relation === "mutual" ? 18 : 15);
-    minX = Math.min(minX, point.x - radius - padding);
-    maxX = Math.max(maxX, point.x + radius + padding);
-    minY = Math.min(minY, point.y - radius - padding);
-    maxY = Math.max(maxY, point.y + radius + padding);
-  });
-
-  if (layout.hasFocusIsland && selectedDid) {
-    const focusPreviewItems = getNetworkStageFocusPreviewItems(selectedDid);
-    const focusCenterX = layout.centerX;
-    const focusCenterY = layout.focusCenterY;
-    const focusRadius = 108;
-    minX = Math.min(minX, focusCenterX - focusRadius - 70);
-    maxX = Math.max(maxX, focusCenterX + focusRadius + 70);
-    minY = Math.min(minY, focusCenterY - focusRadius - 58);
-    maxY = Math.max(maxY, focusCenterY + focusRadius + 70);
-    focusPreviewItems.forEach((entry, index) => {
-      const angle = (-Math.PI / 2) + ((index / Math.max(1, focusPreviewItems.length)) * Math.PI * 2);
-      const orbitRadius = 76;
-      const pointX = focusCenterX + Math.cos(angle) * orbitRadius;
-      const pointY = focusCenterY + Math.sin(angle) * orbitRadius;
-      minX = Math.min(minX, pointX - 24);
-      maxX = Math.max(maxX, pointX + 24);
-      minY = Math.min(minY, pointY - 24);
-      maxY = Math.max(maxY, pointY + 24);
-    });
-  }
-
-  return {
-    minX,
-    minY,
-    maxX,
-    maxY,
-  };
+  let focusItems = [];
+  if (layout.hasFocusIsland && selectedDid) { focusItems = getNetworkStageFocusPreviewItems(selectedDid); }
+  return calculateNetworkContentBounds(layout, visibleNodes, selectedDid, focusItems);
 }
 
+/** Zooms the stage without an anchor. @param {number} factor - Zoom multiplier. @returns {void} */
 function zoomNetworkStage(factor) {
-  networkStageFitAll = false;
-  networkStageZoom = clamp((networkStageZoom || 1) * factor, NETWORK_STAGE_MIN_ZOOM, NETWORK_STAGE_MAX_ZOOM);
-  renderNetworkStage();
+  networkStageController.zoom(factor);
 }
 
+/** Zooms around a client-space anchor. @param {number} factor - Zoom multiplier. @param {number} clientX - Anchor X. @param {number} clientY - Anchor Y. @returns {void} */
 function zoomNetworkStageAtPoint(factor, clientX, clientY) {
-  if (!networkStageSvg) {
-    zoomNetworkStage(factor);
-    return;
-  }
-  const visibleNodes = getVisibleNetworkNodes();
-  const selectedDid = networkSelectedDid || getPreferredNetworkSelection(visibleNodes);
-  const layout = computeNetworkLayout(visibleNodes, selectedDid);
-  layout.contentBounds = computeNetworkStageContentBounds(layout, visibleNodes, selectedDid);
-  const beforeViewport = getNetworkStageViewport(layout);
-  const bounds = networkStageSvg.getBoundingClientRect();
-  const relativeX = clamp((clientX - bounds.left) / Math.max(1, bounds.width), 0, 1);
-  const relativeY = clamp((clientY - bounds.top) / Math.max(1, bounds.height), 0, 1);
-  const stageX = beforeViewport.x + (beforeViewport.width * relativeX);
-  const stageY = beforeViewport.y + (beforeViewport.height * relativeY);
-
-  networkStageFitAll = false;
-  const nextZoom = clamp((networkStageZoom || 1) * factor, NETWORK_STAGE_MIN_ZOOM, NETWORK_STAGE_MAX_ZOOM);
-  networkStageZoom = nextZoom;
-
-  const afterViewWidth = layout.width / nextZoom;
-  const afterViewHeight = layout.height / nextZoom;
-  const targetX = stageX - (afterViewWidth * relativeX);
-  const targetY = stageY - (afterViewHeight * relativeY);
-  const defaultCenterX = ((layout.contentBounds.minX + layout.contentBounds.maxX) / 2) - (afterViewWidth / 2);
-  const defaultCenterY = ((layout.contentBounds.minY + layout.contentBounds.maxY) / 2) - (afterViewHeight / 2);
-  networkStagePanX = targetX - defaultCenterX;
-  networkStagePanY = targetY - defaultCenterY;
-
-  renderNetworkStage();
+  networkStageController.zoomAtPoint(factor, clientX, clientY);
 }
 
+/** Resets the stage to fit-to-content. @returns {void} */
 function resetNetworkStageView() {
-  networkStageFitAll = true;
-  networkStageZoom = 1;
-  networkStagePanX = 0;
-  networkStagePanY = 0;
-  renderNetworkStage();
+  networkStageController.resetZoom();
 }
 
+/** Toggles and persists the stage shape. @returns {void} */
 function toggleNetworkStageShape() {
-  networkStageShape = networkStageShape === NETWORK_STAGE_SHAPE_SQUIRCLE
-    ? NETWORK_STAGE_SHAPE_ROUND
-    : NETWORK_STAGE_SHAPE_SQUIRCLE;
-  persistNetworkStageShapePreference(networkStageShape);
-  resetNetworkStageView();
-  renderNetworkWorkspace();
+  networkStageController.toggleShape();
 }
 
+/** Resolves stage label candidates. @param {object[]} visibleNodes - Visible profiles. @param {string} selectedDid - Focus DID. @returns {string[]} Label DIDs. */
 function getNetworkStageLabelCandidates(visibleNodes, selectedDid) {
-  const labelCandidates = [];
-  if (selectedDid) {
-    labelCandidates.push(selectedDid);
-  }
-
-  visibleNodes
-    .filter((node) => getNetworkRelationType(node) === "mutual")
-    .slice(0, 3)
-    .forEach((node) => {
-      if (!labelCandidates.includes(node.did)) {
-        labelCandidates.push(node.did);
-      }
-    });
-
-  visibleNodes.slice(0, 2).forEach((node) => {
-    if (!labelCandidates.includes(node.did)) {
-      labelCandidates.push(node.did);
-    }
-  });
-
-  return labelCandidates;
+  return networkLayoutController.labels(visibleNodes, selectedDid);
 }
 
+/** Resolves capped focus previews. @param {string} selectedDid - Focus DID. @returns {object[]} Preview profiles. */
 function getNetworkStageFocusPreviewItems(selectedDid) {
-  const focusData = selectedDid ? networkFocusDetails.get(selectedDid) || null : null;
-  if (!focusData) {
-    return [];
-  }
-
-  const followers = (focusData.followersPreview || []).slice(0, 4).map((entry) => ({
-    ...entry,
-    previewRelation: "followers",
-  }));
-  const following = (focusData.followsPreview || []).slice(0, 4).map((entry) => ({
-    ...entry,
-    previewRelation: "following",
-  }));
-
-  return [...followers, ...following]
-    .filter((entry) => entry?.did && entry.did !== selectedDid)
-    .filter((entry, index, items) => items.findIndex((candidate) => candidate.did === entry.did) === index);
+  return networkFocusController.previews(selectedDid);
 }
 
+/** Keeps visible node selection. @param {object[]} visibleNodes - Visible profiles. @returns {string} Selected DID. */
 function getPreferredNetworkSelection(visibleNodes = getVisibleNetworkNodes()) {
-  const selected = networkSelectedDid ? networkNodes.get(networkSelectedDid) : null;
-  if (selected && visibleNodes.some((node) => node.did === selected.did)) {
-    return selected.did;
-  }
-  return "";
+  return networkFocusController.preferred(visibleNodes);
 }
 
+/** Selects and optionally loads a focus profile. @param {string} did - Profile DID. @param {object} settings - Loading and preview flags. @returns {void} */
 function setNetworkSelection(did, { loadDetails = true, previewTab = "followers" } = {}) {
-  const actorDid = String(did || "").trim();
-  if (!actorDid) {
-    return;
-  }
-
-  if (networkCommonMutualsTargetDid && networkCommonMutualsTargetDid !== actorDid) {
-    clearNetworkCommonMutuals();
-  }
-
-  networkSelectedDid = actorDid;
-  networkFocusPreviewTab = previewTab;
-  networkFocusCollapsed = false;
-  renderNetworkWorkspace();
-  if (loadDetails) {
-    void loadNetworkFocusDetails(actorDid);
-  }
+  networkFocusController.select(did, { loadDetails, previewTab });
 }
 
+/** Clears common-mutual filtering and state. @returns {void} */
 function clearNetworkCommonMutuals() {
-  networkCommonMutualsTargetDid = "";
-  networkCommonMutualsDids = new Set();
-  networkCommonMutualsLoadingDid = "";
-  networkCommonMutualsHasMore = false;
-  if (networkFilterMode === "common") {
-    networkFilterMode = "all";
-  }
+  networkFocusController.clearCommon();
 }
 
+/** Restores network result scroll across animation frames. @returns {void} */
 function restoreNetworkResultsScroll() {
-  if (!networkResults) {
-    return;
-  }
-  const target = Math.max(0, Number(networkResultsScrollTop) || 0);
-  networkResultsRestorePending = true;
-  networkResults.scrollTop = target;
-  requestAnimationFrame(() => {
-    if (!networkResults) {
-      networkResultsRestorePending = false;
-      return;
-    }
-    networkResults.scrollTop = target;
-    requestAnimationFrame(() => {
-      if (networkResults) {
-        networkResults.scrollTop = target;
-      }
-      networkResultsRestorePending = false;
-    });
-  });
+  networkStageController.restoreScroll();
 }
 
+/** Reads common mutuals for a selection. @param {string} selectedDid - Focus DID. @returns {Set<string>} Common DIDs. */
 function getActiveNetworkCommonMutualDids(selectedDid = networkSelectedDid) {
-  const actorDid = String(selectedDid || "").trim();
-  if (!actorDid || actorDid !== networkCommonMutualsTargetDid || !networkCommonMutualsDids.size) {
-    return new Set();
-  }
-  return new Set(networkCommonMutualsDids);
+  return networkFocusController.activeCommon(selectedDid);
 }
 
+/** Updates hover metadata. @param {string} did - Profile DID. @returns {void} */
 function setNetworkHoveredAccount(did = "") {
-  networkHoveredDid = String(did || "").trim();
-  if (!networkStageHovercard) {
-    return;
-  }
-
-  const profile = getKnownNetworkProfile(networkHoveredDid);
-  if (!profile) {
-    networkStageHovercard.hidden = true;
-    networkStageHovercard.textContent = "";
-    return;
-  }
-
-  networkStageHovercard.hidden = false;
-  networkStageHovercard.textContent = getProfileLabel(profile);
+  networkWorkspaceController.hover(did);
 }
 
+/** Loads focus details. @param {string} did - Profile DID. @returns {Promise<void>} Completion. */
 async function loadNetworkFocusDetails(did) {
-  const actorDid = String(did || "").trim();
-  if (!actorDid || networkFocusLoadingDid === actorDid) {
-    return;
-  }
-
-  networkFocusLoadingDid = actorDid;
-  renderNetworkWorkspace();
-
-  try {
-    const result = await sendToServiceWorker("LOAD_NETWORK_ACTOR_FOCUS", {
-      actor: actorDid,
-    }, {
-      timeoutMs: 120000,
-      onProgress(progress) {
-        const step = String(progress?.step || "").trim();
-        const detail = String(progress?.detail || "").trim();
-        if (networkSelectedDid === actorDid) {
-          const selectedProfile = networkNodes.get(actorDid) || null;
-          const actorLabel = selectedProfile ? getProfileLabel(selectedProfile) : "";
-          setNetworkStatus([step, actorLabel || detail].filter(Boolean).join(" · ") || t("networkFocusLoading"));
-        }
-      },
-    });
-
-    if (result?.profile?.did) {
-      const existing = networkNodes.get(result.profile.did) || null;
-      networkNodes.set(result.profile.did, mergeNetworkNode(existing, result.profile));
-      networkFocusDetails.set(result.profile.did, {
-        profile: result.profile,
-        relationshipDates: result.relationshipDates || null,
-        activityStats: result.activityStats || null,
-        likeStats: result.likeStats || null,
-        followersPreview: Array.isArray(result.followersPreview) ? result.followersPreview : [],
-        followsPreview: Array.isArray(result.followsPreview) ? result.followsPreview : [],
-      });
-    }
-  } catch (error) {
-    console.error(error);
-    if (networkSelectedDid === actorDid) {
-      setNetworkStatus(error.message || t("networkFocusLoadFailed"));
-    }
-  } finally {
-    if (networkFocusLoadingDid === actorDid) {
-      networkFocusLoadingDid = "";
-    }
-    renderNetworkWorkspace();
-  }
+  await networkFocusController.loadFocus(did);
 }
 
+/** Loads common mutuals. @param {string} actorDid - Focus DID. @returns {Promise<void>} Completion. */
 async function loadNetworkCommonMutuals(actorDid) {
-  const focusDid = String(actorDid || "").trim();
-  if (!focusDid || networkCommonMutualsLoadingDid === focusDid) {
-    return;
-  }
-  const centerDid = String(networkViewerProfile?.did || networkAccountDid || authAccountDid || "").trim();
-  if (!centerDid || centerDid === focusDid) {
-    return;
-  }
-
-  networkCommonMutualsLoadingDid = focusDid;
-  renderNetworkWorkspace();
-
-  try {
-    const result = await sendToServiceWorker("LOAD_NETWORK_COMMON_MUTUALS", {
-      centerActor: centerDid,
-      focusActor: focusDid,
-    }, {
-      timeoutMs: 420000,
-      onProgress(progress) {
-        const step = String(progress?.step || "").trim();
-        const detail = String(progress?.detail || "").trim();
-        if (networkSelectedDid === focusDid) {
-          setNetworkStatus([step, detail].filter(Boolean).join(" · ") || t("networkCommonMutualsLoading"));
-        }
-      },
-    });
-    networkFilterMode = "all";
-    networkSearchQuery = "";
-    if (networkSearchInput) {
-      networkSearchInput.value = "";
-    }
-    ingestNetworkProfiles(result?.commonProfiles || []);
-    networkCommonMutualsTargetDid = focusDid;
-    networkCommonMutualsDids = new Set(
-      Array.isArray(result?.commonDids) ? result.commonDids.map((item) => String(item || "").trim()).filter(Boolean) : [],
-    );
-    networkCommonMutualsHasMore = false;
-    networkStageFitAll = true;
-    networkStageZoom = 1;
-    networkStagePanX = 0;
-    networkStagePanY = 0;
-    setNetworkStatus(t("networkCommonMutualsLoaded", {
-      count: formatCount(networkCommonMutualsDids.size),
-    }));
-  } catch (error) {
-    console.error(error);
-    clearNetworkCommonMutuals();
-    setNetworkStatus(error.message || t("networkCommonMutualsLoadFailed"));
-  } finally {
-    if (networkCommonMutualsLoadingDid === focusDid) {
-      networkCommonMutualsLoadingDid = "";
-    }
-    renderNetworkWorkspace();
-  }
+  await networkFocusController.loadCommon(actorDid);
 }
 
+/** Resolves the requested network actor. @returns {string} Actor. */
 function getRequestedNetworkActor() {
-  const typedActor = String(networkAccountInput?.value || "").trim();
-  if (typedActor) {
-    return typedActor;
-  }
-  if (networkViewerProfile?.handle) {
-    return networkViewerProfile.handle;
-  }
-  return networkAccountDid || authAccountDid || "";
+  return networkWorkspaceController.requested();
 }
 
 
@@ -3757,57 +3253,24 @@ function restoreThreadExplorerViewModePreference() {
   return threadExplorerViewMode;
 }
 
+/** Enters native or app-internal network stage mode. @returns {Promise<void>} Completion. */
 async function enterNetworkStageMode() {
-  networkStageMode = true;
-  networkStageModeFocusVisible = false;
-  networkStageModeListsVisible = false;
-  document.body.classList.add("network-stage-mode");
-  const fullscreenTarget = networkGrid || networkWorkspace || networkStageCard;
-  if (document.fullscreenEnabled && !document.fullscreenElement && fullscreenTarget?.requestFullscreen) {
-    try {
-      await fullscreenTarget.requestFullscreen();
-    } catch {
-      // Fallback to app-internal stage mode only.
-    }
-  }
-  renderNetworkWorkspace();
+  await networkStageController.enter();
 }
 
+/** Exits network stage mode. @returns {Promise<void>} Completion. */
 async function exitNetworkStageMode() {
-  networkStageMode = false;
-  networkStageModeFocusVisible = false;
-  networkStageModeListsVisible = false;
-  document.body.classList.remove("network-stage-mode");
-  if (document.fullscreenElement) {
-    try {
-      await document.exitFullscreen();
-    } catch {
-      // Ignore fullscreen exit failures.
-    }
-  }
-  renderNetworkWorkspace();
+  await networkStageController.exit();
 }
 
+/** Persists the stage shape. @param {string} shape - Shape. @returns {void} */
 function persistNetworkStageShapePreference(shape) {
-  try {
-    const normalizedShape = shape === NETWORK_STAGE_SHAPE_SQUIRCLE
-      ? NETWORK_STAGE_SHAPE_SQUIRCLE
-      : NETWORK_STAGE_SHAPE_ROUND;
-    window.localStorage.setItem(NETWORK_STAGE_SHAPE_STORAGE_KEY, normalizedShape);
-  } catch {
-    // Ignore storage errors in private or restricted contexts.
-  }
+  writeNetworkShapePreference(shape, () => window.localStorage, NETWORK_STAGE_SHAPE_STORAGE_KEY);
 }
 
+/** Reads the stage shape with restricted-storage fallback. @returns {string} Shape. */
 function getStoredNetworkStageShape() {
-  try {
-    const value = String(window.localStorage.getItem(NETWORK_STAGE_SHAPE_STORAGE_KEY) || "").trim();
-    return value === NETWORK_STAGE_SHAPE_SQUIRCLE
-      ? NETWORK_STAGE_SHAPE_SQUIRCLE
-      : NETWORK_STAGE_SHAPE_ROUND;
-  } catch {
-    return NETWORK_STAGE_SHAPE_ROUND;
-  }
+  return readNetworkShapePreference(() => window.localStorage, NETWORK_STAGE_SHAPE_STORAGE_KEY);
 }
 
 /**
@@ -5608,25 +5071,9 @@ function showArchiveWorkspace() {
  * Shows the network workspace on the tools page.
  * @returns {void}
  */
+/** Opens the network workspace through the page controller. @returns {void} */
 function showNetworkWorkspace() {
-  if (navigateToThreadlinePage(THREADLINE_PAGE_TOOLS)) {
-    return;
-  }
-  if (!authAccount) {
-    return;
-  }
-
-  ensureNetworkStateForAccount();
-  currentWorkspace = "network";
-  applyThreadExplorerFullscreenState();
-  persistWorkspacePreference(currentWorkspace);
-  setVisibleWorkspace(currentWorkspace);
-  applyHashtagPaneContext();
-  updateAuthButtons();
-  renderNetworkWorkspace();
-  if (!networkNodes.size && !networkLoading) {
-    void loadNetworkWave({ silentErrors: false });
-  }
+  networkWorkspaceController.show();
 }
 
 /**
@@ -5662,20 +5109,7 @@ function showThreadExplorerWorkspace() {
  * @returns {void}
  */
 function showAnalysisWorkspace() {
-  if (navigateToThreadlinePage(THREADLINE_PAGE_TOOLS)) {
-    return;
-  }
-  if (!authAccount) {
-    return;
-  }
-
-  currentWorkspace = "analysis";
-  applyThreadExplorerFullscreenState();
-  persistWorkspacePreference(currentWorkspace);
-  setVisibleWorkspace(currentWorkspace);
-  applyHashtagPaneContext();
-  updateAuthButtons();
-  renderAnalysisWorkspace();
+  analysisWorkspaceController.show();
 }
 
 /**
@@ -5730,11 +5164,9 @@ function showComposerWorkspace(options = {}) {
   });
 }
 
+/** Updates network progress text. @param {unknown} message - Status text. @returns {void} */
 function setNetworkStatus(message) {
-  networkStatusLine = String(message || "").trim() || t("networkProgressIdle");
-  if (networkProgressLine) {
-    networkProgressLine.textContent = networkStatusLine;
-  }
+  networkWorkspaceController.status(message);
 }
 
 /**
@@ -11755,2195 +11187,88 @@ function handleThreadExplorerFavoriteRemoveClick(event) {
   void removeThreadExplorerFavorite(uri);
 }
 
-function formatNetworkRelationshipDate(value) {
-  const timestamp = Date.parse(String(value || "").trim());
-  if (!Number.isFinite(timestamp)) {
-    return "";
-  }
-  return new Intl.DateTimeFormat(currentLocale, {
-    dateStyle: "medium",
-  }).format(new Date(timestamp));
-}
 
-function getNetworkActivityWindow(activityStats, days) {
-  if (!activityStats?.windows || typeof activityStats.windows !== "object") {
-    return null;
-  }
-  const entry = activityStats.windows[days] ?? activityStats.windows[String(days)];
-  if (!entry || typeof entry !== "object") {
-    return null;
-  }
-  return {
-    postsCount: Number(entry.postsCount) || 0,
-    likesReceivedCount: Number(entry.likesReceivedCount) || 0,
-  };
-}
 
-function formatNetworkActivityLastPost(value) {
-  const timestamp = Date.parse(String(value || "").trim());
-  if (!Number.isFinite(timestamp)) {
-    return "";
-  }
-  return new Intl.DateTimeFormat(currentLocale, {
-    dateStyle: "medium",
-  }).format(new Date(timestamp));
-}
 
-function getActiveAnalysisActor() {
-  const activeAccount = savedAccounts.find((account) => account?.did && account.did === authAccountDid) || null;
-  const actor = String(
-    activeAccount?.handle
-    || activeAccount?.identifier
-    || authAccount
-    || authAccountDid
-    || "",
-  ).trim();
-  return actor.replace(/^@+/, "");
-}
 
-function getAnalysisOptions() {
-  return {
-    rangeDays: Math.max(0, Number(analysisRangeSelect?.value) || 0),
-    limit: Math.max(100, Math.min(2000, Number(analysisPostLimitSelect?.value) || 500)),
-    includeReplies: analysisIncludeRepliesToggle?.checked === true,
-    includeQuotes: analysisIncludeQuotesToggle?.checked === true,
-  };
-}
 
+/** Updates analysis status. @param {string} message - Status text. @returns {void} */
 function setAnalysisStatus(message = "") {
-  analysisStatusLine = String(message || "").trim() || t("analysisStatusIdle");
-  if (analysisStatusLineNode) {
-    analysisStatusLineNode.textContent = analysisStatusLine;
-  }
+  analysisController.status(message);
 }
 
+/** Formats a locale-aware analysis number. @param {number} value - Number. @param {number} digits - Fraction digits. @returns {string} Text. */
 function formatAnalysisNumber(value, digits = 2) {
-  return new Intl.NumberFormat(currentLocale, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(Number(value) || 0);
+  return analysisController.number(value, digits);
 }
 
+/** Formats an analysis percentage. @param {number} value - Fraction. @returns {string} Text. */
 function formatAnalysisPercent(value) {
-  return `${formatAnalysisNumber((Number(value) || 0) * 100, 1)}%`;
+  return analysisController.percent(value);
 }
 
-function countRegexMatches(text, regex) {
-  const matches = String(text || "").match(regex);
-  return matches ? matches.length : 0;
-}
 
-function getAnalysisTopEntriesFromMap(frequencyMap, denominator, limit = 10, minimumCount = 1) {
-  const safeDenominator = Math.max(1, Number(denominator) || 1);
-  return Array.from(frequencyMap.entries())
-    .filter(([, count]) => (Number(count) || 0) >= minimumCount)
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], currentLocale))
-    .slice(0, limit)
-    .map(([label, count]) => ({
-      label,
-      count,
-      share: count / safeDenominator,
-    }));
-}
 
-function createAnalysisCorpus(texts = []) {
-  const normalizedPosts = (Array.isArray(texts) ? texts : [])
-    .map((text) => String(text || "").trim())
-    .filter(Boolean);
-  const joinedText = normalizedPosts.join("\n");
-  const withoutUrls = joinedText.replace(/https?:\/\/\S+/giu, " ");
-  const lowercase = withoutUrls.toLowerCase();
-  const words = lowercase.match(/\p{L}+(?:['\u2019-]\p{L}+)*/gu) || [];
-  const tokensWithNumbers = lowercase.match(/\p{L}+(?:['\u2019-]\p{L}+)*|\p{N}+/gu) || [];
-  const sentences = withoutUrls
-    .split(/[.!?]+/u)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  const characters = Array.from(withoutUrls);
-  const letters = characters.filter((character) => /\p{L}/u.test(character));
-  const uppercaseLetters = characters.filter((character) => /\p{Lu}/u.test(character));
-  const emojiMatches = withoutUrls.match(/\p{Extended_Pictographic}/gu) || [];
-  const wordFrequency = new Map();
-  const trigramFrequency = new Map();
-  const emojiFrequency = new Map();
-  const bigramFrequency = new Map();
-  const phraseFrequency = new Map();
-  const postStartFrequency = new Map();
-  const postEndFrequency = new Map();
-  const punctuationFrequency = new Map();
-  const functionWordFrequency = new Map();
 
-  emojiMatches.forEach((emoji) => {
-    emojiFrequency.set(emoji, (emojiFrequency.get(emoji) || 0) + 1);
-  });
 
-  for (const word of words) {
-    if (word.length >= 2 && word.length <= 12) {
-      wordFrequency.set(word, (wordFrequency.get(word) || 0) + 1);
-    }
-    if (word.length >= 3) {
-      for (let index = 0; index <= word.length - 3; index += 1) {
-        const trigram = word.slice(index, index + 3);
-        trigramFrequency.set(trigram, (trigramFrequency.get(trigram) || 0) + 1);
-      }
-    }
-  }
 
-  for (let index = 0; index < words.length - 1; index += 1) {
-    const bigram = `${words[index]} ${words[index + 1]}`;
-    bigramFrequency.set(bigram, (bigramFrequency.get(bigram) || 0) + 1);
-  }
 
-  for (let index = 0; index < words.length - 2; index += 1) {
-    const phrase = `${words[index]} ${words[index + 1]} ${words[index + 2]}`;
-    phraseFrequency.set(phrase, (phraseFrequency.get(phrase) || 0) + 1);
-  }
 
-  ANALYSIS_FUNCTION_WORDS.forEach((word) => {
-    const count = wordFrequency.get(word) || 0;
-    if (count > 0) {
-      functionWordFrequency.set(word, count);
-    }
-  });
 
-  const punctuationDefinitions = [
-    ["...", /\.\.\./g],
-    ["?!", /\?!/g],
-    ["!?", /!\?/g],
-    ["!!", /!!+/g],
-    ["??", /\?\?+/g],
-    ["!", /!/g],
-    ["?", /\?/g],
-    [",", /,/g],
-    [":", /:/g],
-    [";", /;/g],
-    ["()", /[()]/g],
-    ["-", /[-\u2013\u2014]/g],
-    ['"', /["\u201c\u201d\u201e]/g],
-  ];
-  punctuationDefinitions.forEach(([label, regex]) => {
-    punctuationFrequency.set(label, countRegexMatches(joinedText, regex));
-  });
 
-  normalizedPosts.forEach((post) => {
-    const postWords = post.toLowerCase().match(/\p{L}+(?:['\u2019-]\p{L}+)*/gu) || [];
-    if (postWords.length > 0) {
-      const start = postWords.slice(0, Math.min(2, postWords.length)).join(" ");
-      const end = postWords.slice(Math.max(0, postWords.length - 2)).join(" ");
-      postStartFrequency.set(start, (postStartFrequency.get(start) || 0) + 1);
-      postEndFrequency.set(end, (postEndFrequency.get(end) || 0) + 1);
-    }
-  });
 
-  const totalWords = Math.max(words.length, 1);
-  const totalSentences = Math.max(sentences.length, 1);
-  const totalLetters = Math.max(letters.length, 1);
-  const uniqueWords = new Set(words);
-  const totalPosts = Math.max(normalizedPosts.length, 1);
-  const wordLengthBuckets = [
-    { labelKey: "analysisWordLengthShort", count: words.filter((word) => word.length <= 3).length },
-    { labelKey: "analysisWordLengthMedium", count: words.filter((word) => word.length >= 4 && word.length <= 6).length },
-    { labelKey: "analysisWordLengthLong", count: words.filter((word) => word.length >= 7 && word.length <= 9).length },
-    { labelKey: "analysisWordLengthVeryLong", count: words.filter((word) => word.length >= 10).length },
-  ].map((entry) => ({
-    ...entry,
-    share: entry.count / totalWords,
-  }));
 
-  const postsWithLinks = normalizedPosts.filter((post) => /https?:\/\/\S+/iu.test(post)).length;
-  const postsWithHashtags = normalizedPosts.filter((post) => /(^|\s)#[\p{L}\p{N}_]+/u.test(post)).length;
-  const postsWithMentions = normalizedPosts.filter((post) => /(^|\s)@[a-z0-9._:-]+/iu.test(post)).length;
-  const blankLinePosts = normalizedPosts.filter((post) => /\n\s*\n/u.test(post)).length;
-  const oneSentencePosts = normalizedPosts.filter((post) => {
-    const postSentences = post.split(/[.!?]+/u).map((entry) => entry.trim()).filter(Boolean);
-    return postSentences.length <= 1;
-  }).length;
-  const questionEndingPosts = normalizedPosts.filter((post) => /\?\s*$/u.test(post)).length;
-  const hashtagEndingPosts = normalizedPosts.filter((post) => /#[\p{L}\p{N}_]+\s*$/u.test(post)).length;
-  const linkEndingPosts = normalizedPosts.filter((post) => /https?:\/\/\S+\s*$/iu.test(post)).length;
 
-  const lineCounts = normalizedPosts.map((post) => Math.max(1, post.split(/\n/u).length));
-  const paragraphCounts = normalizedPosts.map((post) => Math.max(1, post.split(/\n\s*\n/u).length));
 
-  const digitsAsTokens = tokensWithNumbers.filter((token) => /^\p{N}+$/u.test(token)).length;
-  const numberWords = words.filter((word) => ANALYSIS_NUMBER_WORDS.has(word)).length;
-  const allCapsWords = (joinedText.match(/\b\p{Lu}{2,}\b/gu) || []).length;
 
-  return {
-    text: withoutUrls,
-    words,
-    wordCount: words.length,
-    sentenceCount: sentences.length,
-    letterCount: letters.length,
-    emojiCount: emojiMatches.length,
-    topWords: getAnalysisTopEntriesFromMap(wordFrequency, totalWords, 10, 2),
-    topTrigrams: getAnalysisTopEntriesFromMap(trigramFrequency, totalWords, 12, 2),
-    topBigrams: getAnalysisTopEntriesFromMap(bigramFrequency, totalWords, 10, 2),
-    topPhrases: getAnalysisTopEntriesFromMap(phraseFrequency, totalWords, 10, 2),
-    topEmojis: getAnalysisTopEntriesFromMap(emojiFrequency, totalPosts, 12, 1),
-    postStarts: getAnalysisTopEntriesFromMap(postStartFrequency, totalPosts, 8, 1),
-    postEnds: getAnalysisTopEntriesFromMap(postEndFrequency, totalPosts, 8, 1),
-    functionWords: getAnalysisTopEntriesFromMap(functionWordFrequency, totalWords, 16, 1),
-    punctuationProfile: getAnalysisTopEntriesFromMap(punctuationFrequency, totalPosts, 12, 1),
-    wordLengthProfile: wordLengthBuckets,
-    writingConventions: [
-      { labelKey: "analysisConventionUppercaseWords", share: allCapsWords / totalWords },
-      { labelKey: "analysisConventionSpaceBeforePunctuation", share: countRegexMatches(joinedText, /\s[,:;!?]/g) / totalPosts },
-      { labelKey: "analysisConventionAmpersandUsage", share: countRegexMatches(joinedText, /&/g) / totalPosts },
-      { labelKey: "analysisConventionDigitUsage", share: digitsAsTokens / Math.max(tokensWithNumbers.length, 1) },
-      { labelKey: "analysisConventionNumberWords", share: numberWords / totalWords },
-    ],
-    linkBehavior: [
-      { labelKey: "analysisBehaviorLinks", share: postsWithLinks / totalPosts },
-      { labelKey: "analysisBehaviorHashtags", share: postsWithHashtags / totalPosts },
-      { labelKey: "analysisBehaviorMentions", share: postsWithMentions / totalPosts },
-      { labelKey: "analysisBehaviorLinkEnding", share: linkEndingPosts / totalPosts },
-      { labelKey: "analysisBehaviorHashtagEnding", share: hashtagEndingPosts / totalPosts },
-    ],
-    structureProfile: [
-      {
-        labelKey: "analysisStructureLinesPerPost",
-        value: lineCounts.reduce((sum, count) => sum + count, 0) / totalPosts,
-        formatter: "number",
-      },
-      {
-        labelKey: "analysisStructureParagraphsPerPost",
-        value: paragraphCounts.reduce((sum, count) => sum + count, 0) / totalPosts,
-        formatter: "number",
-      },
-      { labelKey: "analysisStructureBlankLines", value: blankLinePosts / totalPosts, formatter: "percent" },
-      { labelKey: "analysisStructureOneSentence", value: oneSentencePosts / totalPosts, formatter: "percent" },
-      { labelKey: "analysisStructureQuestionEnding", value: questionEndingPosts / totalPosts, formatter: "percent" },
-    ],
-    frequency: {
-      words: wordFrequency,
-      trigrams: trigramFrequency,
-      bigrams: bigramFrequency,
-      phrases: phraseFrequency,
-      functionWords: functionWordFrequency,
-    },
-    metrics: {
-      avgWordLength: words.reduce((sum, word) => sum + word.length, 0) / totalWords,
-      avgSentenceLength: words.length / totalSentences,
-      uniqueWordShare: uniqueWords.size / totalWords,
-      uppercaseRate: uppercaseLetters.length / totalLetters,
-      emojiRate: emojiMatches.length / totalWords,
-      exclamationRate: ((withoutUrls.match(/!/g) || []).length) / totalWords,
-      questionRate: ((withoutUrls.match(/\?/g) || []).length) / totalWords,
-      commaRate: ((withoutUrls.match(/,/g) || []).length) / totalWords,
-      shortWordShare: words.filter((word) => word.length <= 3).length / totalWords,
-      longWordShare: words.filter((word) => word.length >= 8).length / totalWords,
-    },
-  };
-}
 
-function cosineSimilarityFromMaps(leftMap, rightMap) {
-  const keys = new Set([...leftMap.keys(), ...rightMap.keys()]);
-  if (!keys.size) {
-    return 0;
-  }
-  let numerator = 0;
-  let leftMagnitude = 0;
-  let rightMagnitude = 0;
-  keys.forEach((key) => {
-    const leftValue = Number(leftMap.get(key) || 0);
-    const rightValue = Number(rightMap.get(key) || 0);
-    numerator += leftValue * rightValue;
-    leftMagnitude += leftValue * leftValue;
-    rightMagnitude += rightValue * rightValue;
-  });
-  if (!leftMagnitude || !rightMagnitude) {
-    return 0;
-  }
-  return numerator / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
-}
 
-function jaccardSimilarityFromSets(leftSet, rightSet) {
-  const left = leftSet instanceof Set ? leftSet : new Set(leftSet || []);
-  const right = rightSet instanceof Set ? rightSet : new Set(rightSet || []);
-  if (!left.size && !right.size) {
-    return 1;
-  }
-  let intersection = 0;
-  left.forEach((item) => {
-    if (right.has(item)) {
-      intersection += 1;
-    }
-  });
-  const union = new Set([...left, ...right]).size;
-  return union ? (intersection / union) : 0;
-}
 
-function intersectionCountFromSets(leftSet, rightSet) {
-  const left = leftSet instanceof Set ? leftSet : new Set(leftSet || []);
-  const right = rightSet instanceof Set ? rightSet : new Set(rightSet || []);
-  let intersection = 0;
-  left.forEach((item) => {
-    if (right.has(item)) {
-      intersection += 1;
-    }
-  });
-  return intersection;
-}
 
-function overlapSummaryFromSets(leftSet, rightSet) {
-  const left = leftSet instanceof Set ? leftSet : new Set(leftSet || []);
-  const right = rightSet instanceof Set ? rightSet : new Set(rightSet || []);
-  const intersection = intersectionCountFromSets(left, right);
-  const union = new Set([...left, ...right]).size;
-  return {
-    leftCount: left.size,
-    rightCount: right.size,
-    sharedCount: intersection,
-    unionCount: union,
-    jaccard: union ? (intersection / union) : 1,
-    leftShare: left.size ? (intersection / left.size) : 0,
-    rightShare: right.size ? (intersection / right.size) : 0,
-  };
-}
 
-function frequencyMapFromEntries(entries = []) {
-  const map = new Map();
-  (Array.isArray(entries) ? entries : []).forEach((entry) => {
-    const label = String(entry?.identifier || entry?.did || entry?.handle || entry?.label || "").trim();
-    if (!label) {
-      return;
-    }
-    const count = Math.max(0, Number(entry?.count) || Math.round((Number(entry?.share) || 0) * 1000) || 0);
-    map.set(label, count);
-  });
-  return map;
-}
 
-function cosineSimilarityFromArrays(leftValues = [], rightValues = []) {
-  const length = Math.max(leftValues.length, rightValues.length);
-  if (!length) {
-    return 0;
-  }
-  let numerator = 0;
-  let leftMagnitude = 0;
-  let rightMagnitude = 0;
-  for (let index = 0; index < length; index += 1) {
-    const left = Number(leftValues[index] || 0);
-    const right = Number(rightValues[index] || 0);
-    numerator += left * right;
-    leftMagnitude += left * left;
-    rightMagnitude += right * right;
-  }
-  if (!leftMagnitude || !rightMagnitude) {
-    return 0;
-  }
-  return numerator / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
-}
 
-function shareArray(values = []) {
-  const total = values.reduce((sum, value) => sum + (Number(value) || 0), 0);
-  if (!total) {
-    return values.map(() => 0);
-  }
-  return values.map((value) => (Number(value) || 0) / total);
-}
 
-function formatUtcHourLabel(hour) {
-  return `${String(hour).padStart(2, "0")}:00`;
-}
 
-function getWeekdayLabel(index) {
-  const mondayAnchors = [
-    "2026-06-29T00:00:00Z",
-    "2026-06-30T00:00:00Z",
-    "2026-07-01T00:00:00Z",
-    "2026-07-02T00:00:00Z",
-    "2026-07-03T00:00:00Z",
-    "2026-07-04T00:00:00Z",
-    "2026-07-05T00:00:00Z",
-  ];
-  try {
-    return new Intl.DateTimeFormat(currentLocale, {
-      weekday: "short",
-      timeZone: "UTC",
-    }).format(new Date(mondayAnchors[index] || mondayAnchors[0]));
-  } catch {
-    return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][index] || "";
-  }
-}
 
-function getTopLabelsFromHistogram(values = [], labelFactory = (index) => String(index), limit = 3) {
-  return values
-    .map((count, index) => ({
-      index,
-      count: Number(count) || 0,
-    }))
-    .filter((entry) => entry.count > 0)
-    .sort((left, right) => right.count - left.count || left.index - right.index)
-    .slice(0, limit)
-    .map((entry) => labelFactory(entry.index));
-}
 
-function getTopChronologicalLabelsFromHistogram(values = [], labelFactory = (index) => String(index), limit = 3) {
-  return values
-    .map((count, index) => ({
-      index,
-      count: Number(count) || 0,
-    }))
-    .filter((entry) => entry.count > 0)
-    .sort((left, right) => right.count - left.count || left.index - right.index)
-    .slice(0, limit)
-    .sort((left, right) => left.index - right.index)
-    .map((entry) => labelFactory(entry.index));
-}
 
-function getTopChronologicalEntriesFromHistogram(values = [], labelFactory = (index) => String(index), limit = 3) {
-  const total = values.reduce((sum, value) => sum + (Number(value) || 0), 0);
-  return values
-    .map((count, index) => ({
-      index,
-      count: Number(count) || 0,
-      share: total ? ((Number(count) || 0) / total) : 0,
-    }))
-    .filter((entry) => entry.count > 0)
-    .sort((left, right) => right.count - left.count || left.index - right.index)
-    .slice(0, limit)
-    .sort((left, right) => left.index - right.index)
-    .map((entry) => ({
-      label: labelFactory(entry.index),
-      share: entry.share,
-    }));
-}
 
-function formatAnalysisTopTemporalEntries(entries = []) {
-  if (!entries.length) {
-    return t("analysisTemporalNoDataShort");
-  }
-  return entries
-    .map((entry) => `${entry.label} ${formatAnalysisPercent(entry.share)}`)
-    .join(" · ");
-}
 
-function startOfUtcDay(timestamp) {
-  const date = new Date(timestamp);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-}
 
-function createAnalysisTemporalProfile(posts = []) {
-  const timestamps = (Array.isArray(posts) ? posts : [])
-    .map((post) => Date.parse(String(post?.createdAt || "").trim()))
-    .filter((timestamp) => Number.isFinite(timestamp))
-    .sort((left, right) => left - right);
-  const hourCounts = Array.from({ length: 24 }, () => 0);
-  const weekdayCounts = Array.from({ length: 7 }, () => 0);
-  const gapCounts = ANALYSIS_TEMPORAL_GAP_BUCKETS.map(() => 0);
-  const heatmap = Array.from({ length: 12 }, () => Array.from({ length: 7 }, () => 0));
-
-  timestamps.forEach((timestamp) => {
-    const date = new Date(timestamp);
-    const hour = date.getUTCHours();
-    hourCounts[hour] += 1;
-    const weekdayIndex = (date.getUTCDay() + 6) % 7;
-    weekdayCounts[weekdayIndex] += 1;
-    heatmap[Math.floor(hour / 2)][weekdayIndex] += 1;
-  });
-
-  const gapsMinutes = [];
-  for (let index = 1; index < timestamps.length; index += 1) {
-    const diffMinutes = Math.max(0, (timestamps[index] - timestamps[index - 1]) / 60000);
-    gapsMinutes.push(diffMinutes);
-    const bucketIndex = ANALYSIS_TEMPORAL_GAP_BUCKETS.findIndex((bucket) => diffMinutes <= bucket.maxMinutes);
-    gapCounts[Math.max(0, bucketIndex)] += 1;
-  }
-
-  const totalPosts = Math.max(timestamps.length, 1);
-  const medianGapMinutes = gapsMinutes.length
-    ? gapsMinutes.slice().sort((left, right) => left - right)[Math.floor(gapsMinutes.length / 2)]
-    : Number.NaN;
-  const latestTimestamp = timestamps[timestamps.length - 1] || Date.now();
-  const dayBuckets = new Map();
-  timestamps.forEach((timestamp) => {
-    const dayKey = startOfUtcDay(timestamp);
-    if (!dayBuckets.has(dayKey)) {
-      dayBuckets.set(dayKey, []);
-    }
-    dayBuckets.get(dayKey).push(new Date(timestamp).getUTCHours() + (new Date(timestamp).getUTCMinutes() / 60));
-  });
-  const recentDays = [];
-  const latestDay = startOfUtcDay(latestTimestamp);
-  for (let offset = 29; offset >= 0; offset -= 1) {
-    const dayStart = latestDay - (offset * 86400000);
-    const date = new Date(dayStart);
-    recentDays.push({
-      key: dayStart,
-      label: `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.`,
-      weekdayLabel: getWeekdayLabel((date.getUTCDay() + 6) % 7),
-      hours: (dayBuckets.get(dayStart) || []).slice().sort((left, right) => left - right),
-    });
-  }
-
-  return {
-    timestamps,
-    hourCounts,
-    hourShares: shareArray(hourCounts),
-    weekdayCounts,
-    weekdayShares: shareArray(weekdayCounts),
-    gapCounts,
-    gapShares: shareArray(gapCounts),
-    gapProfile: ANALYSIS_TEMPORAL_GAP_BUCKETS.map((bucket, index) => ({
-      labelKey: bucket.labelKey,
-      share: gapCounts[index] / Math.max(gapsMinutes.length, 1),
-    })),
-    medianGapMinutes,
-    topHours: getTopChronologicalLabelsFromHistogram(hourCounts, (hour) => formatUtcHourLabel(hour), 3),
-    topWeekdays: getTopChronologicalLabelsFromHistogram(weekdayCounts, (weekday) => getWeekdayLabel(weekday), 3),
-    topHourEntries: getTopChronologicalEntriesFromHistogram(hourCounts, (hour) => formatUtcHourLabel(hour), 3),
-    topWeekdayEntries: getTopChronologicalEntriesFromHistogram(weekdayCounts, (weekday) => getWeekdayLabel(weekday), 3),
-    activeHourCount: hourCounts.filter((count) => count > 0).length,
-    totalPosts,
-    heatmap,
-    recentDays,
-  };
-}
-
-function computeAnalysisTemporalProximityScore(leftTimestamps = [], rightTimestamps = [], windowMinutes = 5) {
-  const left = Array.isArray(leftTimestamps) ? leftTimestamps : [];
-  const right = Array.isArray(rightTimestamps) ? rightTimestamps : [];
-  if (!left.length || !right.length) {
-    return 0;
-  }
-  const windowMs = windowMinutes * 60000;
-  const countMatches = (source, target) => {
-    let matches = 0;
-    let pointer = 0;
-    source.forEach((timestamp) => {
-      while (pointer < target.length && target[pointer] < timestamp - windowMs) {
-        pointer += 1;
-      }
-      const before = pointer > 0 ? Math.abs(target[pointer - 1] - timestamp) : Number.POSITIVE_INFINITY;
-      const current = pointer < target.length ? Math.abs(target[pointer] - timestamp) : Number.POSITIVE_INFINITY;
-      if (Math.min(before, current) <= windowMs) {
-        matches += 1;
-      }
-    });
-    return matches / source.length;
-  };
-  return (countMatches(left, right) + countMatches(right, left)) / 2;
-}
-
-function computeAnalysisTemporalOverlapHeatmap(leftTimestamps = [], rightTimestamps = [], windowMinutes = 10) {
-  const heatmap = Array.from({ length: 12 }, () => Array.from({ length: 7 }, () => 0));
-  const left = Array.isArray(leftTimestamps) ? leftTimestamps : [];
-  const right = Array.isArray(rightTimestamps) ? rightTimestamps : [];
-  if (!left.length || !right.length) {
-    return heatmap;
-  }
-  const windowMs = windowMinutes * 60000;
-  let pointer = 0;
-  left.forEach((timestamp) => {
-    while (pointer < right.length && right[pointer] < timestamp - windowMs) {
-      pointer += 1;
-    }
-    const candidateIndexes = [pointer - 1, pointer, pointer + 1];
-    let bestTimestamp = null;
-    let bestDiff = Number.POSITIVE_INFINITY;
-    candidateIndexes.forEach((index) => {
-      if (index < 0 || index >= right.length) {
-        return;
-      }
-      const diff = Math.abs(right[index] - timestamp);
-      if (diff <= windowMs && diff < bestDiff) {
-        bestDiff = diff;
-        bestTimestamp = Math.round((right[index] + timestamp) / 2);
-      }
-    });
-    if (bestTimestamp !== null) {
-      const date = new Date(bestTimestamp);
-      const weekdayIndex = (date.getUTCDay() + 6) % 7;
-      const bucketIndex = Math.floor(date.getUTCHours() / 2);
-      heatmap[bucketIndex][weekdayIndex] += 1;
-    }
-  });
-  return heatmap;
-}
-
-function buildAnalysisTemporalSummaryItems(profile = null) {
-  if (!profile) {
-    return [];
-  }
-  return [
-    {
-      label: t("analysisTemporalTopHours"),
-      value: profile.topHours.length ? profile.topHours.join(", ") : t("analysisTemporalNoDataShort"),
-    },
-    {
-      label: t("analysisTemporalTopWeekdays"),
-      value: profile.topWeekdays.length ? profile.topWeekdays.join(", ") : t("analysisTemporalNoDataShort"),
-    },
-    {
-      label: t("analysisTemporalMedianGap"),
-      value: Number.isFinite(profile.medianGapMinutes)
-        ? t("analysisTemporalMedianGapValue", { value: formatAnalysisNumber(profile.medianGapMinutes, 0) })
-        : t("analysisTemporalNoDataShort"),
-    },
-    {
-      label: t("analysisTemporalActiveHours"),
-      value: t("analysisTemporalActiveHoursValue", { count: formatCount(profile.activeHourCount) }),
-    },
-  ];
-}
-
-function createAnalysisTemporalHeatmap(profile = null) {
-  const wrap = document.createElement("div");
-  wrap.className = "analysis-temporal-heatmap";
-  if (!profile?.heatmap) {
-    return wrap;
-  }
-
-  const title = document.createElement("strong");
-  title.className = "analysis-temporal-chart-title";
-  title.textContent = t("analysisTemporalHeatmapTitle");
-  wrap.appendChild(title);
-
-  const grid = document.createElement("div");
-  grid.className = "analysis-temporal-heatmap-grid";
-  const maxValue = Math.max(1, ...profile.heatmap.flat());
-
-  const emptyCorner = document.createElement("span");
-  emptyCorner.className = "analysis-temporal-axis-label analysis-temporal-axis-corner";
-  grid.appendChild(emptyCorner);
-  for (let weekday = 0; weekday < 7; weekday += 1) {
-    const label = document.createElement("span");
-    label.className = "analysis-temporal-axis-label";
-    label.textContent = getWeekdayLabel(weekday);
-    grid.appendChild(label);
-  }
-
-  profile.heatmap.forEach((row, rowIndex) => {
-    const hourLabel = document.createElement("span");
-    hourLabel.className = "analysis-temporal-axis-label";
-    hourLabel.textContent = `${String(rowIndex * 2).padStart(2, "0")}-${String((rowIndex * 2) + 1).padStart(2, "0")}`;
-    grid.appendChild(hourLabel);
-    row.forEach((value) => {
-      const cell = document.createElement("span");
-      cell.className = "analysis-temporal-heatmap-cell";
-      const intensity = Math.max(0.08, value / maxValue);
-      cell.style.setProperty("--heat", intensity.toFixed(3));
-      cell.title = `${value} ${t("analysisTemporalHeatmapPosts")}`;
-      grid.appendChild(cell);
-    });
-  });
-  wrap.appendChild(grid);
-  return wrap;
-}
-
-function createAnalysisTemporalComparisonHeatmap(leftProfile = null, rightProfile = null, windowMinutes = 10) {
-  const wrap = document.createElement("div");
-  wrap.className = "analysis-temporal-heatmap";
-  const heatmap = computeAnalysisTemporalOverlapHeatmap(
-    leftProfile?.timestamps || [],
-    rightProfile?.timestamps || [],
-    windowMinutes,
-  );
-  const hasAny = heatmap.some((row) => row.some((value) => value > 0));
-  if (!hasAny) {
-    return wrap;
-  }
-
-  const title = document.createElement("strong");
-  title.className = "analysis-temporal-chart-title";
-  title.textContent = t("analysisTemporalOverlapHeatmapTitle", { count: windowMinutes });
-  wrap.appendChild(title);
-
-  const note = document.createElement("p");
-  note.className = "settings-note";
-  note.textContent = t("analysisTemporalOverlapHeatmapNote");
-  wrap.appendChild(note);
-
-  const grid = document.createElement("div");
-  grid.className = "analysis-temporal-heatmap-grid";
-  const maxValue = Math.max(1, ...heatmap.flat());
-  const emptyCorner = document.createElement("span");
-  emptyCorner.className = "analysis-temporal-axis-label analysis-temporal-axis-corner";
-  grid.appendChild(emptyCorner);
-  for (let weekday = 0; weekday < 7; weekday += 1) {
-    const label = document.createElement("span");
-    label.className = "analysis-temporal-axis-label";
-    label.textContent = getWeekdayLabel(weekday);
-    grid.appendChild(label);
-  }
-  heatmap.forEach((row, rowIndex) => {
-    const hourLabel = document.createElement("span");
-    hourLabel.className = "analysis-temporal-axis-label";
-    hourLabel.textContent = `${String(rowIndex * 2).padStart(2, "0")}-${String((rowIndex * 2) + 1).padStart(2, "0")}`;
-    grid.appendChild(hourLabel);
-    row.forEach((value) => {
-      const cell = document.createElement("span");
-      cell.className = "analysis-temporal-heatmap-cell analysis-temporal-heatmap-cell-overlap";
-      const intensity = Math.max(0.08, value / maxValue);
-      cell.style.setProperty("--heat", intensity.toFixed(3));
-      cell.title = `${value} ${t("analysisTemporalHeatmapPosts")}`;
-      grid.appendChild(cell);
-    });
-  });
-  wrap.appendChild(grid);
-  return wrap;
-}
-
-function createAnalysisTemporalTimeline(profile = null) {
-  const wrap = document.createElement("div");
-  wrap.className = "analysis-temporal-timeline";
-  if (!profile?.recentDays?.length) {
-    return wrap;
-  }
-
-  const title = document.createElement("strong");
-  title.className = "analysis-temporal-chart-title";
-  title.textContent = t("analysisTemporalTimelineTitle");
-  wrap.appendChild(title);
-
-  const axis = document.createElement("div");
-  axis.className = "analysis-temporal-timeline-axis";
-  const axisSpacer = document.createElement("span");
-  axisSpacer.className = "analysis-temporal-timeline-date";
-  axisSpacer.textContent = "";
-  axis.appendChild(axisSpacer);
-  const axisTrack = document.createElement("div");
-  axisTrack.className = "analysis-temporal-timeline-axis-track";
-  [0, 6, 12, 18, 24].forEach((hour) => {
-    const tick = document.createElement("span");
-    tick.className = "analysis-temporal-timeline-tick";
-    tick.style.left = `${Math.max(0, Math.min(100, (hour / 24) * 100))}%`;
-    tick.textContent = `${String(hour).padStart(2, "0")}:00`;
-    axisTrack.appendChild(tick);
-  });
-  axis.appendChild(axisTrack);
-  wrap.appendChild(axis);
-
-  const rows = document.createElement("div");
-  rows.className = "analysis-temporal-timeline-rows";
-  profile.recentDays.forEach((day) => {
-    const row = document.createElement("div");
-    row.className = "analysis-temporal-timeline-row";
-    const label = document.createElement("span");
-    label.className = "analysis-temporal-timeline-date";
-    label.textContent = `${day.weekdayLabel} ${day.label}`;
-    const track = document.createElement("div");
-    track.className = "analysis-temporal-timeline-track";
-    day.hours.forEach((hour) => {
-      const point = document.createElement("span");
-      point.className = "analysis-temporal-timeline-point";
-      point.style.left = `${Math.max(0, Math.min(100, (hour / 24) * 100))}%`;
-      point.title = formatUtcHourLabel(Math.floor(hour));
-      track.appendChild(point);
-    });
-    row.append(label, track);
-    rows.appendChild(row);
-  });
-  wrap.appendChild(rows);
-  return wrap;
-}
-
-function buildAnalysisWordRateMap(words = [], features = []) {
-  const frequency = new Map();
-  const validWords = Array.isArray(words) ? words : [];
-  validWords.forEach((word) => {
-    frequency.set(word, (frequency.get(word) || 0) + 1);
-  });
-  const totalWords = Math.max(validWords.length, 1);
-  return new Map(features.map((feature) => [feature, (frequency.get(feature) || 0) / totalWords]));
-}
-
-function splitAnalysisTextsIntoWordChunks(texts = [], minWords = 180, maxChunks = 12) {
-  const chunks = [];
-  let buffer = [];
-  let wordCount = 0;
-  (Array.isArray(texts) ? texts : []).forEach((text) => {
-    const normalized = String(text || "").trim();
-    if (!normalized) {
-      return;
-    }
-    const words = normalized.toLowerCase().match(/\p{L}+(?:['\u2019-]\p{L}+)*/gu) || [];
-    if (!words.length) {
-      return;
-    }
-    buffer.push(normalized);
-    wordCount += words.length;
-    if (wordCount >= minWords) {
-      chunks.push(buffer.join("\n"));
-      buffer = [];
-      wordCount = 0;
-    }
-  });
-  if (buffer.length) {
-    chunks.push(buffer.join("\n"));
-  }
-  while (chunks.length > maxChunks) {
-    const tail = chunks.pop();
-    chunks[chunks.length - 1] = `${chunks[chunks.length - 1]}\n${tail}`;
-  }
-  return chunks;
-}
-
-function computeBurrowsDelta(leftAccount, rightAccount) {
-  const combinedWordCounts = new Map();
-  [leftAccount, rightAccount].forEach((account) => {
-    account.corpus.frequency.words.forEach((count, word) => {
-      if (word.length < 2 || word.length > 12) {
-        return;
-      }
-      combinedWordCounts.set(word, (combinedWordCounts.get(word) || 0) + count);
-    });
-  });
-  const features = Array.from(combinedWordCounts.entries())
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], currentLocale))
-    .slice(0, 40)
-    .map(([word]) => word);
-  if (features.length < 8) {
-    return {
-      delta: Number.NaN,
-      similarity: 0,
-      featureCount: features.length,
-      chunkCount: 0,
-    };
-  }
-
-  const leftChunks = splitAnalysisTextsIntoWordChunks(leftAccount.texts);
-  const rightChunks = splitAnalysisTextsIntoWordChunks(rightAccount.texts);
-  const chunkRates = [...leftChunks, ...rightChunks]
-    .map((text) => createAnalysisCorpus([text]).words)
-    .map((words) => buildAnalysisWordRateMap(words, features));
-  if (chunkRates.length < 4) {
-    return {
-      delta: Number.NaN,
-      similarity: 0,
-      featureCount: features.length,
-      chunkCount: chunkRates.length,
-    };
-  }
-
-  const leftRates = buildAnalysisWordRateMap(leftAccount.corpus.words, features);
-  const rightRates = buildAnalysisWordRateMap(rightAccount.corpus.words, features);
-  const zLeft = [];
-  const zRight = [];
-
-  features.forEach((feature) => {
-    const values = chunkRates.map((rates) => Number(rates.get(feature) || 0));
-    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-    const variance = values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length;
-    const stdDev = Math.sqrt(variance);
-    if (!stdDev || !Number.isFinite(stdDev)) {
-      return;
-    }
-    zLeft.push((Number(leftRates.get(feature) || 0) - mean) / stdDev);
-    zRight.push((Number(rightRates.get(feature) || 0) - mean) / stdDev);
-  });
-
-  if (!zLeft.length || zLeft.length !== zRight.length) {
-    return {
-      delta: Number.NaN,
-      similarity: 0,
-      featureCount: features.length,
-      chunkCount: chunkRates.length,
-    };
-  }
-
-  const delta = zLeft.reduce((sum, value, index) => sum + Math.abs(value - zRight[index]), 0) / zLeft.length;
-  return {
-    delta,
-    similarity: 1 / (1 + Math.max(0, delta)),
-    featureCount: zLeft.length,
-    chunkCount: chunkRates.length,
-  };
-}
-
-function normalizeAnalysisAccountData(result = null) {
-  if (!result || typeof result !== "object") {
-    return null;
-  }
-  const profile = result.profile && typeof result.profile === "object" ? result.profile : {};
-  const posts = Array.isArray(result.posts) ? result.posts : [];
-  const texts = posts
-    .map((post) => String(post?.text || "").replace(/\s+/g, " ").trim())
-    .filter(Boolean);
-  const corpus = createAnalysisCorpus(texts);
-  const temporal = createAnalysisTemporalProfile(posts);
-  const network = result.network && typeof result.network === "object" ? result.network : {};
-  const markers = result.markers && typeof result.markers === "object" ? result.markers : {};
-  const rawNetworkLoadState = String(network.loadState || "").trim();
-  const inferredNetworkLoadState = ["complete", "partial", "failed", "legacy"].includes(rawNetworkLoadState)
-    ? rawNetworkLoadState
-    : (
-        Array.isArray(network.followerDids) && Array.isArray(network.followDids) && Array.isArray(network.mutualDids)
-          ? "complete"
-          : "legacy"
-      );
-  return {
-    profile: {
-      did: String(profile.did || "").trim(),
-      handle: String(profile.handle || "").trim(),
-      displayName: String(profile.displayName || profile.handle || profile.did || "").trim(),
-      avatar: String(profile.avatar || "").trim(),
-      postsCount: Number(profile.postsCount) || 0,
-      followersCount: Number(profile.followersCount) || 0,
-      followsCount: Number(profile.followsCount) || 0,
-    },
-    filters: {
-      rangeDays: Math.max(0, Number(result.filters?.rangeDays) || 0),
-      includeReplies: result.filters?.includeReplies === true,
-      includeQuotes: result.filters?.includeQuotes === true,
-      limit: Math.max(1, Number(result.filters?.limit) || posts.length || 1),
-    },
-    stats: {
-      fetchedPosts: Math.max(0, Number(result.stats?.fetchedPosts) || 0),
-      scannedPosts: Math.max(0, Number(result.stats?.scannedPosts) || posts.length),
-      pages: Math.max(0, Number(result.stats?.pages) || 0),
-      oldestPostAt: String(result.stats?.oldestPostAt || "").trim(),
-      newestPostAt: String(result.stats?.newestPostAt || "").trim(),
-    },
-    posts,
-    texts,
-    corpus,
-    temporal,
-    network: {
-      followers: [],
-      follows: [],
-      mutualDids: Array.isArray(network.mutualDids) ? network.mutualDids.map((value) => String(value || "").trim()).filter(Boolean) : [],
-      followerDids: new Set(Array.isArray(network.followerDids) ? network.followerDids.map((value) => String(value || "").trim()).filter(Boolean) : Array.isArray(network.followers) ? network.followers.map((entry) => String(entry?.did || "").trim()).filter(Boolean) : []),
-      followDids: new Set(Array.isArray(network.followDids) ? network.followDids.map((value) => String(value || "").trim()).filter(Boolean) : Array.isArray(network.follows) ? network.follows.map((entry) => String(entry?.did || "").trim()).filter(Boolean) : []),
-      mutes: Array.isArray(network.mutes) ? network.mutes.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
-      blocks: Array.isArray(network.blocks) ? network.blocks.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
-      muteBlockSource: String(network.muteBlockSource || "unavailable").trim() || "unavailable",
-      loadState: inferredNetworkLoadState,
-      warnings: Array.isArray(network.warnings) ? network.warnings.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
-    },
-    markers: {
-      topMentions: Array.isArray(markers.topMentions) ? markers.topMentions : [],
-      topHashtags: Array.isArray(markers.topHashtags) ? markers.topHashtags : [],
-      topDomains: Array.isArray(markers.topDomains) ? markers.topDomains : [],
-      topReplyTargets: Array.isArray(markers.topReplyTargets) ? markers.topReplyTargets : [],
-      topQuoteTargets: Array.isArray(markers.topQuoteTargets) ? markers.topQuoteTargets : [],
-      topLanguages: Array.isArray(markers.topLanguages) ? markers.topLanguages : [],
-      mediaPostShare: Number(markers.mediaPostShare) || 0,
-      textOnlyPostShare: Number(markers.textOnlyPostShare) || 0,
-    },
-  };
-}
-
-function getPersistableAnalysisAccount(account = null) {
-  if (!account || typeof account !== "object") {
-    return null;
-  }
-  return {
-    profile: {
-      did: String(account.profile?.did || "").trim(),
-      handle: String(account.profile?.handle || "").trim(),
-      displayName: String(account.profile?.displayName || "").trim(),
-      avatar: String(account.profile?.avatar || "").trim(),
-      postsCount: Number(account.profile?.postsCount) || 0,
-      followersCount: Number(account.profile?.followersCount) || 0,
-      followsCount: Number(account.profile?.followsCount) || 0,
-    },
-    filters: {
-      rangeDays: Math.max(0, Number(account.filters?.rangeDays) || 0),
-      includeReplies: account.filters?.includeReplies === true,
-      includeQuotes: account.filters?.includeQuotes === true,
-      limit: Math.max(1, Number(account.filters?.limit) || 1),
-    },
-    stats: {
-      fetchedPosts: Math.max(0, Number(account.stats?.fetchedPosts) || 0),
-      scannedPosts: Math.max(0, Number(account.stats?.scannedPosts) || 0),
-      pages: Math.max(0, Number(account.stats?.pages) || 0),
-      oldestPostAt: String(account.stats?.oldestPostAt || "").trim(),
-      newestPostAt: String(account.stats?.newestPostAt || "").trim(),
-    },
-    posts: (Array.isArray(account.posts) ? account.posts : []).map((post) => ({
-      uri: String(post?.uri || "").trim(),
-      cid: String(post?.cid || "").trim(),
-      createdAt: String(post?.createdAt || "").trim(),
-      text: String(post?.text || "").trim(),
-    })),
-    network: {
-      followers: [],
-      follows: [],
-      mutualDids: Array.isArray(account.network?.mutualDids) ? account.network.mutualDids : [],
-      followerDids: Array.from(account.network?.followerDids || []),
-      followDids: Array.from(account.network?.followDids || []),
-      mutes: Array.isArray(account.network?.mutes) ? account.network.mutes.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
-      blocks: Array.isArray(account.network?.blocks) ? account.network.blocks.map((entry) => ({ did: String(entry?.did || "").trim() })).filter((entry) => entry.did) : null,
-      muteBlockSource: String(account.network?.muteBlockSource || "unavailable").trim() || "unavailable",
-      loadState: ["complete", "partial", "failed"].includes(String(account.network?.loadState || "").trim()) ? String(account.network.loadState).trim() : "legacy",
-      warnings: Array.isArray(account.network?.warnings) ? account.network.warnings.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
-    },
-    markers: {
-      topMentions: Array.isArray(account.markers?.topMentions) ? account.markers.topMentions : [],
-      topHashtags: Array.isArray(account.markers?.topHashtags) ? account.markers.topHashtags : [],
-      topDomains: Array.isArray(account.markers?.topDomains) ? account.markers.topDomains : [],
-      topReplyTargets: Array.isArray(account.markers?.topReplyTargets) ? account.markers.topReplyTargets : [],
-      topQuoteTargets: Array.isArray(account.markers?.topQuoteTargets) ? account.markers.topQuoteTargets : [],
-      topLanguages: Array.isArray(account.markers?.topLanguages) ? account.markers.topLanguages : [],
-      mediaPostShare: Number(account.markers?.mediaPostShare) || 0,
-      textOnlyPostShare: Number(account.markers?.textOnlyPostShare) || 0,
-    },
-  };
-}
-
+/** Captures JSON-safe analysis state through the controller. @returns {object} Snapshot. */
 function getPersistableAnalysisState() {
-  return {
-    inputs: {
-      accountA: String(analysisAccountAInput?.value || "").trim(),
-      accountB: String(analysisAccountBInput?.value || "").trim(),
-    },
-    options: getAnalysisOptions(),
-    accountA: getPersistableAnalysisAccount(analysisAccountDataA),
-    accountB: getPersistableAnalysisAccount(analysisAccountDataB),
-    comparison: analysisComparisonResult && typeof analysisComparisonResult === "object"
-      ? {
-          score: Math.max(0, Number(analysisComparisonResult.score) || 0),
-          labelKey: String(analysisComparisonResult.labelKey || "").trim(),
-          confidenceKey: String(analysisComparisonResult.confidenceKey || "").trim(),
-        }
-      : null,
-  };
+  return analysisController.snapshot();
 }
 
-function analysisAccountNeedsNetworkRefresh(rawAccount = null) {
-  if (!rawAccount || typeof rawAccount !== "object") {
-    return false;
-  }
-  const network = rawAccount.network && typeof rawAccount.network === "object" ? rawAccount.network : null;
-  if (!network) {
-    return false;
-  }
-  if (Object.prototype.hasOwnProperty.call(network, "loadState")) {
-    return false;
-  }
-  const hasPersistedNetworkArrays = (
-    Object.prototype.hasOwnProperty.call(network, "followerDids")
-    || Object.prototype.hasOwnProperty.call(network, "followDids")
-    || Object.prototype.hasOwnProperty.call(network, "mutualDids")
-    || Object.prototype.hasOwnProperty.call(network, "warnings")
-  );
-  const expectedNetwork = (Number(rawAccount.profile?.followersCount) || 0) > 0 || (Number(rawAccount.profile?.followsCount) || 0) > 0;
-  return expectedNetwork && !hasPersistedNetworkArrays;
-}
 
+/** Restores saved analysis state. @param {object|null} state - Snapshot. @returns {void} */
 function restorePersistedAnalysisState(state = null) {
-  const persisted = state && typeof state === "object" ? state : {};
-  if (analysisAccountAInput) {
-    analysisAccountAInput.value = String(persisted.inputs?.accountA || "").trim();
-  }
-  if (analysisAccountBInput) {
-    analysisAccountBInput.value = String(persisted.inputs?.accountB || "").trim();
-  }
-  if (analysisRangeSelect) {
-    analysisRangeSelect.value = String(
-      Number.isFinite(Number(persisted.options?.rangeDays))
-        ? Number(persisted.options.rangeDays)
-        : 90,
-    );
-  }
-  if (analysisPostLimitSelect) {
-    analysisPostLimitSelect.value = String(
-      Number.isFinite(Number(persisted.options?.limit))
-        ? Number(persisted.options.limit)
-        : 500,
-    );
-  }
-  if (analysisIncludeRepliesToggle) {
-    analysisIncludeRepliesToggle.checked = persisted.options?.includeReplies === true;
-  }
-  if (analysisIncludeQuotesToggle) {
-    analysisIncludeQuotesToggle.checked = persisted.options?.includeQuotes === true;
-  }
-  analysisAccountDataA = normalizeAnalysisAccountData(persisted.accountA);
-  analysisAccountDataB = normalizeAnalysisAccountData(persisted.accountB);
-  const hasLegacyNetworkState = analysisAccountNeedsNetworkRefresh(persisted.accountA) || analysisAccountNeedsNetworkRefresh(persisted.accountB);
-  analysisComparisonResult = (!hasLegacyNetworkState && analysisAccountDataA && analysisAccountDataB)
-    ? compareAnalysisAccountsData(analysisAccountDataA, analysisAccountDataB)
-    : null;
-  if (hasLegacyNetworkState) {
-    analysisStatusLine = t("analysisNetworkReloadNeeded");
-  }
+  analysisController.restore(state);
 }
 
-function compareAnalysisAccountsData(leftAccount, rightAccount) {
-  if (!leftAccount || !rightAccount) {
-    return null;
-  }
-  const metricRows = ANALYSIS_METRIC_DEFINITIONS.map((definition) => {
-    const leftValue = Number(leftAccount.corpus.metrics[definition.key] || 0);
-    const rightValue = Number(rightAccount.corpus.metrics[definition.key] || 0);
-    const normalizedDifference = Math.abs(leftValue - rightValue) / Math.max(definition.scale, 0.0001);
-    return {
-      ...definition,
-      leftValue,
-      rightValue,
-      normalizedDifference,
-    };
-  });
-  const numericDistance = Math.sqrt(
-    metricRows.reduce((sum, row) => sum + (row.normalizedDifference ** 2), 0) / Math.max(metricRows.length, 1),
-  );
-  const metricsSimilarity = 1 / (1 + numericDistance * 1.35);
-  const cosineSimilarity = cosineSimilarityFromMaps(
-    leftAccount.corpus.frequency.words,
-    rightAccount.corpus.frequency.words,
-  );
-  const functionWordSimilarity = cosineSimilarityFromMaps(
-    leftAccount.corpus.frequency.functionWords || new Map(),
-    rightAccount.corpus.frequency.functionWords || new Map(),
-  );
-  const characterNgramSimilarity = cosineSimilarityFromMaps(
-    leftAccount.corpus.frequency.trigrams,
-    rightAccount.corpus.frequency.trigrams,
-  );
-  const jaccardSimilarity = jaccardSimilarityFromSets(
-    new Set(leftAccount.corpus.words.filter((word) => word.length >= 3)),
-    new Set(rightAccount.corpus.words.filter((word) => word.length >= 3)),
-  );
-  const burrowsDelta = computeBurrowsDelta(leftAccount, rightAccount);
-  const temporalProfileSimilarity = (
-    (cosineSimilarityFromArrays(leftAccount.temporal.hourShares, rightAccount.temporal.hourShares) * 0.5)
-    + (cosineSimilarityFromArrays(leftAccount.temporal.weekdayShares, rightAccount.temporal.weekdayShares) * 0.3)
-    + (cosineSimilarityFromArrays(leftAccount.temporal.gapShares, rightAccount.temporal.gapShares) * 0.2)
-  );
-  const temporalProximityScore = computeAnalysisTemporalProximityScore(
-    leftAccount.temporal.timestamps,
-    rightAccount.temporal.timestamps,
-    5,
-  );
-  const followerOverlap = overlapSummaryFromSets(leftAccount.network?.followerDids, rightAccount.network?.followerDids);
-  const followingOverlap = overlapSummaryFromSets(leftAccount.network?.followDids, rightAccount.network?.followDids);
-  const mutualOverlap = overlapSummaryFromSets(
-    new Set(leftAccount.network?.mutualDids || []),
-    new Set(rightAccount.network?.mutualDids || []),
-  );
-  const mentionSimilarity = cosineSimilarityFromMaps(
-    frequencyMapFromEntries(leftAccount.markers?.topMentions),
-    frequencyMapFromEntries(rightAccount.markers?.topMentions),
-  );
-  const hashtagSimilarity = cosineSimilarityFromMaps(
-    frequencyMapFromEntries(leftAccount.markers?.topHashtags),
-    frequencyMapFromEntries(rightAccount.markers?.topHashtags),
-  );
-  const domainSimilarity = cosineSimilarityFromMaps(
-    frequencyMapFromEntries(leftAccount.markers?.topDomains),
-    frequencyMapFromEntries(rightAccount.markers?.topDomains),
-  );
-  const replyTargetSimilarity = cosineSimilarityFromMaps(
-    frequencyMapFromEntries(leftAccount.markers?.topReplyTargets),
-    frequencyMapFromEntries(rightAccount.markers?.topReplyTargets),
-  );
-  const quoteTargetSimilarity = cosineSimilarityFromMaps(
-    frequencyMapFromEntries(leftAccount.markers?.topQuoteTargets),
-    frequencyMapFromEntries(rightAccount.markers?.topQuoteTargets),
-  );
-  const languageSimilarity = cosineSimilarityFromMaps(
-    frequencyMapFromEntries(leftAccount.markers?.topLanguages),
-    frequencyMapFromEntries(rightAccount.markers?.topLanguages),
-  );
-  const mediaSimilarity = 1 - Math.min(1, Math.abs((leftAccount.markers?.mediaPostShare || 0) - (rightAccount.markers?.mediaPostShare || 0)));
-  const interactionSimilarity = (
-    (mentionSimilarity * 0.18)
-    + (hashtagSimilarity * 0.18)
-    + (domainSimilarity * 0.18)
-    + (replyTargetSimilarity * 0.16)
-    + (quoteTargetSimilarity * 0.16)
-    + (languageSimilarity * 0.08)
-    + (mediaSimilarity * 0.06)
-  );
-  const relationshipSimilarity = (
-    (followerOverlap.jaccard * 0.35)
-    + (followingOverlap.jaccard * 0.35)
-    + (mutualOverlap.jaccard * 0.30)
-  );
-  const leftBlocksSet = leftAccount.network?.blocks ? new Set(leftAccount.network.blocks.map((entry) => entry.did).filter(Boolean)) : null;
-  const rightBlocksSet = rightAccount.network?.blocks ? new Set(rightAccount.network.blocks.map((entry) => entry.did).filter(Boolean)) : null;
-  const leftMutesSet = leftAccount.network?.mutes ? new Set(leftAccount.network.mutes.map((entry) => entry.did).filter(Boolean)) : null;
-  const rightMutesSet = rightAccount.network?.mutes ? new Set(rightAccount.network.mutes.map((entry) => entry.did).filter(Boolean)) : null;
-  const blockOverlap = leftBlocksSet && rightBlocksSet ? overlapSummaryFromSets(leftBlocksSet, rightBlocksSet) : null;
-  const muteOverlap = leftMutesSet && rightMutesSet ? overlapSummaryFromSets(leftMutesSet, rightMutesSet) : null;
-  const moderationSimilarity = blockOverlap && muteOverlap
-    ? ((blockOverlap.jaccard * 0.5) + (muteOverlap.jaccard * 0.5))
-    : blockOverlap
-    ? blockOverlap.jaccard
-    : muteOverlap
-    ? muteOverlap.jaccard
-    : null;
-  const robustnessMix = (
-    (burrowsDelta.similarity * 0.22)
-    + (characterNgramSimilarity * 0.18)
-    + (functionWordSimilarity * 0.14)
-    + (cosineSimilarity * 0.11)
-    + (jaccardSimilarity * 0.05)
-    + (metricsSimilarity * 0.06)
-    + (temporalProfileSimilarity * 0.05)
-    + (temporalProximityScore * 0.03)
-    + (relationshipSimilarity * 0.08)
-    + (interactionSimilarity * 0.08)
-    + ((moderationSimilarity ?? 0) * 0.00)
-  );
-  const score = Math.round(100 * robustnessMix);
-  const minWords = Math.min(leftAccount.corpus.wordCount, rightAccount.corpus.wordCount);
-  const labelKey = score >= 98
-    ? "analysisSimilarityIdentical"
-    : score >= 78
-    ? "analysisSimilarityHigh"
-    : score >= 58
-    ? "analysisSimilarityMedium"
-    : "analysisSimilarityLow";
-  const confidenceKey = minWords < 2000
-    ? "analysisConfidenceLow"
-    : minWords < 5000
-    ? "analysisConfidenceMedium"
-    : "analysisConfidenceHigh";
 
-  return {
-    score,
-    labelKey,
-    confidenceKey,
-    robustnessMix,
-    metricsSimilarity,
-    cosineSimilarity,
-    jaccardSimilarity,
-    functionWordSimilarity,
-    characterNgramSimilarity,
-    temporalProfileSimilarity,
-    temporalProximityScore,
-    relationshipSimilarity,
-    interactionSimilarity,
-    moderationSimilarity,
-    followerOverlap,
-    followingOverlap,
-    mutualOverlap,
-    blockOverlap,
-    muteOverlap,
-    mentionSimilarity,
-    hashtagSimilarity,
-    domainSimilarity,
-    replyTargetSimilarity,
-    quoteTargetSimilarity,
-    languageSimilarity,
-    mediaSimilarity,
-    directRelationship: {
-      leftFollowsRight: Boolean(leftAccount.network?.followDids?.has?.(rightAccount.profile.did)),
-      rightFollowsLeft: Boolean(rightAccount.network?.followDids?.has?.(leftAccount.profile.did)),
-    },
-    burrowsDelta,
-    metricRows,
-  };
-}
 
-function createAnalysisPatternList(entries = [], emptyKey = "analysisPatternsEmpty") {
-  const list = document.createElement("div");
-  list.className = "analysis-token-list";
-  if (!entries.length) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t(emptyKey);
-    list.appendChild(note);
-    return list;
-  }
-  entries.forEach((entry) => {
-    const chip = document.createElement("span");
-    chip.className = "analysis-token-chip";
-    chip.textContent = `${entry.label} - ${formatAnalysisPercent(entry.share)}`;
-    list.appendChild(chip);
-  });
-  return list;
-}
 
-function createAnalysisStatList(items = [], formatter = "percent", emptyKey = "analysisPatternsEmpty") {
-  const list = document.createElement("div");
-  list.className = "analysis-stat-list";
-  if (!items.length) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t(emptyKey);
-    list.appendChild(note);
-    return list;
-  }
-  items.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "analysis-stat-row";
-    const label = document.createElement("span");
-    label.className = "analysis-stat-label";
-    label.textContent = item.labelKey ? t(item.labelKey) : item.label;
-    const value = document.createElement("strong");
-    value.className = "analysis-stat-value";
-    if ((item.formatter || formatter) === "text") {
-      value.textContent = String(item.value ?? item.share ?? "");
-    } else if ((item.formatter || formatter) === "number") {
-      value.textContent = formatAnalysisNumber(item.value, 2);
-    } else {
-      value.textContent = formatAnalysisPercent(item.share ?? item.value);
-    }
-    row.append(label, value);
-    list.appendChild(row);
-  });
-  return list;
-}
 
-function createAnalysisBarList(items = [], emptyKey = "analysisPatternsEmpty") {
-  const list = document.createElement("div");
-  list.className = "analysis-bar-list";
-  if (!items.length) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t(emptyKey);
-    list.appendChild(note);
-    return list;
-  }
-  items.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "analysis-bar-row";
-    const head = document.createElement("div");
-    head.className = "analysis-bar-head";
-    const label = document.createElement("span");
-    label.textContent = item.labelKey ? t(item.labelKey) : item.label;
-    const value = document.createElement("strong");
-    value.textContent = formatAnalysisPercent(item.share ?? item.value);
-    head.append(label, value);
-    const track = document.createElement("div");
-    track.className = "analysis-bar-track";
-    const fill = document.createElement("span");
-    fill.className = "analysis-bar-fill";
-    fill.style.width = `${Math.max(0, Math.min(100, (item.share ?? item.value ?? 0) * 100))}%`;
-    track.appendChild(fill);
-    row.append(head, track);
-    list.appendChild(row);
-  });
-  return list;
-}
 
-function createAnalysisPatternCard(title, children = []) {
-  const card = document.createElement("article");
-  card.className = "analysis-pattern-card";
-  const heading = document.createElement("strong");
-  heading.textContent = title;
-  card.appendChild(heading);
-  children.forEach((child) => {
-    if (child) {
-      card.appendChild(child);
-    }
-  });
-  return card;
-}
 
-function renderAnalysisSummaryCard(slotLabel, account) {
-  const card = document.createElement("article");
-  card.className = "analysis-account-card";
-  if (!account) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = slotLabel === "A" ? t("analysisAccountAEmpty") : t("analysisAccountBEmpty");
-    card.appendChild(note);
-    return card;
-  }
 
-  const head = document.createElement("div");
-  head.className = "analysis-account-card-head";
-  const avatar = document.createElement("img");
-  avatar.className = "analysis-account-avatar";
-  setAvatarImage(avatar, account.profile.avatar, account.profile.displayName || account.profile.handle || account.profile.did);
-  const identity = document.createElement("div");
-  identity.className = "analysis-account-identity";
-  const eyebrow = document.createElement("p");
-  eyebrow.className = "eyebrow";
-  eyebrow.textContent = slotLabel === "A" ? t("analysisAccountALabel") : t("analysisAccountBLabel");
-  const name = document.createElement("strong");
-  name.textContent = account.profile.displayName || account.profile.handle || account.profile.did;
-  const handle = document.createElement("span");
-  handle.className = "reply-target-handle";
-  handle.textContent = account.profile.handle ? `@${account.profile.handle}` : account.profile.did;
-  identity.append(eyebrow, name, handle);
-  head.append(avatar, identity);
 
-  const stats = document.createElement("div");
-  stats.className = "analysis-account-stats";
-  const rangeText = account.filters.rangeDays > 0
-    ? t("analysisSummaryRangeDays", { count: account.filters.rangeDays })
-    : t("analysisSummaryRangeAll");
-  [
-    t("analysisSummaryPostsLoaded", { count: formatCount(account.posts.length) }),
-    t("analysisSummaryWordsLoaded", { count: formatCount(account.corpus.wordCount) }),
-    rangeText,
-    t("analysisSummaryPagesLoaded", { count: formatCount(account.stats.pages) }),
-  ].forEach((text) => {
-    const item = document.createElement("span");
-    item.textContent = text;
-    stats.appendChild(item);
-  });
 
-  const preview = document.createElement("p");
-  preview.className = "analysis-account-preview";
-  preview.textContent = account.posts[0]?.createdAt
-    ? t("analysisSummaryLatestPost", { value: formatHistoryTimestamp(account.posts[0].createdAt) })
-    : t("analysisSummaryNoPreview");
 
-  card.append(head, stats, preview);
-  return card;
-}
 
-function renderAnalysisSummary() {
-  if (!analysisSummary) {
-    return;
-  }
-  analysisSummary.replaceChildren(
-    renderAnalysisSummaryCard("A", analysisAccountDataA),
-    renderAnalysisSummaryCard("B", analysisAccountDataB),
-  );
-}
 
-function renderAnalysisResult() {
-  if (!analysisResultCard) {
-    return;
-  }
-  const comparison = analysisComparisonResult;
-  analysisResultCard.hidden = !comparison;
-  analysisResultCard.replaceChildren();
-  if (!comparison) {
-    return;
-  }
 
-  const overall = document.createElement("div");
-  overall.className = "analysis-result-overall";
-  const overallEyebrow = document.createElement("p");
-  overallEyebrow.className = "eyebrow";
-  overallEyebrow.textContent = t("analysisOverallScoreLabel");
-  const headline = document.createElement("div");
-  headline.className = "analysis-result-head";
-  const score = document.createElement("strong");
-  score.className = "analysis-result-score";
-  score.textContent = `${comparison.score}/100`;
-  const label = document.createElement("span");
-  label.className = "analysis-result-label";
-  label.textContent = t(comparison.labelKey);
-  headline.append(score, label);
-  const overallSummary = document.createElement("p");
-  overallSummary.className = "analysis-result-summary";
-  overallSummary.textContent = t("analysisOverallScoreSummary", {
-    value: formatAnalysisPercent(comparison.robustnessMix),
-  });
-  overall.append(overallEyebrow, headline, overallSummary);
 
-  const confidence = document.createElement("p");
-  confidence.className = "analysis-result-confidence";
-  confidence.textContent = t(comparison.confidenceKey);
 
-  const detailHeading = document.createElement("p");
-  detailHeading.className = "analysis-result-section-title";
-  detailHeading.textContent = t("analysisSubscoresLabel");
 
-  const details = document.createElement("div");
-  details.className = "analysis-result-details";
-  [
-    Number.isFinite(comparison.burrowsDelta?.delta)
-      ? t("analysisSimilarityBurrowsDelta", {
-          value: formatAnalysisNumber(comparison.burrowsDelta.delta, 2),
-          score: formatAnalysisPercent(comparison.burrowsDelta.similarity),
-        })
-      : t("analysisSimilarityBurrowsDeltaUnavailable"),
-    t("analysisSimilarityCosine", { value: formatAnalysisPercent(comparison.cosineSimilarity) }),
-    t("analysisSimilarityJaccard", { value: formatAnalysisPercent(comparison.jaccardSimilarity) }),
-    t("analysisSimilarityFunctionWords", { value: formatAnalysisPercent(comparison.functionWordSimilarity) }),
-    t("analysisSimilarityCharacterNgrams", { value: formatAnalysisPercent(comparison.characterNgramSimilarity) }),
-    t("analysisSimilarityMetrics", { value: formatAnalysisPercent(comparison.metricsSimilarity) }),
-    t("analysisSimilarityTemporalProfile", { value: formatAnalysisPercent(comparison.temporalProfileSimilarity) }),
-    t("analysisSimilarityTemporalProximity", { value: formatAnalysisPercent(comparison.temporalProximityScore) }),
-  ].forEach((text) => {
-    const item = document.createElement("span");
-    item.textContent = text;
-    details.appendChild(item);
-  });
 
-  const note = document.createElement("p");
-  note.className = "settings-note";
-  note.textContent = t("analysisResultNote");
 
-  analysisResultCard.append(overall, confidence, detailHeading, details, note);
-}
 
-function renderAnalysisTemporalAccountCard(slotLabel, account) {
-  const card = document.createElement("article");
-  card.className = "analysis-pattern-card";
-  if (!account?.temporal) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = slotLabel === "A" ? t("analysisAccountAEmpty") : t("analysisAccountBEmpty");
-    card.appendChild(note);
-    return card;
-  }
 
-  const heading = document.createElement("strong");
-  heading.textContent = slotLabel === "A" ? t("analysisTemporalAccountATitle") : t("analysisTemporalAccountBTitle");
-  const note = document.createElement("p");
-  note.className = "settings-note";
-  note.textContent = t("analysisTemporalUtcHint");
-  card.append(
-    heading,
-    note,
-    createAnalysisStatList(buildAnalysisTemporalSummaryItems(account.temporal), "text", "analysisPatternsNoData"),
-    createAnalysisTemporalHeatmap(account.temporal),
-    createAnalysisTemporalTimeline(account.temporal),
-  );
-  return card;
-}
 
-function renderAnalysisTemporal() {
-  if (!analysisTemporal) {
-    return;
-  }
-  analysisTemporal.replaceChildren();
-  if (!analysisAccountDataA && !analysisAccountDataB) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t("analysisTemporalEmpty");
-    analysisTemporal.appendChild(note);
-    return;
-  }
 
-  analysisTemporal.append(
-    renderAnalysisTemporalAccountCard("A", analysisAccountDataA),
-    renderAnalysisTemporalAccountCard("B", analysisAccountDataB),
-  );
-
-  if (analysisComparisonResult) {
-    const comparisonCard = document.createElement("article");
-    comparisonCard.className = "analysis-account-card analysis-temporal-comparison-card";
-    const heading = document.createElement("strong");
-    heading.textContent = t("analysisTemporalComparisonTitle");
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t("analysisTemporalNote");
-    const table = document.createElement("table");
-    table.className = "analysis-table";
-    const head = document.createElement("thead");
-    const headRow = cloneTemplate("analysis-table-head-template");
-    if (headRow) {
-      const headers = headRow.querySelectorAll("th");
-      if (headers.length >= 4) {
-        setSafeText(headers[0], t("analysisMetricsColumnMetric"));
-        setSafeText(headers[1], t("analysisAccountALabel"));
-        setSafeText(headers[2], t("analysisAccountBLabel"));
-        setSafeText(headers[3], t("analysisTemporalColumnAssessment"));
-      }
-      head.appendChild(headRow);
-    }
-    table.appendChild(head);
-    const body = document.createElement("tbody");
-    getAnalysisTemporalTableRows().forEach((row) => {
-      const tr = cloneTemplate("analysis-table-row-template");
-      if (tr) {
-        const cells = tr.querySelectorAll("td");
-        if (cells.length >= 4) {
-          setSafeText(cells[0], row.label);
-          setSafeText(cells[1], row.left);
-          setSafeText(cells[2], row.right);
-          setSafeText(cells[3], row.diff);
-        }
-        body.appendChild(tr);
-      }
-    });
-    table.appendChild(body);
-    comparisonCard.append(
-      heading,
-      note,
-      createAnalysisTemporalComparisonHeatmap(analysisAccountDataA?.temporal, analysisAccountDataB?.temporal, 10),
-      table,
-    );
-    analysisTemporal.appendChild(comparisonCard);
-  }
-}
-
-function createAnalysisSimpleChipList(entries = [], emptyKey = "analysisPatternsNoData") {
-  const list = document.createElement("div");
-  list.className = "analysis-token-list";
-  if (!entries.length) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t(emptyKey);
-    list.appendChild(note);
-    return list;
-  }
-  entries.forEach((entry) => {
-    const chip = document.createElement("span");
-    chip.className = "analysis-token-chip";
-    chip.textContent = `${entry.label} - ${formatAnalysisPercent(entry.share ?? 0)}`;
-    list.appendChild(chip);
-  });
-  return list;
-}
-
-function createAnalysisResolvedProfileList(entries = [], emptyKey = "analysisPatternsNoData") {
-  const list = document.createElement("div");
-  list.className = "analysis-profile-list";
-  if (!entries.length) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t(emptyKey);
-    list.appendChild(note);
-    return list;
-  }
-
-  entries.forEach((entry) => {
-    const card = document.createElement("article");
-    card.className = "analysis-profile-chip";
-
-    const avatar = document.createElement("img");
-    avatar.className = "analysis-profile-chip-avatar";
-    const avatarSrc = String(entry?.avatar || "").trim();
-    avatar.loading = "lazy";
-    setAvatarImage(avatar, avatarSrc, String(entry?.displayName || entry?.handle || entry?.did || entry?.label || "profile").trim());
-
-    const body = document.createElement("div");
-    body.className = "analysis-profile-chip-body";
-
-    const title = document.createElement("strong");
-    const deleted = entry?.deleted === true;
-    title.textContent = String(entry?.displayName || entry?.handle || entry?.did || entry?.label || "").trim();
-
-    const meta = document.createElement("span");
-    meta.className = "reply-target-handle";
-    const handle = String(entry?.handle || "").trim();
-    const did = String(entry?.did || "").trim();
-    meta.textContent = handle ? `@${handle}` : (did || String(entry?.label || "").trim());
-
-    const share = document.createElement("span");
-    share.className = "analysis-profile-chip-share";
-    share.textContent = formatAnalysisPercent(entry?.share ?? 0);
-
-    body.append(title, meta);
-    if (deleted) {
-      const status = document.createElement("span");
-      status.className = "analysis-profile-chip-status";
-      status.textContent = t("analysisNetworkDeletedAccount");
-      body.appendChild(status);
-    }
-    body.appendChild(share);
-    card.append(avatar, body);
-    list.appendChild(card);
-  });
-
-  return list;
-}
-
-function buildAnalysisNetworkPatternDefinitions() {
-  return [
-    { title: t("analysisNetworkMentionsTitle"), key: "topMentions", resolvedProfiles: true },
-    { title: t("analysisNetworkDomainsTitle"), key: "topDomains" },
-    { title: t("analysisNetworkHashtagsTitle"), key: "topHashtags" },
-    { title: t("analysisNetworkReplyTargetsTitle"), key: "topReplyTargets", resolvedProfiles: true },
-    { title: t("analysisNetworkQuoteTargetsTitle"), key: "topQuoteTargets", resolvedProfiles: true },
-    { title: t("analysisNetworkLanguagesTitle"), key: "topLanguages" },
-    {
-      title: t("analysisNetworkMediaSimilarity"),
-      createNode: (account) => createAnalysisStatList([
-        {
-          label: t("analysisNetworkMediaSimilarity"),
-          value: account?.markers?.mediaPostShare || 0,
-          formatter: "percent",
-        },
-      ], "percent", "analysisPatternsNoData"),
-    },
-  ];
-}
-
-function getAnalysisNetworkTableRows() {
-  if (!analysisAccountDataA || !analysisAccountDataB || !analysisComparisonResult) {
-    return [];
-  }
-  const comparison = analysisComparisonResult;
-  const networkLoaded = analysisAccountDataA.network?.loadState === "complete" && analysisAccountDataB.network?.loadState === "complete";
-  const formatOverlap = (summary) => `${formatCount(summary.sharedCount)} / ${formatCount(summary.unionCount)} · ${formatAnalysisPercent(summary.jaccard)}`;
-  const moderationAvailability = (source) => source === "saved_account" ? t("analysisNetworkModerationAvailable") : t("analysisNetworkModerationUnavailable");
-  return [
-    {
-      label: t("analysisNetworkFollowersOverlap"),
-      left: networkLoaded ? formatCount(comparison.followerOverlap.leftCount) : t("analysisNetworkNotAvailable"),
-      right: networkLoaded ? formatCount(comparison.followerOverlap.rightCount) : t("analysisNetworkNotAvailable"),
-      diff: networkLoaded ? formatOverlap(comparison.followerOverlap) : t("analysisNetworkLoadIncomplete"),
-    },
-    {
-      label: t("analysisNetworkFollowsOverlap"),
-      left: networkLoaded ? formatCount(comparison.followingOverlap.leftCount) : t("analysisNetworkNotAvailable"),
-      right: networkLoaded ? formatCount(comparison.followingOverlap.rightCount) : t("analysisNetworkNotAvailable"),
-      diff: networkLoaded ? formatOverlap(comparison.followingOverlap) : t("analysisNetworkLoadIncomplete"),
-    },
-    {
-      label: t("analysisNetworkMutualsOverlap"),
-      left: networkLoaded ? formatCount(comparison.mutualOverlap.leftCount) : t("analysisNetworkNotAvailable"),
-      right: networkLoaded ? formatCount(comparison.mutualOverlap.rightCount) : t("analysisNetworkNotAvailable"),
-      diff: networkLoaded ? formatOverlap(comparison.mutualOverlap) : t("analysisNetworkLoadIncomplete"),
-    },
-    {
-      label: t("analysisNetworkDirectRelation"),
-      left: comparison.directRelationship.leftFollowsRight ? t("analysisNetworkRelationYes") : t("analysisNetworkRelationNo"),
-      right: comparison.directRelationship.rightFollowsLeft ? t("analysisNetworkRelationYes") : t("analysisNetworkRelationNo"),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.relationshipSimilarity) }),
-    },
-    {
-      label: t("analysisNetworkMuteOverlap"),
-      left: moderationAvailability(analysisAccountDataA.network?.muteBlockSource),
-      right: moderationAvailability(analysisAccountDataB.network?.muteBlockSource),
-      diff: comparison.muteOverlap ? formatOverlap(comparison.muteOverlap) : t("analysisNetworkNotAvailable"),
-    },
-    {
-      label: t("analysisNetworkBlockOverlap"),
-      left: moderationAvailability(analysisAccountDataA.network?.muteBlockSource),
-      right: moderationAvailability(analysisAccountDataB.network?.muteBlockSource),
-      diff: comparison.blockOverlap ? formatOverlap(comparison.blockOverlap) : t("analysisNetworkNotAvailable"),
-    },
-    {
-      label: t("analysisNetworkMentionsSimilarity"),
-      left: formatAnalysisPercent(analysisAccountDataA.markers?.topMentions?.[0]?.share || 0),
-      right: formatAnalysisPercent(analysisAccountDataB.markers?.topMentions?.[0]?.share || 0),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.mentionSimilarity) }),
-    },
-    {
-      label: t("analysisNetworkDomainsSimilarity"),
-      left: formatAnalysisPercent(analysisAccountDataA.markers?.topDomains?.[0]?.share || 0),
-      right: formatAnalysisPercent(analysisAccountDataB.markers?.topDomains?.[0]?.share || 0),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.domainSimilarity) }),
-    },
-    {
-      label: t("analysisNetworkHashtagsSimilarity"),
-      left: formatAnalysisPercent(analysisAccountDataA.markers?.topHashtags?.[0]?.share || 0),
-      right: formatAnalysisPercent(analysisAccountDataB.markers?.topHashtags?.[0]?.share || 0),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.hashtagSimilarity) }),
-    },
-    {
-      label: t("analysisNetworkReplyTargetsSimilarity"),
-      left: formatAnalysisPercent(analysisAccountDataA.markers?.topReplyTargets?.[0]?.share || 0),
-      right: formatAnalysisPercent(analysisAccountDataB.markers?.topReplyTargets?.[0]?.share || 0),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.replyTargetSimilarity) }),
-    },
-    {
-      label: t("analysisNetworkQuoteTargetsSimilarity"),
-      left: formatAnalysisPercent(analysisAccountDataA.markers?.topQuoteTargets?.[0]?.share || 0),
-      right: formatAnalysisPercent(analysisAccountDataB.markers?.topQuoteTargets?.[0]?.share || 0),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.quoteTargetSimilarity) }),
-    },
-    {
-      label: t("analysisNetworkLanguagesSimilarity"),
-      left: formatAnalysisPercent(analysisAccountDataA.markers?.topLanguages?.[0]?.share || 0),
-      right: formatAnalysisPercent(analysisAccountDataB.markers?.topLanguages?.[0]?.share || 0),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.languageSimilarity) }),
-    },
-    {
-      label: t("analysisNetworkMediaSimilarity"),
-      left: formatAnalysisPercent(analysisAccountDataA.markers?.mediaPostShare || 0),
-      right: formatAnalysisPercent(analysisAccountDataB.markers?.mediaPostShare || 0),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(comparison.mediaSimilarity) }),
-    },
-  ];
-}
-
-function renderAnalysisNetwork() {
-  if (!analysisNetwork) {
-    return;
-  }
-  analysisNetwork.replaceChildren();
-  if (!analysisAccountDataA && !analysisAccountDataB) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t("analysisNetworkEmpty");
-    analysisNetwork.appendChild(note);
-    return;
-  }
-  if (!analysisComparisonResult) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = analysisStatusLine === t("analysisNetworkReloadNeeded") ? t("analysisNetworkReloadNeeded") : t("analysisNetworkEmpty");
-    analysisNetwork.appendChild(note);
-    return;
-  }
-
-  const networkWarnings = [
-    ...(analysisAccountDataA?.network?.warnings || []),
-    ...(analysisAccountDataB?.network?.warnings || []),
-  ];
-
-  const summary = document.createElement("article");
-  summary.className = "analysis-account-card";
-  const summaryHeading = document.createElement("strong");
-  summaryHeading.textContent = t("analysisNetworkSummaryTitle");
-  const summaryNote = document.createElement("p");
-  summaryNote.className = "settings-note";
-  summaryNote.textContent = t("analysisNetworkSummaryNote");
-  const summaryDetails = document.createElement("div");
-  summaryDetails.className = "analysis-result-details";
-  [
-    t("analysisSimilarityRelationship", { value: formatAnalysisPercent(analysisComparisonResult.relationshipSimilarity) }),
-    t("analysisSimilarityInteraction", { value: formatAnalysisPercent(analysisComparisonResult.interactionSimilarity) }),
-    analysisComparisonResult.moderationSimilarity === null
-      ? t("analysisSimilarityModerationUnavailable")
-      : t("analysisSimilarityModeration", { value: formatAnalysisPercent(analysisComparisonResult.moderationSimilarity) }),
-  ].forEach((text) => {
-    const item = document.createElement("span");
-    item.textContent = text;
-    summaryDetails.appendChild(item);
-  });
-  summary.append(summaryHeading, summaryNote, summaryDetails);
-  if (networkWarnings.length) {
-    const warning = document.createElement("p");
-    warning.className = "settings-note";
-    warning.textContent = `${t("analysisNetworkLoadIncomplete")} ${networkWarnings[0]}`;
-    summary.appendChild(warning);
-  }
-  analysisNetwork.appendChild(summary);
-
-  const table = document.createElement("table");
-  table.className = "analysis-table";
-  const head = document.createElement("thead");
-  const headRow = cloneTemplate("analysis-table-head-template");
-  if (headRow) {
-    const headers = headRow.querySelectorAll("th");
-    if (headers.length >= 4) {
-      setSafeText(headers[0], t("analysisMetricsColumnMetric"));
-      setSafeText(headers[1], t("analysisAccountALabel"));
-      setSafeText(headers[2], t("analysisAccountBLabel"));
-      setSafeText(headers[3], t("analysisTemporalColumnAssessment"));
-    }
-    head.appendChild(headRow);
-  }
-  table.appendChild(head);
-  const body = document.createElement("tbody");
-  getAnalysisNetworkTableRows().forEach((row) => {
-    const tr = cloneTemplate("analysis-table-row-template");
-    if (tr) {
-      const cells = tr.querySelectorAll("td");
-      if (cells.length >= 4) {
-        setSafeText(cells[0], row.label);
-        setSafeText(cells[1], row.left);
-        setSafeText(cells[2], row.right);
-        setSafeText(cells[3], row.diff);
-      }
-      body.appendChild(tr);
-    }
-  });
-  table.appendChild(body);
-  analysisNetwork.appendChild(table);
-
-  buildAnalysisNetworkPatternDefinitions().forEach((definition) => {
-    const createList = definition.resolvedProfiles
-      ? createAnalysisResolvedProfileList
-      : definition.createNode
-      ? definition.createNode
-      : createAnalysisSimpleChipList;
-    analysisNetwork.appendChild(createAnalysisPatternCard(
-      `${t("analysisAccountALabel")} - ${definition.title}`,
-      [createList(definition.key ? (analysisAccountDataA?.markers?.[definition.key] || []) : analysisAccountDataA, "analysisPatternsNoData")],
-    ));
-    analysisNetwork.appendChild(createAnalysisPatternCard(
-      `${t("analysisAccountBLabel")} - ${definition.title}`,
-      [createList(definition.key ? (analysisAccountDataB?.markers?.[definition.key] || []) : analysisAccountDataB, "analysisPatternsNoData")],
-    ));
-  });
-}
-
-function renderAnalysisMetrics() {
-  if (!analysisMetrics) {
-    return;
-  }
-  analysisMetrics.replaceChildren();
-  if (!analysisComparisonResult) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t("analysisMetricsEmpty");
-    analysisMetrics.appendChild(note);
-    return;
-  }
-
-  const table = document.createElement("table");
-  table.className = "analysis-table";
-  const head = document.createElement("thead");
-  const headRow = cloneTemplate("analysis-table-head-template");
-  if (headRow) {
-    const headers = headRow.querySelectorAll("th");
-    if (headers.length >= 4) {
-      setSafeText(headers[0], t("analysisMetricsColumnMetric"));
-      setSafeText(headers[1], t("analysisAccountALabel"));
-      setSafeText(headers[2], t("analysisAccountBLabel"));
-      setSafeText(headers[3], t("analysisMetricsColumnDiff"));
-    }
-    head.appendChild(headRow);
-  }
-  table.appendChild(head);
-
-  const body = document.createElement("tbody");
-  analysisComparisonResult.metricRows.forEach((row) => {
-    const tr = cloneTemplate("analysis-table-row-template");
-    if (tr) {
-      const cells = tr.querySelectorAll("td");
-      if (cells.length >= 4) {
-        const formatValue = (value) => (row.formatter === "percent" ? formatAnalysisPercent(value) : formatAnalysisNumber(value, 2));
-        setSafeText(cells[0], t(row.labelKey));
-        setSafeText(cells[1], formatValue(row.leftValue));
-        setSafeText(cells[2], formatValue(row.rightValue));
-        setSafeText(cells[3], formatAnalysisPercent(Math.min(1, row.normalizedDifference)));
-      }
-      body.appendChild(tr);
-    }
-  });
-  table.appendChild(body);
-  analysisMetrics.appendChild(table);
-}
-
-function renderAnalysisPatterns() {
-  if (!analysisPatterns) {
-    return;
-  }
-  analysisPatterns.replaceChildren();
-  if (!analysisAccountDataA && !analysisAccountDataB) {
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = t("analysisPatternsEmpty");
-    analysisPatterns.appendChild(note);
-    return;
-  }
-
-  const buildPatternCard = (label, account, patternTitle, children) => {
-    if (!account) {
-      const emptyCard = document.createElement("article");
-      emptyCard.className = "analysis-pattern-card";
-      const heading = document.createElement("strong");
-      heading.textContent = `${label} - ${patternTitle}`;
-      const note = document.createElement("p");
-      note.className = "settings-note";
-      note.textContent = t(label === t("analysisAccountALabel") ? "analysisAccountAEmpty" : "analysisAccountBEmpty");
-      emptyCard.append(heading, note);
-      return emptyCard;
-    }
-    return createAnalysisPatternCard(`${label} - ${patternTitle}`, children);
-  };
-
-  const patternDefinitions = [
-    {
-      title: t("analysisPatternWordsTitle"),
-      createChildren: (account) => [createAnalysisPatternList(account.corpus.topWords, "analysisPatternsNoData")],
-    },
-    {
-      title: t("analysisPatternTrigramsTitle"),
-      createChildren: (account) => [createAnalysisPatternList(account.corpus.topTrigrams, "analysisPatternsNoData")],
-    },
-    {
-      title: t("analysisPatternBigramsTitle"),
-      createChildren: (account) => [createAnalysisPatternList(account.corpus.topBigrams, "analysisPatternsNoData")],
-    },
-    {
-      title: t("analysisPatternPhrasesTitle"),
-      createChildren: (account) => [createAnalysisPatternList(account.corpus.topPhrases, "analysisPatternsNoData")],
-    },
-    {
-      title: t("analysisPatternFunctionWordsTitle"),
-      createChildren: (account) => [createAnalysisPatternList(account.corpus.functionWords, "analysisPatternsNoData")],
-    },
-    {
-      title: t("analysisPatternEmojiTitle"),
-      createChildren: (account) => [createAnalysisPatternList(account.corpus.topEmojis, "analysisPatternsNoEmoji")],
-    },
-    {
-      title: t("analysisPatternPunctuationTitle"),
-      createChildren: (account) => [createAnalysisPatternList(account.corpus.punctuationProfile, "analysisPatternsNoData")],
-    },
-    {
-      title: t("analysisPatternStartsEndsTitle"),
-      createChildren: (account) => [
-        createAnalysisPatternList(account.corpus.postStarts, "analysisPatternsNoData"),
-        createAnalysisPatternList(account.corpus.postEnds, "analysisPatternsNoData"),
-      ],
-    },
-    {
-      title: t("analysisPatternWordLengthTitle"),
-      createChildren: (account) => [createAnalysisBarList(account.corpus.wordLengthProfile, "analysisPatternsNoData")],
-    },
-    {
-      title: t("analysisPatternConventionsTitle"),
-      createChildren: (account) => [createAnalysisStatList(account.corpus.writingConventions, "percent", "analysisPatternsNoData")],
-    },
-    {
-      title: t("analysisPatternBehaviorTitle"),
-      createChildren: (account) => [createAnalysisStatList(account.corpus.linkBehavior, "percent", "analysisPatternsNoData")],
-    },
-    {
-      title: t("analysisPatternStructureTitle"),
-      createChildren: (account) => [createAnalysisStatList(account.corpus.structureProfile, "mixed", "analysisPatternsNoData")],
-    },
-  ];
-
-  patternDefinitions.forEach((definition) => {
-    analysisPatterns.appendChild(
-      buildPatternCard(
-        t("analysisAccountALabel"),
-        analysisAccountDataA,
-        definition.title,
-        analysisAccountDataA ? definition.createChildren(analysisAccountDataA) : [],
-      ),
-    );
-    analysisPatterns.appendChild(
-      buildPatternCard(
-        t("analysisAccountBLabel"),
-        analysisAccountDataB,
-        definition.title,
-        analysisAccountDataB ? definition.createChildren(analysisAccountDataB) : [],
-      ),
-    );
-  });
-}
-
-function makeAnalysisExportFileName() {
-  const left = String(analysisAccountDataA?.profile?.handle || "account-a").replace(/[^\w.-]+/g, "-");
-  const right = String(analysisAccountDataB?.profile?.handle || "account-b").replace(/[^\w.-]+/g, "-");
-  const datePart = new Date().toISOString().slice(0, 10);
-  return `threadline-analysis-${left}-vs-${right}-${datePart}.pdf`;
-}
-
-function getAnalysisPdfMetricRows() {
-  if (!analysisComparisonResult) {
-    return [];
-  }
-  return [
-    ...analysisComparisonResult.metricRows.map((row) => ({
-      label: t(row.labelKey),
-      left: row.formatter === "percent" ? formatAnalysisPercent(row.leftValue) : formatAnalysisNumber(row.leftValue, 2),
-      right: row.formatter === "percent" ? formatAnalysisPercent(row.rightValue) : formatAnalysisNumber(row.rightValue, 2),
-      diff: formatAnalysisPercent(Math.min(1, row.normalizedDifference)),
-    })),
-    {
-      label: "Burrows's Delta",
-      left: Number.isFinite(analysisComparisonResult.burrowsDelta?.delta)
-        ? formatAnalysisNumber(analysisComparisonResult.burrowsDelta.delta, 2)
-        : "-",
-      right: Number.isFinite(analysisComparisonResult.burrowsDelta?.similarity)
-        ? formatAnalysisPercent(analysisComparisonResult.burrowsDelta.similarity)
-        : "-",
-      diff: Number.isFinite(analysisComparisonResult.burrowsDelta?.chunkCount)
-        ? t("analysisPdfChunkCount", { count: analysisComparisonResult.burrowsDelta.chunkCount })
-        : "-",
-    },
-  ];
-}
-
-function getAnalysisPdfTemporalRows() {
-  if (!analysisComparisonResult) {
-    return [];
-  }
-  return getAnalysisTemporalTableRows();
-}
-
-function getAnalysisPdfNetworkRows() {
-  if (!analysisComparisonResult) {
-    return [];
-  }
-  return getAnalysisNetworkTableRows();
-}
-
-function getAnalysisTemporalTableRows() {
-  const hourSimilarity = cosineSimilarityFromArrays(
-    analysisAccountDataA?.temporal?.hourShares || [],
-    analysisAccountDataB?.temporal?.hourShares || [],
-  );
-  const weekdaySimilarity = cosineSimilarityFromArrays(
-    analysisAccountDataA?.temporal?.weekdayShares || [],
-    analysisAccountDataB?.temporal?.weekdayShares || [],
-  );
-  const gapSimilarity = cosineSimilarityFromArrays(
-    analysisAccountDataA?.temporal?.gapShares || [],
-    analysisAccountDataB?.temporal?.gapShares || [],
-  );
-  return [
-    {
-      label: t("analysisTemporalHourSimilarity"),
-      left: formatAnalysisTopTemporalEntries(analysisAccountDataA?.temporal?.topHourEntries || []),
-      right: formatAnalysisTopTemporalEntries(analysisAccountDataB?.temporal?.topHourEntries || []),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(hourSimilarity) }),
-    },
-    {
-      label: t("analysisTemporalWeekdaySimilarity"),
-      left: formatAnalysisTopTemporalEntries(analysisAccountDataA?.temporal?.topWeekdayEntries || []),
-      right: formatAnalysisTopTemporalEntries(analysisAccountDataB?.temporal?.topWeekdayEntries || []),
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(weekdaySimilarity) }),
-    },
-    {
-      label: t("analysisTemporalGapSimilarity"),
-      left: Number.isFinite(analysisAccountDataA?.temporal?.medianGapMinutes)
-        ? t("analysisTemporalMedianGapValue", { value: formatAnalysisNumber(analysisAccountDataA.temporal.medianGapMinutes, 0) })
-        : "-",
-      right: Number.isFinite(analysisAccountDataB?.temporal?.medianGapMinutes)
-        ? t("analysisTemporalMedianGapValue", { value: formatAnalysisNumber(analysisAccountDataB.temporal.medianGapMinutes, 0) })
-        : "-",
-      diff: t("analysisTemporalAssessmentSimilarity", { value: formatAnalysisPercent(gapSimilarity) }),
-    },
-    {
-      label: t("analysisTemporalProfileScore"),
-      left: t("analysisTemporalActiveHoursValue", { count: formatCount(analysisAccountDataA?.temporal?.activeHourCount || 0) }),
-      right: t("analysisTemporalActiveHoursValue", { count: formatCount(analysisAccountDataB?.temporal?.activeHourCount || 0) }),
-      diff: t("analysisTemporalAssessmentScore", { value: formatAnalysisPercent(analysisComparisonResult?.temporalProfileSimilarity || 0) }),
-    },
-    {
-      label: t("analysisTemporalProximityScore"),
-      left: t("analysisTemporalWindowValue", { count: 5 }),
-      right: t("analysisTemporalWindowValue", { count: 5 }),
-      diff: t("analysisTemporalAssessmentMatches", { value: formatAnalysisPercent(analysisComparisonResult?.temporalProximityScore || 0) }),
-    },
-  ];
-}
-
-function getAnalysisPdfScoreRows() {
-  if (!analysisComparisonResult) {
-    return [];
-  }
-  return [
-    {
-      label: t("analysisOverallScoreLabel"),
-      value: `${analysisComparisonResult.score}/100`,
-      accent: true,
-    },
-    {
-      label: t("analysisSimilarityRobustnessMix", {
-        value: formatAnalysisPercent(analysisComparisonResult.robustnessMix),
-      }),
-    },
-    {
-      label: Number.isFinite(analysisComparisonResult.burrowsDelta?.delta)
-        ? t("analysisSimilarityBurrowsDelta", {
-            value: formatAnalysisNumber(analysisComparisonResult.burrowsDelta.delta, 2),
-            score: formatAnalysisPercent(analysisComparisonResult.burrowsDelta.similarity),
-          })
-        : t("analysisSimilarityBurrowsDeltaUnavailable"),
-    },
-    {
-      label: t("analysisSimilarityCosine", { value: formatAnalysisPercent(analysisComparisonResult.cosineSimilarity) }),
-    },
-    {
-      label: t("analysisSimilarityJaccard", { value: formatAnalysisPercent(analysisComparisonResult.jaccardSimilarity) }),
-    },
-    {
-      label: t("analysisSimilarityFunctionWords", { value: formatAnalysisPercent(analysisComparisonResult.functionWordSimilarity) }),
-    },
-    {
-      label: t("analysisSimilarityCharacterNgrams", { value: formatAnalysisPercent(analysisComparisonResult.characterNgramSimilarity) }),
-    },
-    {
-      label: t("analysisSimilarityMetrics", { value: formatAnalysisPercent(analysisComparisonResult.metricsSimilarity) }),
-    },
-    {
-      label: t("analysisSimilarityTemporalProfile", { value: formatAnalysisPercent(analysisComparisonResult.temporalProfileSimilarity) }),
-    },
-    {
-      label: t("analysisSimilarityTemporalProximity", { value: formatAnalysisPercent(analysisComparisonResult.temporalProximityScore) }),
-    },
-    {
-      label: t("analysisSimilarityRelationship", { value: formatAnalysisPercent(analysisComparisonResult.relationshipSimilarity) }),
-    },
-    {
-      label: t("analysisSimilarityInteraction", { value: formatAnalysisPercent(analysisComparisonResult.interactionSimilarity) }),
-    },
-    {
-      label: analysisComparisonResult.moderationSimilarity === null
-        ? t("analysisSimilarityModerationUnavailable")
-        : t("analysisSimilarityModeration", { value: formatAnalysisPercent(analysisComparisonResult.moderationSimilarity) }),
-    },
-  ];
-}
 
 function encodePdfHexString(value) {
   const text = String(value || "");
@@ -14020,1161 +11345,45 @@ function buildPdfMetadataInfoDictionary(title = "") {
   return `<< ${entries.join(" ")} >>`;
 }
 
-function createAnalysisTextPdfPages(options = {}) {
-  if (!analysisAccountDataA || !analysisAccountDataB || !analysisComparisonResult) {
-    return [];
-  }
 
-  const {
-    includeTemporalSection = true,
-    includeNetworkSection = true,
-    includeMetricsSection = true,
-    includePatternSection = true,
-  } = options;
 
-  const pageWidth = 595;
-  const pageHeight = 842;
-  const marginX = 42;
-  const marginTop = 78;
-  const marginBottom = 46;
-  const contentWidth = pageWidth - (marginX * 2);
-  const pages = [];
-  const measureCanvas = document.createElement("canvas");
-  const measureContext = measureCanvas.getContext("2d");
-  let currentPage = [];
-  let cursorY = marginTop;
 
-  const startPage = () => {
-    currentPage = [];
-    pages.push(currentPage);
-    cursorY = marginTop;
-  };
 
-  const ensureSpace = (height) => {
-    if (!pages.length) {
-      startPage();
-      return;
-    }
-    if (cursorY + height > pageHeight - marginBottom) {
-      startPage();
-    }
-  };
 
-  const pushText = (text, options = {}) => {
-    const size = Number(options.size) || 10;
-    const font = options.font || "F1";
-    const color = options.color || [0.09, 0.14, 0.23];
-    const indent = Number(options.indent) || 0;
-    const lineHeight = options.lineHeight || Math.round(size * 1.35);
-    measureContext.font = `${font === "F2" ? "700" : "400"} ${size}px "Segoe UI", Aptos, sans-serif`;
-    const lines = buildWrappedPdfLines(measureContext, String(text || ""), Math.max(40, contentWidth - indent))
-      .map((line) => Array.isArray(line?.fragments)
-        ? line.fragments.map((fragment) => fragment.text).join("")
-        : String(line?.text || ""));
-    const height = Math.max(lineHeight, lines.length * lineHeight);
-    ensureSpace(height + (options.gapAfter || 0));
-    lines.forEach((line, index) => {
-      currentPage.push({
-        type: "text",
-        text: line,
-        x: marginX + indent,
-        y: cursorY + (index * lineHeight),
-        size,
-        font,
-        color,
-      });
-    });
-    cursorY += height + (options.gapAfter || 0);
-  };
 
-  const pushRule = (gapBefore = 4, gapAfter = 10) => {
-    ensureSpace(gapBefore + 8 + gapAfter);
-    cursorY += gapBefore;
-    currentPage.push({
-      type: "rule",
-      x1: marginX,
-      y1: cursorY,
-      x2: pageWidth - marginX,
-      y2: cursorY,
-      color: [0.84, 0.89, 0.95],
-      width: 1,
-    });
-    cursorY += 8 + gapAfter;
-  };
 
-  const pushSection = (title) => {
-    pushText(title, {
-      size: 15,
-      font: "F2",
-      color: [0.07, 0.13, 0.24],
-      gapAfter: 6,
-    });
-    pushRule(0, 8);
-  };
 
-  const pushBulletLines = (lines = [], indent = 14) => {
-    lines.forEach((line) => {
-      pushText(`- ${line}`, {
-        size: 9.6,
-        font: "F1",
-        indent,
-        gapAfter: 3,
-        color: [0.15, 0.24, 0.37],
-      });
-    });
-  };
 
-  const summaryRowsA = [
-    t("analysisSummaryPostsLoaded", { count: formatCount(analysisAccountDataA.posts.length) }),
-    t("analysisSummaryWordsLoaded", { count: formatCount(analysisAccountDataA.corpus.wordCount) }),
-    analysisAccountDataA.filters.rangeDays > 0 ? t("analysisSummaryRangeDays", { count: analysisAccountDataA.filters.rangeDays }) : t("analysisSummaryRangeAll"),
-    t("analysisSummaryPagesLoaded", { count: formatCount(analysisAccountDataA.stats.pages) }),
-    analysisAccountDataA.posts[0]?.createdAt ? t("analysisSummaryLatestPost", { value: formatHistoryTimestamp(analysisAccountDataA.posts[0].createdAt) }) : t("analysisSummaryNoPreview"),
-  ];
-  const summaryRowsB = [
-    t("analysisSummaryPostsLoaded", { count: formatCount(analysisAccountDataB.posts.length) }),
-    t("analysisSummaryWordsLoaded", { count: formatCount(analysisAccountDataB.corpus.wordCount) }),
-    analysisAccountDataB.filters.rangeDays > 0 ? t("analysisSummaryRangeDays", { count: analysisAccountDataB.filters.rangeDays }) : t("analysisSummaryRangeAll"),
-    t("analysisSummaryPagesLoaded", { count: formatCount(analysisAccountDataB.stats.pages) }),
-    analysisAccountDataB.posts[0]?.createdAt ? t("analysisSummaryLatestPost", { value: formatHistoryTimestamp(analysisAccountDataB.posts[0].createdAt) }) : t("analysisSummaryNoPreview"),
-  ];
 
-  pushSection(t("analysisPdfTitle"));
-  pushText(`${t("analysisAccountALabel")}: ${analysisAccountDataA.profile.displayName || analysisAccountDataA.profile.handle || analysisAccountDataA.profile.did}`, { size: 11.5, font: "F2", gapAfter: 4 });
-  pushBulletLines(summaryRowsA);
-  pushText(`${t("analysisAccountBLabel")}: ${analysisAccountDataB.profile.displayName || analysisAccountDataB.profile.handle || analysisAccountDataB.profile.did}`, { size: 11.5, font: "F2", gapAfter: 4, color: [0.07, 0.13, 0.24] });
-  pushBulletLines(summaryRowsB);
 
-  pushSection(t("analysisOverallScoreLabel"));
-  pushText(`${analysisComparisonResult.score}/100 - ${t(analysisComparisonResult.labelKey)}`, { size: 18, font: "F2", color: [0.09, 0.58, 0.50], gapAfter: 6 });
-  pushText(t("analysisOverallScoreSummary", { value: formatAnalysisPercent(analysisComparisonResult.robustnessMix) }), { size: 10.5, gapAfter: 4, color: [0.15, 0.24, 0.37] });
-  pushText(t(analysisComparisonResult.confidenceKey), { size: 9.5, gapAfter: 6, color: [0.35, 0.44, 0.57] });
-  pushBulletLines(getAnalysisPdfScoreRows().slice(1).map((row) => row.label), 10);
 
-  if (includeTemporalSection) {
-    pushSection(t("analysisTemporalTitle"));
-    pushBulletLines(getAnalysisPdfTemporalRows().map((row) => `${row.label}: ${t("analysisAccountALabel")} ${row.left} | ${t("analysisAccountBLabel")} ${row.right} | ${row.diff}`), 10);
-  }
 
-  if (includeNetworkSection) {
-    pushSection(t("analysisNetworkTitle"));
-    pushBulletLines(getAnalysisPdfNetworkRows().map((row) => `${row.label}: ${t("analysisAccountALabel")} ${row.left} | ${t("analysisAccountBLabel")} ${row.right} | ${row.diff}`), 10);
-  }
 
-  if (includeMetricsSection) {
-    pushSection(t("analysisMetricsTitle"));
-    pushBulletLines(getAnalysisPdfMetricRows().map((row) => `${row.label}: ${t("analysisAccountALabel")} ${row.left} | ${t("analysisAccountBLabel")} ${row.right} | ${t("analysisMetricsColumnDiff")} ${row.diff}`), 10);
-  }
 
-  if (includePatternSection) {
-    pushSection(t("analysisPdfPatternsTitle"));
-    buildAnalysisPdfPatternRows().forEach((row) => {
-      const sectionTitle = String(row.left?.title || "").replace(`${t("analysisAccountALabel")} - `, "");
-      pushText(sectionTitle, { size: 11.5, font: "F2", gapAfter: 4 });
-      pushText(t("analysisAccountALabel"), { size: 9.8, font: "F2", gapAfter: 2, indent: 8, color: [0.15, 0.24, 0.37] });
-      pushBulletLines(row.left?.lines || [], 18);
-      pushText(t("analysisAccountBLabel"), { size: 9.8, font: "F2", gapAfter: 2, indent: 8, color: [0.15, 0.24, 0.37] });
-      pushBulletLines(row.right?.lines || [], 18);
-      cursorY += 4;
-    });
-  }
 
-  return pages.map((ops, index) => ({ ops, pageIndex: index, pageCount: pages.length }));
-}
 
-function buildAnalysisPdfTextPageContent(ops, pageIndex, pageCount) {
-  const lines = [];
-  const titleY = 812;
-  const metaY = 792;
-  lines.push("BT");
-  lines.push("/F2 18 Tf");
-  lines.push("0.063 0.137 0.243 rg");
-  lines.push(`1 0 0 1 42 ${titleY} Tm ${encodePdfHexString(t("analysisPdfTitle"))} Tj`);
-  lines.push("ET");
-  lines.push("BT");
-  lines.push("/F1 9.5 Tf");
-  lines.push("0.345 0.443 0.573 rg");
-  lines.push(`1 0 0 1 42 ${metaY} Tm ${encodePdfHexString(`${formatCompactArchiveTimestamp(new Date().toISOString())} - ${t("analysisPdfPage", { index: pageIndex + 1, count: pageCount })}`)} Tj`);
-  lines.push("ET");
 
-  for (const op of ops) {
-    if (op.type === "text") {
-      const y = 842 - op.y - op.size;
-      lines.push("BT");
-      lines.push(`/${op.font || "F1"} ${Number(op.size) || 10} Tf`);
-      const [r, g, b] = Array.isArray(op.color) ? op.color : [0.09, 0.14, 0.23];
-      lines.push(`${r} ${g} ${b} rg`);
-      lines.push(`1 0 0 1 ${Number(op.x).toFixed(2)} ${y.toFixed(2)} Tm ${encodePdfHexString(op.text || "")} Tj`);
-      lines.push("ET");
-      continue;
-    }
-    if (op.type === "rule") {
-      const [r, g, b] = Array.isArray(op.color) ? op.color : [0.84, 0.89, 0.95];
-      const y = 842 - op.y1;
-      lines.push("q");
-      lines.push(`${r} ${g} ${b} RG`);
-      lines.push(`${Number(op.width) || 1} w`);
-      lines.push(`${Number(op.x1).toFixed(2)} ${y.toFixed(2)} m`);
-      lines.push(`${Number(op.x2).toFixed(2)} ${y.toFixed(2)} l`);
-      lines.push("S");
-      lines.push("Q");
-    }
-  }
 
-  return lines.join("\n");
-}
 
-function convertAnalysisTextPagesToPdfPages(textPages, totalPages, pageOffset = 0) {
-  return textPages.map((page, index) => ({
-    content: buildAnalysisPdfTextPageContent(page.ops || [], pageOffset + index, totalPages),
-    images: [],
-    annotations: [],
-  }));
-}
 
-function createAnalysisPdfBasePage(pageIndex, pageCount) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1190;
-  canvas.height = 1684;
-  const context = canvas.getContext("2d");
-  const scale = canvas.width / 595;
-  const margin = 28 * scale;
-  const pageWidth = canvas.width - (margin * 2);
-  const pageHeight = canvas.height - (margin * 2);
-  let cursorY = margin + (22 * scale);
 
-  const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
-  gradient.addColorStop(0, "#f3f8ff");
-  gradient.addColorStop(1, "#e7eef9");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  fillRoundedRect(context, margin, margin, pageWidth, pageHeight, 22 * scale, "rgba(255,255,255,0.52)");
-  strokeRoundedRect(context, margin, margin, pageWidth, pageHeight, 22 * scale, "#d5e1f3", 1.2 * scale);
 
-  context.textBaseline = "top";
-  context.fillStyle = "#10233e";
-  context.font = `700 ${18 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(t("analysisPdfTitle"), margin + (18 * scale), cursorY);
-  cursorY += 24 * scale;
-  context.fillStyle = "#587192";
-  context.font = `${9.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(
-    `${formatCompactArchiveTimestamp(new Date().toISOString())} - ${t("analysisPdfPage", { index: pageIndex + 1, count: pageCount })}`,
-    margin + (18 * scale),
-    cursorY,
-  );
-  cursorY += 22 * scale;
 
-  const cardX = margin + (18 * scale);
-  const cardWidth = pageWidth - (36 * scale);
-  const columnGap = 14 * scale;
-  const columnWidth = (cardWidth - columnGap) / 2;
-
-  return {
-    canvas,
-    context,
-    scale,
-    margin,
-    pageWidth,
-    pageHeight,
-    cursorY,
-    cardX,
-    cardWidth,
-    columnGap,
-    columnWidth,
-    contentBottom: margin + pageHeight - (18 * scale),
-  };
-}
-
-function formatAnalysisPdfListEntries(entries = [], emptyKey = "analysisPatternsNoData") {
-  if (!entries.length) {
-    return [t(emptyKey)];
-  }
-  return entries.slice(0, 8).map((entry) => `${entry.label}: ${formatAnalysisPercent(entry.share)}`);
-}
-
-function formatAnalysisPdfStatEntries(items = [], formatter = "percent", emptyKey = "analysisPatternsNoData") {
-  if (!items.length) {
-    return [t(emptyKey)];
-  }
-  return items.map((item) => {
-    const label = item.labelKey ? t(item.labelKey) : item.label;
-    const value = (item.formatter || formatter) === "number"
-      ? formatAnalysisNumber(item.value, 2)
-      : formatAnalysisPercent(item.share ?? item.value);
-    return `${label}: ${value}`;
-  });
-}
-
-const analysisPdfAvatarBitmapCache = new Map();
-
-async function loadAnalysisPdfAvatarBitmap(url) {
-  const normalizedUrl = String(url || "").trim();
-  if (!normalizedUrl) {
-    return null;
-  }
-  if (analysisPdfAvatarBitmapCache.has(normalizedUrl)) {
-    return analysisPdfAvatarBitmapCache.get(normalizedUrl);
-  }
-  const promise = (async () => {
-    const response = await fetch(normalizedUrl, { mode: "cors", credentials: "omit" });
-    if (!response.ok) {
-      throw new Error(`Avatar HTTP ${response.status}`);
-    }
-    const blob = await response.blob();
-    return createImageBitmap(blob);
-  })().catch(() => null);
-  analysisPdfAvatarBitmapCache.set(normalizedUrl, promise);
-  return promise;
-}
-
-function buildAnalysisPdfPatternRows() {
-  const buildCard = (label, account, title, lines) => ({
-    title: `${label} - ${title}`,
-    lines: account ? lines : [t(label === t("analysisAccountALabel") ? "analysisAccountAEmpty" : "analysisAccountBEmpty")],
-  });
-
-  const definitions = [
-    {
-      title: t("analysisPatternWordsTitle"),
-      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topWords, "analysisPatternsNoData"),
-    },
-    {
-      title: t("analysisPatternTrigramsTitle"),
-      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topTrigrams, "analysisPatternsNoData"),
-    },
-    {
-      title: t("analysisPatternBigramsTitle"),
-      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topBigrams, "analysisPatternsNoData"),
-    },
-    {
-      title: t("analysisPatternPhrasesTitle"),
-      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topPhrases, "analysisPatternsNoData"),
-    },
-    {
-      title: t("analysisPatternFunctionWordsTitle"),
-      lines: (account) => formatAnalysisPdfListEntries(account.corpus.functionWords, "analysisPatternsNoData"),
-    },
-    {
-      title: t("analysisPatternEmojiTitle"),
-      lines: (account) => formatAnalysisPdfListEntries(account.corpus.topEmojis, "analysisPatternsNoEmoji"),
-    },
-    {
-      title: t("analysisPatternPunctuationTitle"),
-      lines: (account) => formatAnalysisPdfListEntries(account.corpus.punctuationProfile, "analysisPatternsNoData"),
-    },
-    {
-      title: t("analysisPatternStartsEndsTitle"),
-      lines: (account) => [
-        t("analysisPdfPostStartsLabel"),
-        ...formatAnalysisPdfListEntries(account.corpus.postStarts, "analysisPatternsNoData"),
-        t("analysisPdfPostEndsLabel"),
-        ...formatAnalysisPdfListEntries(account.corpus.postEnds, "analysisPatternsNoData"),
-      ],
-    },
-    {
-      title: t("analysisPatternWordLengthTitle"),
-      card: (account) => ({
-        barEntries: Array.isArray(account?.corpus?.wordLengthProfile) ? account.corpus.wordLengthProfile.slice(0, 8) : [],
-      }),
-    },
-    {
-      title: t("analysisPatternConventionsTitle"),
-      lines: (account) => formatAnalysisPdfStatEntries(account.corpus.writingConventions, "percent", "analysisPatternsNoData"),
-    },
-    {
-      title: t("analysisPatternBehaviorTitle"),
-      lines: (account) => formatAnalysisPdfStatEntries(account.corpus.linkBehavior, "percent", "analysisPatternsNoData"),
-    },
-    {
-      title: t("analysisPatternStructureTitle"),
-      lines: (account) => formatAnalysisPdfStatEntries(account.corpus.structureProfile, "mixed", "analysisPatternsNoData"),
-    },
-  ];
-
-  return definitions.map((definition) => {
-    const leftBase = definition.card
-      ? definition.card(analysisAccountDataA)
-      : { lines: analysisAccountDataA ? definition.lines(analysisAccountDataA) : [] };
-    const rightBase = definition.card
-      ? definition.card(analysisAccountDataB)
-      : { lines: analysisAccountDataB ? definition.lines(analysisAccountDataB) : [] };
-    return {
-      left: {
-        ...buildCard(t("analysisAccountALabel"), analysisAccountDataA, definition.title, leftBase.lines || []),
-        ...leftBase,
-      },
-      right: {
-        ...buildCard(t("analysisAccountBLabel"), analysisAccountDataB, definition.title, rightBase.lines || []),
-        ...rightBase,
-      },
-    };
-  });
-}
-
-function buildAnalysisPdfNetworkPatternRows() {
-  const buildCard = (label, account, title, lines) => ({
-    title: `${label} - ${title}`,
-    lines: account ? lines : [t(label === t("analysisAccountALabel") ? "analysisAccountAEmpty" : "analysisAccountBEmpty")],
-  });
-
-  return buildAnalysisNetworkPatternDefinitions().map((definition) => {
-    const leftBase = !analysisAccountDataA
-      ? { lines: [] }
-      : definition.resolvedProfiles
-      ? { profileEntries: Array.isArray(analysisAccountDataA?.markers?.[definition.key]) ? analysisAccountDataA.markers[definition.key].slice(0, 6) : [] }
-      : definition.createNode
-      ? {
-          lines: formatAnalysisPdfStatEntries([
-            {
-              label: t("analysisNetworkMediaSimilarity"),
-              value: analysisAccountDataA?.markers?.mediaPostShare || 0,
-              formatter: "percent",
-            },
-          ], "percent", "analysisPatternsNoData"),
-        }
-      : { lines: formatAnalysisPdfListEntries(analysisAccountDataA?.markers?.[definition.key] || [], "analysisPatternsNoData") };
-    const rightBase = !analysisAccountDataB
-      ? { lines: [] }
-      : definition.resolvedProfiles
-      ? { profileEntries: Array.isArray(analysisAccountDataB?.markers?.[definition.key]) ? analysisAccountDataB.markers[definition.key].slice(0, 6) : [] }
-      : definition.createNode
-      ? {
-          lines: formatAnalysisPdfStatEntries([
-            {
-              label: t("analysisNetworkMediaSimilarity"),
-              value: analysisAccountDataB?.markers?.mediaPostShare || 0,
-              formatter: "percent",
-            },
-          ], "percent", "analysisPatternsNoData"),
-        }
-      : { lines: formatAnalysisPdfListEntries(analysisAccountDataB?.markers?.[definition.key] || [], "analysisPatternsNoData") };
-    return {
-      left: {
-        ...buildCard(t("analysisAccountALabel"), analysisAccountDataA, definition.title, leftBase.lines || []),
-        ...leftBase,
-      },
-      right: {
-        ...buildCard(t("analysisAccountBLabel"), analysisAccountDataB, definition.title, rightBase.lines || []),
-        ...rightBase,
-      },
-    };
-  });
-}
-
-function buildAnalysisPdfPatternPageLayouts(scale, cardWidth, columnGap, contentHeight) {
-  const measureCanvas = document.createElement("canvas");
-  measureCanvas.width = 1190;
-  measureCanvas.height = 1684;
-  const measureContext = measureCanvas.getContext("2d");
-  const patternWidth = (cardWidth - columnGap) / 2;
-  const rowGap = 14 * scale;
-  const rows = buildAnalysisPdfPatternRows().map((row) => {
-    const leftHeight = measureAnalysisPdfPatternCard(measureContext, scale, patternWidth, row.left);
-    const rightHeight = measureAnalysisPdfPatternCard(measureContext, scale, patternWidth, row.right);
-    return {
-      ...row,
-      height: Math.max(leftHeight, rightHeight),
-    };
-  });
-  const pages = [];
-  let currentPage = [];
-  let usedHeight = 0;
-  rows.forEach((row) => {
-    const nextHeight = row.height + (currentPage.length ? rowGap : 0);
-    if (currentPage.length && usedHeight + nextHeight > contentHeight) {
-      pages.push(currentPage);
-      currentPage = [];
-      usedHeight = 0;
-    }
-    currentPage.push(row);
-    usedHeight += row.height + (currentPage.length > 1 ? rowGap : 0);
-  });
-  if (currentPage.length) {
-    pages.push(currentPage);
-  }
-  return pages;
-}
-
-function buildAnalysisPdfPatternPageLayoutsFromRows(scale, cardWidth, columnGap, contentHeight, rows) {
-  const measureCanvas = document.createElement("canvas");
-  measureCanvas.width = 1190;
-  measureCanvas.height = 1684;
-  const measureContext = measureCanvas.getContext("2d");
-  const patternWidth = (cardWidth - columnGap) / 2;
-  const rowGap = 14 * scale;
-  const measuredRows = rows.map((row) => {
-    const leftHeight = measureAnalysisPdfPatternCard(measureContext, scale, patternWidth, row.left);
-    const rightHeight = measureAnalysisPdfPatternCard(measureContext, scale, patternWidth, row.right);
-    return {
-      ...row,
-      height: Math.max(leftHeight, rightHeight),
-    };
-  });
-
-  const pages = [];
-  let currentPage = [];
-  let usedHeight = 0;
-  measuredRows.forEach((row) => {
-    const nextHeight = currentPage.length ? usedHeight + rowGap + row.height : row.height;
-    if (currentPage.length && nextHeight > contentHeight) {
-      pages.push(currentPage);
-      currentPage = [];
-      usedHeight = 0;
-    }
-    currentPage.push(row);
-    usedHeight = currentPage.length === 1 ? row.height : usedHeight + rowGap + row.height;
-  });
-  if (currentPage.length) {
-    pages.push(currentPage);
-  }
-  return pages;
-}
-function measureAnalysisPdfPatternCard(context, scale, width, card) {
-  const lineWidth = width - (28 * scale);
-  context.font = `700 ${10 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const titleLineCount = Math.max(1, buildWrappedPdfLines(context, card.title, lineWidth).length);
-  context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const lineCount = Math.max(0, (card.lines || []).reduce((sum, line) => sum + Math.max(1, buildWrappedPdfLines(context, line, lineWidth).length), 0));
-  const profileCount = Array.isArray(card.profileEntries) ? card.profileEntries.length : 0;
-  const barCount = Array.isArray(card.barEntries) ? card.barEntries.length : 0;
-  const lineHeight = lineCount > 0 ? (lineCount * 11 * scale) : 0;
-  const profileHeight = profileCount > 0 ? (profileCount * 40 * scale) + (Math.max(0, profileCount - 1) * 8 * scale) : 0;
-  const barHeight = barCount > 0 ? (barCount * 28 * scale) + (Math.max(0, barCount - 1) * 8 * scale) : 0;
-  const contentHeight = Math.max(lineHeight, profileHeight, barHeight, 12 * scale);
-  return (26 * scale) + (titleLineCount * 12 * scale) + contentHeight + (24 * scale);
-}
-
-async function drawAnalysisPdfPatternCard(context, scale, x, y, width, cardHeight, card) {
-  fillRoundedRect(context, x, y, width, cardHeight, 18 * scale, "#ffffff");
-  strokeRoundedRect(context, x, y, width, cardHeight, 18 * scale, "#d7e3f5", 1 * scale);
-  context.fillStyle = "#13213c";
-  context.font = `700 ${10 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const maxWidth = width - (28 * scale);
-  const titleLines = buildWrappedPdfLines(context, card.title, maxWidth);
-  drawArchivePdfTextBlock(context, titleLines, x + (14 * scale), y + (14 * scale), 12 * scale);
-  context.fillStyle = "#415b81";
-  context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-  let lineY = y + (20 * scale) + (titleLines.length * 12 * scale);
-  if (Array.isArray(card.profileEntries) && card.profileEntries.length) {
-    for (const entry of card.profileEntries) {
-      const avatarSize = 24 * scale;
-      const avatarX = x + (14 * scale);
-      const avatarY = lineY;
-      const avatarBitmap = await loadAnalysisPdfAvatarBitmap(entry?.avatar || "");
-      if (avatarBitmap) {
-        drawCircularImageCover(context, avatarBitmap, avatarX, avatarY, avatarSize, "#eef4ff");
-      } else {
-        fillRoundedRect(context, avatarX, avatarY, avatarSize, avatarSize, 8 * scale, "#eef4ff");
-      }
-      const textX = avatarX + avatarSize + (8 * scale);
-      const textWidth = width - (textX - x) - (14 * scale);
-      context.fillStyle = "#13213c";
-      context.font = `700 ${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-      const title = String(entry?.displayName || entry?.handle || entry?.did || entry?.label || "").trim();
-      const titleLinesLocal = buildWrappedPdfLines(context, title, textWidth);
-      drawArchivePdfTextBlock(context, titleLinesLocal, textX, lineY, 10 * scale);
-      context.fillStyle = "#587192";
-      context.font = `${7.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-      const metaText = `@${String(entry?.handle || entry?.did || entry?.label || "").trim()} · ${formatAnalysisPercent(entry?.share ?? 0)}`;
-      const metaLines = buildWrappedPdfLines(context, metaText, textWidth);
-      drawArchivePdfTextBlock(context, metaLines, textX, lineY + (10 * scale), 9 * scale);
-      lineY += (32 * scale);
-    }
-    return;
-  }
-  if (Array.isArray(card.barEntries) && card.barEntries.length) {
-    const trackX = x + (14 * scale);
-    const labelWidth = 40 * scale;
-    const trackWidth = width - (28 * scale) - labelWidth - (8 * scale);
-    card.barEntries.forEach((entry) => {
-      const label = entry.labelKey ? t(entry.labelKey) : entry.label;
-      context.fillStyle = "#415b81";
-      context.font = `${8 * scale}px "Segoe UI", Aptos, sans-serif`;
-      context.fillText(label, trackX, lineY + (2 * scale));
-      const trackStartX = trackX + labelWidth;
-      fillRoundedRect(context, trackStartX, lineY, trackWidth, 12 * scale, 6 * scale, "#edf4ff");
-      fillRoundedRect(context, trackStartX, lineY, trackWidth * Math.max(0, Math.min(1, entry.share ?? entry.value ?? 0)), 12 * scale, 6 * scale, "#27b6a0");
-      context.fillStyle = "#13213c";
-      context.font = `700 ${7.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-      const valueText = formatAnalysisPercent(entry.share ?? entry.value ?? 0);
-      const valueWidth = context.measureText(valueText).width;
-      context.fillText(valueText, trackStartX + trackWidth - valueWidth, lineY + (1 * scale));
-      lineY += 20 * scale;
-    });
-    return;
-  }
-  (card.lines || []).forEach((line) => {
-    const wrapped = buildWrappedPdfLines(context, line, maxWidth);
-    drawArchivePdfTextBlock(context, wrapped, x + (14 * scale), lineY, 11 * scale);
-    lineY += Math.max(1, wrapped.length) * 11 * scale;
-  });
-}
-
-function measureAnalysisPdfScoreRow(context, scale, width, row) {
-  context.font = `${row.accent ? "700" : "400"} ${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const text = row.accent ? `${row.label}: ${row.value}` : row.label;
-  const lines = buildWrappedPdfLines(context, text, width - (24 * scale));
-  return {
-    lines,
-    height: Math.max(26 * scale, (lines.length * 11 * scale) + (14 * scale)),
-  };
-}
-
-function drawAnalysisPdfScoreRow(context, scale, x, y, width, row, measured) {
-  const boxColor = row.accent ? "#e8fbf7" : "#edf4ff";
-  const borderColor = row.accent ? "#bfeee3" : "#d0ddf6";
-  fillRoundedRect(context, x, y, width, measured.height, 13 * scale, boxColor);
-  strokeRoundedRect(context, x, y, width, measured.height, 13 * scale, borderColor, 1 * scale);
-  context.fillStyle = row.accent ? "#17927f" : "#3d5f8f";
-  context.font = `${row.accent ? "700" : "400"} ${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-  drawArchivePdfTextBlock(context, measured.lines, x + (12 * scale), y + (7 * scale), 11 * scale);
-}
-
-function measureAnalysisPdfInfoRow(context, scale, width, text, fontSize = 8.1, minHeight = 22 * scale) {
-  context.font = `${fontSize * scale}px "Segoe UI", Aptos, sans-serif`;
-  const lines = buildWrappedPdfLines(context, text, width);
-  return {
-    lines,
-    height: Math.max(minHeight, (Math.max(1, lines.length) * 11 * scale) + (10 * scale)),
-  };
-}
-
-function measureAnalysisPdfHeatmapHeight(scale, rowCount = 12) {
-  return (12 * scale) + (rowCount * 10 * scale) + (Math.max(0, rowCount - 1) * 4 * scale);
-}
-
-function drawAnalysisPdfHeatmapGrid(context, scale, x, y, width, heatmap = [], accent = "#27b6a0") {
-  const labelWidth = 34 * scale;
-  const gap = 4 * scale;
-  const innerWidth = width - labelWidth - gap;
-  const cellGap = 4 * scale;
-  const cellWidth = (innerWidth - (6 * cellGap)) / 7;
-  const cellHeight = 10 * scale;
-  const rowGap = 4 * scale;
-  const maxValue = Math.max(1, ...(Array.isArray(heatmap) ? heatmap.flat() : [0]));
-
-  context.fillStyle = "#587192";
-  context.font = `${7 * scale}px "Segoe UI", Aptos, sans-serif`;
-  for (let weekday = 0; weekday < 7; weekday += 1) {
-    context.fillText(getWeekdayLabel(weekday), x + labelWidth + (weekday * (cellWidth + cellGap)), y);
-  }
-
-  let rowY = y + (12 * scale);
-  (Array.isArray(heatmap) ? heatmap : []).forEach((row, rowIndex) => {
-    context.fillStyle = "#587192";
-    context.font = `${6.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(`${String(rowIndex * 2).padStart(2, "0")}`, x, rowY + (1 * scale));
-    row.forEach((value, columnIndex) => {
-      const alpha = Math.max(0.08, (Number(value) || 0) / maxValue);
-      fillRoundedRect(
-        context,
-        x + labelWidth + (columnIndex * (cellWidth + cellGap)),
-        rowY,
-        cellWidth,
-        cellHeight,
-        3 * scale,
-        accent === "#3f7cd6"
-          ? `rgba(63, 124, 214, ${alpha * 0.92})`
-          : `rgba(39, 182, 160, ${alpha * 0.92})`,
-      );
-    });
-    rowY += cellHeight + rowGap;
-  });
-  return rowY - y;
-}
-
-function measureAnalysisPdfTableRows(context, scale, rows, widths) {
-  return rows.map((row) => {
-    context.font = `${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-    const labelLines = buildWrappedPdfLines(context, row.label, widths.label);
-    const leftLines = buildWrappedPdfLines(context, row.left, widths.value);
-    const rightLines = buildWrappedPdfLines(context, row.right, widths.value);
-    const diffLines = buildWrappedPdfLines(context, row.diff, widths.diff);
-    const lineCount = Math.max(labelLines.length, leftLines.length, rightLines.length, diffLines.length, 1);
-    return {
-      ...row,
-      labelLines,
-      leftLines,
-      rightLines,
-      diffLines,
-      height: Math.max(24 * scale, (lineCount * 11 * scale) + (10 * scale)),
-    };
-  });
-}
-
-function buildAnalysisPdfTablePageLayouts(scale, cardWidth, contentHeight, rows, columns) {
-  const measureCanvas = document.createElement("canvas");
-  measureCanvas.width = 1190;
-  measureCanvas.height = 1684;
-  const measureContext = measureCanvas.getContext("2d");
-  const tableWidth = cardWidth - (36 * scale);
-  const widths = {
-    label: tableWidth * columns.label,
-    value: tableWidth * columns.value,
-    diff: tableWidth * columns.diff,
-  };
-  const measuredRows = measureAnalysisPdfTableRows(measureContext, scale, rows, widths);
-  const availableBodyHeight = Math.max(80 * scale, contentHeight - (92 * scale));
-  const pages = [];
-  let currentPage = [];
-  let usedHeight = 0;
-
-  measuredRows.forEach((row) => {
-    if (currentPage.length && (usedHeight + row.height) > availableBodyHeight) {
-      pages.push(currentPage);
-      currentPage = [];
-      usedHeight = 0;
-    }
-    currentPage.push(row);
-    usedHeight += row.height;
-  });
-
-  if (currentPage.length) {
-    pages.push(currentPage);
-  }
-  return { pages, widths };
-}
-
-async function renderAnalysisPdfOverviewPage(pageIndex, pageCount) {
-  const {
-    canvas,
-    context,
-    scale,
-    cursorY: initialCursorY,
-    cardX,
-    cardWidth,
-    columnGap,
-    columnWidth,
-  } = createAnalysisPdfBasePage(pageIndex, pageCount);
-  let cursorY = initialCursorY;
-
-  const drawAccountCard = (account, x, y, label) => {
-    const statRows = [
-      t("analysisSummaryPostsLoaded", { count: formatCount(account.posts.length) }),
-      t("analysisSummaryWordsLoaded", { count: formatCount(account.corpus.wordCount) }),
-      account.filters.rangeDays > 0 ? t("analysisSummaryRangeDays", { count: account.filters.rangeDays }) : t("analysisSummaryRangeAll"),
-      t("analysisSummaryPagesLoaded", { count: formatCount(account.stats.pages) }),
-      account.posts[0]?.createdAt
-        ? t("analysisSummaryLatestPost", { value: formatHistoryTimestamp(account.posts[0].createdAt) })
-        : t("analysisSummaryNoPreview"),
-    ];
-    const measuredRows = statRows.map((row) => measureAnalysisPdfInfoRow(context, scale, columnWidth - (48 * scale), row));
-    const rowsHeight = measuredRows.reduce((sum, row) => sum + row.height, 0) + (Math.max(0, measuredRows.length - 1) * 6 * scale);
-    const cardHeight = (78 * scale) + rowsHeight + (14 * scale);
-    fillRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#ffffff");
-    strokeRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#d7e3f5", 1 * scale);
-    context.fillStyle = "#27b6a0";
-    context.font = `700 ${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(label, x + (14 * scale), y + (14 * scale));
-    context.fillStyle = "#13213c";
-    context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(account.profile.displayName || account.profile.handle || account.profile.did, x + (14 * scale), y + (34 * scale));
-    context.fillStyle = "#577194";
-    context.font = `${10 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(`@${account.profile.handle || account.profile.did}`, x + (14 * scale), y + (52 * scale));
-
-    let statY = y + (78 * scale);
-    measuredRows.forEach((row) => {
-      fillRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), row.height, 11 * scale, "#edf4ff");
-      strokeRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), row.height, 11 * scale, "#d0ddf6", 1 * scale);
-      context.fillStyle = "#3d5f8f";
-      context.font = `${8.1 * scale}px "Segoe UI", Aptos, sans-serif`;
-      drawArchivePdfTextBlock(context, row.lines, x + (24 * scale), statY + (6 * scale), 11 * scale);
-      statY += row.height + (6 * scale);
-    });
-    return cardHeight;
-  };
-
-  const leftCardHeight = drawAccountCard(analysisAccountDataA, cardX, cursorY, t("analysisAccountALabel"));
-  const rightCardHeight = drawAccountCard(analysisAccountDataB, cardX + columnWidth + columnGap, cursorY, t("analysisAccountBLabel"));
-  cursorY += Math.max(leftCardHeight, rightCardHeight) + (16 * scale);
-
-  const summaryTextWidth = cardWidth - (36 * scale);
-  context.font = `${10 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const overallLines = buildWrappedPdfLines(
-    context,
-    t("analysisOverallScoreSummary", { value: formatAnalysisPercent(analysisComparisonResult.robustnessMix) }),
-    summaryTextWidth,
-  ).slice(0, 3);
-  const noteLines = buildWrappedPdfLines(context, t(analysisComparisonResult.confidenceKey), summaryTextWidth).slice(0, 4);
-  const scoreRows = getAnalysisPdfScoreRows().slice(1);
-  const scoreColumnGap = 12 * scale;
-  const scoreColumnWidth = ((cardWidth - (36 * scale)) - scoreColumnGap) / 2;
-  const scoreRowsPerColumn = Math.ceil(scoreRows.length / 2);
-  const leftScoreRows = scoreRows.slice(0, scoreRowsPerColumn);
-  const rightScoreRows = scoreRows.slice(scoreRowsPerColumn);
-  const measuredLeftScoreRows = leftScoreRows.map((row) => measureAnalysisPdfScoreRow(context, scale, scoreColumnWidth, row));
-  const measuredRightScoreRows = rightScoreRows.map((row) => measureAnalysisPdfScoreRow(context, scale, scoreColumnWidth, row));
-  const scoreRowCount = Math.max(measuredLeftScoreRows.length, measuredRightScoreRows.length);
-  const scoreRowsHeight = Array.from({ length: scoreRowCount }, (_, index) => {
-    const leftHeight = measuredLeftScoreRows[index]?.height || 0;
-    const rightHeight = measuredRightScoreRows[index]?.height || 0;
-    return Math.max(leftHeight, rightHeight, 26 * scale);
-  }).reduce((sum, height) => sum + height, 0) + (Math.max(0, scoreRowCount - 1) * 8 * scale);
-  const overallCardHeight = (140 * scale)
-    + (overallLines.length * 13 * scale)
-    + (noteLines.length * 13 * scale)
-    + scoreRowsHeight;
-
-  fillRoundedRect(context, cardX, cursorY, cardWidth, overallCardHeight, 18 * scale, "#ffffff");
-  strokeRoundedRect(context, cardX, cursorY, cardWidth, overallCardHeight, 18 * scale, "#d7e3f5", 1 * scale);
-  context.fillStyle = "#27b6a0";
-  context.font = `700 ${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(t("analysisOverallScoreLabel"), cardX + (18 * scale), cursorY + (18 * scale));
-  context.fillStyle = "#13213c";
-  context.font = `700 ${22 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(`${analysisComparisonResult.score}/100`, cardX + (18 * scale), cursorY + (34 * scale));
-  fillRoundedRect(context, cardX + (108 * scale), cursorY + (32 * scale), 220 * scale, 26 * scale, 13 * scale, "#e8fbf7");
-  context.fillStyle = "#27b6a0";
-  context.font = `700 ${11 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(t(analysisComparisonResult.labelKey), cardX + (122 * scale), cursorY + (39 * scale));
-  context.fillStyle = "#415b81";
-  context.font = `${10 * scale}px "Segoe UI", Aptos, sans-serif`;
-  drawArchivePdfTextBlock(context, overallLines, cardX + (18 * scale), cursorY + (70 * scale), 13 * scale);
-  const noteY = cursorY + (76 * scale) + (overallLines.length * 13 * scale);
-  drawArchivePdfTextBlock(context, noteLines, cardX + (18 * scale), noteY, 13 * scale);
-
-  let detailY = noteY + (noteLines.length * 13 * scale) + (16 * scale);
-  for (let index = 0; index < scoreRowCount; index += 1) {
-    const leftMeasured = measuredLeftScoreRows[index] || null;
-    const rightMeasured = measuredRightScoreRows[index] || null;
-    const rowHeight = Math.max(leftMeasured?.height || 0, rightMeasured?.height || 0, 26 * scale);
-    if (leftMeasured) {
-      drawAnalysisPdfScoreRow(
-        context,
-        scale,
-        cardX + (18 * scale),
-        detailY,
-        scoreColumnWidth,
-        leftScoreRows[index],
-        leftMeasured,
-      );
-    }
-    if (rightMeasured) {
-      drawAnalysisPdfScoreRow(
-        context,
-        scale,
-        cardX + (18 * scale) + scoreColumnWidth + scoreColumnGap,
-        detailY,
-        scoreColumnWidth,
-        rightScoreRows[index],
-        rightMeasured,
-      );
-    }
-    detailY += rowHeight + (8 * scale);
-  }
-  return canvas;
-}
-
-async function renderAnalysisPdfTablePage(pageIndex, pageCount, config) {
-  const {
-    canvas,
-    context,
-    scale,
-    cursorY: initialCursorY,
-    cardX,
-    cardWidth,
-  } = createAnalysisPdfBasePage(pageIndex, pageCount);
-  const {
-    title,
-    rows,
-    columns,
-    column4Title,
-  } = config;
-  const cursorY = initialCursorY;
-
-  const tableWidth = cardWidth - (36 * scale);
-  const tableColumns = {
-    label: tableWidth * columns.label,
-    value: tableWidth * columns.value,
-    diff: tableWidth * columns.diff,
-  };
-  const measuredRows = measureAnalysisPdfTableRows(context, scale, rows, tableColumns);
-  const tableBodyHeight = measuredRows.reduce((sum, row) => sum + row.height, 0);
-  const tableCardHeight = (74 * scale) + tableBodyHeight + (18 * scale);
-  fillRoundedRect(context, cardX, cursorY, cardWidth, tableCardHeight, 18 * scale, "#ffffff");
-  strokeRoundedRect(context, cardX, cursorY, cardWidth, tableCardHeight, 18 * scale, "#d7e3f5", 1 * scale);
-  context.fillStyle = "#13213c";
-  context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(title, cardX + (18 * scale), cursorY + (18 * scale));
-  const tableY = cursorY + (48 * scale);
-  const col1 = cardX + (18 * scale);
-  const col2 = col1 + tableColumns.label + (12 * scale);
-  const col3 = col2 + tableColumns.value + (12 * scale);
-  const col4 = col3 + tableColumns.value + (12 * scale);
-  context.fillStyle = "#587192";
-  context.font = `700 ${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(t("analysisMetricsColumnMetric"), col1, tableY);
-  context.fillText(t("analysisAccountALabel"), col2, tableY);
-  context.fillText(t("analysisAccountBLabel"), col3, tableY);
-  context.fillText(column4Title, col4, tableY);
-  let rowY = tableY + (18 * scale);
-  measuredRows.forEach((row, index) => {
-    if (index % 2 === 0) {
-      fillRoundedRect(context, cardX + (12 * scale), rowY - (4 * scale), cardWidth - (24 * scale), row.height, 10 * scale, "#f7faff");
-    }
-    context.fillStyle = "#17233a";
-    context.font = `${8.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-    drawArchivePdfTextBlock(context, row.labelLines, col1, rowY, 11 * scale);
-    drawArchivePdfTextBlock(context, row.leftLines, col2, rowY, 11 * scale);
-    drawArchivePdfTextBlock(context, row.rightLines, col3, rowY, 11 * scale);
-    drawArchivePdfTextBlock(context, row.diffLines, col4, rowY, 11 * scale);
-    rowY += row.height;
-  });
-  return canvas;
-}
-
-async function renderAnalysisPdfTemporalPage(pageIndex, pageCount) {
-  const {
-    canvas,
-    context,
-    scale,
-    cursorY: initialCursorY,
-    cardX,
-    cardWidth,
-    columnGap,
-    columnWidth,
-  } = createAnalysisPdfBasePage(pageIndex, pageCount);
-  let cursorY = initialCursorY;
-
-  const drawTemporalAccountCard = (account, x, y, title) => {
-    const noteLines = buildWrappedPdfLines(context, t("analysisTemporalUtcHint"), columnWidth - (28 * scale)).slice(0, 2);
-    const statRows = buildAnalysisTemporalSummaryItems(account?.temporal || null);
-    const measuredRows = statRows.map((item) => measureAnalysisPdfInfoRow(context, scale, columnWidth - (44 * scale), `${item.label}: ${item.value}`, 7.8, 22 * scale));
-    const rowsHeight = measuredRows.reduce((sum, row) => sum + row.height, 0) + (Math.max(0, measuredRows.length - 1) * 6 * scale);
-    const heatmapHeight = measureAnalysisPdfHeatmapHeight(scale);
-    const heatmapTitleY = y + (50 * scale) + (noteLines.length * 10 * scale) + rowsHeight + (12 * scale);
-    const heatmapY = heatmapTitleY + (16 * scale);
-    const cardHeight = (heatmapY - y) + heatmapHeight + (14 * scale);
-    fillRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#ffffff");
-    strokeRoundedRect(context, x, y, columnWidth, cardHeight, 18 * scale, "#d7e3f5", 1 * scale);
-    context.fillStyle = "#13213c";
-    context.font = `700 ${12 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(title, x + (14 * scale), y + (14 * scale));
-    context.fillStyle = "#587192";
-    context.font = `${8 * scale}px "Segoe UI", Aptos, sans-serif`;
-    drawArchivePdfTextBlock(context, noteLines, x + (14 * scale), y + (32 * scale), 10 * scale);
-
-    let statY = y + (50 * scale) + (noteLines.length * 10 * scale);
-    measuredRows.forEach((item) => {
-      fillRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), item.height, 11 * scale, "#edf4ff");
-      strokeRoundedRect(context, x + (14 * scale), statY, columnWidth - (28 * scale), item.height, 11 * scale, "#d0ddf6", 1 * scale);
-      context.fillStyle = "#3d5f8f";
-      context.font = `${7.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-      drawArchivePdfTextBlock(context, item.lines, x + (22 * scale), statY + (6 * scale), 11 * scale);
-      statY += item.height + (6 * scale);
-    });
-
-    context.fillStyle = "#284a78";
-    context.font = `700 ${9 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(t("analysisTemporalHeatmapTitle"), x + (14 * scale), heatmapTitleY);
-    drawAnalysisPdfHeatmapGrid(context, scale, x + (14 * scale), heatmapY, columnWidth - (28 * scale), account?.temporal?.heatmap || [], "#27b6a0");
-    return cardHeight;
-  };
-
-  const leftCardHeight = drawTemporalAccountCard(analysisAccountDataA, cardX, cursorY, t("analysisTemporalAccountATitle"));
-  const rightCardHeight = drawTemporalAccountCard(analysisAccountDataB, cardX + columnWidth + columnGap, cursorY, t("analysisTemporalAccountBTitle"));
-  cursorY += Math.max(leftCardHeight, rightCardHeight) + (16 * scale);
-
-  const overlapNoteLines = buildWrappedPdfLines(context, t("analysisTemporalOverlapHeatmapNote"), cardWidth - (36 * scale)).slice(0, 3);
-  const overlapHeatmapHeight = measureAnalysisPdfHeatmapHeight(scale);
-  const overlapCardHeight = (70 * scale) + (overlapNoteLines.length * 10 * scale) + overlapHeatmapHeight + (14 * scale);
-  fillRoundedRect(context, cardX, cursorY, cardWidth, overlapCardHeight, 18 * scale, "#ffffff");
-  strokeRoundedRect(context, cardX, cursorY, cardWidth, overlapCardHeight, 18 * scale, "#d7e3f5", 1 * scale);
-  context.fillStyle = "#13213c";
-  context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(t("analysisTemporalOverlapHeatmapTitle", { count: 10 }), cardX + (18 * scale), cursorY + (18 * scale));
-  context.fillStyle = "#587192";
-  context.font = `${8.2 * scale}px "Segoe UI", Aptos, sans-serif`;
-  drawArchivePdfTextBlock(context, overlapNoteLines, cardX + (18 * scale), cursorY + (38 * scale), 10 * scale);
-  const overlapHeatmap = computeAnalysisTemporalOverlapHeatmap(
-    analysisAccountDataA?.temporal?.timestamps || [],
-    analysisAccountDataB?.temporal?.timestamps || [],
-    10,
-  );
-  drawAnalysisPdfHeatmapGrid(context, scale, cardX + (18 * scale), cursorY + (50 * scale) + (overlapNoteLines.length * 10 * scale), cardWidth - (36 * scale), overlapHeatmap, "#3f7cd6");
-  return canvas;
-}
-
-async function renderAnalysisPdfPatternPage(pageIndex, pageCount, rows, title = t("analysisPdfPatternsTitle")) {
-  const {
-    canvas,
-    context,
-    scale,
-    cursorY: initialCursorY,
-    cardX,
-    cardWidth,
-    columnGap,
-  } = createAnalysisPdfBasePage(pageIndex, pageCount);
-  const patternWidth = (cardWidth - columnGap) / 2;
-  const rowGap = 14 * scale;
-  let cursorY = initialCursorY;
-
-  fillRoundedRect(context, cardX, cursorY, cardWidth, 46 * scale, 18 * scale, "#ffffff");
-  strokeRoundedRect(context, cardX, cursorY, cardWidth, 46 * scale, 18 * scale, "#d7e3f5", 1 * scale);
-  context.fillStyle = "#13213c";
-  context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(title, cardX + (18 * scale), cursorY + (16 * scale));
-  cursorY += 60 * scale;
-
-  for (const row of rows) {
-    await drawAnalysisPdfPatternCard(context, scale, cardX, cursorY, patternWidth, row.height, row.left);
-    if (row.right) {
-      await drawAnalysisPdfPatternCard(context, scale, cardX + patternWidth + columnGap, cursorY, patternWidth, row.height, row.right);
-    }
-    cursorY += row.height + rowGap;
-  }
-  return canvas;
-}
-
+/** Exports the current comparison through the analysis PDF renderer. @returns {Promise<void>} Completion. */
 async function exportAnalysisPdfReport() {
-  if (!analysisAccountDataA || !analysisAccountDataB || !analysisComparisonResult) {
-    throw new Error(t("analysisNeedComparison"));
-  }
-  const previewPage = createAnalysisPdfBasePage(0, 1);
-  const contentHeight = previewPage.contentBottom - previewPage.cursorY;
-  const temporalTablePages = buildAnalysisPdfTablePageLayouts(
-    previewPage.scale,
-    previewPage.cardWidth,
-    contentHeight,
-    getAnalysisPdfTemporalRows(),
-    { label: 0.34, value: 0.2, diff: 0.23 },
-  );
-  const networkTablePages = buildAnalysisPdfTablePageLayouts(
-    previewPage.scale,
-    previewPage.cardWidth,
-    contentHeight,
-    getAnalysisPdfNetworkRows(),
-    { label: 0.34, value: 0.2, diff: 0.23 },
-  );
-  const metricTablePages = buildAnalysisPdfTablePageLayouts(
-    previewPage.scale,
-    previewPage.cardWidth,
-    contentHeight,
-    getAnalysisPdfMetricRows(),
-    { label: 0.41, value: 0.16, diff: 0.27 },
-  );
-  const networkPatternPages = buildAnalysisPdfPatternPageLayoutsFromRows(
-    previewPage.scale,
-    previewPage.cardWidth,
-    previewPage.columnGap,
-    previewPage.contentBottom - (previewPage.cursorY + (60 * previewPage.scale)),
-    buildAnalysisPdfNetworkPatternRows(),
-  );
-  const patternPageRows = buildAnalysisPdfPatternPageLayouts(
-    previewPage.scale,
-    previewPage.cardWidth,
-    previewPage.columnGap,
-    previewPage.contentBottom - (previewPage.cursorY + (60 * previewPage.scale)),
-  );
-  const totalPages = 2
-    + temporalTablePages.pages.length
-    + networkTablePages.pages.length
-    + networkPatternPages.length
-    + metricTablePages.pages.length
-    + patternPageRows.length;
-  const pageCanvases = await Promise.all([
-    renderAnalysisPdfOverviewPage(0, totalPages),
-    renderAnalysisPdfTemporalPage(1, totalPages),
-    ...temporalTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2, totalPages, {
-      title: t("analysisTemporalTitle"),
-      rows,
-      columns: { label: 0.34, value: 0.2, diff: 0.23 },
-      column4Title: t("analysisTemporalColumnAssessment"),
-    })),
-    ...networkTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2 + temporalTablePages.pages.length, totalPages, {
-      title: t("analysisNetworkTitle"),
-      rows,
-      columns: { label: 0.34, value: 0.2, diff: 0.23 },
-      column4Title: t("analysisTemporalColumnAssessment"),
-    })),
-    ...networkPatternPages.map((rows, index) => renderAnalysisPdfPatternPage(
-      index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length,
-      totalPages,
-      rows,
-      t("analysisNetworkTitle"),
-    )),
-    ...metricTablePages.pages.map((rows, index) => renderAnalysisPdfTablePage(index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length + networkPatternPages.length, totalPages, {
-      title: t("analysisMetricsTitle"),
-      rows,
-      columns: { label: 0.41, value: 0.16, diff: 0.27 },
-      column4Title: t("analysisMetricsColumnDiff"),
-    })),
-    ...patternPageRows.map((rows, index) => renderAnalysisPdfPatternPage(index + 2 + temporalTablePages.pages.length + networkTablePages.pages.length + networkPatternPages.length + metricTablePages.pages.length, totalPages, rows)),
-  ]);
-  const pages = [];
-  for (const [pageIndex, canvas] of pageCanvases.entries()) {
-    const jpegBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-    const bytes = new Uint8Array(await jpegBlob.arrayBuffer());
-    pages.push({
-      content: `q 595 0 0 842 0 0 cm /PageImage${pageIndex + 1} Do Q`,
-      images: [{
-        name: `PageImage${pageIndex + 1}`,
-        width: canvas.width,
-        height: canvas.height,
-        bytes,
-      }],
-      annotations: [],
-    });
-  }
-  const blob = buildPdfFile(pages, {
-    title: t("analysisPdfTitle"),
-  });
-  const fileName = makeAnalysisExportFileName();
-  const file = new File([blob], fileName, { type: "application/pdf" });
-  await shareOrDownloadFile(file, fileName, { preferDownload: true });
-  setAnalysisStatus(t("analysisExportDone"));
+  return analysisPdfRenderer.export();
 }
 
+/** Updates analysis control availability. @returns {void} */
 function updateAnalysisControls() {
-  const hasAuth = Boolean(authAccount);
-  const actorA = normalizeAnalysisActor(analysisAccountAInput?.value || "");
-  const actorB = normalizeAnalysisActor(analysisAccountBInput?.value || "");
-  if (analysisAccountALoadButton) {
-    analysisAccountALoadButton.disabled = analysisLoading || !hasAuth || !actorA;
-  }
-  if (analysisAccountBLoadButton) {
-    analysisAccountBLoadButton.disabled = analysisLoading || !hasAuth || !actorB;
-  }
-  if (analysisAccountAOwnButton) {
-    analysisAccountAOwnButton.disabled = analysisLoading || !hasAuth;
-  }
-  if (analysisAccountBOwnButton) {
-    analysisAccountBOwnButton.disabled = analysisLoading || !hasAuth;
-  }
-  if (analysisCompareButton) {
-    analysisCompareButton.disabled = analysisLoading || !hasAuth || !actorA || !actorB;
-    analysisCompareButton.textContent = analysisLoading ? t("analysisLoadingButton") : t("analysisCompareButton");
-  }
-  if (analysisResetButton) {
-    analysisResetButton.disabled = analysisLoading || (!analysisAccountDataA && !analysisAccountDataB && !analysisComparisonResult && !actorA && !actorB);
-  }
-  if (analysisExportPdfButton) {
-    analysisExportPdfButton.disabled = analysisLoading || !analysisComparisonResult;
-  }
+  analysisController.controls();
 }
 
+/** Renders the complete analysis workspace through its domain controller. @returns {void} */
 function renderAnalysisWorkspace() {
-  renderAnalysisSummary();
-  renderAnalysisResult();
-  renderAnalysisTemporal();
-  renderAnalysisNetwork();
-  renderAnalysisMetrics();
-  renderAnalysisPatterns();
-  updateAnalysisControls();
-  setAnalysisStatus(analysisStatusLine || t("analysisStatusIdle"));
+  analysisWorkspaceController.render();
 }
 
-/**
- * Returns whether one analysis-account error is an expected validation result.
- * @param {unknown} error - Error returned from the service worker or loaders.
- * @returns {boolean} True when the error is expected and should stay out of the console.
- */
-function isExpectedAnalysisAccountError(error) {
-  const errorCode = String(error?.details?.code || "").trim();
-  return errorCode === "ANALYSIS_ACCOUNT_NOT_FOUND" || errorCode === "ANALYSIS_ACCOUNT_MISSING";
-}
 
 /**
  * Renders or clears a compact warning note below an account input.
@@ -15192,19 +11401,6 @@ function setAccountFieldNote(note, message = "") {
   note.hidden = normalizedMessage.length === 0;
 }
 
-/**
- * Renders or clears the inline validation note for one analysis-account field.
- * @param {"a"|"b"} slot - Analysis slot whose note should change.
- * @param {string} message - Visible validation message, or empty text to hide the note.
- * @returns {void}
- */
-function setAnalysisAccountFieldNote(slot, message = "") {
-  let note = analysisAccountBNote;
-  if (slot === "a") {
-    note = analysisAccountANote;
-  }
-  setAccountFieldNote(note, message);
-}
 
 /**
  * Renders or clears the inline validation note below the network-account field.
@@ -15224,245 +11420,19 @@ function setDmContactSearchFieldNote(message = "") {
   setAccountFieldNote(dmContactSearchNote, message);
 }
 
-async function loadAnalysisAccountForSlot(slot, { actor, requestToken } = {}) {
-  const normalizedActor = normalizeAnalysisActor(actor);
-  if (!normalizedActor) {
-    throw new Error(t(slot === "a" ? "analysisAccountAMissing" : "analysisAccountBMissing"));
-  }
-  const slotLabel = slot === "a" ? t("analysisAccountALabel") : t("analysisAccountBLabel");
-  const result = await sendToServiceWorker("LOAD_ANALYSIS_ACCOUNT", {
-    actor: normalizedActor,
-    options: getAnalysisOptions(),
-  }, {
-    timeoutMs: 180000,
-    onProgress(progress) {
-      if (requestToken !== analysisRequestToken) {
-        return;
-      }
-      const step = String(progress?.step || "").trim();
-      const detail = String(progress?.detail || "").trim();
-      setAnalysisStatus([slotLabel, step, detail].filter(Boolean).join(" - "));
-    },
-  });
-  if (requestToken !== analysisRequestToken) {
-    return null;
-  }
-  return normalizeAnalysisAccountData(result);
-}
 
-async function validateAnalysisAccountInput(slot, { silentSuccess = true } = {}) {
-  if (!authAccount || analysisLoading) {
-    return null;
-  }
-  const input = slot === "a" ? analysisAccountAInput : analysisAccountBInput;
-  const slotLabel = slot === "a" ? t("analysisAccountALabel") : t("analysisAccountBLabel");
-  const normalizedActor = normalizeAnalysisActor(input?.value || "");
-  const requestToken = ++analysisValidationTokens[slot];
 
-  if (input) {
-    input.setCustomValidity("");
-  }
-  setAnalysisAccountFieldNote(slot, "");
-  if (!normalizedActor) {
-    return null;
-  }
 
-  setAnalysisStatus(`${slotLabel} - ${t("analysisAccountCheckingStatus", { account: normalizedActor })}`);
 
-  try {
-    const result = await sendToServiceWorker("CHECK_ANALYSIS_ACCOUNT", {
-      actor: normalizedActor,
-    }, {
-      timeoutMs: 30000,
-    });
-    if (requestToken !== analysisValidationTokens[slot]) {
-      return null;
-    }
-    if (input) {
-      input.value = result?.handle || normalizedActor;
-      input.setCustomValidity("");
-    }
-    setAnalysisAccountFieldNote(slot, "");
-    if (!silentSuccess) {
-      setAnalysisStatus(t("analysisAccountValidatedStatus", {
-        slot: slot === "a" ? "A" : "B",
-        account: result?.handle || normalizedActor,
-      }));
-    } else if (!analysisComparisonResult && !analysisAccountDataA && !analysisAccountDataB) {
-      setAnalysisStatus(t("analysisStatusIdle"));
-    }
-    void persistSettings();
-    return result;
-  } catch (error) {
-    if (requestToken !== analysisValidationTokens[slot]) {
-      return null;
-    }
-    const message = error?.message || t("analysisLoadFailed");
-    if (input) {
-      input.setCustomValidity(message);
-    }
-    setAnalysisAccountFieldNote(slot, message);
-    setAnalysisStatus(message);
-    return null;
-  }
-}
 
-async function handleAnalysisAccountLoad(slot) {
-  if (!authAccount || analysisLoading) {
-    return;
-  }
-  const actor = slot === "a" ? analysisAccountAInput?.value : analysisAccountBInput?.value;
-  const requestToken = ++analysisRequestToken;
-  analysisLoading = true;
-  analysisComparisonResult = null;
-  updateAnalysisControls();
-  try {
-    const loaded = await loadAnalysisAccountForSlot(slot, { actor, requestToken });
-    if (!loaded || requestToken !== analysisRequestToken) {
-      return;
-    }
-    if (slot === "a") {
-      analysisAccountDataA = loaded;
-    } else {
-      analysisAccountDataB = loaded;
-    }
-    setAnalysisStatus(t("analysisAccountLoadedStatus", {
-      slot: slot === "a" ? "A" : "B",
-      account: loaded.profile.handle || loaded.profile.displayName || loaded.profile.did,
-    }));
-    renderAnalysisWorkspace();
-    await persistSettings();
-  } catch (error) {
-    if (!isExpectedAnalysisAccountError(error)) {
-      console.error(error);
-    }
-    setAnalysisAccountFieldNote(slot, error.message || t("analysisLoadFailed"));
-    setAnalysisStatus(error.message || t("analysisLoadFailed"));
-    showErrorDialog(error.message || t("analysisLoadFailed"), t("archiveErrorTitle"));
-  } finally {
-    if (requestToken === analysisRequestToken) {
-      analysisLoading = false;
-      updateAnalysisControls();
-    }
-  }
-}
-
-async function runAnalysisComparison() {
-  if (!authAccount || analysisLoading) {
-    return;
-  }
-  const actorA = analysisAccountAInput?.value || "";
-  const actorB = analysisAccountBInput?.value || "";
-  if (!normalizeAnalysisActor(actorA)) {
-    showErrorDialog(t("analysisAccountAMissing"), t("archiveErrorTitle"));
-    return;
-  }
-  if (!normalizeAnalysisActor(actorB)) {
-    showErrorDialog(t("analysisAccountBMissing"), t("archiveErrorTitle"));
-    return;
-  }
-
-  const requestToken = ++analysisRequestToken;
-  analysisLoading = true;
-  analysisComparisonResult = null;
-  updateAnalysisControls();
-
-  try {
-    const loadedA = await loadAnalysisAccountForSlot("a", { actor: actorA, requestToken });
-    const loadedB = await loadAnalysisAccountForSlot("b", { actor: actorB, requestToken });
-    if (!loadedA || !loadedB || requestToken !== analysisRequestToken) {
-      return;
-    }
-    analysisAccountDataA = loadedA;
-    analysisAccountDataB = loadedB;
-    analysisComparisonResult = compareAnalysisAccountsData(loadedA, loadedB);
-    setAnalysisStatus(t("analysisComparisonReady", {
-      left: loadedA.profile.handle || loadedA.profile.displayName || loadedA.profile.did,
-      right: loadedB.profile.handle || loadedB.profile.displayName || loadedB.profile.did,
-    }));
-    renderAnalysisWorkspace();
-    await persistSettings();
-  } catch (error) {
-    if (!isExpectedAnalysisAccountError(error)) {
-      console.error(error);
-    }
-    if (!analysisAccountDataA) {
-      setAnalysisAccountFieldNote("a", error.message || t("analysisLoadFailed"));
-    }
-    if (!analysisAccountDataB) {
-      setAnalysisAccountFieldNote("b", error.message || t("analysisLoadFailed"));
-    }
-    setAnalysisStatus(error.message || t("analysisLoadFailed"));
-    showErrorDialog(error.message || t("analysisLoadFailed"), t("archiveErrorTitle"));
-  } finally {
-    if (requestToken === analysisRequestToken) {
-      analysisLoading = false;
-      updateAnalysisControls();
-    }
-  }
-}
-
-function resetAnalysisWorkspace() {
-  analysisRequestToken += 1;
-  analysisLoading = false;
-  analysisStatusLine = "";
-  analysisAccountDataA = null;
-  analysisAccountDataB = null;
-  analysisComparisonResult = null;
-  if (analysisAccountAInput) {
-    analysisAccountAInput.value = "";
-  }
-  if (analysisAccountBInput) {
-    analysisAccountBInput.value = "";
-  }
-  if (analysisRangeSelect) {
-    analysisRangeSelect.value = "90";
-  }
-  if (analysisPostLimitSelect) {
-    analysisPostLimitSelect.value = "500";
-  }
-  if (analysisIncludeRepliesToggle) {
-    analysisIncludeRepliesToggle.checked = false;
-  }
-  if (analysisIncludeQuotesToggle) {
-    analysisIncludeQuotesToggle.checked = false;
-  }
-  renderAnalysisWorkspace();
-  void persistSettings();
-}
-
+/** Updates network filter visibility and active state. @returns {void} */
 function updateNetworkFilterButtons() {
-  const commonFilterAvailable = Boolean(
-    networkFilterCommonButton
-    && networkCommonMutualsTargetDid
-    && networkCommonMutualsTargetDid === networkSelectedDid
-    && networkCommonMutualsDids.size,
-  );
-  if (networkFilterCommonButton) {
-    networkFilterCommonButton.hidden = !commonFilterAvailable;
-  }
-  if (!commonFilterAvailable && networkFilterMode === "common") {
-    networkFilterMode = "all";
-  }
-  networkFilterButtons.forEach((button) => {
-    if (button.hidden) {
-      button.classList.remove("is-active");
-      button.setAttribute("aria-pressed", "false");
-      return;
-    }
-    const isActive = button.dataset.networkFilter === networkFilterMode;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-pressed", isActive ? "true" : "false");
-  });
+  networkWorkspaceRenderer.filters();
 }
 
+/** Renders loaded, mutual and visible network counts. @returns {void} */
 function renderNetworkSummary() {
-  const allNodes = getAllNetworkNodes();
-  const visibleNodes = getVisibleNetworkNodes();
-  const mutualCount = allNodes.filter((node) => getNetworkRelationType(node) === "mutual").length;
-  networkSummaryLoaded.textContent = formatCount(allNodes.length);
-  networkSummaryMutuals.textContent = formatCount(mutualCount);
-  networkSummaryVisible.textContent = formatCount(visibleNodes.length);
+  networkWorkspaceRenderer.summary();
 }
 
 function createSvgNode(tagName, attributes = {}) {
@@ -15475,1260 +11445,50 @@ function createSvgNode(tagName, attributes = {}) {
   return node;
 }
 
-function getNetworkOrbitAxes(radius) {
-  if (networkStageShape !== NETWORK_STAGE_SHAPE_SQUIRCLE) {
-    return {
-      radiusX: radius,
-      radiusY: radius,
-      exponent: 2,
-    };
-  }
 
-  return {
-    radiusX: radius * 1.18,
-    radiusY: radius * 0.88,
-    exponent: 4.6,
-  };
-}
-
-function getNetworkOrbitPoint(centerX, centerY, radius, angle) {
-  const orbit = getNetworkOrbitAxes(radius);
-  if (orbit.exponent <= 2.01) {
-    return {
-      x: centerX + Math.cos(angle) * orbit.radiusX,
-      y: centerY + Math.sin(angle) * orbit.radiusY,
-    };
-  }
-
-  const cosAngle = Math.cos(angle);
-  const sinAngle = Math.sin(angle);
-  const power = 2 / orbit.exponent;
-  return {
-    x: centerX + (Math.sign(cosAngle) * Math.pow(Math.abs(cosAngle), power) * orbit.radiusX),
-    y: centerY + (Math.sign(sinAngle) * Math.pow(Math.abs(sinAngle), power) * orbit.radiusY),
-  };
-}
-
+/** Builds a squircle orbit path. @param {number} centerX - Center X. @param {number} centerY - Center Y. @param {number} radius - Ring radius. @returns {string|null} Path or circle fallback. */
 function buildNetworkOrbitPath(centerX, centerY, radius) {
-  const orbit = getNetworkOrbitAxes(radius);
-  if (orbit.exponent <= 2.01) {
-    return null;
-  }
-
-  const segmentCount = 72;
-  const points = [];
-  for (let index = 0; index <= segmentCount; index += 1) {
-    const angle = (-Math.PI / 2) + ((index / segmentCount) * Math.PI * 2);
-    points.push(getNetworkOrbitPoint(centerX, centerY, radius, angle));
-  }
-  return points
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
-    .join(" ")
-    .concat(" Z");
+  return networkLayoutController.path(centerX, centerY, radius);
 }
 
+/** Resolves stage geometry for visible profiles. @param {object[]} nodes - Profiles. @param {string} selectedDid - Focus DID. @returns {object} Stage layout. */
 function computeNetworkLayout(nodes, selectedDid = "") {
-  const densityFactor = clamp((nodes.length - 90) / 220, 0, 1.35);
-  const hasFocusIsland = Boolean(String(selectedDid || "").trim());
-  const groups = {
-    mutual: nodes.filter((node) => getNetworkRelationType(node) === "mutual"),
-    followers: nodes.filter((node) => getNetworkRelationType(node) === "followers"),
-    following: nodes.filter((node) => getNetworkRelationType(node) === "following"),
-    other: nodes.filter((node) => getNetworkRelationType(node) === "other"),
-  };
-  const laneSpacing = 32 + Math.round(8 * densityFactor);
-  const ringGap = 92 + Math.round(12 * densityFactor);
-  const ringConfig = {
-    mutual: { baseRadius: 176 + Math.round(10 * densityFactor), capacity: 24 },
-    followers: { baseRadius: 0, capacity: 30 },
-    following: { baseRadius: 0, capacity: 36 },
-    other: { baseRadius: 0, capacity: 42 },
-  };
-  const laneCounts = {
-    mutual: Math.max(1, Math.ceil(groups.mutual.length / ringConfig.mutual.capacity)),
-    followers: Math.max(1, Math.ceil(groups.followers.length / ringConfig.followers.capacity)),
-    following: Math.max(1, Math.ceil(groups.following.length / ringConfig.following.capacity)),
-    other: Math.max(1, Math.ceil(groups.other.length / ringConfig.other.capacity)),
-  };
-
-  ringConfig.followers.baseRadius = ringConfig.mutual.baseRadius + ((laneCounts.mutual - 1) * laneSpacing) + ringGap;
-  ringConfig.following.baseRadius = ringConfig.followers.baseRadius + ((laneCounts.followers - 1) * laneSpacing) + ringGap;
-  ringConfig.other.baseRadius = ringConfig.following.baseRadius + ((laneCounts.following - 1) * laneSpacing) + ringGap;
-
-  const outerRadius = ringConfig.other.baseRadius + ((laneCounts.other - 1) * laneSpacing);
-  const width = Math.max(960, Math.round((outerRadius * 2) + 320));
-  const height = hasFocusIsland
-    ? Math.max(1040, Math.round(outerRadius + 640))
-    : Math.max(880, Math.round((outerRadius * 2) + 240));
-  const centerX = width / 2;
-  const centerY = hasFocusIsland
-    ? 350 + Math.round(34 * densityFactor)
-    : Math.round(height / 2);
-  const focusCenterY = hasFocusIsland
-    ? Math.min(height - 190, centerY + outerRadius + (104 + Math.round(32 * densityFactor)))
-    : 0;
-
-  const positions = new Map();
-  Object.entries(groups).forEach(([groupName, groupNodes]) => {
-    const config = ringConfig[groupName] || ringConfig.other;
-    groupNodes.forEach((node) => {
-      const slot = ensureNetworkStageSlot(node);
-      const absoluteIndex = slot?.index || 0;
-      const lane = Math.floor(absoluteIndex / config.capacity);
-      const indexWithinLane = absoluteIndex % config.capacity;
-      const radius = config.baseRadius + (lane * laneSpacing);
-      const angle = (-Math.PI / 2)
-        + ((indexWithinLane / config.capacity) * Math.PI * 2)
-        + (lane * 0.12);
-      positions.set(node.did, getNetworkOrbitPoint(centerX, centerY, radius, angle));
-    });
-  });
-
-  return {
-    width,
-    height,
-    centerX,
-    centerY,
-    densityFactor,
-    ringRadii: {
-      mutual: ringConfig.mutual.baseRadius,
-      followers: ringConfig.followers.baseRadius,
-      following: ringConfig.following.baseRadius,
-    },
-    focusCenterY,
-    hasFocusIsland,
-    positions,
-  };
+  return networkLayoutController.layout(nodes, selectedDid);
 }
 
+/** Renders the complete template-based network SVG stage. @returns {void} */
 function renderNetworkStage() {
-  getAllNetworkNodes().forEach((node) => {
-    ensureNetworkStageSlot(node);
-  });
-  const visibleNodes = getVisibleNetworkNodes();
-  if (!visibleNodes.some((node) => node.did === networkHoveredDid)) {
-    setNetworkHoveredAccount("");
-  } else if (networkHoveredDid) {
-    setNetworkHoveredAccount(networkHoveredDid);
-  }
-  const selectedDid = getPreferredNetworkSelection(visibleNodes);
-  const stageSelectedDid = networkSelectedDid || selectedDid;
-  networkStageSvg.replaceChildren();
-  const hasData = visibleNodes.length > 0 || Boolean(networkViewerProfile?.did || authAccountDid);
-  networkStageEmpty.hidden = hasData;
-
-  const layout = computeNetworkLayout(visibleNodes, stageSelectedDid);
-  layout.contentBounds = computeNetworkStageContentBounds(layout, visibleNodes, stageSelectedDid);
-  const viewport = getNetworkStageViewport(layout);
-  networkStageSvg.setAttribute("viewBox", `${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`);
-  const activeCommonMutualDids = getActiveNetworkCommonMutualDids(stageSelectedDid);
-
-  const defs = createSvgNode("defs");
-  const stageGlow = createSvgNode("radialGradient", { id: "network-stage-glow" });
-  stageGlow.append(
-    createSvgNode("stop", { offset: "0%", "stop-color": "#58caff", "stop-opacity": "0.7" }),
-    createSvgNode("stop", { offset: "55%", "stop-color": "#58caff", "stop-opacity": "0.12" }),
-    createSvgNode("stop", { offset: "100%", "stop-color": "#58caff", "stop-opacity": "0" }),
-  );
-  defs.appendChild(stageGlow);
-  networkStageSvg.appendChild(defs);
-
-  const background = createSvgNode("g");
-  [
-    { radius: layout.ringRadii.mutual, color: "rgba(62, 160, 221, 0.24)" },
-    { radius: layout.ringRadii.followers, color: "rgba(62, 160, 221, 0.18)" },
-    { radius: layout.ringRadii.following, color: "rgba(62, 160, 221, 0.12)" },
-  ].forEach((entry) => {
-    const orbitPath = buildNetworkOrbitPath(layout.centerX, layout.centerY, entry.radius);
-    background.appendChild(createSvgNode(orbitPath ? "path" : "circle", orbitPath
-      ? {
-          d: orbitPath,
-          fill: "none",
-          stroke: entry.color,
-          "stroke-width": 1.5,
-        }
-      : {
-          cx: layout.centerX,
-          cy: layout.centerY,
-          r: entry.radius,
-          fill: "none",
-          stroke: entry.color,
-          "stroke-width": 1.5,
-        }));
-  });
-  background.appendChild(createSvgNode("circle", {
-    cx: layout.centerX,
-    cy: layout.centerY,
-    r: 110,
-    fill: "url(#network-stage-glow)",
-  }));
-  networkStageSvg.appendChild(background);
-
-  const edgeLayer = createSvgNode("g");
-  visibleNodes.forEach((node) => {
-    const point = layout.positions.get(node.did);
-    if (!point) {
-      return;
-    }
-    const isSelected = node.did === stageSelectedDid;
-    edgeLayer.appendChild(createSvgNode("line", {
-      x1: layout.centerX,
-      y1: layout.centerY,
-      x2: point.x,
-      y2: point.y,
-      stroke: isSelected ? "rgba(98, 229, 205, 0.95)" : "rgba(111, 154, 220, 0.26)",
-      "stroke-width": isSelected ? 2.2 : 1.1,
-    }));
-  });
-  networkStageSvg.appendChild(edgeLayer);
-
-  const viewerLayer = createSvgNode("g");
-  viewerLayer.appendChild(createSvgNode("circle", {
-    cx: layout.centerX,
-    cy: layout.centerY,
-    r: 46,
-    fill: "rgba(98, 229, 205, 0.92)",
-    stroke: "rgba(255, 255, 255, 0.92)",
-    "stroke-width": 2,
-  }));
-  const viewerText = createSvgNode("text", {
-    x: layout.centerX,
-    y: layout.centerY + 7,
-    "text-anchor": "middle",
-    fill: "#091320",
-    "font-size": 20,
-    "font-weight": 800,
-  });
-  viewerText.textContent = networkAccountDid === authAccountDid
-    ? "DU"
-    : getProfileInitials(networkViewerProfile || { handle: "?" });
-  viewerLayer.appendChild(viewerText);
-  const viewerHandleText = createSvgNode("text", {
-    x: layout.centerX,
-    y: layout.centerY + 76,
-    "text-anchor": "middle",
-    class: "network-node-label",
-  });
-  viewerHandleText.textContent = `@${networkViewerProfile?.handle || authAccount || "account"}`;
-  viewerLayer.appendChild(viewerHandleText);
-  networkStageSvg.appendChild(viewerLayer);
-
-  let focusLayer = null;
-
-  if (stageSelectedDid) {
-    const selectedProfile = getKnownNetworkProfile(stageSelectedDid);
-    const focusPreviewItems = getNetworkStageFocusPreviewItems(stageSelectedDid);
-    const focusCenterX = layout.centerX;
-    const focusCenterY = layout.focusCenterY;
-    const focusRadius = 108;
-    focusLayer = createSvgNode("g", {
-      class: "network-focus-island",
-    });
-    const focusShield = createSvgNode("circle", {
-      cx: focusCenterX,
-      cy: focusCenterY,
-      r: focusRadius + 42,
-      fill: "rgba(0, 0, 0, 0.001)",
-    });
-    const stopFocusIslandEvent = (event) => {
-      event.stopPropagation();
-    };
-    focusShield.addEventListener("pointerdown", stopFocusIslandEvent);
-    focusShield.addEventListener("click", stopFocusIslandEvent);
-    focusShield.addEventListener("dblclick", stopFocusIslandEvent);
-    focusLayer.appendChild(focusShield);
-
-    focusLayer.appendChild(createSvgNode("circle", {
-      cx: focusCenterX,
-      cy: focusCenterY,
-      r: focusRadius + 18,
-      fill: "rgba(11, 26, 48, 0.4)",
-      stroke: "rgba(95, 157, 255, 0.1)",
-      "stroke-width": 1,
-    }));
-    focusLayer.appendChild(createSvgNode("circle", {
-      cx: focusCenterX,
-      cy: focusCenterY,
-      r: focusRadius,
-      fill: "none",
-      stroke: "rgba(96, 174, 255, 0.24)",
-      "stroke-width": 1.6,
-      "stroke-dasharray": "4 8",
-    }));
-
-    const focusBridge = createSvgNode("line", {
-      x1: layout.centerX,
-      y1: layout.centerY + 56,
-      x2: focusCenterX,
-      y2: focusCenterY - focusRadius,
-      stroke: "rgba(98, 229, 205, 0.28)",
-      "stroke-width": 1.8,
-    });
-    focusLayer.appendChild(focusBridge);
-
-    const focusHint = createSvgNode("text", {
-      x: focusCenterX,
-      y: focusCenterY - focusRadius - 18,
-      "text-anchor": "middle",
-      class: "network-stage-hint network-stage-hint-focus",
-    });
-    focusHint.textContent = t("networkFocusEyebrow");
-    focusLayer.appendChild(focusHint);
-
-    const focusCenterGroup = createSvgNode("g", {
-      class: "network-node-button network-node-button-focus-center",
-      tabindex: 0,
-      role: "button",
-      "aria-label": `${selectedProfile?.displayName || selectedProfile?.handle || stageSelectedDid} · ${t("networkFocusEyebrow")}`,
-    });
-    focusCenterGroup.style.cursor = "pointer";
-    focusCenterGroup.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-    });
-    focusCenterGroup.addEventListener("mouseenter", () => {
-      setNetworkHoveredAccount(stageSelectedDid);
-    });
-    focusCenterGroup.addEventListener("mouseleave", () => {
-      if (networkHoveredDid === stageSelectedDid) {
-        setNetworkHoveredAccount("");
-      }
-    });
-    focusCenterGroup.addEventListener("focus", () => {
-      setNetworkHoveredAccount(stageSelectedDid);
-    });
-    focusCenterGroup.addEventListener("blur", () => {
-      if (networkHoveredDid === stageSelectedDid) {
-        setNetworkHoveredAccount("");
-      }
-    });
-    focusCenterGroup.addEventListener("click", (event) => {
-      event.stopPropagation();
-      setNetworkSelection(stageSelectedDid);
-    });
-    focusCenterGroup.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        event.stopPropagation();
-        setNetworkSelection(stageSelectedDid);
-      }
-    });
-    if (selectedProfile) {
-      const title = createSvgNode("title");
-      title.textContent = getProfileLabel(selectedProfile);
-      focusCenterGroup.appendChild(title);
-    }
-
-    focusCenterGroup.appendChild(createSvgNode("circle", {
-      cx: focusCenterX,
-      cy: focusCenterY,
-      r: 30,
-      fill: "rgba(98, 229, 205, 0.92)",
-      stroke: "#ffffff",
-      "stroke-width": 2.2,
-    }));
-    const focusInitials = createSvgNode("text", {
-      x: focusCenterX,
-      y: focusCenterY + 5,
-      "text-anchor": "middle",
-      fill: "#091320",
-      "font-size": 15,
-      "font-weight": 800,
-    });
-    focusInitials.textContent = getProfileInitials(selectedProfile || networkNodes.get(stageSelectedDid) || { handle: "?" });
-    focusCenterGroup.appendChild(focusInitials);
-
-    const focusHandle = createSvgNode("text", {
-      x: focusCenterX,
-      y: focusCenterY + 54,
-      "text-anchor": "middle",
-      class: "network-node-label",
-    });
-    focusHandle.textContent = `@${selectedProfile?.handle || networkNodes.get(stageSelectedDid)?.handle || "user"}`;
-    focusCenterGroup.appendChild(focusHandle);
-    focusLayer.appendChild(focusCenterGroup);
-
-    if (activeCommonMutualDids.size) {
-      const commonLinkLayer = createSvgNode("g", {
-        class: "network-common-mutual-layer",
-      });
-      activeCommonMutualDids.forEach((did) => {
-        const point = layout.positions.get(did);
-        if (!point) {
-          return;
-        }
-        commonLinkLayer.appendChild(createSvgNode("line", {
-          x1: focusCenterX,
-          y1: focusCenterY,
-          x2: point.x,
-          y2: point.y,
-          stroke: "rgba(92, 231, 207, 0.72)",
-          "stroke-width": 2.2,
-          "stroke-dasharray": "5 6",
-        }));
-      });
-      focusLayer.appendChild(commonLinkLayer);
-    }
-
-    focusPreviewItems.forEach((entry, index) => {
-      const angle = (-Math.PI / 2) + ((index / Math.max(1, focusPreviewItems.length)) * Math.PI * 2);
-      const orbitRadius = 76;
-      const pointX = focusCenterX + Math.cos(angle) * orbitRadius;
-      const pointY = focusCenterY + Math.sin(angle) * orbitRadius;
-      const previewColor = entry.previewRelation === "followers" ? "#69a9ff" : "#f8c26c";
-      const previewGroup = createSvgNode("g", {
-        class: "network-node-button network-node-button-preview",
-        tabindex: 0,
-        role: "button",
-        "aria-label": `${entry.displayName || entry.handle || entry.did} · ${entry.previewRelation === "followers" ? t("networkPreviewFollowersTitle") : t("networkPreviewFollowingTitle")}`,
-      });
-      previewGroup.style.cursor = "pointer";
-      previewGroup.addEventListener("pointerdown", (event) => {
-        event.stopPropagation();
-      });
-      previewGroup.addEventListener("mouseenter", () => {
-        setNetworkHoveredAccount(entry.did);
-      });
-      previewGroup.addEventListener("mouseleave", () => {
-        if (networkHoveredDid === entry.did) {
-          setNetworkHoveredAccount("");
-        }
-      });
-      previewGroup.addEventListener("focus", () => {
-        setNetworkHoveredAccount(entry.did);
-      });
-      previewGroup.addEventListener("blur", () => {
-        if (networkHoveredDid === entry.did) {
-          setNetworkHoveredAccount("");
-        }
-      });
-      previewGroup.addEventListener("click", (event) => {
-        event.stopPropagation();
-        setNetworkSelection(entry.did, {
-          previewTab: entry.previewRelation,
-          loadDetails: true,
-        });
-      });
-      previewGroup.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          event.stopPropagation();
-          setNetworkSelection(entry.did, {
-            previewTab: entry.previewRelation,
-            loadDetails: true,
-          });
-        }
-      });
-      previewGroup.appendChild(createSvgNode("line", {
-        x1: focusCenterX,
-        y1: focusCenterY,
-        x2: pointX,
-        y2: pointY,
-        stroke: "rgba(152, 196, 255, 0.32)",
-        "stroke-width": 1.2,
-      }));
-      previewGroup.appendChild(createSvgNode("circle", {
-        cx: pointX,
-        cy: pointY,
-        r: 16,
-        fill: previewColor,
-        stroke: "rgba(255, 255, 255, 0.82)",
-        "stroke-width": 1.4,
-      }));
-      const previewInitials = createSvgNode("text", {
-        x: pointX,
-        y: pointY + 4,
-        "text-anchor": "middle",
-        fill: "#091320",
-        "font-size": 10,
-        "font-weight": 800,
-      });
-      previewInitials.textContent = getProfileInitials(entry);
-      previewGroup.appendChild(previewInitials);
-      const previewTitle = createSvgNode("title");
-      previewTitle.textContent = getProfileLabel(entry);
-      previewGroup.appendChild(previewTitle);
-      focusLayer.appendChild(previewGroup);
-    });
-
-  }
-
-  const nodeLayer = createSvgNode("g");
-  const labelCandidates = getNetworkStageLabelCandidates(visibleNodes, stageSelectedDid);
-
-  visibleNodes.forEach((node) => {
-    const point = layout.positions.get(node.did);
-    if (!point) {
-      return;
-    }
-    const relation = getNetworkRelationType(node);
-    const isSelected = node.did === stageSelectedDid;
-    const radius = isSelected ? 22 : (relation === "mutual" ? 18 : 15);
-    const isCommonMutual = activeCommonMutualDids.has(node.did);
-    const color = relation === "mutual"
-      ? "#5ce7cf"
-      : (relation === "followers" ? "#69a9ff" : (relation === "following" ? "#f8c26c" : "#bac6d6"));
-
-    const buttonGroup = createSvgNode("g", {
-      class: "network-node-button",
-      tabindex: 0,
-      role: "button",
-        "aria-label": `${node.displayName || node.handle || node.did} · ${getNetworkRelationLabel(node)}`,
-    });
-    buttonGroup.style.cursor = "pointer";
-    buttonGroup.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-    });
-    buttonGroup.addEventListener("mouseenter", () => {
-      setNetworkHoveredAccount(node.did);
-    });
-    buttonGroup.addEventListener("mouseleave", () => {
-      if (networkHoveredDid === node.did) {
-        setNetworkHoveredAccount("");
-      }
-    });
-    buttonGroup.addEventListener("focus", () => {
-      setNetworkHoveredAccount(node.did);
-    });
-    buttonGroup.addEventListener("blur", () => {
-      if (networkHoveredDid === node.did) {
-        setNetworkHoveredAccount("");
-      }
-    });
-    buttonGroup.addEventListener("click", (event) => {
-      event.stopPropagation();
-      setNetworkSelection(node.did);
-    });
-    buttonGroup.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        event.stopPropagation();
-        setNetworkSelection(node.did);
-      }
-    });
-    const title = createSvgNode("title");
-    title.textContent = getProfileLabel(node);
-    buttonGroup.appendChild(title);
-
-    buttonGroup.appendChild(createSvgNode("circle", {
-      cx: point.x,
-      cy: point.y,
-      r: radius + (isSelected ? 5 : 0),
-      fill: isSelected ? "rgba(255, 255, 255, 0.16)" : "rgba(255, 255, 255, 0.04)",
-    }));
-    if (isCommonMutual) {
-      buttonGroup.appendChild(createSvgNode("circle", {
-        cx: point.x,
-        cy: point.y,
-        r: radius + 10,
-        fill: "rgba(92, 231, 207, 0.08)",
-        stroke: "rgba(92, 231, 207, 0.34)",
-        "stroke-width": 6,
-      }));
-      buttonGroup.appendChild(createSvgNode("circle", {
-        cx: point.x,
-        cy: point.y,
-        r: radius + 7,
-        fill: "none",
-        stroke: "rgba(255, 255, 255, 0.92)",
-        "stroke-width": 2.2,
-      }));
-      buttonGroup.appendChild(createSvgNode("circle", {
-        cx: point.x,
-        cy: point.y,
-        r: radius + 4,
-        fill: "none",
-        stroke: "rgba(92, 231, 207, 1)",
-        "stroke-width": 2.8,
-        "stroke-dasharray": "4 4",
-      }));
-    }
-    buttonGroup.appendChild(createSvgNode("circle", {
-      cx: point.x,
-      cy: point.y,
-      r: radius,
-      fill: color,
-      stroke: isSelected ? "#ffffff" : "rgba(255, 255, 255, 0.38)",
-      "stroke-width": isSelected ? 2.4 : 1.4,
-    }));
-    const initials = createSvgNode("text", {
-      x: point.x,
-      y: point.y + 5,
-      "text-anchor": "middle",
-      fill: "#06111f",
-      "font-size": isSelected ? 14 : 12,
-      "font-weight": 800,
-    });
-    initials.textContent = getProfileInitials(node);
-    buttonGroup.appendChild(initials);
-
-    if (labelCandidates.includes(node.did)) {
-      const label = createSvgNode("text", {
-        x: point.x,
-        y: point.y + radius + 22,
-        "text-anchor": "middle",
-        class: "network-node-label",
-      });
-      label.textContent = `@${node.handle || "user"}`;
-      buttonGroup.appendChild(label);
-    }
-
-    nodeLayer.appendChild(buttonGroup);
-  });
-  networkStageSvg.appendChild(nodeLayer);
-  if (focusLayer) {
-    networkStageSvg.appendChild(focusLayer);
-  }
-
-  if (!hasData) {
-    const emptyHint = createSvgNode("text", {
-      x: layout.centerX,
-      y: layout.centerY - 12,
-      "text-anchor": "middle",
-      class: "network-stage-hint",
-    });
-    emptyHint.textContent = t("networkEmpty");
-    networkStageSvg.appendChild(emptyHint);
-  }
+  networkStageRenderer.render();
 }
 
+/** Renders the complete template-based network focus card. @returns {void} */
 function renderNetworkFocus() {
-  const fallback = document.createElement("p");
-  fallback.className = "settings-note";
-  fallback.textContent = networkNodes.size ? t("networkFocusEmpty") : t("networkEmpty");
-  if (!networkSelectedDid) {
-    networkFocusCard.replaceChildren(fallback);
-    return;
-  }
-  const selectedProfile = networkSelectedDid ? getKnownNetworkProfile(networkSelectedDid) : null;
-  const node = networkSelectedDid ? networkNodes.get(networkSelectedDid) : null;
-  const focusData = networkSelectedDid ? networkFocusDetails.get(networkSelectedDid) || null : null;
-  const active = focusData?.profile || selectedProfile || node || networkViewerProfile || null;
-  networkFocusCard.replaceChildren();
-
-  if (!active) {
-    networkFocusCard.appendChild(fallback);
-    return;
-  }
-
-  const shell = document.createElement("div");
-  shell.className = "network-focus-shell";
-  const summary = document.createElement("section");
-  summary.className = "network-focus-summary";
-
-  const header = document.createElement("div");
-  header.className = "network-focus-head";
-  const badge = document.createElement("div");
-  badge.className = "network-avatar-badge";
-  const activeAvatarUri = active.did ? getStoredAccountAvatarUri(active) : (active.avatar || "");
-  const image = document.createElement("img");
-  setAvatarImage(image, activeAvatarUri, active.displayName || active.handle || "avatar");
-  badge.appendChild(image);
-
-  const copy = document.createElement("div");
-  copy.className = "network-avatar-copy";
-  const name = document.createElement("strong");
-  name.textContent = active.displayName || active.handle || authAccount || t("networkViewerFallback");
-  const handle = document.createElement("span");
-  handle.className = "network-handle";
-  handle.textContent = `@${active.handle || authAccount || "account"}`;
-  copy.append(name, handle);
-  header.append(badge, copy);
-
-  const relation = document.createElement("span");
-  relation.className = "network-relation-pill";
-  relation.textContent = node ? getNetworkRelationLabel(node) : t("networkRelationViewer");
-
-  const focusActions = document.createElement("div");
-  focusActions.className = "network-focus-actions";
-  if (active?.did) {
-    const loadActorNetworkButton = document.createElement("button");
-    loadActorNetworkButton.type = "button";
-    loadActorNetworkButton.className = "ghost-button network-focus-action-button";
-    loadActorNetworkButton.textContent = t("networkFocusLoadActorButton");
-    loadActorNetworkButton.disabled = networkLoading || active.did === networkAccountDid;
-    loadActorNetworkButton.addEventListener("click", () => {
-      if (networkAccountInput) {
-        networkAccountInput.value = active.handle || active.did || "";
-      }
-      void loadNetworkWave({
-        actor: active.did || active.handle || "",
-        append: false,
-        silentErrors: false,
-      });
-    });
-    focusActions.appendChild(loadActorNetworkButton);
-
-    const commonMutualsButton = document.createElement("button");
-    commonMutualsButton.type = "button";
-    commonMutualsButton.className = "ghost-button network-focus-action-button";
-    const commonMutualsActive = networkCommonMutualsTargetDid === active.did;
-    commonMutualsButton.textContent = commonMutualsActive
-      ? t("networkCommonMutualsHideButton")
-      : t("networkCommonMutualsShowButton");
-    commonMutualsButton.disabled = networkLoading || networkCommonMutualsLoadingDid === active.did || active.did === networkAccountDid;
-    commonMutualsButton.addEventListener("click", () => {
-      if (networkCommonMutualsTargetDid === active.did) {
-        clearNetworkCommonMutuals();
-        renderNetworkWorkspace();
-        return;
-      }
-      void loadNetworkCommonMutuals(active.did);
-    });
-    focusActions.appendChild(commonMutualsButton);
-  }
-
-  const stats = document.createElement("div");
-  stats.className = "network-stat-grid";
-  [
-    { label: t("networkStatFollowers"), value: formatCount(active.followersCount) },
-    { label: t("networkStatFollowing"), value: formatCount(active.followsCount) },
-    { label: t("networkStatPosts"), value: formatCount(active.postsCount) },
-    { label: t("networkStatScore"), value: node ? formatCount(getNetworkNodeScore(node)) : "—" },
-  ].forEach((item) => {
-    const card = document.createElement("div");
-    card.className = "network-stat-card";
-    const label = document.createElement("span");
-    label.textContent = item.label;
-    const value = document.createElement("strong");
-    value.textContent = item.value;
-    card.append(label, value);
-    stats.appendChild(card);
-  });
-
-  summary.append(header, relation, focusActions, stats);
-
-  if (node) {
-    const scoreBreakdown = getNetworkScoreBreakdown(node);
-    const scoreExplain = document.createElement("p");
-    scoreExplain.className = "network-card-explainer";
-    scoreExplain.textContent = t(isViewingOwnNetwork() ? "networkScoreExplain" : "networkScoreExplainOther", {
-      score: formatCount(scoreBreakdown.total),
-      relation: getNetworkRelationLabel(node),
-      account: getNetworkCenterLabel(),
-      relationScore: formatCount(scoreBreakdown.relationScore),
-      followersScore: formatCount(scoreBreakdown.followersScore),
-      postsScore: formatCount(scoreBreakdown.postsScore),
-    });
-    summary.appendChild(scoreExplain);
-  }
-
-  if (active?.did === networkCommonMutualsTargetDid) {
-    const commonMeta = document.createElement("div");
-    commonMeta.className = "network-relationship-meta";
-    const commonCount = document.createElement("p");
-    commonCount.className = "network-card-explainer network-card-explainer-strong";
-    commonCount.textContent = networkCommonMutualsDids.size
-      ? t("networkCommonMutualsCount", {
-          count: formatCount(networkCommonMutualsDids.size),
-        })
-      : t("networkCommonMutualsZero");
-    commonMeta.appendChild(commonCount);
-    const commonWhere = document.createElement("p");
-    commonWhere.className = "network-card-explainer";
-    commonWhere.textContent = t("networkCommonMutualsWhereShown");
-    commonMeta.appendChild(commonWhere);
-    const commonSample = document.createElement("p");
-    commonSample.className = "network-card-explainer";
-    commonSample.textContent = t("networkCommonMutualsSampleNote");
-    commonMeta.appendChild(commonSample);
-    summary.appendChild(commonMeta);
-  } else if (networkCommonMutualsLoadingDid === active?.did) {
-    const commonLoading = document.createElement("p");
-    commonLoading.className = "network-card-explainer";
-    commonLoading.textContent = t("networkCommonMutualsLoading");
-    summary.appendChild(commonLoading);
-  }
-
-  const youFollowSince = formatNetworkRelationshipDate(focusData?.relationshipDates?.youFollowSince);
-  const followsYouSince = formatNetworkRelationshipDate(focusData?.relationshipDates?.followsYouSince);
-  if (isViewingOwnNetwork() && (youFollowSince || followsYouSince)) {
-    const relationshipMeta = document.createElement("div");
-    relationshipMeta.className = "network-relationship-meta";
-    if (youFollowSince && followsYouSince) {
-      const mutualSince = new Date(Math.max(
-        Date.parse(focusData.relationshipDates.youFollowSince || 0),
-        Date.parse(focusData.relationshipDates.followsYouSince || 0),
-      ));
-      const mutualLine = document.createElement("p");
-      mutualLine.className = "network-card-explainer";
-      mutualLine.textContent = t("networkMutualSince", {
-        date: new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium" }).format(mutualSince),
-      });
-      relationshipMeta.appendChild(mutualLine);
-    }
-    if (youFollowSince) {
-      const followLine = document.createElement("p");
-      followLine.className = "network-card-explainer";
-      followLine.textContent = t("networkYouFollowSince", {
-        date: youFollowSince,
-      });
-      relationshipMeta.appendChild(followLine);
-    }
-    if (followsYouSince) {
-      const followedByLine = document.createElement("p");
-      followedByLine.className = "network-card-explainer";
-      followedByLine.textContent = t("networkFollowsYouSince", {
-        date: followsYouSince,
-      });
-      relationshipMeta.appendChild(followedByLine);
-    }
-    summary.appendChild(relationshipMeta);
-  }
-
-  if (focusData?.activityStats) {
-    const activity14 = getNetworkActivityWindow(focusData.activityStats, 14);
-    const activity60 = getNetworkActivityWindow(focusData.activityStats, 60);
-    const latestPost = formatNetworkActivityLastPost(focusData.activityStats.latestPostAt);
-    if (activity14 || activity60 || latestPost) {
-      const activityMeta = document.createElement("div");
-      activityMeta.className = "network-relationship-meta";
-
-      const activityTitle = document.createElement("p");
-      activityTitle.className = "network-card-explainer network-card-explainer-strong";
-      activityTitle.textContent = t("networkActivityTitle");
-      activityMeta.appendChild(activityTitle);
-
-      if (latestPost) {
-        const latestLine = document.createElement("p");
-        latestLine.className = "network-card-explainer";
-        latestLine.textContent = t("networkLatestPost", {
-          date: latestPost,
-        });
-        activityMeta.appendChild(latestLine);
-      }
-
-      if (activity14) {
-        const posts14 = document.createElement("p");
-        posts14.className = "network-card-explainer";
-        posts14.textContent = t("networkRecentPostsWindow", {
-          days: "14",
-          count: formatCount(activity14.postsCount),
-        });
-        activityMeta.appendChild(posts14);
-
-        const likes14 = document.createElement("p");
-        likes14.className = "network-card-explainer";
-        likes14.textContent = t("networkRecentLikesWindow", {
-          days: "14",
-          count: formatCount(activity14.likesReceivedCount),
-        });
-        activityMeta.appendChild(likes14);
-      }
-
-      if (activity60) {
-        const posts60 = document.createElement("p");
-        posts60.className = "network-card-explainer";
-        posts60.textContent = t("networkRecentPostsWindow", {
-          days: "60",
-          count: formatCount(activity60.postsCount),
-        });
-        activityMeta.appendChild(posts60);
-
-        const likes60 = document.createElement("p");
-        likes60.className = "network-card-explainer";
-        likes60.textContent = t("networkRecentLikesWindow", {
-          days: "60",
-          count: formatCount(activity60.likesReceivedCount),
-        });
-        activityMeta.appendChild(likes60);
-      }
-
-      const activitySample = document.createElement("p");
-      activitySample.className = "network-card-explainer";
-      activitySample.textContent = t("networkActivitySampleNote", {
-        count: formatCount(focusData.activityStats.samplePosts || 0),
-      });
-      activityMeta.appendChild(activitySample);
-
-      summary.appendChild(activityMeta);
-    }
-  }
-
-  if (isViewingOwnNetwork() && focusData?.likeStats) {
-    const likeMeta = document.createElement("div");
-    likeMeta.className = "network-relationship-meta";
-
-    const totalLikes = document.createElement("p");
-    totalLikes.className = "network-card-explainer";
-    totalLikes.textContent = t("networkMutualLikesTotal", {
-      count: formatCount(focusData.likeStats.mutualLikesCount || 0),
-    });
-    likeMeta.appendChild(totalLikes);
-
-    const youLike = document.createElement("p");
-    youLike.className = "network-card-explainer";
-    youLike.textContent = t("networkYouLikePosts", {
-      count: formatCount(focusData.likeStats.youLikeCount || 0),
-    });
-    likeMeta.appendChild(youLike);
-
-    const likesYou = document.createElement("p");
-    likesYou.className = "network-card-explainer";
-    likesYou.textContent = t("networkTheyLikeYourPosts", {
-      count: formatCount(focusData.likeStats.likesYouCount || 0),
-    });
-    likeMeta.appendChild(likesYou);
-
-    const sampleNote = document.createElement("p");
-    sampleNote.className = "network-card-explainer";
-    sampleNote.textContent = t("networkLikesSampleNote", {
-      own: formatCount(focusData.likeStats.ownPostsSampled || 0),
-      actor: formatCount(focusData.likeStats.actorPostsSampled || 0),
-      total: formatCount(focusData.likeStats.totalSample || 0),
-    });
-    likeMeta.appendChild(sampleNote);
-
-    summary.appendChild(likeMeta);
-  }
-
-  if (active?.description) {
-    const descriptionWrap = document.createElement("details");
-    descriptionWrap.className = "network-description-disclosure";
-    const descriptionSummary = document.createElement("summary");
-    descriptionSummary.textContent = t("networkDescriptionButton");
-    const description = document.createElement("p");
-    description.className = "network-description";
-    description.textContent = active.description;
-    descriptionWrap.append(descriptionSummary, description);
-    summary.appendChild(descriptionWrap);
-  }
-
-  if (networkFocusLoadingDid && node?.did === networkFocusLoadingDid) {
-    const loading = document.createElement("p");
-    loading.className = "settings-note";
-    loading.textContent = t("networkFocusLoading");
-    summary.appendChild(loading);
-  }
-
-  if (focusData && node) {
-    const previewMeta = document.createElement("p");
-    previewMeta.className = "network-card-explainer";
-    previewMeta.textContent = t("networkStagePreviewMeta", {
-      followers: formatCount(focusData.followersPreview?.length || 0),
-      following: formatCount(focusData.followsPreview?.length || 0),
-    });
-    summary.appendChild(previewMeta);
-  }
-
-  shell.appendChild(summary);
-  networkFocusCard.appendChild(shell);
+  networkFocusCardRenderer.render();
 }
 
+/** Renders template-based grouped network lists and pagination. @returns {void} */
 function renderNetworkResults() {
-  const savedScrollTop = networkResults?.scrollTop || networkResultsScrollTop || 0;
-  networkResults.replaceChildren();
-  const allNodes = getAllNetworkNodes();
-  if (!allNodes.length) {
-    const empty = document.createElement("p");
-    empty.className = "settings-note";
-    empty.textContent = t("networkResultsEmpty");
-    networkResults.appendChild(empty);
-    return;
-  }
-
-  const centerLabel = getNetworkCenterLabel();
-  const groups = [
-    [
-      "mutual",
-      t("networkGroupMutuals"),
-      isViewingOwnNetwork()
-        ? t("networkGroupMutualsNote")
-        : t("networkGroupMutualsNoteOther", { account: centerLabel }),
-    ],
-    [
-      "followers",
-      t("networkGroupFollowers"),
-      isViewingOwnNetwork()
-        ? t("networkGroupFollowersNote")
-        : t("networkGroupFollowersNoteOther", { account: centerLabel }),
-    ],
-    [
-      "following",
-      t("networkGroupFollowing"),
-      isViewingOwnNetwork()
-        ? t("networkGroupFollowingNote")
-        : t("networkGroupFollowingNoteOther", { account: centerLabel }),
-    ],
-  ];
-
-  if (!networkStageMode) {
-    const introCard = document.createElement("article");
-    introCard.className = "network-group-card network-group-card-intro";
-    const introTitle = document.createElement("strong");
-    introTitle.textContent = t("networkTopConnectionsTitle");
-    const introBody = document.createElement("p");
-    introBody.className = "network-card-explainer";
-    introBody.textContent = t("networkTopConnectionsMeta", {
-      total: formatCount(allNodes.length),
-      visible: formatCount(getVisibleNetworkNodes().length),
-    });
-    introCard.append(introTitle, introBody);
-    networkResults.appendChild(introCard);
-  }
-
-  groups.forEach(([groupKey, titleText, noteText]) => {
-    if (networkStageMode && networkStageModeListsVisible && groupKey !== networkInsightsStageGroup) {
-      return;
-    }
-    const groupItems = sortNetworkNodes(
-      allNodes.filter((node) => getNetworkRelationType(node) === groupKey),
-    );
-    const totalCount = groupItems.length;
-    const card = document.createElement("article");
-    card.className = "network-group-card";
-    const title = document.createElement("strong");
-    title.textContent = `${titleText} · ${formatCount(totalCount)}`;
-    const note = document.createElement("p");
-    note.className = "network-card-explainer";
-    note.textContent = noteText;
-    card.append(title, note);
-
-    if (!groupItems.length) {
-      const empty = document.createElement("p");
-      empty.className = "settings-note";
-      empty.textContent = t("networkGroupEmpty");
-      card.appendChild(empty);
-    } else {
-      const list = document.createElement("div");
-      list.className = "network-scroll-list";
-      groupItems.forEach((node) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "network-list-button";
-        button.addEventListener("click", () => {
-          networkResultsScrollTop = networkResults?.scrollTop || 0;
-          setNetworkSelection(node.did);
-        });
-        const name = document.createElement("strong");
-        name.textContent = node.displayName || node.handle || node.did;
-        const meta = document.createElement("span");
-        meta.className = "network-list-meta";
-        meta.textContent = `@${node.handle || node.did} · ${formatCount(getNetworkNodeScore(node))}`;
-        button.append(name, meta);
-        list.appendChild(button);
-      });
-      card.appendChild(list);
-    }
-
-    if (hasPendingNetworkDataForGroup(groupKey)) {
-      const moreButton = document.createElement("button");
-      moreButton.type = "button";
-      moreButton.className = "ghost-button network-more-button";
-      moreButton.textContent = t("networkShowMoreButton");
-      moreButton.disabled = networkLoading;
-      moreButton.addEventListener("click", async () => {
-        await loadMoreNetworkGroup(groupKey);
-      });
-      const moreNote = document.createElement("p");
-      moreNote.className = "network-card-explainer";
-      moreNote.textContent = t("networkShowMoreNote");
-      card.append(moreButton, moreNote);
-    }
-
-    networkResults.appendChild(card);
-  });
-
-  networkResultsScrollTop = savedScrollTop;
-  restoreNetworkResultsScroll();
+  networkWorkspaceRenderer.results();
 }
 
+/** Updates network load/reset controls from application state. @returns {void} */
 function updateNetworkControls() {
-  const canLoadMore = networkHasMoreFollowers || networkHasMoreFollows || !networkNodes.size;
-  const requestedActor = getRequestedNetworkActor();
-  const loadButtonLabel = networkLoading
-    ? t("networkLoadingButton")
-    : canLoadMore && networkNodes.size
-    ? t("networkLoadMoreButton")
-    : t("networkLoadButton");
-  networkLoadButton.textContent = loadButtonLabel;
-  networkLoadButton.disabled = networkLoading || !authAccount || !canLoadMore;
-  networkLoadButton.title = !authAccount
-    ? t("networkLoadButton")
-    : networkLoading
-    ? t("networkLoadingButton")
-    : canLoadMore && networkNodes.size
-    ? t("networkLoadMoreTitle")
-    : canLoadMore
-    ? t("networkLoadButton")
-    : t("networkLoadFinishedTitle");
-  networkResetButton.disabled = networkLoading || (!networkNodes.size && !networkSearchQuery && networkFilterMode === "all");
-  if (networkOwnLoadButton) {
-    networkOwnLoadButton.disabled = networkLoading || !authAccount || isViewingOwnNetwork();
-  }
-  if (networkAccountLoadButton) {
-    networkAccountLoadButton.disabled = networkLoading || !authAccount || !requestedActor;
-  }
+  renderNetworkLoadControls({ load: networkLoadButton, reset: networkResetButton, own: networkOwnLoadButton, account: networkAccountLoadButton }, {
+      loading: networkLoading, authenticated: Boolean(authAccount), nodeCount: networkNodes.size,
+      hasMoreFollowers: networkHasMoreFollowers, hasMoreFollows: networkHasMoreFollows,
+      query: networkSearchQuery, filterMode: networkFilterMode, ownNetwork: isViewingOwnNetwork(), actor: getRequestedNetworkActor(),
+    }, t);
 }
 
+/** Coordinates network presentation, content renderers and pending focus loading. @returns {void} */
+/** Coordinates network rendering and pending focus loading. @returns {void} */
 function renderNetworkWorkspace() {
-  ensureNetworkStateForAccount();
-  document.body.classList.toggle("network-stage-mode", networkStageMode);
-  if (networkAccountInput && !networkAccountInput.matches(":focus")) {
-    networkAccountInput.value = String(networkAccountInput.value || "").trim() || networkViewerProfile?.handle || "";
-  }
-  const focusPanelVisible = Boolean(networkSelectedDid) && (!networkStageMode || networkStageModeFocusVisible);
-  networkCanvasPanel?.classList.toggle("has-focus", focusPanelVisible);
-  networkCanvasPanel?.classList.toggle("has-focus-collapsed", focusPanelVisible && networkFocusCollapsed);
-  networkCanvasPanel?.classList.toggle("is-squircle", networkStageShape === NETWORK_STAGE_SHAPE_SQUIRCLE);
-  networkStageCard?.classList.toggle("is-stage-mode", networkStageMode);
-  networkInsightsCard?.classList.toggle("is-stage-mode-visible", networkStageMode && networkStageModeListsVisible);
-  networkInsightsCard?.toggleAttribute("hidden", networkStageMode && !networkStageModeListsVisible);
-  networkFocusPanel?.classList.toggle("is-collapsed", networkFocusCollapsed);
-  networkFocusPanel?.toggleAttribute("hidden", networkStageMode && !networkStageModeFocusVisible);
-  if (networkShapeToggleButton) {
-    const isSquircle = networkStageShape === NETWORK_STAGE_SHAPE_SQUIRCLE;
-    networkShapeToggleButton.classList.toggle("is-active", isSquircle);
-    networkShapeToggleButton.setAttribute("aria-pressed", isSquircle ? "true" : "false");
-    networkShapeToggleButton.title = isSquircle ? t("networkShapeDisableTitle") : t("networkShapeEnableTitle");
-  }
-  if (networkFocusToggleButton) {
-    networkFocusToggleButton.innerHTML = createIconSvg(
-      networkFocusCollapsed
-        ? "M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"
-        : "M7.4 15.4 12 10.8l4.6 4.6L18 14l-6-6-6 6z",
-    );
-    networkFocusToggleButton.setAttribute("aria-expanded", networkFocusCollapsed ? "false" : "true");
-    networkFocusToggleButton.setAttribute("aria-label", networkFocusCollapsed ? t("networkFocusExpand") : t("networkFocusCollapse"));
-    networkFocusToggleButton.disabled = !networkSelectedDid;
-  }
-  if (networkStageModeButton) {
-    networkStageModeButton.hidden = networkStageMode;
-    networkStageModeButton.setAttribute("aria-pressed", networkStageMode ? "true" : "false");
-  }
-  if (networkStageModeExitButton) {
-    networkStageModeExitButton.hidden = !networkStageMode;
-  }
-  if (networkStageModeFocusButton) {
-    networkStageModeFocusButton.hidden = !networkStageMode;
-    networkStageModeFocusButton.disabled = !networkSelectedDid;
-    networkStageModeFocusButton.classList.toggle("is-active", networkStageModeFocusVisible);
-    networkStageModeFocusButton.setAttribute("aria-pressed", networkStageModeFocusVisible ? "true" : "false");
-    networkStageModeFocusButton.textContent = networkStageModeFocusVisible
-      ? t("networkStageModeHideFocus")
-      : t("networkStageModeShowFocus");
-  }
-  if (networkStageModeListsButton) {
-    networkStageModeListsButton.hidden = !networkStageMode;
-    networkStageModeListsButton.classList.toggle("is-active", networkStageModeListsVisible);
-    networkStageModeListsButton.setAttribute("aria-pressed", networkStageModeListsVisible ? "true" : "false");
-    networkStageModeListsButton.textContent = networkStageModeListsVisible
-      ? t("networkStageModeHideLists")
-      : t("networkStageModeShowLists");
-  }
-  if (networkSortFieldSelect) {
-    networkSortFieldSelect.value = networkSortField;
-  }
-  if (networkSortDirectionSelect) {
-    networkSortDirectionSelect.value = networkSortDirection;
-  }
-  if (networkInsightsGroupToggles) {
-    networkInsightsGroupToggles.hidden = !(networkStageMode && networkStageModeListsVisible);
-  }
-  networkInsightsGroupButtons.forEach((button) => {
-    const isActive = button.dataset.networkInsightsGroup === networkInsightsStageGroup;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-pressed", isActive ? "true" : "false");
-  });
-  updateNetworkFilterButtons();
-  renderNetworkSummary();
-  renderNetworkStage();
-  renderNetworkFocus();
-  renderNetworkResults();
-  updateNetworkControls();
-  setNetworkStatus(networkStatusLine || t("networkProgressIdle"));
-  restoreNetworkResultsScroll();
-  if (networkSelectedDid && !networkFocusDetails.has(networkSelectedDid) && networkFocusLoadingDid !== networkSelectedDid) {
-    void loadNetworkFocusDetails(networkSelectedDid);
-  }
+  networkWorkspaceController.render();
 }
 
+/** Loads the next network wave through the data controller. @param {object} options - Actor/append/error flags. @returns {Promise<void>} Load completion. */
 async function loadNetworkWave(options = {}) {
-  if (!authAccount || networkLoading) {
-    return;
-  }
-
-  let requestedActorSource = options.actor;
-  if (!requestedActorSource) {
-    if (options.append === true) {
-      requestedActorSource = networkViewerProfile?.did || networkAccountDid || authAccountDid || "";
-    } else {
-      requestedActorSource = getRequestedNetworkActor();
-    }
-  }
-  const requestedActor = String(requestedActorSource).trim();
-  if (!requestedActor) {
-    return;
-  }
-
-  setNetworkAccountFieldNote("");
-
-  const currentActorIdentity = String(networkViewerProfile?.handle || networkAccountDid || "").trim().toLowerCase();
-  const requestedActorIdentity = requestedActor.toLowerCase();
-  const switchActor = options.append !== true && (!networkNodes.size || !currentActorIdentity || currentActorIdentity !== requestedActorIdentity);
-
-  ensureNetworkStateForAccount();
-  if (switchActor) {
-    networkAccountDid = requestedActor;
-    resetNetworkState();
-    networkAccountDid = requestedActor;
-    networkFilterMode = "all";
-    networkSearchQuery = "";
-    if (networkSearchInput) {
-      networkSearchInput.value = "";
-    }
-    networkStatusLine = t("networkProgressLoading");
-  }
-  networkLoading = true;
-  updateNetworkControls();
-  setBusy(networkLoadButton, true, t("networkLoadingButton"), t("networkLoadButton"));
-
-  try {
-    const result = await sendToServiceWorker("LOAD_NETWORK_SLICE", {
-      actor: requestedActor,
-      followerCursor: networkFollowerCursor,
-      followCursor: networkFollowCursor,
-      limit: 500,
-    }, {
-      timeoutMs: 180000,
-      onProgress(progress) {
-        const step = String(progress?.step || "").trim();
-        const detail = String(progress?.detail || "").trim();
-        setNetworkStatus([step, detail].filter(Boolean).join(" · ") || t("networkProgressLoading"));
-      },
-    });
-
-    networkAccountDid = result?.viewer?.did || networkAccountDid || requestedActor;
-    networkViewerProfile = result?.viewer || networkViewerProfile;
-    if (networkAccountInput) {
-      networkAccountInput.value = networkViewerProfile?.handle || requestedActor;
-    }
-    setNetworkAccountFieldNote("");
-    ingestNetworkProfiles(result?.followers || []);
-    ingestNetworkProfiles(result?.follows || []);
-    networkFollowerCursor = String(result?.followerCursor || "");
-    networkFollowCursor = String(result?.followCursor || "");
-    networkHasMoreFollowers = result?.hasMoreFollowers === true;
-    networkHasMoreFollows = result?.hasMoreFollows === true;
-    networkWaveIndex += 1;
-    setNetworkStatus(t("networkProgressLoaded", {
-      wave: networkWaveIndex,
-      loaded: formatCount(networkNodes.size),
-      followers: formatCount((result?.wave?.followers) || 0),
-      follows: formatCount((result?.wave?.follows) || 0),
-    }));
-  } catch (error) {
-    console.error(error);
-    const message = error?.message || t("networkLoadFailed");
-    setNetworkAccountFieldNote(message);
-    setNetworkStatus(message);
-    if (!options.silentErrors) {
-      showErrorDialog(message, t("archiveErrorTitle"));
-    }
-  } finally {
-    networkLoading = false;
-    setBusy(networkLoadButton, false, t("networkLoadingButton"), t("networkLoadButton"));
-    renderNetworkWorkspace();
-  }
+  await networkDataController.load(options);
 }
 
 function setDmProgress({ title, step, percent = 0, detail = "" } = {}) {
@@ -17546,89 +12306,10 @@ async function loadDmArchive() {
 
 const ARCHIVE_RANGE_MAX_MONTHS = 3;
 
-/**
- * Formats a Date object for a date input field.
- * @param {Date | null | undefined} date Date to format.
- * @returns {string} Date string in YYYY-MM-DD format or an empty string.
- */
-function formatArchiveDateInputValue(date) {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-    return "";
-  }
-  const year = String(date.getFullYear()).padStart(4, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
-/**
- * Parses a date input value into a local Date object.
- * @param {string} value Input value from a date field.
- * @returns {Date | null} Parsed local date or null for invalid input.
- */
-function parseArchiveDateInputValue(value) {
-  const normalizedValue = String(value || "").trim();
-  const match = normalizedValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) {
-    return null;
-  }
-  const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1;
-  const day = Number(match[3]);
-  const date = new Date(year, monthIndex, day);
-  if (
-    Number.isNaN(date.getTime())
-    || date.getFullYear() !== year
-    || date.getMonth() !== monthIndex
-    || date.getDate() !== day
-  ) {
-    return null;
-  }
-  return date;
-}
 
-/**
- * Returns a copy of a Date object with the time portion removed.
- * @param {Date | null | undefined} date Source date.
- * @returns {Date | null} Date at local midnight or null.
- */
-function getArchiveDateAtLocalMidnight(date) {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
 
-/**
- * Adds whole calendar months while keeping the day as stable as possible.
- * @param {Date | null | undefined} date Base date.
- * @param {number} monthDelta Number of months to add or subtract.
- * @returns {Date | null} Shifted date or null for invalid input.
- */
-function addArchiveMonths(date, monthDelta) {
-  const normalizedDate = getArchiveDateAtLocalMidnight(date);
-  const normalizedDelta = Number(monthDelta) || 0;
-  if (!normalizedDate) {
-    return null;
-  }
-  const targetMonthDate = new Date(normalizedDate.getFullYear(), normalizedDate.getMonth() + normalizedDelta, 1);
-  const lastDayOfTargetMonth = new Date(targetMonthDate.getFullYear(), targetMonthDate.getMonth() + 1, 0).getDate();
-  const day = Math.min(normalizedDate.getDate(), lastDayOfTargetMonth);
-  return new Date(targetMonthDate.getFullYear(), targetMonthDate.getMonth(), day);
-}
 
-/**
- * Builds the default archive date range of up to three months ending today.
- * @returns {{ from: string, to: string }} Default range values for the archive inputs.
- */
-function getDefaultArchiveDateRange() {
-  const today = getArchiveDateAtLocalMidnight(new Date());
-  const defaultFromDate = addArchiveMonths(today, -ARCHIVE_RANGE_MAX_MONTHS);
-  return {
-    from: formatArchiveDateInputValue(defaultFromDate),
-    to: formatArchiveDateInputValue(today),
-  };
-}
 
 /**
  * Ensures the archive date inputs always contain a valid bounded range.
@@ -17636,77 +12317,7 @@ function getDefaultArchiveDateRange() {
  * @returns {{ from: string, to: string, changed: boolean }} Final values and whether the inputs changed.
  */
 function enforceArchiveDateRangeLimit(preferredEdge = "auto") {
-  const defaultRange = getDefaultArchiveDateRange();
-  const today = parseArchiveDateInputValue(defaultRange.to);
-  let fromDate = parseArchiveDateInputValue(archiveFromInput?.value || "");
-  let toDate = parseArchiveDateInputValue(archiveToInput?.value || "");
-  let changed = false;
-
-  if (!toDate) {
-    toDate = today;
-    changed = true;
-  }
-  if (toDate && today && toDate.getTime() > today.getTime()) {
-    toDate = today;
-    changed = true;
-  }
-
-  if (!fromDate && toDate) {
-    fromDate = addArchiveMonths(toDate, -ARCHIVE_RANGE_MAX_MONTHS);
-    changed = true;
-  }
-
-  if (fromDate && toDate && fromDate.getTime() > toDate.getTime()) {
-    if (preferredEdge === "from") {
-      toDate = addArchiveMonths(fromDate, ARCHIVE_RANGE_MAX_MONTHS);
-      if (toDate && today && toDate.getTime() > today.getTime()) {
-        toDate = today;
-      }
-    } else {
-      fromDate = addArchiveMonths(toDate, -ARCHIVE_RANGE_MAX_MONTHS);
-    }
-    changed = true;
-  }
-
-  if (fromDate && toDate) {
-    const maxAllowedToDate = addArchiveMonths(fromDate, ARCHIVE_RANGE_MAX_MONTHS);
-    const minAllowedFromDate = addArchiveMonths(toDate, -ARCHIVE_RANGE_MAX_MONTHS);
-    if (preferredEdge === "from") {
-      if (maxAllowedToDate && toDate.getTime() > maxAllowedToDate.getTime()) {
-        toDate = maxAllowedToDate;
-        changed = true;
-      }
-      if (toDate && today && toDate.getTime() > today.getTime()) {
-        toDate = today;
-        changed = true;
-      }
-    } else if (preferredEdge === "to") {
-      if (minAllowedFromDate && fromDate.getTime() < minAllowedFromDate.getTime()) {
-        fromDate = minAllowedFromDate;
-        changed = true;
-      }
-    } else if (minAllowedFromDate && fromDate.getTime() < minAllowedFromDate.getTime()) {
-      fromDate = minAllowedFromDate;
-      changed = true;
-    }
-  }
-
-  const fromValue = formatArchiveDateInputValue(fromDate);
-  const toValue = formatArchiveDateInputValue(toDate);
-  if (archiveFromInput && archiveFromInput.value !== fromValue) {
-    archiveFromInput.value = fromValue;
-    changed = true;
-  }
-  if (archiveToInput && archiveToInput.value !== toValue) {
-    archiveToInput.value = toValue;
-    changed = true;
-  }
-
-  return {
-    from: fromValue,
-    to: toValue,
-    changed,
-  };
+  return archivePreferencesController.clamp(preferredEdge);
 }
 
 /**
@@ -17714,42 +12325,7 @@ function enforceArchiveDateRangeLimit(preferredEdge = "auto") {
  * @returns {void}
  */
 function syncArchiveDateInputBounds() {
-  const defaultRange = getDefaultArchiveDateRange();
-  const todayValue = defaultRange.to;
-  const fromDate = parseArchiveDateInputValue(archiveFromInput?.value || "");
-  const toDate = parseArchiveDateInputValue(archiveToInput?.value || "");
-  let toMin = "";
-  let toMax = todayValue;
-  let fromMin = "";
-  let fromMax = todayValue;
-
-  if (fromDate) {
-    const maxFromDate = addArchiveMonths(fromDate, ARCHIVE_RANGE_MAX_MONTHS);
-    if (maxFromDate) {
-      toMax = formatArchiveDateInputValue(maxFromDate);
-      if (todayValue && toMax > todayValue) {
-        toMax = todayValue;
-      }
-    }
-    toMin = formatArchiveDateInputValue(fromDate);
-  }
-
-  if (toDate) {
-    const minFromDate = addArchiveMonths(toDate, -ARCHIVE_RANGE_MAX_MONTHS);
-    if (minFromDate) {
-      fromMin = formatArchiveDateInputValue(minFromDate);
-    }
-    fromMax = formatArchiveDateInputValue(toDate);
-  }
-
-  if (archiveFromInput) {
-    archiveFromInput.min = fromMin;
-    archiveFromInput.max = fromMax;
-  }
-  if (archiveToInput) {
-    archiveToInput.min = toMin;
-    archiveToInput.max = toMax;
-  }
+  return archivePreferencesController.bounds();
 }
 
 /**
@@ -17757,18 +12333,7 @@ function syncArchiveDateInputBounds() {
  * @returns {void}
  */
 function ensureArchiveDateRangeDefaults() {
-  const hasValidFromDate = Boolean(parseArchiveDateInputValue(archiveFromInput?.value || ""));
-  const hasValidToDate = Boolean(parseArchiveDateInputValue(archiveToInput?.value || ""));
-  if (hasValidFromDate && hasValidToDate) {
-    return;
-  }
-  const defaultRange = getDefaultArchiveDateRange();
-  if (archiveFromInput) {
-    archiveFromInput.value = defaultRange.from;
-  }
-  if (archiveToInput) {
-    archiveToInput.value = defaultRange.to;
-  }
+  return archivePreferencesController.ensure();
 }
 
 /**
@@ -17776,66 +12341,23 @@ function ensureArchiveDateRangeDefaults() {
  * @returns {object} Normalized archive filter object for persistence and fetches.
  */
 function getArchiveFilters() {
-  ensureArchiveDateRangeDefaults();
-  const normalizedRange = enforceArchiveDateRangeLimit("auto");
-  syncArchiveDateInputBounds();
-  const sourceActor = String(archiveSourceInput?.value || "").trim().replace(/^@+/, "");
-  return {
-    sourceActor,
-    sourceDid: String(archiveSourceProfile?.did || "").trim(),
-    scope: "range",
-    contentMode: archiveContentModeSelect.value || "posts",
-    includeConversationContext: archiveConversationContextToggle?.checked === true,
-    year: "",
-    from: normalizedRange.from,
-    to: normalizedRange.to,
-    hashtagTags: normalizeSelectedHashtagEntries(archiveSelectedHashtags, hashtags),
-    hashtagScope: archiveHashtagScope === "startpost" ? "startpost" : "thread",
-  };
+  return archivePreferencesController.filters();
 }
 
-function getPersistableArchiveSource() {
-  const rawInput = String(archiveSourceInput?.value || "").trim();
-  if (!rawInput && !archiveSourceProfile) {
-    return null;
-  }
-  return {
-    input: rawInput,
-    did: String(archiveSourceProfile?.did || "").trim(),
-    handle: String(archiveSourceProfile?.handle || "").trim(),
-    displayName: String(archiveSourceProfile?.displayName || "").trim(),
-    avatar: String(archiveSourceProfile?.avatar || "").trim(),
-  };
-}
 
+/** Reads normalized archive PDF settings. @returns {object} Options. */
 function getArchivePdfOptions() {
-  return {
-    bandSize: Math.max(100, Math.min(1000, Number(archiveBandSizeSelect.value) || 200)),
-    imageSize: archiveImageSizeSelect.value || "medium",
-    includeMetrics: archiveMetricsToggle.checked,
-    keepThreadsTogether: archiveThreadsToggle.checked,
-    indentThreads: archivePdfIndentToggle ? archivePdfIndentToggle.checked : true,
-  };
+  return archivePreferencesController.pdf();
 }
 
+/** Reads the bounded archive loading wave size. @returns {number} Size. */
 function getArchiveWaveSize() {
-  return Math.max(100, Math.min(1000, Number(archiveWaveSizeSelect.value) || 500));
+  return archivePreferencesController.wave();
 }
 
+/** Captures current archive preferences. @returns {object} Snapshot. */
 function getArchivePreferences() {
-  const filters = getArchiveFilters();
-  const options = getArchivePdfOptions();
-  return {
-    filters,
-    source: getPersistableArchiveSource(),
-    waveSize: getArchiveWaveSize(),
-    pdfOptions: options,
-    livePreview: archiveLivePreviewToggle ? archiveLivePreviewToggle.checked : true,
-    savedSearchId: archiveSavedSearchId,
-    threadImportMode: archiveThreadImportModeSelect?.value === "tree"
-      ? "tree"
-      : (archiveThreadImportModeSelect?.value === "author" ? "author" : "path"),
-  };
+  return archivePreferencesController.snapshot();
 }
 
 /**
@@ -17844,71 +12366,7 @@ function getArchivePreferences() {
  * @returns {void}
  */
 function applyArchivePreferences(preferences = {}) {
-  const filters = preferences.filters || {};
-  const source = preferences.source && typeof preferences.source === "object" ? preferences.source : {};
-  if (archiveSourceInput) {
-    archiveSourceInput.value = String(source.input || filters.sourceActor || "").trim();
-  }
-  archiveSourceProfile = source.did
-    ? {
-        did: String(source.did || "").trim(),
-        handle: String(source.handle || "").trim(),
-        displayName: String(source.displayName || source.handle || source.did || "").trim(),
-        avatar: String(source.avatar || "").trim(),
-      }
-    : null;
-  archiveScopeSelect.value = "range";
-  archiveContentModeSelect.value = ["posts", "thread_roots", "threads", "full"].includes(filters.contentMode)
-    ? filters.contentMode
-    : "posts";
-  if (archiveConversationContextToggle) {
-    archiveConversationContextToggle.checked = filters.includeConversationContext === true;
-  }
-  archiveYearInput.value = "";
-  archiveFromInput.value = String(filters.from || "");
-  archiveToInput.value = String(filters.to || "");
-  archiveSelectedHashtags = normalizeSelectedHashtagEntries(filters.hashtagTags, hashtags);
-  archiveHashtagScope = filters.hashtagScope === "startpost" ? "startpost" : "thread";
-  archiveHashtagScopeSelect.value = archiveHashtagScope;
-  if (archiveThreadImportModeSelect) {
-    archiveThreadImportModeSelect.value = preferences.threadImportMode === "tree"
-      ? "tree"
-      : (preferences.threadImportMode === "author" ? "author" : "path");
-  }
-  archiveSavedSearchId = String(preferences.savedSearchId || "").trim();
-  ensureArchiveDateRangeDefaults();
-  enforceArchiveDateRangeLimit("auto");
-  syncArchiveDateInputBounds();
-
-  const waveSize = String(preferences.waveSize || "");
-  if ([...archiveWaveSizeSelect.options].some((option) => option.value === waveSize)) {
-    archiveWaveSizeSelect.value = waveSize;
-  }
-
-  const pdfOptions = preferences.pdfOptions || {};
-  const bandSize = String(pdfOptions.bandSize || "");
-  if ([...archiveBandSizeSelect.options].some((option) => option.value === bandSize)) {
-    archiveBandSizeSelect.value = bandSize;
-  }
-  if (archiveImageSizeSelect) {
-    archiveImageSizeSelect.value = pdfOptions.imageSize === "small" || pdfOptions.imageSize === "large" ? pdfOptions.imageSize : "medium";
-  }
-  if (archiveMetricsToggle) {
-    archiveMetricsToggle.checked = pdfOptions.includeMetrics !== false;
-  }
-  if (archiveThreadsToggle) {
-    archiveThreadsToggle.checked = pdfOptions.keepThreadsTogether !== false;
-  }
-  if (archivePdfIndentToggle) {
-    archivePdfIndentToggle.checked = pdfOptions.indentThreads !== false;
-  }
-  if (archiveLivePreviewToggle) {
-    archiveLivePreviewToggle.checked = preferences.livePreview !== false;
-  }
-  updateArchiveScopeFields();
-  renderArchiveSourceState();
-  renderArchiveSavedSearchNote();
-  renderHashtagCloud();
+  return archivePreferencesController.restore(preferences);
 }
 
 function serializeArchiveFilters(filters = getArchiveFilters()) {
@@ -18824,12 +13282,7 @@ function applyTranslations() {
   if (archiveMediaActorInput) {
     archiveMediaActorInput.placeholder = t("archiveMediaActorPlaceholder");
   }
-  if (analysisAccountAInput) {
-    analysisAccountAInput.placeholder = t("analysisAccountPlaceholder");
-  }
-  if (analysisAccountBInput) {
-    analysisAccountBInput.placeholder = t("analysisAccountPlaceholder");
-  }
+  analysisWorkspaceController.translate();
   loginButton.textContent = t("loginButton");
   loginDialogCancelButton.textContent = t("cancelButton");
   loginDialogCloseTop.textContent = t("closeButton");
@@ -18845,11 +13298,7 @@ function applyTranslations() {
   updateAppearanceModeControls();
   archiveButton.textContent = t("archiveLaunchButton");
   networkButton.textContent = t("networkLaunchButton");
-  analysisButton.textContent = t("analysisLaunchButton");
   dmButton.textContent = t("dmLaunchButton");
-  if (analysisExportPdfButton) {
-    analysisExportPdfButton.textContent = t("analysisExportPdfButton");
-  }
   networkLoadButton.textContent = networkLoading ? t("networkLoadingButton") : t("networkLoadButton");
   networkResetButton.textContent = t("networkResetButton");
   archiveNextWaveButton.textContent = t("archiveNextWaveButton");
@@ -25658,153 +20107,7 @@ bindToolsWorkspaceNavigationEvents({
   dmClick: showDmWorkspace,
 });
 
-bindAnalysisWorkspaceEvents({
-  accountAOwnButton: analysisAccountAOwnButton,
-  accountBOwnButton: analysisAccountBOwnButton,
-  accountALoadButton: analysisAccountALoadButton,
-  accountBLoadButton: analysisAccountBLoadButton,
-  compareButton: analysisCompareButton,
-  resetButton: analysisResetButton,
-  exportPdfButton: analysisExportPdfButton,
-  accountInputs: [analysisAccountAInput, analysisAccountBInput],
-  optionControls: [analysisRangeSelect, analysisPostLimitSelect, analysisIncludeRepliesToggle, analysisIncludeQuotesToggle],
-}, {
-  accountAOwn: () => {
-    const actor = getActiveAnalysisActor();
-    if (analysisAccountAInput && actor) {
-      analysisAccountAInput.value = actor;
-      updateAnalysisControls();
-      setAnalysisStatus(t("analysisAccountLoadedStatus", { slot: "A", account: actor }));
-      void persistSettings();
-    }
-  },
-  accountBOwn: () => {
-    const actor = getActiveAnalysisActor();
-    if (analysisAccountBInput && actor) {
-      analysisAccountBInput.value = actor;
-      updateAnalysisControls();
-      setAnalysisStatus(t("analysisAccountLoadedStatus", { slot: "B", account: actor }));
-      void persistSettings();
-    }
-  },
-  accountALoad: () => { void handleAnalysisAccountLoad("a"); },
-  accountBLoad: () => { void handleAnalysisAccountLoad("b"); },
-  compare: () => { void runAnalysisComparison(); },
-  reset: resetAnalysisWorkspace,
-  exportPdf: async () => {
-  try {
-    setBusy(analysisExportPdfButton, true, t("analysisExportPdfWorking"), t("analysisExportPdfButton"));
-    await exportAnalysisPdfReport();
-  } catch (error) {
-    console.error(error);
-    setAnalysisStatus(error.message || t("analysisExportFailed"));
-    showErrorDialog(error.message || t("analysisExportFailed"), t("archiveErrorTitle"));
-  } finally {
-    setBusy(analysisExportPdfButton, false, t("analysisExportPdfWorking"), t("analysisExportPdfButton"));
-  }
-  },
-  accountInput: (event) => {
-    const input = event.currentTarget;
-    analysisComparisonResult = null;
-    input.setCustomValidity("");
-    setAnalysisAccountFieldNote(input === analysisAccountAInput ? "a" : "b", "");
-    if (input === analysisAccountAInput) {
-      analysisValidationTokens.a += 1;
-    } else if (input === analysisAccountBInput) {
-      analysisValidationTokens.b += 1;
-    }
-    updateAnalysisControls();
-    renderAnalysisResult();
-    void persistSettings();
-  },
-  accountBlur: (event) => {
-    const input = event.currentTarget;
-    const slot = input === analysisAccountAInput ? "a" : "b";
-    void validateAnalysisAccountInput(slot);
-  },
-  accountKeydown: (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void runAnalysisComparison();
-    }
-  },
-  optionChange: () => {
-    analysisComparisonResult = null;
-    renderAnalysisWorkspace();
-    void persistSettings();
-  },
-});
 
-bindNetworkWorkspaceEvents({
-  filterButtons: networkFilterButtons,
-  searchInput: networkSearchInput,
-  accountInput: networkAccountInput,
-  sortField: networkSortFieldSelect,
-  sortDirection: networkSortDirectionSelect,
-  accountLoadButton: networkAccountLoadButton,
-  ownLoadButton: networkOwnLoadButton,
-  loadButton: networkLoadButton,
-  resetButton: networkResetButton,
-}, {
-  filterClick: (event) => {
-    networkFilterMode = event.currentTarget.dataset.networkFilter || "all";
-    renderNetworkWorkspace();
-  },
-  searchInput: () => {
-    networkSearchQuery = networkSearchInput.value.trim();
-    renderNetworkWorkspace();
-  },
-  accountKeydown: (event) => {
-    if (event.key !== "Enter") {
-      return;
-    }
-    event.preventDefault();
-    void loadNetworkWave({ actor: networkAccountInput.value.trim(), append: false, silentErrors: false });
-  },
-  accountInput: () => {
-    setNetworkAccountFieldNote("");
-    updateNetworkControls();
-  },
-  sortFieldChange: () => {
-    if (networkSortFieldSelect.value === "handle") {
-      networkSortField = "handle";
-    } else {
-      networkSortField = "displayName";
-    }
-    renderNetworkWorkspace();
-  },
-  sortDirectionChange: () => {
-    if (networkSortDirectionSelect.value === "desc") {
-      networkSortDirection = "desc";
-    } else {
-      networkSortDirection = "asc";
-    }
-    renderNetworkWorkspace();
-  },
-  accountLoad: async () => {
-    await loadNetworkWave({ actor: networkAccountInput?.value.trim() || "", append: false, silentErrors: false });
-  },
-  ownLoad: async () => {
-    if (networkAccountInput) {
-      networkAccountInput.value = authAccount || authAccountDid || "";
-    }
-    await loadNetworkWave({ actor: authAccountDid || authAccount || "", append: false, silentErrors: false });
-  },
-  load: async () => {
-    await loadNetworkWave({ append: true });
-  },
-  reset: () => {
-    networkFilterMode = "all";
-    networkSearchQuery = "";
-    networkSelectedDid = "";
-    networkHoveredDid = "";
-    networkFocusPreviewTab = "followers";
-    if (networkSearchInput) {
-      networkSearchInput.value = "";
-    }
-    renderNetworkWorkspace();
-  },
-});
 
 bindNetworkViewportControls({
   stage: networkStageSvg,
@@ -25818,124 +20121,9 @@ bindNetworkViewportControls({
   resetZoom: resetNetworkStageView,
 });
 
-bindNetworkStageModeEvents({
-  enterButton: networkStageModeButton,
-  exitButton: networkStageModeExitButton,
-  focusButton: networkStageModeFocusButton,
-  listsButton: networkStageModeListsButton,
-}, {
-  enterClick: async () => {
-    await enterNetworkStageMode();
-  },
-  exitClick: async () => {
-    await exitNetworkStageMode();
-  },
-  focusClick: () => {
-    networkStageModeFocusVisible = !networkStageModeFocusVisible;
-    renderNetworkWorkspace();
-  },
-  listsClick: () => {
-    networkStageModeListsVisible = !networkStageModeListsVisible;
-    renderNetworkWorkspace();
-  },
-});
 
-bindNetworkInsightEvents({
-  groupButtons: networkInsightsGroupButtons,
-  focusToggleButton: networkFocusToggleButton,
-}, {
-  groupClick: (event) => {
-    const button = event.currentTarget;
-    const nextGroup = String(button?.dataset?.networkInsightsGroup || "").trim();
-    if (!nextGroup) {
-      return;
-    }
-    networkInsightsStageGroup = nextGroup;
-    networkResultsScrollTop = 0;
-    renderNetworkWorkspace();
-  },
-  focusToggleClick: () => {
-    if (!networkSelectedDid) {
-      return;
-    }
-    networkFocusCollapsed = !networkFocusCollapsed;
-    renderNetworkWorkspace();
-  },
-});
 
-bindNetworkStageInteractionEvents({ stage: networkStageSvg }, {
-  wheel: (event) => {
-    if (currentWorkspace !== "network") {
-      return;
-    }
-    event.preventDefault();
-    let scale = 1 / 1.12;
-    if (event.deltaY < 0) {
-      scale = 1.12;
-    }
-    zoomNetworkStageAtPoint(scale, event.clientX, event.clientY);
-  },
-  pointerDown: (event) => {
-    if (currentWorkspace !== "network") {
-      return;
-    }
-    event.preventDefault();
-    networkStageFitAll = false;
-    networkStageDrag = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-    };
-    networkStageSvg.setPointerCapture(event.pointerId);
-  },
-  pointerMove: (event) => {
-    if (!networkStageDrag || networkStageDrag.pointerId !== event.pointerId) {
-      return;
-    }
-    const bounds = networkStageSvg.getBoundingClientRect();
-    const visibleNodes = getVisibleNetworkNodes();
-    const selectedDid = networkSelectedDid || getPreferredNetworkSelection(visibleNodes);
-    const layout = computeNetworkLayout(visibleNodes, selectedDid);
-    layout.contentBounds = computeNetworkStageContentBounds(layout, visibleNodes, selectedDid);
-    const viewport = getNetworkStageViewport(layout);
-    const unitsPerPixelX = viewport.width / Math.max(1, bounds.width);
-    const unitsPerPixelY = viewport.height / Math.max(1, bounds.height);
-    networkStagePanX -= (event.clientX - networkStageDrag.x) * unitsPerPixelX;
-    networkStagePanY -= (event.clientY - networkStageDrag.y) * unitsPerPixelY;
-    networkStageDrag.x = event.clientX;
-    networkStageDrag.y = event.clientY;
-    renderNetworkStage();
-  },
-  pointerUp: (event) => {
-    if (networkStageDrag?.pointerId === event.pointerId) {
-      networkStageDrag = null;
-    }
-  },
-});
 
-bindNetworkLifecycleEvents({ document, results: networkResults }, {
-  fullscreenChange: () => {
-  if (!document.fullscreenElement && networkStageMode) {
-    networkStageMode = false;
-    networkStageModeFocusVisible = false;
-    networkStageModeListsVisible = false;
-    document.body.classList.remove("network-stage-mode");
-    renderNetworkWorkspace();
-  }
-  },
-  keydown: (event) => {
-  if (event.key === "Escape" && networkStageMode && !document.fullscreenElement) {
-    event.preventDefault();
-    void exitNetworkStageMode();
-  }
-  },
-  resultsScroll: () => {
-    if (networkResultsRestorePending) {
-      return;
-    }
-    networkResultsScrollTop = networkResults.scrollTop;
-  },
-});
 
 bindArchivePreferenceEvents({
   scope: archiveScopeSelect,
@@ -26798,6 +20986,156 @@ function applyHydratedApplicationState(patch) {
   if ("authAccountService" in patch) { authAccountService = patch.authAccountService; }
   if ("authAccountWebApp" in patch) { authAccountWebApp = patch.authAccountWebApp; }
 }
+const archivePreferencesController = createArchivePreferencesController({
+  from: archiveFromInput, to: archiveToInput, source: archiveSourceInput, content: archiveContentModeSelect,
+  context: archiveConversationContextToggle, band: archiveBandSizeSelect, image: archiveImageSizeSelect,
+  metrics: archiveMetricsToggle, threads: archiveThreadsToggle, indent: archivePdfIndentToggle, wave: archiveWaveSizeSelect,
+  preview: archiveLivePreviewToggle, importMode: archiveThreadImportModeSelect, scope: archiveScopeSelect,
+  year: archiveYearInput, hashtagScope: archiveHashtagScopeSelect,
+}, {
+  state: {
+    /** Reads current sourceProfile. @returns {*} Live value. */
+    get sourceProfile() { return archiveSourceProfile; },
+    /** Updates current sourceProfile. @param {*} value - New value. */
+    set sourceProfile(value) { archiveSourceProfile = value; },
+    /** Reads current selectedHashtags. @returns {*} Live value. */
+    get selectedHashtags() { return archiveSelectedHashtags; },
+    /** Updates current selectedHashtags. @param {*} value - New value. */
+    set selectedHashtags(value) { archiveSelectedHashtags = value; },
+    /** Reads current hashtagScope. @returns {*} Live value. */
+    get hashtagScope() { return archiveHashtagScope; },
+    /** Updates current hashtagScope. @param {*} value - New value. */
+    set hashtagScope(value) { archiveHashtagScope = value; },
+    /** Reads current savedSearchId. @returns {*} Live value. */
+    get savedSearchId() { return archiveSavedSearchId; },
+    /** Updates current savedSearchId. @param {*} value - New value. */
+    set savedSearchId(value) { archiveSavedSearchId = value; },
+    /** Reads current hashtags. @returns {*} Live value. */
+    get hashtags() { return hashtags; },
+    /** Updates current hashtags. @param {*} value - New value. */
+    set hashtags(value) { hashtags = value; },
+  }, now: () => new Date(), maxMonths: ARCHIVE_RANGE_MAX_MONTHS, normalizeTags: normalizeSelectedHashtagEntries,
+  scopeFields: updateArchiveScopeFields, renderSource: renderArchiveSourceState, renderSavedSearch: renderArchiveSavedSearchNote, renderTags: renderHashtagCloud,
+});
+const analysisCorpusAnalyzer = createAnalysisCorpusAnalyzer({
+  locale: () => currentLocale, functionWords: ANALYSIS_FUNCTION_WORDS, numberWords: ANALYSIS_NUMBER_WORDS,
+});
+const analysisTemporalAnalyzer = createAnalysisTemporalAnalyzer({
+  locale: () => currentLocale, now: () => Date.now(), shares: shareArray, gapBuckets: ANALYSIS_TEMPORAL_GAP_BUCKETS,
+  weekdayAnchors: ANALYSIS_WEEKDAY_ANCHORS, weekdayFallbacks: ANALYSIS_WEEKDAY_FALLBACKS,
+});
+const analysisStylometryAnalyzer = createAnalysisStylometryAnalyzer({ locale: () => currentLocale, corpus: analysisCorpusAnalyzer.create });
+const analysisTableModels = createAnalysisTableModels({ t, number: formatAnalysisNumber, percent: formatAnalysisPercent,
+  count: formatCount, similarity: cosineSimilarityFromArrays });
+const analysisRenderer = createAnalysisRenderer({
+  summary: analysisSummary, result: analysisResultCard, temporal: analysisTemporal, metrics: analysisMetrics,
+  network: analysisNetwork, patterns: analysisPatterns,
+  templates: Object.fromEntries(["note", "span", "tokens", "token", "stats", "stat", "bars", "bar", "pattern", "account", "result",
+    "heatmap", "heatmap-grid", "axis", "heatmap-cell", "timeline", "timeline-tick", "timeline-row", "timeline-point",
+    "profiles", "profile", "table", "table-head", "table-row", "temporal-comparison", "network-summary"]
+    .map((name) => [name, document.querySelector(`#analysis-${name}-template`)])),
+}, { cloneTemplate: cloneTemplateContent, setAvatar: setAvatarImage, t, count: formatCount,
+  timestamp: formatHistoryTimestamp, number: formatAnalysisNumber, percent: formatAnalysisPercent,
+  weekday: analysisTemporalAnalyzer.weekdayLabel, hour: analysisTemporalAnalyzer.hourLabel, overlapHeatmap: analysisTemporalAnalyzer.overlapHeatmap,
+  networkPatterns: ANALYSIS_NETWORK_PATTERNS, corpusPatterns: ANALYSIS_CORPUS_PATTERNS });
+const analysisAccountNormalizer = createAnalysisAccountNormalizer({ corpus: analysisCorpusAnalyzer.create, temporal: analysisTemporalAnalyzer.profile });
+const analysisAccountComparator = createAnalysisAccountComparator({
+  metrics: ANALYSIS_METRIC_DEFINITIONS, mapSimilarity: cosineSimilarityFromMaps, arraySimilarity: cosineSimilarityFromArrays,
+  jaccard: jaccardSimilarityFromSets, overlap: overlapSummaryFromSets, frequencies: frequencyMapFromEntries,
+  stylometry: analysisStylometryAnalyzer.compare, proximity: analysisTemporalAnalyzer.proximity,
+});
+const analysisController = createAnalysisController({
+  inputA: analysisAccountAInput, inputB: analysisAccountBInput, range: analysisRangeSelect, limit: analysisPostLimitSelect,
+  replies: analysisIncludeRepliesToggle, quotes: analysisIncludeQuotesToggle, status: analysisStatusLineNode,
+  noteA: analysisAccountANote, noteB: analysisAccountBNote, loadA: analysisAccountALoadButton, loadB: analysisAccountBLoadButton,
+  ownA: analysisAccountAOwnButton, ownB: analysisAccountBOwnButton, compare: analysisCompareButton,
+  reset: analysisResetButton, exportPdf: analysisExportPdfButton,
+}, {
+  state: {
+    /** Reads current accounts. @returns {*} Live value. */
+    get accounts() { return savedAccounts; },
+    /** Applies current accounts. @param {*} value - New value. */
+    set accounts(value) { savedAccounts = value; },
+    /** Reads current authDid. @returns {*} Live value. */
+    get authDid() { return authAccountDid; },
+    /** Applies current authDid. @param {*} value - New value. */
+    set authDid(value) { authAccountDid = value; },
+    /** Reads current auth. @returns {*} Live value. */
+    get auth() { return authAccount; },
+    /** Applies current auth. @param {*} value - New value. */
+    set auth(value) { authAccount = value; },
+    /** Reads current loading. @returns {*} Live value. */
+    get loading() { return analysisLoading; },
+    /** Applies current loading. @param {*} value - New value. */
+    set loading(value) { analysisLoading = value; },
+    /** Reads current status. @returns {*} Live value. */
+    get status() { return analysisStatusLine; },
+    /** Applies current status. @param {*} value - New value. */
+    set status(value) { analysisStatusLine = value; },
+    /** Reads current accountA. @returns {*} Live value. */
+    get accountA() { return analysisAccountDataA; },
+    /** Applies current accountA. @param {*} value - New value. */
+    set accountA(value) { analysisAccountDataA = value; },
+    /** Reads current accountB. @returns {*} Live value. */
+    get accountB() { return analysisAccountDataB; },
+    /** Applies current accountB. @param {*} value - New value. */
+    set accountB(value) { analysisAccountDataB = value; },
+    /** Reads current comparison. @returns {*} Live value. */
+    get comparison() { return analysisComparisonResult; },
+    /** Applies current comparison. @param {*} value - New value. */
+    set comparison(value) { analysisComparisonResult = value; },
+    /** Reads current requestToken. @returns {*} Live value. */
+    get requestToken() { return analysisRequestToken; },
+    /** Applies current requestToken. @param {*} value - New value. */
+    set requestToken(value) { analysisRequestToken = value; },
+    /** Reads current validationTokens. @returns {*} Live value. */
+    get validationTokens() { return analysisValidationTokens; },
+    /** Applies current validationTokens. @param {*} value - New value. */
+    set validationTokens(value) { analysisValidationTokens = value; },
+  }, t, locale: () => currentLocale, actor: normalizeAnalysisActor, serialize: getPersistableAnalysisAccount,
+  normalize: analysisAccountNormalizer.normalize, needsRefresh: analysisAccountNeedsNetworkRefresh, compare: analysisAccountComparator.compare,
+  request: sendToServiceWorker, persist: persistSettings, render: renderAnalysisWorkspace, error: showErrorDialog,
+  note: setAccountFieldNote, report: (error) => console.error(error), busy: setBusy, exportReport: exportAnalysisPdfReport,
+  renderResult: () => analysisRenderer.result(analysisComparisonResult),
+});
+const analysisReportModels = createAnalysisReportModels({
+  t, number: formatAnalysisNumber, percent: formatAnalysisPercent, now: () => new Date(),
+  metricRows: buildAnalysisMetricTableModel, deltaLabel: ANALYSIS_DELTA_REPORT_LABEL, corpusPatterns: ANALYSIS_CORPUS_PATTERNS, networkPatterns: ANALYSIS_NETWORK_PATTERNS,
+});
+const analysisReportLayout = createAnalysisReportLayout({ canvas: () => document.createElement("canvas"), wrap: buildWrappedPdfLines });
+const analysisPdfRenderer = createAnalysisPdfRenderer({
+  state: {
+    /** Reads the current first account. @returns {object|null} Account A. */
+    get accountA() { return analysisAccountDataA; },
+    /** Reads the current second account. @returns {object|null} Account B. */
+    get accountB() { return analysisAccountDataB; },
+    /** Reads the current comparison. @returns {object|null} Comparison. */
+    get comparison() { return analysisComparisonResult; },
+  }, t, models: analysisReportModels, layout: analysisReportLayout, tables: analysisTableModels,
+  canvas: () => document.createElement("canvas"), now: () => new Date(),
+  fetch: (...args) => fetch(...args), bitmap: (blob) => createImageBitmap(blob),
+  fill: fillRoundedRect, stroke: strokeRoundedRect, wrap: buildWrappedPdfLines, text: drawArchivePdfTextBlock, circle: drawCircularImageCover,
+  date: formatCompactArchiveTimestamp, count: formatCount, timestamp: formatHistoryTimestamp, percent: formatAnalysisPercent,
+  weekday: analysisTemporalAnalyzer.weekdayLabel, overlap: analysisTemporalAnalyzer.overlapHeatmap, temporalSummary: analysisRenderer.temporalSummary,
+  pdf: buildPdfFile, file: (blob, name) => new File([blob], name, { type: "application/pdf" }),
+  deliver: shareOrDownloadFile, status: setAnalysisStatus,
+});
+const analysisWorkspaceController = createAnalysisWorkspaceController({
+  inputA: analysisAccountAInput, inputB: analysisAccountBInput, launch: analysisButton, exportPdf: analysisExportPdfButton,
+}, {
+  getState: () => ({ auth: authAccount, accountA: analysisAccountDataA, accountB: analysisAccountDataB, comparison: analysisComparisonResult, status: analysisStatusLine }),
+  renderer: analysisRenderer, controller: analysisController, tables: analysisTableModels, t,
+  navigate: () => navigateToThreadlinePage(THREADLINE_PAGE_TOOLS),
+  setWorkspace: (workspace) => { currentWorkspace = workspace; }, fullscreen: applyThreadExplorerFullscreenState,
+  persistWorkspace: persistWorkspacePreference, visible: setVisibleWorkspace, context: applyHashtagPaneContext, authButtons: updateAuthButtons,
+});
+bindAnalysisWorkspaceEvents({
+  accountAOwnButton: analysisAccountAOwnButton, accountBOwnButton: analysisAccountBOwnButton,
+  accountALoadButton: analysisAccountALoadButton, accountBLoadButton: analysisAccountBLoadButton,
+  compareButton: analysisCompareButton, resetButton: analysisResetButton, exportPdfButton: analysisExportPdfButton,
+  accountInputs: [analysisAccountAInput, analysisAccountBInput],
+  optionControls: [analysisRangeSelect, analysisPostLimitSelect, analysisIncludeRepliesToggle, analysisIncludeQuotesToggle],
+}, analysisController.handlers);
 const helpController = createHelpController({
   dialog: helpDialog, eyebrow: helpDialogEyebrow, title: helpDialogTitle, status: helpStatus,
   content: helpContent, template: document.querySelector("#help-topic-template"),
@@ -26848,6 +21186,203 @@ const savedAccountActions = createSavedAccountActions({
   updateStatus: updateStatusForAuth, setStatus, openLogin: openLoginDialog, verify: verifySession,
   confirm: openConfirmDialog, t, report: (error) => console.error(error),
 });
+const networkLayoutController = createNetworkLayoutController({
+  getState: () => ({ shape: networkStageShape, slots: networkStageSlots, counts: networkStageRelationCounts }),
+  relation: getNetworkRelationType, clamp,
+});
+const networkDataController = createNetworkDataController({
+  getState: () => ({ authAccount, authDid: authAccountDid, loading: networkLoading, viewer: networkViewerProfile,
+    accountDid: networkAccountDid, nodes: networkNodes, followerCursor: networkFollowerCursor,
+    followCursor: networkFollowCursor, waveIndex: networkWaveIndex }),
+  setState: (patch) => {
+    if ("accountDid" in patch) { networkAccountDid = patch.accountDid; }
+    if ("viewer" in patch) { networkViewerProfile = patch.viewer; }
+    if ("loading" in patch) { networkLoading = patch.loading; }
+    if ("filterMode" in patch) { networkFilterMode = patch.filterMode; }
+    if ("query" in patch) { networkSearchQuery = patch.query; }
+    if ("statusLine" in patch) { networkStatusLine = patch.statusLine; }
+    if ("followerCursor" in patch) { networkFollowerCursor = patch.followerCursor; }
+    if ("followCursor" in patch) { networkFollowCursor = patch.followCursor; }
+    if ("hasMoreFollowers" in patch) { networkHasMoreFollowers = patch.hasMoreFollowers; }
+    if ("hasMoreFollows" in patch) { networkHasMoreFollows = patch.hasMoreFollows; }
+    if ("waveIndex" in patch) { networkWaveIndex = patch.waveIndex; }
+  },
+  requestedActor: getRequestedNetworkActor, ensureAccount: ensureNetworkStateForAccount, reset: resetNetworkState,
+  clearQuery: () => { if (networkSearchInput) { networkSearchInput.value = ""; } },
+  setActorInput: (actor) => { if (networkAccountInput) { networkAccountInput.value = actor; } },
+  note: setNetworkAccountFieldNote, updateControls: updateNetworkControls,
+  busy: (busy) => setBusy(networkLoadButton, busy, t("networkLoadingButton"), t("networkLoadButton")),
+  request: sendToServiceWorker, status: setNetworkStatus, ingest: ingestNetworkProfiles, t, formatCount,
+  report: (error) => console.error(error), showError: showErrorDialog, render: renderNetworkWorkspace,
+});
+const networkFocusController = createNetworkFocusController({
+  getState: () => ({ viewer: networkViewerProfile, nodes: networkNodes, details: networkFocusDetails,
+    selectedDid: networkSelectedDid, loadingDid: networkFocusLoadingDid, accountDid: networkAccountDid, authDid: authAccountDid,
+    commonTargetDid: networkCommonMutualsTargetDid, commonDids: networkCommonMutualsDids,
+    commonLoadingDid: networkCommonMutualsLoadingDid, filterMode: networkFilterMode }),
+  setState: (patch) => {
+    if ("selectedDid" in patch) { networkSelectedDid = patch.selectedDid; }
+    if ("loadingDid" in patch) { networkFocusLoadingDid = patch.loadingDid; }
+    if ("previewTab" in patch) { networkFocusPreviewTab = patch.previewTab; }
+    if ("collapsed" in patch) { networkFocusCollapsed = patch.collapsed; }
+    if ("commonTargetDid" in patch) { networkCommonMutualsTargetDid = patch.commonTargetDid; }
+    if ("commonDids" in patch) { networkCommonMutualsDids = patch.commonDids; }
+    if ("commonLoadingDid" in patch) { networkCommonMutualsLoadingDid = patch.commonLoadingDid; }
+    if ("commonHasMore" in patch) { networkCommonMutualsHasMore = patch.commonHasMore; }
+    if ("filterMode" in patch) { networkFilterMode = patch.filterMode; }
+    if ("query" in patch) { networkSearchQuery = patch.query; }
+    if ("fitAll" in patch) { networkStageFitAll = patch.fitAll; }
+    if ("zoom" in patch) { networkStageZoom = patch.zoom; }
+    if ("panX" in patch) { networkStagePanX = patch.panX; }
+    if ("panY" in patch) { networkStagePanY = patch.panY; }
+  },
+  request: sendToServiceWorker, render: renderNetworkWorkspace, setStatus: setNetworkStatus,
+  label: getProfileLabel, t, formatCount, report: (error) => console.error(error),
+  clearQuery: () => { if (networkSearchInput) { networkSearchInput.value = ""; } },
+});
+const networkStageController = createNetworkStageController({
+  stage: networkStageSvg, body: document.body, document,
+  fullscreenTarget: networkGrid || networkWorkspace || networkStageCard, results: networkResults,
+}, {
+  getState: () => ({ workspace: currentWorkspace, fitAll: networkStageFitAll, zoom: networkStageZoom,
+    panX: networkStagePanX, panY: networkStagePanY, drag: networkStageDrag, shape: networkStageShape,
+    mode: networkStageMode, focusVisible: networkStageModeFocusVisible, listsVisible: networkStageModeListsVisible,
+    selectedDid: networkSelectedDid, collapsed: networkFocusCollapsed,
+    scrollTop: networkResultsScrollTop, restorePending: networkResultsRestorePending }),
+  setState: (patch) => {
+    if ("fitAll" in patch) { networkStageFitAll = patch.fitAll; }
+    if ("zoom" in patch) { networkStageZoom = patch.zoom; }
+    if ("panX" in patch) { networkStagePanX = patch.panX; }
+    if ("panY" in patch) { networkStagePanY = patch.panY; }
+    if ("drag" in patch) { networkStageDrag = patch.drag; }
+    if ("shape" in patch) { networkStageShape = patch.shape; }
+    if ("mode" in patch) { networkStageMode = patch.mode; }
+    if ("focusVisible" in patch) { networkStageModeFocusVisible = patch.focusVisible; }
+    if ("listsVisible" in patch) { networkStageModeListsVisible = patch.listsVisible; }
+    if ("collapsed" in patch) { networkFocusCollapsed = patch.collapsed; }
+    if ("group" in patch) { networkInsightsStageGroup = patch.group; }
+    if ("scrollTop" in patch) { networkResultsScrollTop = patch.scrollTop; }
+    if ("restorePending" in patch) { networkResultsRestorePending = patch.restorePending; }
+  },
+  clamp, minZoom: NETWORK_STAGE_MIN_ZOOM, maxZoom: NETWORK_STAGE_MAX_ZOOM,
+  layout: () => {
+    const visible = getVisibleNetworkNodes(); const selected = networkSelectedDid || getPreferredNetworkSelection(visible);
+    const layout = computeNetworkLayout(visible, selected);
+    layout.contentBounds = computeNetworkStageContentBounds(layout, visible, selected); return layout;
+  },
+  viewport: getNetworkStageViewport, renderStage: renderNetworkStage, renderWorkspace: renderNetworkWorkspace,
+  persistShape: persistNetworkStageShapePreference, frame: (callback) => requestAnimationFrame(callback),
+});
+bindNetworkStageModeEvents({ enterButton: networkStageModeButton, exitButton: networkStageModeExitButton,
+  focusButton: networkStageModeFocusButton, listsButton: networkStageModeListsButton }, networkStageController.modeHandlers);
+bindNetworkInsightEvents({ groupButtons: networkInsightsGroupButtons, focusToggleButton: networkFocusToggleButton }, networkStageController.insightHandlers);
+bindNetworkStageInteractionEvents({ stage: networkStageSvg }, networkStageController.interactionHandlers);
+bindNetworkLifecycleEvents({ document, results: networkResults }, networkStageController.lifecycleHandlers);
+const networkWorkspaceRenderer = createNetworkWorkspaceRenderer({
+  body: document.body, results: networkResults, commonFilter: networkFilterCommonButton, filterButtons: networkFilterButtons,
+  loaded: networkSummaryLoaded, mutuals: networkSummaryMutuals, visible: networkSummaryVisible,
+  actor: networkAccountInput, canvas: networkCanvasPanel, stageCard: networkStageCard, insightsCard: networkInsightsCard,
+  focusPanel: networkFocusPanel, shape: networkShapeToggleButton, collapse: networkFocusToggleButton,
+  enter: networkStageModeButton, exit: networkStageModeExitButton, focus: networkStageModeFocusButton, lists: networkStageModeListsButton,
+  sortField: networkSortFieldSelect, sortDirection: networkSortDirectionSelect,
+  groupToggles: networkInsightsGroupToggles, groupButtons: networkInsightsGroupButtons,
+  templates: { intro: document.querySelector("#network-result-intro-template"), group: document.querySelector("#network-result-group-template"),
+    item: document.querySelector("#network-result-item-template"), more: document.querySelector("#network-result-more-template"),
+    empty: document.querySelector("#network-result-empty-template"), icon: document.querySelector("#network-focus-toggle-template") },
+}, {
+  getState: () => ({ commonTargetDid: networkCommonMutualsTargetDid, selectedDid: networkSelectedDid,
+    commonDids: networkCommonMutualsDids, filterMode: networkFilterMode, scrollTop: networkResultsScrollTop,
+    stageMode: networkStageMode, listsVisible: networkStageModeListsVisible, focusVisible: networkStageModeFocusVisible,
+    group: networkInsightsStageGroup, loading: networkLoading, viewer: networkViewerProfile, collapsed: networkFocusCollapsed,
+    shape: networkStageShape, sortField: networkSortField, sortDirection: networkSortDirection }),
+  cloneTemplate: cloneTemplateContent, allNodes: getAllNetworkNodes, visibleNodes: getVisibleNetworkNodes,
+  relation: getNetworkRelationType, sort: sortNetworkNodes, score: getNetworkNodeScore, formatCount, t,
+  ownNetwork: isViewingOwnNetwork, centerLabel: getNetworkCenterLabel, pending: hasPendingNetworkDataForGroup,
+  setFilter: (mode) => { networkFilterMode = mode; }, setScroll: (top) => { networkResultsScrollTop = top; },
+  select: setNetworkSelection, loadMore: loadMoreNetworkGroup, restoreScroll: restoreNetworkResultsScroll,
+});
+const networkFocusCardRenderer = createNetworkFocusCardRenderer({
+  card: networkFocusCard, templates: { shell: document.querySelector("#network-focus-shell-template"),
+    stat: document.querySelector("#network-focus-stat-template"), line: document.querySelector("#network-focus-line-template"),
+    meta: document.querySelector("#network-focus-meta-template"), description: document.querySelector("#network-focus-description-template"),
+    empty: document.querySelector("#network-result-empty-template") },
+}, {
+  getState: () => ({ selectedDid: networkSelectedDid, nodes: networkNodes, details: networkFocusDetails,
+    viewer: networkViewerProfile, authAccount, accountDid: networkAccountDid, loading: networkLoading,
+    focusLoadingDid: networkFocusLoadingDid, commonTargetDid: networkCommonMutualsTargetDid,
+    commonLoadingDid: networkCommonMutualsLoadingDid, commonDids: networkCommonMutualsDids }),
+  model: (state) => buildNetworkFocusCardModel(state, {
+    known: getKnownNetworkProfile, ownNetwork: isViewingOwnNetwork, avatar: getStoredAccountAvatarUri,
+    relation: getNetworkRelationLabel, score: getNetworkNodeScore, breakdown: getNetworkScoreBreakdown,
+    centerLabel: getNetworkCenterLabel, locale: currentLocale, formatCount, t,
+  }),
+  cloneTemplate: cloneTemplateContent, setAvatar: setAvatarImage, t,
+  setActorInput: (actor) => { if (networkAccountInput) { networkAccountInput.value = actor; } },
+  load: loadNetworkWave, loadCommon: loadNetworkCommonMutuals, clearCommon: clearNetworkCommonMutuals,
+  renderWorkspace: renderNetworkWorkspace,
+});
+const networkStageRenderer = createNetworkStageRenderer({
+  stage: networkStageSvg, empty: networkStageEmpty,
+  templates: { scene: document.querySelector("#network-svg-scene-template"), node: document.querySelector("#network-svg-node-template"),
+    focus: document.querySelector("#network-svg-focus-template"), preview: document.querySelector("#network-svg-preview-template"),
+    primitive: document.querySelector("#network-svg-primitive-template") },
+}, {
+  getState: () => ({ selectedDid: networkSelectedDid, hoveredDid: networkHoveredDid, viewer: networkViewerProfile,
+    accountDid: networkAccountDid, authDid: authAccountDid, authAccount, nodes: networkNodes }),
+  allNodes: getAllNetworkNodes, slot: ensureNetworkStageSlot, visibleNodes: getVisibleNetworkNodes, preferred: getPreferredNetworkSelection,
+  hover: setNetworkHoveredAccount, select: setNetworkSelection, known: getKnownNetworkProfile, label: getProfileLabel,
+  initials: getProfileInitials, relation: getNetworkRelationType, relationLabel: getNetworkRelationLabel, previews: getNetworkStageFocusPreviewItems,
+  layout: computeNetworkLayout, contentBounds: computeNetworkStageContentBounds, viewport: getNetworkStageViewport,
+  common: getActiveNetworkCommonMutualDids, orbitPath: buildNetworkOrbitPath, labels: getNetworkStageLabelCandidates,
+  cloneTemplate: cloneTemplateContent, t,
+});
+const networkWorkspaceController = createNetworkWorkspaceController({
+  search: networkSearchInput, account: networkAccountInput, sortField: networkSortFieldSelect, sortDirection: networkSortDirectionSelect,
+  status: networkProgressLine, hover: networkStageHovercard,
+}, {
+  getState: () => ({ authAccount, authDid: authAccountDid, accountDid: networkAccountDid, viewer: networkViewerProfile,
+    nodes: networkNodes, details: networkFocusDetails, selectedDid: networkSelectedDid, loadingDid: networkFocusLoadingDid,
+    loading: networkLoading, hasMoreFollowers: networkHasMoreFollowers, hasMoreFollows: networkHasMoreFollows, statusLine: networkStatusLine }),
+  setState: (patch) => {
+    if ("accountDid" in patch) { networkAccountDid = patch.accountDid; }
+    if ("viewer" in patch) { networkViewerProfile = patch.viewer; }
+    if ("nodes" in patch) { networkNodes = patch.nodes; }
+    if ("details" in patch) { networkFocusDetails = patch.details; }
+    if ("followerCursor" in patch) { networkFollowerCursor = patch.followerCursor; }
+    if ("followCursor" in patch) { networkFollowCursor = patch.followCursor; }
+    if ("hasMoreFollowers" in patch) { networkHasMoreFollowers = patch.hasMoreFollowers; }
+    if ("hasMoreFollows" in patch) { networkHasMoreFollows = patch.hasMoreFollows; }
+    if ("loading" in patch) { networkLoading = patch.loading; }
+    if ("loadingDid" in patch) { networkFocusLoadingDid = patch.loadingDid; }
+    if ("selectedDid" in patch) { networkSelectedDid = patch.selectedDid; }
+    if ("statusLine" in patch) { networkStatusLine = patch.statusLine; }
+    if ("waveIndex" in patch) { networkWaveIndex = patch.waveIndex; }
+    if ("slots" in patch) { networkStageSlots = patch.slots; }
+    if ("counts" in patch) { networkStageRelationCounts = patch.counts; }
+    if ("zoom" in patch) { networkStageZoom = patch.zoom; }
+    if ("panX" in patch) { networkStagePanX = patch.panX; }
+    if ("panY" in patch) { networkStagePanY = patch.panY; }
+    if ("drag" in patch) { networkStageDrag = patch.drag; }
+    if ("fitAll" in patch) { networkStageFitAll = patch.fitAll; }
+    if ("hoveredDid" in patch) { networkHoveredDid = patch.hoveredDid; }
+    if ("previewTab" in patch) { networkFocusPreviewTab = patch.previewTab; }
+    if ("filterMode" in patch) { networkFilterMode = patch.filterMode; }
+    if ("query" in patch) { networkSearchQuery = patch.query; }
+    if ("sortField" in patch) { networkSortField = patch.sortField; }
+    if ("sortDirection" in patch) { networkSortDirection = patch.sortDirection; }
+    if ("workspace" in patch) { currentWorkspace = patch.workspace; }
+  },
+  clearCommon: clearNetworkCommonMutuals, relation: getNetworkRelationType, t, known: getKnownNetworkProfile, label: getProfileLabel,
+  load: loadNetworkWave, loadFocus: loadNetworkFocusDetails, note: setNetworkAccountFieldNote, updateControls: updateNetworkControls,
+  navigate: () => navigateToThreadlinePage(THREADLINE_PAGE_TOOLS), applyExplorerFullscreen: applyThreadExplorerFullscreenState,
+  persistWorkspace: persistWorkspacePreference, showWorkspace: setVisibleWorkspace,
+  applyHashtagContext: applyHashtagPaneContext, updateAuth: updateAuthButtons,
+  renderers: [() => networkWorkspaceRenderer.presentation(), updateNetworkFilterButtons, renderNetworkSummary,
+    renderNetworkStage, renderNetworkFocus, renderNetworkResults, updateNetworkControls], restoreScroll: restoreNetworkResultsScroll,
+});
+bindNetworkWorkspaceEvents({ filterButtons: networkFilterButtons, searchInput: networkSearchInput, accountInput: networkAccountInput,
+  sortField: networkSortFieldSelect, sortDirection: networkSortDirectionSelect, accountLoadButton: networkAccountLoadButton,
+  ownLoadButton: networkOwnLoadButton, loadButton: networkLoadButton, resetButton: networkResetButton }, networkWorkspaceController.handlers);
 const savedAccountRenderer = createSavedAccountRenderer({
   panel: accountSwitcherPanel, list: accountSwitcherList,
   template: document.querySelector("#account-switcher-item-template"),

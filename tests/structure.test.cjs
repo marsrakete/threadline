@@ -8,6 +8,74 @@ const { spawnSync } = require("node:child_process");
 
 const projectRoot = path.resolve(__dirname, "..");
 
+test("archive preferences delegate dates, filters and restoration to their cached module", () => {
+  const source = readProjectFile("app.js");
+  assert.ok(source.includes('from "./js/tools/archive-preferences.js"'));
+  assert.ok(readProjectFile("sw.js").includes('"./js/tools/archive-preferences.js"'));
+  for (const name of ["formatArchiveDateInputValue", "parseArchiveDateInputValue", "getArchiveDateAtLocalMidnight", "addArchiveMonths"]) {
+    assert.doesNotMatch(source, new RegExp(`function ${name}\\(`));
+  }
+  for (const operation of ["clamp(preferredEdge)", "bounds()", "ensure()", "filters()", "pdf()", "wave()", "snapshot()", "restore(preferences)"]) {
+    assert.ok(source.includes(`archivePreferencesController.${operation}`));
+  }
+});
+
+test("analysis calculations delegate to cached domain modules without duplicate implementations", () => {
+  const source = readProjectFile("app.js");
+  const cache = readProjectFile("sw.js");
+  for (const name of ["config", "corpus", "similarity", "temporal", "stylometry", "accounts", "comparison", "rendering", "table-models", "controller", "report-models", "report-layout", "pdf-rendering"]) {
+    assert.ok(source.includes(`./js/tools/analysis-${name}.js`));
+    assert.ok(cache.includes(`./js/tools/analysis-${name}.js`));
+  }
+  for (const name of ["countRegexMatches", "cosineSimilarityFromMaps", "jaccardSimilarityFromSets",
+    "intersectionCountFromSets", "overlapSummaryFromSets", "frequencyMapFromEntries", "cosineSimilarityFromArrays",
+    "shareArray", "getAnalysisTopEntriesFromMap", "buildAnalysisWordRateMap", "splitAnalysisTextsIntoWordChunks", "startOfUtcDay"]) {
+    assert.doesNotMatch(source, new RegExp(`function ${name}\\(`));
+  }
+  assert.doesNotMatch(source, /const ANALYSIS_(FUNCTION_WORDS|NUMBER_WORDS|TEMPORAL_GAP_BUCKETS)\s*=/);
+  for (const operation of ["corpus: analysisCorpusAnalyzer.create", "temporal: analysisTemporalAnalyzer.profile",
+    "proximity: analysisTemporalAnalyzer.proximity", "overlap: analysisTemporalAnalyzer.overlapHeatmap",
+    "stylometry: analysisStylometryAnalyzer.compare", "normalize: analysisAccountNormalizer.normalize", "compare: analysisAccountComparator.compare"]) {
+    assert.ok(source.includes(operation));
+  }
+  for (const name of ["getPersistableAnalysisAccount", "analysisAccountNeedsNetworkRefresh", "computeBurrowsDelta", "createAnalysisCorpus", "createAnalysisTemporalProfile"]) {
+    assert.doesNotMatch(source, new RegExp(`function ${name}\\(`));
+  }
+  assert.doesNotMatch(source, /const ANALYSIS_METRIC_DEFINITIONS\s*=/);
+  assert.doesNotMatch(source, /const robustnessMix\s*=/);
+  assert.doesNotMatch(source, /function buildAnalysisNetworkPatternDefinitions\(|function formatAnalysisPdfListEntries\(|function formatAnalysisPdfStatEntries\(/);
+  assert.ok(source.includes("analysisPdfRenderer.export()"));
+  assert.ok(source.includes("models: analysisReportModels, layout: analysisReportLayout, tables: analysisTableModels"));
+  assert.doesNotMatch(source, /function (?:createAnalysisTextPdfPages|buildAnalysisPdfTextPageContent|convertAnalysisTextPagesToPdfPages|renderAnalysisPdf\w+|drawAnalysisPdf\w+|loadAnalysisPdfAvatarBitmap)\(/);
+  assert.doesNotMatch(source, /const analysisPdfAvatarBitmapCache/);
+  assert.doesNotMatch(source, /sendToServiceWorker\("LOAD_ANALYSIS_ACCOUNT"/);
+  for (const operation of ["snapshot()", "restore(state)", "controls()"] ) {
+    assert.ok(source.includes(`analysisController.${operation}`));
+  }
+  assert.doesNotMatch(source, /function renderAnalysisSummaryCard\(/);
+  for (const pathname of ["index.html", "tools.html"]) {
+    for (const name of ["note", "span", "tokens", "token", "stats", "stat", "bars", "bar", "pattern", "account", "result",
+      "heatmap", "heatmap-grid", "axis", "heatmap-cell", "timeline", "timeline-tick", "timeline-row", "timeline-point",
+      "profiles", "profile", "table", "table-head", "table-row", "temporal-comparison", "network-summary"]) {
+      assert.ok(readProjectFile(pathname).includes(`id="analysis-${name}-template"`));
+    }
+  }
+  assert.ok(source.includes("analysisController.handlers"));
+  assert.ok(source.indexOf("bindAnalysisWorkspaceEvents({") > source.indexOf("const analysisController ="));
+  assert.ok(source.includes("analysisWorkspaceController.show()"));
+  assert.ok(source.includes("analysisWorkspaceController.render()"));
+  assert.ok(source.includes("analysisWorkspaceController.translate()"));
+  assert.ok(source.includes("analysisRenderer.result(analysisComparisonResult)"));
+  const workspace = readProjectFile("js/tools/analysis.js");
+  for (const operation of ["renderer.summary(", "renderer.result(", "renderer.temporal(", "renderer.network(", "renderer.metrics(", "renderer.patterns(", "options.tables.network(", "options.tables.temporal("]) {
+    assert.ok(workspace.includes(operation));
+  }
+  for (const name of ["renderAnalysisTemporalAccountCard", "createAnalysisTemporalHeatmap", "createAnalysisTemporalComparisonHeatmap", "createAnalysisTemporalTimeline",
+    "createAnalysisPatternList", "createAnalysisStatList", "createAnalysisBarList", "createAnalysisPatternCard", "createAnalysisSimpleChipList", "createAnalysisResolvedProfileList", "formatAnalysisTopTemporalEntries"]) {
+    assert.doesNotMatch(source, new RegExp(`function ${name}\\(`));
+  }
+});
+
 test("authentication UI and account actions remain module-owned and template-based", () => {
   const source = readProjectFile("app.js");
   assert.match(source, /savedAccountRenderer\.render\(\)/);
@@ -16,6 +84,51 @@ test("authentication UI and account actions remain module-owned and template-bas
   for (const pathname of ["index.html", "tools.html"]) {
     const html = readProjectFile(pathname);
     assert.match(html, /<template id="account-switcher-item-template">[\s\S]*?class="account-chip-label"[\s\S]*?class="account-chip-action"/);
+  }
+});
+
+test("network selection and viewport calculations stay behind domain module contracts", () => {
+  const source = readProjectFile("app.js");
+  for (const name of ["mergeNetworkNode", "getStrongNetworkScoreThreshold", "matchesNetworkFilter", "getNetworkSortValue"]) {
+    assert.doesNotMatch(source, new RegExp(`function ${name}\\(`));
+  }
+  for (const operation of ["rankNetworkNodes", "selectNetworkNodes", "sortNetworkProfiles", "calculateNetworkViewport", "calculateNetworkContentBounds"]) {
+    assert.match(source, new RegExp(`${operation}\\(`));
+  }
+  assert.match(readProjectFile("sw.js"), /\.\/js\/tools\/network\.js/);
+  assert.match(readProjectFile("sw.js"), /\.\/js\/tools\/network-layout\.js/);
+  assert.doesNotMatch(source, /sendToServiceWorker\("LOAD_NETWORK_SLICE"|function getNetworkOrbitAxes\(/);
+  assert.match(source, /networkDataController\.load\(options\)/);
+  assert.match(source, /networkLayoutController\.layout\(nodes, selectedDid\)/);
+  assert.match(source, /renderNetworkLoadControls\(/);
+  assert.match(source, /networkWorkspaceRenderer\.presentation\(\)/);
+  assert.match(source, /networkFocusCardRenderer\.render\(\)/);
+  assert.match(source, /networkStageRenderer\.render\(\)/);
+  assert.match(source, /networkWorkspaceController\.handlers/);
+  assert.match(source, /networkWorkspaceController\.render\(\)/);
+  assert.match(source, /networkWorkspaceController\.reset\(\)/);
+  assert.match(readProjectFile("sw.js"), /\.\/js\/tools\/network-controller\.js/);
+  assert.match(readProjectFile("sw.js"), /\.\/js\/tools\/network-stage-rendering\.js/);
+  for (const name of ["formatNetworkRelationshipDate", "formatNetworkActivityLastPost", "getNetworkActivityWindow"]) { assert.doesNotMatch(source, new RegExp(`function ${name}\\(`)); }
+  assert.match(readProjectFile("sw.js"), /\.\/js\/tools\/network-focus-rendering\.js/);
+  assert.match(readProjectFile("sw.js"), /\.\/js\/tools\/network-rendering\.js/);
+  for (const pathname of ["index.html", "tools.html"]) {
+    for (const id of ["intro", "group", "item", "more", "empty"]) { assert.ok(readProjectFile(pathname).includes(`id="network-result-${id}-template"`)); }
+    for (const id of ["shell", "stat", "line", "meta", "description"]) { assert.ok(readProjectFile(pathname).includes(`id="network-focus-${id}-template"`)); }
+    for (const id of ["scene", "node", "focus", "preview", "primitive"]) { assert.ok(readProjectFile(pathname).includes(`id="network-svg-${id}-template"`)); }
+  }
+  for (const handlers of ["modeHandlers", "insightHandlers", "interactionHandlers", "lifecycleHandlers"]) {
+    assert.ok(source.includes(`networkStageController.${handlers}`));
+  }
+  assert.doesNotMatch(source, /networkStageSvg\.setPointerCapture\(/);
+  assert.match(source, /await networkStageController\.enter\(\)/);
+  assert.doesNotMatch(source, /sendToServiceWorker\("LOAD_NETWORK_ACTOR_FOCUS"|sendToServiceWorker\("LOAD_NETWORK_COMMON_MUTUALS"/);
+  for (const [name, operation] of [["getKnownNetworkProfile", "known"], ["ingestNetworkProfiles", "ingest"],
+    ["getNetworkStageFocusPreviewItems", "previews"], ["getPreferredNetworkSelection", "preferred"],
+    ["setNetworkSelection", "select"], ["clearNetworkCommonMutuals", "clearCommon"],
+    ["getActiveNetworkCommonMutualDids", "activeCommon"], ["loadNetworkFocusDetails", "loadFocus"], ["loadNetworkCommonMutuals", "loadCommon"]]) {
+    const body = source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(body); assert.ok(body[0].includes(`networkFocusController.${operation}(`));
   }
 });
 

@@ -4,6 +4,140 @@
 
 Diese Datei bündelt die technischeren Hintergrundinformationen, die nicht im schnellen Einstieg des Haupt-README stehen sollen.
 
+## Analyse-Berechnungen
+
+Fuenf Analyse-Einheiten haben jetzt explizite Domaenengrenzen: `analysis-config.js` enthaelt mehrsprachige Wortlisten und Zeitklassen; `analysis-corpus.js` verwaltet Tokenisierung, Haeufigkeiten und Textmetriken; `analysis-similarity.js` berechnet Vektor-/Mengenueberlappungen; `analysis-temporal.js` verwaltet UTC-Profile, Histogramme und Zeitstempelvergleiche; `analysis-stylometry.js` verwaltet Wort-Chunks und Burrows Delta. Sprache und Uhr werden als Adapter uebergeben. `app.js` setzt die Analyzer zusammen und behaelt Account-/UI-Orchestrierung, aber keine doppelten Berechnungsimplementierungen. Alle fuenf Module stehen in der Service-Worker-Assetliste.
+
+Die bisherigen Regeln bleiben erhalten, einschliesslich oberem mittlerem Zeitabstand, inklusiven Zeitfenstern, Mehrfachzuordnung von Zeitstempeln und Delta-Ergebnissen bei unzureichenden Stichproben. Ungueltige Chunk-Limits werfen nun einen Fehler statt eine unbegrenzte Zusammenfuehrungsschleife zu erlauben. Vertragstests decken normale, leere, mehrsprachige und ungueltige Eingaben ab. Browserintegration mit kontrollierten Worker-Antworten laedt beide Seiten, laedt zwei Analyse-Accounts, berechnet einen Vergleich, prueft endliche angezeigte Werte und setzt das Ergebnis zurueck; Seitenfehler werden gesammelt. Live-Anfragen, PDF-Export und Offline-Cache-Aktivierung werden damit nicht geprueft.
+
+### Analyse-Accounts Und Vergleich
+
+`analysis-accounts.js` verwaltet die Normalisierung von Worker-/Speicherdaten, das JSON-faehige Speicherformat und die Legacy-Netzwerkerkennung. Korpus- und Zeitberechnung sind explizite Adapter. Originalpostings bleiben von normalisierten Textstichproben getrennt; DID-Mengen werden nach dem Laden neu aufgebaut. Fehlende Moderationslisten bleiben von vorhandenen leeren Listen unterscheidbar. Netzwerk-Ladezustand und Fallback-Regeln bleiben erhalten.
+
+`analysis-comparison.js` verwaltet das vollstaendige Vergleichsmodell: Metrikdistanzen, Text-/Stil-/Zeit-Aehnlichkeiten, Netzwerk-/Interaktionsueberlappungen, Moderationsverfuegbarkeit, direkte Beziehungen, gewichtete Scores, Konfidenz und Label-Schwellen. Die Metrikdefinitionen liegen jetzt in `analysis-config.js`. Berechnungsadapter und Definitionen werden bei der Initialisierung uebergeben; der Einstieg delegiert nur und uebernimmt Ergebnisse. Ueberfluessige Korpus-/Stil-/Zeit-Wrapper wurden entfernt.
+
+Tests pruefen Normalisierung, JSON-Roundtrips, Legacy-Feldprioritaet, Vergleichszweige, fehlende Accounts und Score-/Konfidenzschwellen. Die Browserintegration speichert den Vergleich, laedt die Seite neu und bestaetigt die Wiederherstellung ohne weitere Account-Anfragen. Speicher und Worker-Antworten sind kontrolliert; echte IndexedDB-Persistenz und Live-Anfragen werden nicht geprueft.
+
+### Analyse-Karten Und Listen-Rendering
+
+`analysis-rendering.js` trennt Account-/Ergebnis-Anzeigemodelle von der DOM-Erzeugung. Account-Karten, Vergleichsergebnisse, Token-Chips, formatierte Statistikzeilen, Prozentbalken und betitelte Musterkarten verwenden wiederverwendbare Templates auf beiden Seiten. Uebersetzung, Zahlen-/Datumsformatierung, Avatare, Template-Klonfunktion und Zielcontainer sind explizite Adapter. Nur dynamische Balkenbreiten bleiben inline. Klassen, Reihenfolge und uebersetzte Texte bleiben erhalten; doppelte Token-Listen delegieren jetzt an denselben Renderer.
+
+Modelltests pruefen fehlende Accounts/Ergebnisse, Namens-/Handle-Fallbacks, Datums-/Zeitraumtexte und vorhandenes beziehungsweise nicht verfuegbares Delta. Browsertests verwenden die echten Templates auf beiden Seiten in normaler und kompakter Oberflaeche. Geprueft werden unveraenderter Klartext bei HTML-Eingaben, Ersetzung beim erneuten Rendern, leere/ungueltige Listen, Balkengrenzen sowie Karten-/Balkenabmessungen bei mobiler Breite. Der produktive Lade-/Vergleichs-/Reload-/Reset-Test prueft ebenfalls den zusammengesetzten Renderer. Restliche Netzwerk-/Muster-Arbeitsbereichslogik und Export-Orchestrierung bleiben getrennte Folgeaufgaben.
+
+### Fuenf Weitere Analyse-Rendering-Einheiten
+
+Derselbe Renderer verwaltet jetzt Zeituebersichten samt Account-/Vergleichskarten, Profil-/Ueberlappungs-Heatmaps, taegliche UTC-Zeitachsen, aufgeloeste Netzwerkprofil-Karten und Metriktabellen. Die Formatierung der Uebersichts-/Profil-/Metrikdaten hat exportierte DOM-freie Modelle. Ein gemeinsamer Vier-Spalten-Renderer erzeugt Metrik- und Zeitvergleichstabellen mit den vorhandenen Kopf-/Zeilentemplates. Uebersetzte Tabellenmodelle werden explizit uebergeben.
+
+Heatmaps teilen Achsen-/Zelltemplates, behalten die Mindestintensitaet 0.08 und verwenden die bestehende Ueberlappungsberechnung mit dem bisherigen Zehn-Minuten-Fenster. Zeitachsen behalten UTC-Markierungen, begrenzte Punktpositionen und Stunden-Tooltips. Profilkarten behalten Lazy-Avatare, Handle-/DID-Fallback, Anteil und optionalen Geloescht-Status. Metriken behalten Prozent-/Zahlenformatierung sowie die nur nach oben begrenzte Differenz. Dynamische Intensitaeten/Positionen bleiben inline; Strukturen liegen in Templates auf beiden Seiten. Alte Diagramm-/Account-Builder wurden aus dem Einstieg entfernt.
+
+Unit-Tests pruefen leere/ungueltige Modelle und Formatgrenzen. Browsertests pruefen 84 Heatmap-Zellen, Ueberlappungs-/Leerdiagramme, fuenf Zeitmarkierungen, Punktgrenzen, geloeschte Profile, Vier-Spalten-Formatierung, teilweise/vergleichende Zeitansichten und Ersetzung ohne Duplikate in beiden Darstellungsmodi auf beiden Seiten. Heatmap-Zellgrenzen werden bei mobiler Breite geprueft. Live-Anfragen, PDF-Darstellung und echte Touch-Geraete sind nicht Bestandteil dieser kontrollierten Tests.
+
+### Musterdefinitionen, Tabellenmodelle Und Vollstaendige Musteransichten
+
+Fuenf weitere Einheiten liegen in Modulen: geordnete Korpus-/Netzwerk-Metadaten in `analysis-config.js`, Netzwerk- und Zeitvergleichsmodelle in `analysis-table-models.js` sowie vollstaendiges Netzwerk-/Muster-Rendering in `analysis-rendering.js`. UI und bestehende PDF-Zeilenadapter nutzen dieselben uebersetzten Tabellenmodelle. Netzwerk-Berichtsdefinitionen verwenden explizite Medien-Metadaten statt eines DOM-Builder-Callbacks. Die PDF-Seitenerzeugung ist in diesem Schritt noch nicht ausgelagert.
+
+Netzwerkzeilen behalten vollstaendige/teilweise Ladezustaende, Moderationsverfuegbarkeit, Ueberlappungszaehler, direkte Beziehungen, Markeranteile und Bewertungstexte. Zeitvergleiche behalten fehlende Medianwerte, Vektor-Aehnlichkeit, Fuenf-Minuten-Fenster und aktive Stunden. Netzwerkansichten behalten die erste Warnung, Neuladehinweise, drei Detailwerte, dreizehn Tabellenzeilen und vierzehn geordnete Musterkarten. Korpusansichten behalten vierundzwanzig Account-Karten, fehlende Accounts, Emoji-Leertext, getrennte Anfang-/Ende-Listen und gemischte Statistikformate. Strukturen nutzen vorhandene Templates plus ein Netzwerk-Summary-Template auf beiden Seiten; ungenutzte Listen-/Karten-Wrapper wurden entfernt.
+
+Vertragstests pruefen Metadaten-Reihenfolge, Modellgrenzen und Verfuegbarkeitszweige. Zweiundsiebzig direkte Vergleichspruefungen in drei Sprachen stimmten vor dem Entfernen mit den alten Tabellen-Buildern ueberein. Browsertests pruefen leere/teilweise/vollstaendige Ansichten, Moderation und Warntexte, Klartext, erneutes Rendern ohne Duplikate, Kartenzahlen und den produktiven Vergleichs-/Reload-Ablauf. PDF-Aufrufer wurden angepasst und auf Syntax geprueft; PDF-Export und Live-Anfragen wurden nicht ausgefuehrt.
+
+### Zehn Analyse-Controller-Einheiten
+
+`analysis-controller.js` verwaltet zehn zusammenhaengende Bereiche: sprachabhaengige Formatierung, aktiver Account/Optionen, Status und Feldhinweise, Button-Zustaende, Speicher-Snapshot, Wiederherstellung, Account-Validierung, einzelnes Laden, Vergleich und Reset. Der explizite Live-State-Adapter nutzt den bestehenden Anwendungszustand ohne Schemawechsel. DOM-Controls, Worker-Transport, Normalisierung/Vergleich, Speicherung, Rendering, Fehlerausgabe und Sprache werden uebergeben. Die Initialisierung folgt den Berechnungsmodulen; schmale Delegationen erhalten bisherige Aufrufer inklusive PDF-Formatierung.
+
+Validierung behaelt Tokens je Slot, Inline-Fehler und 30 Sekunden Timeout. Laden behaelt 180 Sekunden Timeout, Fortschrittszuordnung, sequenzielle A-/B-Anfragen, unterdrueckte Logs bei erwarteten Fehlern und die Freigabe des Busy-Zustands nur durch den aktuellen Request. Reset entwertet Ladeantworten und stellt die bisherigen Defaults her. Gespeicherte Vergleichszusammenfassungen werden aus normalisierten Accounts neu berechnet; alte Netzwerkdatensaetze verhindern weiterhin den Vergleich und zeigen den Neuladehinweis. PDF-Seitenrendering wurde hier nicht verschoben.
+
+Vertragstests pruefen Sprachwechsel, Account-Prioritaet, Optionsgrenzen, Auth-/Busy-/Ergebniszustaende, Speichern/Wiederherstellen, leere/fehlgeschlagene Validierung, ueberholte Validierungsantworten, Fortschritt, Reset waehrend des Ladens, Vergleichsreihenfolge und erwartete/unerwartete Fehler. Browserintegration laedt beide Seiten und prueft Laden, Vergleich, Speichern/Reload und Reset. Echte Worker-/PDS-/IndexedDB-Abläufe, PDF-Export und saemtliche moeglichen Request-Rennen sind nicht Bestandteil dieser kontrollierten Tests.
+
+### Zehn Analyse-Berichts- Und Layout-Einheiten
+
+`analysis-report-models.js` verwaltet Dateinamen, Metrik-/Delta-Zeilen, Score-Uebersichten, Token-/Statistiktexte, Korpus- und Netzwerk-Kartenpaare. Geordnete Metadaten und das Metriktabellenmodell werden mit der UI geteilt. Uhr, Texte, Formatierung und Metadaten sind explizite Eingaben. Grenzen von acht Tokens/acht Balken/sechs Profilen sowie bisheriges Verhalten bei fehlenden Accounts bleiben erhalten.
+
+`analysis-report-layout.js` verwaltet Karten-, Score-/Info- und Heatmap-Messungen, Musterseiten-Aufteilung, Tabellenzeilenmessung und Tabellenseiten-Aufteilung. Canvas-Erzeugung und Textumbruch werden uebergeben. Die beiden bisherigen Musterseitenpfade nutzen nun dieselbe Implementierung. Schriftgroessen, Zeilenhoehen, Abstaende, Mindesthoehe, Spaltenanteile und Behandlung uebergrosser Zeilen bleiben erhalten. Die nachfolgend beschriebene Renderer-Auslagerung vervollstaendigt den aktiven Canvas-Exportpfad.
+
+Dreissig direkte Vergleiche stimmten vor dem Austausch mit den bisherigen Berichtsmodellen und Seitenlayouts ueberein. Unit-Tests pruefen Metadatengrenzen, fehlendes/Null-Delta, Karteninhalte, Messhoehen, leere/uebergrosse Seiten und exakte Kapazitaetsgrenzen. Die Edge-Integration klickt nun nach Wiederherstellung eines Vergleichs den echten Exportbutton, empfaengt den PDF-Download und prueft Dateiname, PDF-Kopf, EOF und Mindestgroesse. Dadurch werden echte Canvas-/Schriftmessung und Berichtserzeugung ausgefuehrt; PDF-Seiten werden nicht visuell geprueft, Live-Accounts nicht getestet.
+
+### Vollstaendiger Aktiver Analyse-PDF-Renderer
+
+`analysis-pdf-rendering.js` verwaltet jetzt A4-Canvas-Grundseite, gecachte anonyme Avatar-Ladevorgaenge, Text-/Profil-/Balkenkarten, Score-Zeilen, UTC-Heatmaps, Uebersichts-/Tabellen-/Zeit-/Musterseiten, JPEG-Seitenzusammenbau und PDF-Ausgabe. Die Anwendung uebergibt Live-Leseadapter fuer Accounts/Vergleich, Modelle/Layout/Tabellen, gemeinsame Canvas-Funktionen, Textumbruch, Uhr/Formatierung, Fetch-/Bitmap-Adapter sowie PDF-/Datei-/Ausgabefunktionen. In `app.js` bleiben Initialisierung und Exportdelegation; gemeinsame Archiv-/PDF-Helfer bleiben gemeinsam.
+
+Seitenreihenfolge, Nummerierung, Bildnamen/-abmessungen, JPEG-Qualitaet, Standardtitel, Download-Praeferenz und Erfolgs-/Fehlerablauf bleiben erhalten. Avatar-Promises werden je Renderer einschliesslich fehlgeschlagener Abrufe gecacht. Drei ungenutzte Text-PDF-Builder sowie ungenutzte Export-Wrapper und der alte Cache wurden entfernt statt erneut ausgelagert.
+
+Vertragstests pruefen Zeichnungszweige, A4-Geometrie, Heatmap-Farben, Abrufe ohne Credentials, Avatar-Deduplizierung/Fallback, Ausgabereihenfolge, fehlenden Vergleich und Ausgabefehler. Die Edge-Integration exportiert den echten zehnseitigen Testbericht nach ignoriertem `test-results/`. Poppler rendert den Bericht zur exemplarischen Sichtpruefung. Dabei gefundene Altfehler wurden korrigiert: Zeit-Hinweise werden mit ihrer Zeichenschrift vermessen und die Balkenlabel-Spalte anhand echter Textbreiten dimensioniert. Beide Korrekturen haben Regressionstests. Berichte mit langen Namen/vielen Bildern, andere echte Accounts und alle Sprach-/Seitenkombinationen sind mit diesem Beispiel nicht visuell verifiziert.
+
+### Analyse-Events Und Arbeitsbereichs-Lebenszyklus
+
+Die Analyse-Eventlogik liegt jetzt in `analysis-controller.js`: eigene Accounts einsetzen, Eingaben und Validierungstokens invalidieren, Blur-Validierung, Enter-Vergleich, Filterwechsel sowie Export-Busy-/Fehlerrueckmeldung. Der vorhandene Event-Binder erhaelt nach der Factory-Initialisierung das Handler-Objekt statt Einstiegspunkt-Closures. Fuenfzehn ungenutzte Account-/Options-/Render-/Aktionsdelegationen wurden entfernt.
+
+`createAnalysisWorkspaceController` in `analysis.js` verwaltet Seitenwechsel-/Auth-Pruefung, Shell-Uebergaenge, geordnetes Abschnittsrendering und Analyse-Labels/Platzhalter. Live-Zustand, Renderer, Tabellenmodelle, Controller und Shell-Aktionen werden explizit uebergeben. Zustandsschema, Renderreihenfolge und Texte bleiben erhalten; `app.js` behaelt Initialisierung und notwendige globale Integrationsdelegationen.
+
+Vertragstests pruefen Account-/Eingabe-Events, slotbezogene Invalidierung, Enter-Verhalten, Export-Erfolg/Fehlerbereinigung, Navigation/Auth, Renderreihenfolge und aktuelle Sprachtexte. Die Browserintegration bedient eigene-Account-Buttons, Enter-Vergleich, Eingabe-Invalidierung, Speicherung/Reload und PDF-Export im produktiven Aufbau; beide Seiten sammeln Initialisierungsfehler. Echte Anmeldung und native Geraeteinteraktion werden nicht geprueft.
+
+## Archiv-Daten Und Einstellungen
+
+`archive-preferences.js` trennt lokale Kalenderverarbeitung, monatsendsichere Monatsverschiebung, uhrbasierte Defaults, Begrenzung nach bevorzugter Zeitraumkante, Datumseingabe-Grenzen, Filter-/Quelldaten, PDF-/Ladewellenoptionen und Wiederherstellung. Uhr, Monatslimit, Live-Zustand, Tag-Normalisierung und UI-Aktualisierungen werden explizit uebergeben. Die Regeln fuer drei Kalendermonate, Scope-/Inhalts-/Importmodi, gueltige Select-Werte, Checkbox-Defaults und Speicherstruktur bleiben erhalten. Das Modul steht im Service-Worker-Cache; alte Implementierungen sowie ungenutzte Imports/Quellen-Wrapper wurden entfernt.
+
+Vertragstests pruefen ungueltige Daten, Schaltjahre, Monatsenden, From-/To-/Auto-Grenzen, Defaults, gueltige/ungueltige Auswahlwerte, Metadaten und Callback-Reihenfolge. Achtundvierzig direkte Vergleiche entsprechen der bisherigen Zeitraum-/Eingabegrenzen-Implementierung. Die Edge-Integration oeffnet echte Archiv-Controls, prueft Januar-/April-Monatsgrenzen, aendert Inhalts-/Bildoptionen und stellt sie nach Speicherung/Reload wieder her. Analyse-/PDF-/Netzwerk-Regressionen bleiben enthalten. Worker-Speicherung ist kontrolliert; echte Archivabrufe und Live-Accounts werden nicht ausgefuehrt.
+
+## Netzwerk-Berechnungen
+
+`tools/network.js` verwaltet Profilzusammenfuehrung, Score-Rangfolge und Relevanzgrenze, Relations-/Textfilter, Ergebnislimits sowie locale-abhaengige alphabetische Sortierung. Die bestehenden Regeln bleiben erhalten: leere Profilfelder und Null-Zaehler ersetzen keine bereits geladenen Werte, Beziehungen werden zusammengefuehrt, Suchergebnisse bleiben score-sortiert und Listen alphabetisch sortiert.
+
+Viewport- und Inhaltsgrenzen sind zustandsfreie Berechnungen im selben Modul. Zoomgrenzen und die gemeinsame Clamp-Funktion werden uebergeben; `app.js` uebernimmt nur den zurueckgegebenen Pan-Zustand. Fokus-Previews sind explizite Eingaben. Fit-Padding, Knotengroessen und Fokusinsel-Abstaende sind unveraendert. Der bereits vorhandene Service-Worker-Asset-Eintrag bleibt gueltig.
+
+Vertragstests pruefen Zusammenfuehrung, Filter, Limits, Sortierties, Zoom-/Pan-Grenzen und Fokusgeometrie. Browser-Integration bedient echte Netzwerk-Controls mit kontrollierten Worker-Daten und prueft nach Fokuswechsel die Kreisgrenzen im SVG-Viewport. Beide Seiten werden mit Laufzeitfehler-Erfassung geladen; Live-Netzwerkabfragen sind damit nicht getestet.
+
+### Netzwerk-Fokus-Controller
+
+Der Netzwerk-Baustein `createNetworkFocusController` verwaltet Profilsuche/-zusammenfuehrung, begrenzte Preview-Listen, Auswahl und Common-Filter sowie Fokus- und gemeinsame-Mutuals-Anfragen. Zustand/Maps, Transport, Fortschritts-/Statusanzeige und Eingabeupdates sind explizite Adapter. Viewer-/Node-/Fokus-/Preview-Suchprioritaet, Request-Timeouts, Same-Target-Sperre und die Zuordnung der Lade-Markierung bleiben erhalten. Auswahlbezogene Fortschritte/Fehler gelten nur fuer das Request-Ziel; `app.js` enthaelt keine zweite Ladefolge.
+
+Vertragstests pruefen leere/fehlende Profile, Deduplizierung, Auswahl-/Filterwechsel, Antwort-Normalisierung, Request-Fehler und ueberlappende Request-Abschluesse. Der Browsertest laedt zusaetzlich gemeinsame Mutuals, filtert sie und hebt den Filter durch Auswahlwechsel auf. Worker-Antworten sind kontrolliert; echte PDS-Daten und reale Netzwerk-Rennen sind damit nicht geprueft.
+
+### Netzwerk-Laden, Geometrie Und Controls
+
+`createNetworkDataController` in `network.js` verwaltet die komplette Slice-Ladefolge: Actor-Auswahl/-Reset, Cursor, Fortschritt, Profilzusammenfuehrung, Zaehler, Busy-Zustand und Fehleranzeige. Zustand und vorhandene Reset-/Transport-/UI-Funktionen sind explizite Adapter. Append-Verhalten, Request-Limits/-Timeouts und stille Fehlerbehandlung bleiben unveraendert.
+
+`network-layout.js` verwaltet stabile Relationsplaetze, Lane-/Ringabstaende, Dichte, Kreis-/Squircle-Punkte und -Pfade, Label-Kandidaten und Fokusinsel-Abmessungen. Der Controller liest aktuelle Form/Maps ueber einen Adapter, auch nach Map-Austausch beim Reset. Zahlenregeln und 72-Segment-Pfad bleiben erhalten; das Modul ist in der Service-Worker-Assetliste. `renderNetworkLoadControls` in `network-ui.js` verwaltet uebersetzte Lade-/Reset-/Own-Account-Buttonzustaende.
+
+Vertragstests pruefen Cursor-Nutzung, Actor-Wechsel, Append-/No-Op-/Fehlerpfade, stabile Plaetze, Relationswechsel, Reset-Maps, dichte Layouts und Controls. Der Browsertest laedt mit dem gelieferten Cursor eine zweite Welle, stellt die gespeicherte Squircle-Einstellung wieder her und prueft fokussierte SVG-Grenzen. Der Form-Button bleibt absichtlich per CSS verborgen; der Test simuliert keinen Nutzerklick darauf. Echte Worker-/PDS-Interaktion und Offline-Cache-Aktivierung sind damit nicht getestet.
+
+### Netzwerk-Buehnenbedienung
+
+`createNetworkStageController` in `network-ui.js` verwaltet verankerten Zoom, Pointer-Pan, Form-/Reset-Aktionen, natives Vollbild mit App-Fallback, Fokus-/Listen-/Gruppenschalter, Escape-/Fullscreen-Lifecycle und die zweistufige Scroll-Wiederherstellung. Die vorhandenen Event-Binder erhalten seine Handler-Gruppen; Inline-Kopien sind aus `app.js` entfernt. Zustand, Geometrie/Viewport, Rendering, Persistenz und Animation-Frames sind explizite Adapter. Die Initialisierung erfolgt nach Layout-/Daten-/Fokus-Controllern.
+
+Vertragstests pruefen Pointer-/Workspace-Zuordnung, Zoomgrenzen und Anker, Vollbild-Erfolg/-Ablehnung/Fallback, Panel-Schalter sowie automatische gegen manuelle Scroll-Ereignisse. Browser-Integration bedient Mausrad-Zoom und Pointer-Drag, oeffnet/schliesst den App-Vollbild-Fallback, schaltet Panels und nutzt Escape. Echte native Betriebssystem-Vollbild-Interaktion wird damit nicht behauptet.
+
+### Netzwerk-Arbeitsbereich-Rendering
+
+`createNetworkWorkspaceRenderer` in `network-rendering.js` verwaltet Filter/Zaehler, gruppierte Ergebnislisten und Arbeitsbereichspraesentation (Panels, Icons, Aktiv-/ARIA-Zustaende und Sortiercontrols). Vorhandene DOM-Controls, Zustand/Aktionen/Uebersetzungen und die gemeinsame Template-Klonfunktion sind explizite Adapter. Intro-/Gruppen-/Eintrag-/Pagination-/Leer-Strukturen und das Fokus-Toggle-Icon haben passende Templates auf beiden Seiten. Profilnamen und Account-Hinweise werden als Klartext gesetzt, nicht als HTML.
+
+Gruppenreihenfolge, alphabetische Sortierung, Own-/Foreign-Account-Hinweise, Auswahl-/Pagination-Callbacks, Stage-Gruppenbegrenzung und Scroll-Wiederherstellung bleiben erhalten. `app.js` koordiniert weiterhin die separaten Buehnen-/Fokus-Renderer, erzeugt aber keine zweite Listen-/Control-Struktur. Das neue Modul ist in der Service-Worker-Assetliste.
+
+Unit-Tests pruefen Filter-Fallback, Zaehler, optionale Controls, Panel-/ARIA-Zustaende, leere Ergebnisse und fehlende Templates. Browsertests rendern echte Templates auf beiden Seiten, pruefen untrusted Labels, einzelne Aktionen nach erneutem Rendern, Pagination-Sperre, Stage-Gruppierung und Button-Grenzen. Die bestehenden Netzwerk-Interaktionstests bedienen die echte Zusammensetzung mit kontrollierten Worker-Antworten.
+
+### Vollstaendige Netzwerk-Fokuskarte
+
+`network-focus-rendering.js` trennt das komplette Fokus-Anzeigemodell vom Template-Rendering. Profil-/Viewer-Fallback, Avatar-Aufloesung, Aktionssperren, Score-Aufschluesselung, gemeinsame-Mutuals-Metadaten, Relationsdaten, Aktivitaetsfenster, Own-Account-Like-Samples, Beschreibung und Preview-/Ladehinweise sind explizite Modellfelder/-Abschnitte. Die zwei gleichen Entry-Point-Datumsformatter sind durch einen gemeinsamen Fokus-Datumshelfer ersetzt. Own-/Foreign-Metadatensichtbarkeit und Reihenfolge bleiben unveraendert.
+
+Shell-/Statistik-/Metadaten-/Beschreibungs-Templates liegen auf beiden Seiten. Texte werden mit `textContent` gesetzt; Aktionen bekommen explizite Lade-, Common-Mutuals- und Workspace-Adapter. `app.js` enthaelt nur Renderer-Delegation und Zusammensetzung. Das neue Modul wird precached. Mindestbreiten und vererbter Wortumbruch verhindern, dass lange untrennbare Namen/Texte die Fokuskarte verbreitern.
+
+Tests pruefen gueltige/ungueltige Datums- und Aktivitaetsdaten, Account-Fallbacks, Metadatenreihenfolge und Own-/Foreign-Sichtbarkeit, fehlende Templates, sichere Profil-/Beschreibungstexte, genaue Aktionspayloads und Handler nach erneutem Rendern. Browser-Geometriepruefungen halten Statistik-Karten innerhalb einer schmalen Fokuskarte; echte Netzwerk-Auswahl/Common-Filter bleiben mit kontrollierten Worker-Antworten getestet.
+
+### Vollstaendige Netzwerk-SVG-Buehne
+
+`network-stage-rendering.js` verwaltet die komplette SVG-Szene: Glow/Orbits, Verbindungen, Viewer, Profilknoten, gemeinsame-Mutuals-Ringe/-Linien, Fokusinsel und Vorschauen. SVG-Templates mit korrektem Namensraum auf beiden Seiten definieren wiederkehrende Strukturen; Attribute und Labels werden mit DOM-APIs gesetzt. Zeichenreihenfolge, Radien, Farben und Geometrie bleiben erhalten. Auswahl, Hover, Zustand, Layout und Uebersetzungen sind explizite Adapter. Die Viewer-Initialen kommen jetzt aus der Uebersetzungsebene (DU/YOU/VOUS) statt aus einem hartcodierten deutschen Text.
+
+Die gemeinsame SVG-Knotenbindung erhaelt Pointer-Propagationsschutz, Hover-Zuordnung und Enter-/Space-Aktivierung inklusive Preview-Relation/-Ladekontext. In `app.js` verbleibt keine SVG-Ebenen-/Knotenerzeugung; der allgemeine SVG-Adapter bleibt, weil andere Arbeitsbereiche ihn verwenden. Das neue Modul wird precached.
+
+Vertragstests pruefen Relationsfarben, Auswahlradien, unbekannte/ungueltige Eingaben, Hover-Zuordnung, Tastaturaktivierung, Preview-Payloads und fehlende Templates. Browser-DOM-Tests auf beiden Seiten pruefen SVG-Namensraeume, Zeichenreihenfolge, sichere Titel, Common-Linien/-Ringe, einzelne Aktionen nach erneutem Rendern und leere Szenen. Die Produktionsintegration prueft weiterhin Fokusgeometrie, Zoom/Pan und Stage-Controls mit kontrolliertem Worker.
+
+### Netzwerk-Arbeitsbereich-Controller
+
+`network-controller.js` buendelt fuenf Einheiten: Daten-Reset/Account-Zuordnung; Own-/Foreign-Labels, Actor-Auswahl und Gruppen-Pagination; Filter-/Such-/Account-/Sortier-/Reset-Handler; seitenuebergreifende Navigation und geordnete Renderfolge; Status/Hover und optionale Form-Persistenz. Globale Zustandsfelder bleiben explizit in `app.js` zusammengesetzt; Fachablaeufe und Handler liegen im Controller. Speicherhelfer sind eigenstaendig, damit die Formeinstellung bereits vor der Controller-Zusammensetzung lesbar bleibt.
+
+Der Daten-Reset erzeugt neue Maps, leert Cursor/Fokus/Pan und delegiert Common-Mutuals-Bereinigung. Der Ansichts-Reset behaelt Profile und Zoom. Actor-Fallback, Own-/Foreign-Beziehungslabels, Pagination-Payloads, Initiallade-/Auth-/Navigations-Gates, Renderreihenfolge und Pending-Fokus-Sperre bleiben erhalten. Der Controller entsteht nach Renderer-/Daten-/Fokus-Abhaengigkeiten und erhaelt native/Navigation/UI-Adapter explizit. Das neue Modul wird precached; Speicherschluessel und Versionsdateien bleiben unveraendert.
+
+Vertragstests pruefen alle fuenf Einheiten inklusive unterschiedlicher Resets, gesperrtem Speicher, genauen Event-Payloads, Sortier-Fallbacks, Renderfolge und No-Op-Gates. Die Browser-Integration setzt ohne Datenverlust zurueck, laedt einen fremden Account per Enter, prueft dessen Beziehungslabel und kehrt zum angemeldeten Account zurueck. Echte PDS-Abfragen, native Speicherpersistenz und Worker-Cache-Aktivierung sind mit kontrolliertem Worker nicht behauptet.
+
 ## Grenzen Des Anwendungsstarts
 
 `app-storage.js` verwaltet den verpflichtenden Hauptzustand, vier optionale Startspeicher und serialisierte Einstellungs-Schreibzugriffe. Fehler optionaler Ladevorgaenge bleiben nichtfatal; Fehler des Hauptzustands gehen an die Wiederherstellung. Einstellungssnapshots werden vor dem Eintritt in die Schreibwarteschlange erfasst.

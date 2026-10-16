@@ -4,6 +4,140 @@
 
 This file collects the technical background information that would otherwise overload the quick-start README.
 
+## Analysis Calculations
+
+Five analysis units now have explicit domain boundaries: `analysis-config.js` contains multilingual lexicons and temporal buckets; `analysis-corpus.js` owns tokenization, frequencies and text metrics; `analysis-similarity.js` owns vector/set overlaps; `analysis-temporal.js` owns UTC profiles, histograms and timestamp comparisons; `analysis-stylometry.js` owns word chunks and Burrows Delta. Locale and clock providers are injected. `app.js` composes the analyzers and retains account/UI orchestration, not duplicate calculation implementations. All five modules are registered in the service-worker asset list.
+
+Existing calculation semantics remain intact, including upper-middle median gaps, inclusive time windows, many-to-one timestamp matches and insufficient-sample Delta results. Invalid chunk limits now throw instead of allowing an unbounded merge loop. Contracts cover normal, empty, multilingual and invalid-input cases. Controlled-worker browser integration loads both pages, loads two analysis accounts, calculates a comparison, checks finite displayed scores and resets the result while collecting page errors. It does not verify live account requests, PDF export or offline cache activation.
+
+### Analysis Accounts And Comparison
+
+`analysis-accounts.js` owns worker/storage account normalization, JSON-safe storage projection and legacy network refresh detection. Corpus and temporal calculators are explicit adapters. Raw posts remain separate from normalized text samples; DID sets are rebuilt after storage restoration. Missing moderation lists remain distinct from available empty lists, and network load-state/fallback rules are preserved.
+
+`analysis-comparison.js` owns the complete comparison model: metric distances, text/style/time similarities, network and interaction overlaps, moderation availability, direct relationships, weighted scores, confidence and label thresholds. Metric definitions now live in `analysis-config.js`. Calculation adapters and definitions are supplied at composition time; the entry point only delegates and applies results. Obsolete corpus/style/time wrapper functions were removed.
+
+Tests cover normalization, JSON round trips, legacy field precedence, comparison branches, missing accounts and score/confidence thresholds. Browser integration now also saves and reloads the comparison and confirms restoration without additional account requests. Storage and worker responses are controlled; real IndexedDB persistence and live requests are not exercised.
+
+### Analysis Summary And List Rendering
+
+`analysis-rendering.js` separates summary/result display models from DOM rendering. Account summaries, comparison results, token chips, formatted statistic rows, percentage bars and titled pattern cards use reusable templates on both pages. Translation, numeric/date formatting, avatars, template cloning and output hosts are explicit adapters. Only runtime bar widths remain inline. Existing classes, order and translated copy are retained; duplicate token-list builders now delegate to one renderer.
+
+Model contracts cover missing accounts/results, display-name/handle fallbacks, date/range copy and finite versus unavailable Delta. Browser contracts render the real templates on both pages in normal and compact modes, verify literal hostile text, rerender replacement, empty/invalid lists, bar clamping and card/track bounds at mobile width. The production load/compare/reload/reset test exercises the composed renderer too. Remaining network/pattern workspace and export orchestration are separate follow-up areas, not claimed complete here.
+
+### Five Further Analysis Rendering Units
+
+The same renderer now owns temporal summary rows and account/comparison cards, profile and overlap heatmaps, daily UTC timelines, resolved network profile chips and metric comparison tables. Summary/profile/metric formatting has exported DOM-free models. A shared four-column table renderer handles metric and temporal comparison rows; existing headers/row templates are reused. Translated table models are explicit renderer inputs.
+
+Heatmap grids share axes/cell templates, retain the 0.08 intensity floor and consume the existing overlap calculator with the original ten-minute window. Timelines retain UTC ticks, clamped point positions and hour tooltips. Profile chips retain lazy avatars, handle/DID fallback, share and optional deleted status. Metric rows retain percent/number formatting and upper-only difference clamping. Dynamic heat/position properties remain inline; markup lives in templates on both pages. Obsolete chart/account builders were removed from the entry point.
+
+Unit contracts cover empty/invalid model inputs and format boundaries. Browser contracts assert 84 heatmap cells, overlap/empty charts, five ticks, point clamping, deleted-profile visibility, four-column metric formatting, temporal partial/comparison states and replacement without duplicates, in both densities on both pages. Heatmap cell bounds are checked at mobile width. Live queries, PDF rendering and real-device touch interaction are not covered by these controlled tests.
+
+### Pattern Definitions, Table Models And Complete Pattern Views
+
+Five further units are module-owned: ordered corpus/network pattern metadata in `analysis-config.js`, network and temporal table models in `analysis-table-models.js`, and complete network/pattern workspace rendering in `analysis-rendering.js`. Both UI and existing PDF row adapters use the same translated table models. Network report definitions use explicit media metadata instead of a DOM-builder callback. PDF page generation itself is not extracted in this step.
+
+Network rows retain complete/partial load distinctions, moderation source availability, overlap counts, direct relationships, top-marker shares and assessment text. Temporal rows retain missing medians, vector similarity, five-minute proximity copy and active-hour formatting. Network views retain first-warning precedence, reload-needed notes, three summary details, thirteen table rows and fourteen ordered pattern cards. Corpus views retain twenty-four account-paired cards, missing-account states, special empty emoji text, starts/ends dual lists and mixed stat formatting. All markup uses existing templates plus one network-summary template on both pages; unused entry-point list/card wrappers were removed.
+
+Contracts cover metadata order, model boundaries and availability branches. Seventy-two differential checks in three locales matched the original table builders before removal. Browser tests cover network/pattern empty/partial/full states, moderation and warning text, literal labels, repeated rendering without duplicates, card counts and production comparison/reload behavior. PDF callers were updated and syntax-checked, but PDF export and live requests were not executed.
+
+### Ten Analysis Controller Units
+
+`analysis-controller.js` owns ten connected workflow areas: locale-aware formatting; active actor/options; status and inline notes; control states; snapshot capture; restoration; actor validation; individual loading; comparison; reset. Its explicit live-state adapter shares existing application state without changing storage schemas. Native controls, worker transport, normalization/comparison, storage, rendering, error reporting and locale are injected. Composition follows initialization of calculation factories; thin entry-point delegates preserve callers, including PDF formatters.
+
+Validation retains per-slot tokens, inline errors and the 30-second timeout. Loading retains the 180-second timeout, progress ownership, sequential A/B comparison loads, expected-error logging suppression and current-request busy-state release. Reset invalidates load responses and restores the original defaults. Stored comparison summaries are recomputed from normalized accounts; legacy network records still suppress comparison and show the reload note. No PDF page rendering was moved here.
+
+Contract tests cover locale changes, saved actor precedence, option limits, auth/loading/result control matrices, snapshot/restoration, empty/failed actor validation, superseded validation responses, progress, reset during loading, comparison order and expected/unexpected errors. Browser integration loads both pages and exercises account load, comparison, persistence/reload and reset. Real worker/PDS and IndexedDB behavior, PDF export and all possible request races remain outside these controlled tests.
+
+### Ten Analysis Report Data And Layout Units
+
+`analysis-report-models.js` owns filenames, metric/Delta rows, score summaries, token/stat text, paired corpus cards and paired network cards. It shares ordered metadata and the metric table model with the UI. Clock, copy, formatting and metadata are explicit inputs. Eight-token/eight-bar/six-profile limits and historical missing-account card behavior are preserved.
+
+`analysis-report-layout.js` owns pattern-card, score/info and heatmap measurements, paired-pattern pagination, table-row measurements and table pagination. Canvas creation and text wrapping are injected. Both former pattern pagination paths now use one implementation. Font sizes, line heights, spacing, minimum body height, column ratios and oversized-row handling are unchanged. The subsequent renderer extraction below completes the active Canvas export path.
+
+Thirty direct comparisons matched the original report models and page layouts before replacement. Unit tests cover metadata limits, absent/zero Delta, card contents, measured heights, empty/oversized pages and exact capacity boundaries. The Edge integration now clicks the real export button after restoring a comparison, receives the PDF download and checks filename, PDF header, EOF and nontrivial size. This exercises real Canvas/font measurements and report assembly but does not visually inspect PDF pages or test live account data.
+
+### Complete Active Analysis PDF Renderer
+
+`analysis-pdf-rendering.js` now owns the A4 Canvas shell, cached anonymous avatar loading, text/profile/bar card drawing, score rows, UTC heatmaps, overview/table/temporal/pattern pages, JPEG page assembly and PDF delivery workflow. The application supplies live read-only account/comparison adapters, report models/layout/tables, shared Canvas primitives, fonts/text wrapping, clock/formatters, fetch/bitmap decoding and PDF/file/delivery functions. `app.js` retains only factory composition and the export delegate; shared archive/PDF primitives stay shared.
+
+Page order, numbering, image names/dimensions, JPEG quality, default headings, download preference and success/error flow remain intact. Avatar promises are cached per renderer, including failed loads. Three uncalled legacy text-PDF builders and unused export wrappers/cache were removed rather than copied into another module.
+
+Contract tests cover drawing branches, A4 geometry, heat colors, credential omission, avatar deduplication/fallback, output order, missing comparison and delivery failures. Edge integration exports the real ten-page fixture and retains it under ignored `test-results/`. Poppler renders the report for representative visual review. That review exposed existing temporal-note font-measurement drift and bar labels obscured by tracks: the renderer now measures the notes with their drawing fonts and sizes the bar-label column from actual text width. Both fixes have regression assertions. Long-name/image-heavy reports, other real account data and every possible locale/page combination are not visually verified by this fixture.
+
+### Analysis Events And Workspace Lifecycle
+
+Analysis event bodies now belong to `analysis-controller.js`: own-account selection, field invalidation/token updates, blur validation, Enter comparison, filter changes and export busy/error feedback. The existing event binder receives the controller's handler object after factory initialization instead of entry-point closures. Fifteen unused actor/options/render/action delegates were removed.
+
+`createAnalysisWorkspaceController` in `analysis.js` owns cross-page/auth navigation gates, shell transitions, ordered section rendering and analysis-specific label/placeholder refresh. It receives live state, renderer, table models, controller and shell actions explicitly. Existing state schemas, rendering order and text remain intact; `app.js` retains composition and necessary global integration delegates.
+
+Contracts cover own-account/input events, slot-specific validation invalidation, Enter routing, export success/failure cleanup, navigation/auth guards, rendering order and current-locale labels. Browser integration operates own-account buttons, Enter comparison, input invalidation, persistence/reload and PDF export on the production composition; initialization errors are collected on both pages. Real authentication and native device interaction are not covered.
+
+## Archive Dates And Preferences
+
+`archive-preferences.js` separates local calendar parsing/formatting, month-end-safe month shifting, clock-based defaults, preferred-edge range clamping, browser date bounds, filters/source metadata, PDF/wave options and preference restoration. Clock, maximum months, live state, tag normalization and dependent UI refresh callbacks are explicit adapters. Existing three-calendar-month rules, scope/content/import modes, supported-select preservation, checkbox defaults and storage shape remain unchanged. The module is precached; entry-point implementations and unused imports/source wrapper were removed.
+
+Contracts cover invalid dates, leap years, month ends, from/to/auto limits, defaults, supported versus invalid choices, metadata and callback order. Forty-eight direct comparisons matched the original range/bounds implementation before final verification. The Edge integration opens the real archive controls, checks January-to-April month bounds, changes content/image options, saves and reloads them, while retaining analysis/PDF/network regression coverage. Worker storage is controlled; real archive fetching and live account data are not exercised.
+
+## Network Calculations
+
+`tools/network.js` owns profile merging, score ranking/cutoffs, relation/text filters, limits and locale-aware alphabetical sorting. Existing rules are retained: empty profile fields and zero counts do not replace known values, relationships are combined, search results remain score-ranked and lists alphabetically sorted.
+
+Viewport and content bounds are pure calculations in the same module. Zoom limits and the shared clamp function are injected; `app.js` only applies returned pan coordinates. Focus previews are explicit inputs. Fit padding, node sizes and focus-island spacing are unchanged. The existing service-worker asset entry remains valid.
+
+Contract tests cover merging, filters, limits, sort ties, zoom/pan limits and focus geometry. Browser integration operates real network controls with controlled worker data and checks circle bounds within the fitted SVG after focus selection. Both pages load with page-error collection; live network queries are not exercised.
+
+### Network Focus Controller
+
+The network's `createNetworkFocusController` owns profile lookup/ingestion, bounded preview lists, selection and common-filter lifecycle, focus requests and common-mutual requests. State/maps, transport, progress/status rendering and input updates are explicit adapters. Viewer/node/focus/preview lookup priority, request timeouts, same-target suppression and loading-marker ownership are preserved. Selection-specific progress/errors stay scoped to the request target; no duplicate request workflow remains in `app.js`.
+
+Unit contracts cover empty/missing profiles, deduplication, selection/filter transitions, response normalization, request failures and overlapping request completion. The browser test additionally loads common mutuals, uses their filter and changes selection to clear it. Worker responses are controlled; real PDS data and network races are not verified by this integration test.
+
+### Network Loading, Geometry And Controls
+
+`createNetworkDataController` in `network.js` owns the complete slice-loading sequence: actor selection/reset, cursors, progress, profile ingestion, counts, busy state and error feedback. State and existing reset/transport/UI functions are explicit adapters. Append behavior, request limits/timeouts and silent-error handling are unchanged.
+
+`network-layout.js` owns stable relation slots, lane/ring spacing, density, round/squircle orbit points and paths, label candidates and focus-island dimensions. The controller reads current shape/maps through an adapter, including maps replaced during reset. The original numeric rules and 72-segment path remain intact; the module is included in the service-worker asset list. `renderNetworkLoadControls` in `network-ui.js` owns translated load/reset/own-account button states.
+
+Contract tests cover cursor reuse, actor switches, append/no-op/error paths, stable slots, relationship changes, reset maps, dense layouts and control states. The browser test loads a second wave with the returned cursor, restores a saved squircle preference and checks focused SVG bounds. The existing shape button stays intentionally hidden by CSS; the test does not simulate a user click on it. Live worker/PDS interaction and offline cache activation remain outside this test.
+
+### Network Stage Interaction
+
+`createNetworkStageController` in `network-ui.js` owns anchored zoom, pointer pan, shape/reset actions, native fullscreen and app-internal fallback, focus/list/group switches, Escape/fullscreen lifecycle and two-frame scroll restoration. The existing event binders receive its handler groups; inline copies were removed from `app.js`. State, geometry/viewport, render operations, persistence and animation frames are explicit adapters, initialized after the layout/data/focus controllers.
+
+Contract tests exercise pointer identity/workspace gates, zoom limits and anchors, fullscreen success/rejection/fallback, panel toggles and generated versus manual scroll events. Browser integration operates wheel zoom and pointer drag, enters/exits the app-internal fullscreen fallback, toggles panels and uses Escape. Real native OS fullscreen behavior is not claimed by that controlled fallback test.
+
+### Network Workspace Rendering
+
+`createNetworkWorkspaceRenderer` in `network-rendering.js` owns filters/counts, grouped result lists and workspace presentation (panel visibility, icons, active/ARIA states and sort controls). It receives existing DOM controls, explicit state/action/translation adapters and the shared template-cloning function. Intro/group/item/pagination/empty structures and the focus-toggle icon use matching templates on both pages. Profile names and account notes are plain text, not HTML.
+
+Group order, alphabetical sorting, own/foreign account notes, selection and pagination callbacks, stage group restrictions and scroll restoration are unchanged. `app.js` retains orchestration of the separate stage/focus renderers, not duplicate list/control generation. The new module is registered in the service-worker asset list.
+
+Unit tests cover filter fallback, counts, optional controls, panel/ARIA states, empty results and missing templates. Browser tests render real templates on both pages, check hostile labels, single actions after rerendering, pagination disablement, stage grouping and button bounds. Existing end-to-end network interaction tests exercise the production composition with controlled worker responses.
+
+### Complete Network Focus Card
+
+`network-focus-rendering.js` separates the complete focus display model from template rendering. Profile/viewer fallback, avatar lookup, action disablement, score breakdown, common-mutual metadata, relationship dates, activity windows, own-account like samples, descriptions and preview/loading notes are explicit model fields/sections. The two identical entry-point date formatters were replaced by one shared focus-date helper. Own/foreign metadata visibility and section order remain unchanged.
+
+Shell/statistic/metadata/description templates exist on both pages. Text is assigned through `textContent`; actions receive explicit loading, common-mutual and workspace adapters. `app.js` retains only the focus renderer delegate and composition. The new module is precached. Focus grid minimum widths and inherited word wrapping prevent long unbroken names/text from enlarging the card.
+
+Tests cover valid/invalid dates and activity samples, account fallbacks, metadata ordering and own/foreign visibility, missing templates, safe profile/description text, exact action payloads and rerendered handlers. Browser geometry checks keep statistic cards within a narrow focus card; production network selection/common filters remain covered with controlled worker responses.
+
+### Complete Network SVG Stage
+
+`network-stage-rendering.js` owns the complete SVG scene: glow/orbits, edges, viewer, profile nodes, common-mutual rings/links, focus island and previews. Namespace-correct SVG templates on both pages define repeated structures; attributes and labels are applied through DOM APIs. The original paint order, radii, colors and geometry remain unchanged. Selection, hover, current state, layout and translation are explicit adapters. The viewer initials now come from the translation layer (DU/YOU/VOUS), rather than a hardcoded German string.
+
+Shared SVG-node binding preserves pointer propagation shielding, hover ownership and Enter/Space activation, including the preview relation/load context. No SVG layer or node generation remains in `app.js`; its generic SVG adapter remains because other workspaces use it. The new module is precached.
+
+Contract tests cover relation styles, selected radii, unknown/invalid inputs, hover ownership, keyboard activation, preview selection payloads and missing templates. Browser DOM tests on both pages verify SVG namespaces, paint order, safe titles, common links/rings, single actions after rerender and empty scenes. Production integration continues to check focus geometry, zoom/pan and stage-mode controls with a controlled worker.
+
+### Network Workspace Controller
+
+`network-controller.js` completes five workspace units: loaded-state reset/account establishment; own/foreign labels, actor selection and group pagination; filter/search/account/sort/reset handlers; cross-page navigation and ordered rendering; status/hover and optional shape persistence. Existing global state is still composed explicitly in `app.js`; domain operations and handler bodies live in the controller. Storage helpers are standalone so the early shape preference can be read before controller composition.
+
+Data reset creates fresh maps, clears cursors/focus/pan and delegates common-mutual cleanup. View reset keeps loaded profiles and zoom. Actor fallback, own/foreign relationship translation, pagination trigger payloads, initial-load/auth/navigation gates, rendering order and pending-focus suppression are unchanged. The controller is created after its renderer/data/focus dependencies and receives all native/navigation/UI adapters explicitly. The new module is precached; storage keys and version files are unchanged.
+
+Contract tests cover all five units, including distinct resets, unavailable storage, exact event payloads, sort fallbacks, render ordering and no-op gates. Browser integration additionally resets without losing loaded profiles, opens a foreign account via Enter, checks its relationship label and returns to the authenticated account. Live PDS calls, native storage persistence and worker cache activation are not claimed by the controlled-worker test.
+
 ## Application Startup Boundaries
 
 `app-storage.js` owns the required app-state request, four optional startup-cache requests and queued settings writes. Failed optional reads remain non-fatal; required state errors propagate to hydration. Settings snapshots are captured before entering the serialized write queue.

@@ -2558,6 +2558,108 @@
     </template>
 
     <!-- Account Switcher Item Template -->
+    <template id="network-svg-primitive-template"><svg xmlns="http://www.w3.org/2000/svg"><circle></circle><path></path><line></line><text></text></svg></template>
+    <template id="network-svg-scene-template"><svg xmlns="http://www.w3.org/2000/svg">
+      <defs><radialGradient id="network-stage-glow"><stop offset="0%" stop-color="#58caff" stop-opacity="0.7"></stop><stop offset="55%" stop-color="#58caff" stop-opacity="0.12"></stop><stop offset="100%" stop-color="#58caff" stop-opacity="0"></stop></radialGradient></defs>
+      <g data-network-layer="background"><circle r="110" fill="url(#network-stage-glow)"></circle></g>
+      <g data-network-layer="edges"></g>
+      <g data-network-layer="viewer"><circle r="46" fill="rgba(98, 229, 205, 0.92)" stroke="rgba(255, 255, 255, 0.92)" stroke-width="2"></circle>
+        <text data-network-field="initials" text-anchor="middle" fill="#091320" font-size="20" font-weight="800"></text><text data-network-field="handle" text-anchor="middle" class="network-node-label"></text>
+      </g>
+      <g data-network-layer="nodes"></g>
+    </svg></template>
+    <template id="network-svg-node-template"><svg xmlns="http://www.w3.org/2000/svg"><g class="network-node-button" tabindex="0" role="button">
+      <title></title><circle data-network-field="halo"></circle>
+      <circle data-network-common-ring="10" fill="rgba(92, 231, 207, 0.08)" stroke="rgba(92, 231, 207, 0.34)" stroke-width="6"></circle>
+      <circle data-network-common-ring="7" fill="none" stroke="rgba(255, 255, 255, 0.92)" stroke-width="2.2"></circle>
+      <circle data-network-common-ring="4" fill="none" stroke="rgba(92, 231, 207, 1)" stroke-width="2.8" stroke-dasharray="4 4"></circle>
+      <circle data-network-field="circle"></circle><text data-network-field="initials" text-anchor="middle" fill="#06111f" font-weight="800"></text><text data-network-field="handle" text-anchor="middle" class="network-node-label"></text>
+    </g></svg></template>
+    <template id="network-svg-focus-template"><svg xmlns="http://www.w3.org/2000/svg"><g class="network-focus-island">
+      <circle data-network-focus-ring="shield" r="150" fill="rgba(0, 0, 0, 0.001)"></circle>
+      <circle data-network-focus-ring="background" r="126" fill="rgba(11, 26, 48, 0.4)" stroke="rgba(95, 157, 255, 0.1)" stroke-width="1"></circle>
+      <circle data-network-focus-ring="orbit" r="108" fill="none" stroke="rgba(96, 174, 255, 0.24)" stroke-width="1.6" stroke-dasharray="4 8"></circle>
+      <line data-network-field="bridge" stroke="rgba(98, 229, 205, 0.28)" stroke-width="1.8"></line><text data-network-field="hint" text-anchor="middle" class="network-stage-hint network-stage-hint-focus"></text>
+      <g class="network-node-button network-node-button-focus-center" tabindex="0" role="button"><title></title>
+        <circle r="30" fill="rgba(98, 229, 205, 0.92)" stroke="#ffffff" stroke-width="2.2"></circle><text data-network-field="initials" text-anchor="middle" fill="#091320" font-size="15" font-weight="800"></text><text data-network-field="handle" text-anchor="middle" class="network-node-label"></text>
+      </g><g class="network-common-mutual-layer"></g>
+    </g></svg></template>
+    <template id="network-svg-preview-template"><svg xmlns="http://www.w3.org/2000/svg"><g class="network-node-button network-node-button-preview" tabindex="0" role="button">
+      <line stroke="rgba(152, 196, 255, 0.32)" stroke-width="1.2"></line><circle r="16" stroke="rgba(255, 255, 255, 0.82)" stroke-width="1.4"></circle><text data-network-field="initials" text-anchor="middle" fill="#091320" font-size="10" font-weight="800"></text><title></title>
+    </g></svg></template>
+
+    <template id="network-focus-shell-template">
+      <div class="network-focus-shell"><section class="network-focus-summary">
+        <div class="network-focus-head">
+          <div class="network-avatar-badge"><img alt=""></div>
+          <div class="network-avatar-copy"><strong></strong><span class="network-handle"></span></div>
+        </div>
+        <span class="network-relation-pill"></span>
+        <div class="network-focus-actions">
+          <button type="button" class="ghost-button network-focus-action-button" data-network-focus-action="load"></button>
+          <button type="button" class="ghost-button network-focus-action-button" data-network-focus-action="common"></button>
+        </div>
+        <div class="network-stat-grid"></div>
+      </section></div>
+    </template>
+    <template id="network-focus-stat-template"><div class="network-stat-card"><span></span><strong></strong></div></template>
+    <template id="network-focus-line-template"><p class="network-card-explainer"></p></template>
+    <template id="network-focus-meta-template"><div class="network-relationship-meta"></div></template>
+    <template id="network-focus-description-template"><details class="network-description-disclosure"><summary></summary><p class="network-description"></p></details></template>
+
+    <template id="network-result-intro-template">
+      <article class="network-group-card network-group-card-intro"><strong></strong><p class="network-card-explainer"></p></article>
+    </template>
+    <template id="network-result-group-template">
+      <article class="network-group-card"><strong></strong><p class="network-card-explainer"></p><div class="network-scroll-list"></div></article>
+    </template>
+    <template id="network-result-item-template">
+      <button type="button" class="network-list-button"><strong></strong><span class="network-list-meta"></span></button>
+    </template>
+    <template id="network-result-more-template">
+      <button type="button" class="ghost-button network-more-button"></button><p class="network-card-explainer"></p>
+    </template>
+    <template id="network-result-empty-template"><p class="settings-note"></p></template>
+    <template id="analysis-note-template"><p class="settings-note"></p></template>
+    <template id="analysis-network-summary-template"><article class="analysis-account-card"><strong></strong><p class="settings-note"></p><div class="analysis-result-details"></div></article></template>
+    <template id="analysis-heatmap-template"><div class="analysis-temporal-heatmap"><strong class="analysis-temporal-chart-title"></strong></div></template>
+    <template id="analysis-heatmap-grid-template"><div class="analysis-temporal-heatmap-grid"></div></template>
+    <template id="analysis-axis-template"><span class="analysis-temporal-axis-label"></span></template>
+    <template id="analysis-heatmap-cell-template"><span class="analysis-temporal-heatmap-cell"></span></template>
+    <template id="analysis-timeline-template">
+      <div class="analysis-temporal-timeline"><strong class="analysis-temporal-chart-title"></strong><div class="analysis-temporal-timeline-axis"><span class="analysis-temporal-timeline-date"></span><div class="analysis-temporal-timeline-axis-track"></div></div><div class="analysis-temporal-timeline-rows"></div></div>
+    </template>
+    <template id="analysis-timeline-tick-template"><span class="analysis-temporal-timeline-tick"></span></template>
+    <template id="analysis-timeline-row-template"><div class="analysis-temporal-timeline-row"><span class="analysis-temporal-timeline-date"></span><div class="analysis-temporal-timeline-track"></div></div></template>
+    <template id="analysis-timeline-point-template"><span class="analysis-temporal-timeline-point"></span></template>
+    <template id="analysis-profiles-template"><div class="analysis-profile-list"></div></template>
+    <template id="analysis-profile-template">
+      <article class="analysis-profile-chip"><img class="analysis-profile-chip-avatar" loading="lazy" alt=""><div class="analysis-profile-chip-body"><strong></strong><span class="reply-target-handle"></span><span class="analysis-profile-chip-status"></span><span class="analysis-profile-chip-share"></span></div></article>
+    </template>
+    <template id="analysis-table-template"><table class="analysis-table"><thead></thead><tbody></tbody></table></template>
+    <template id="analysis-temporal-comparison-template"><article class="analysis-account-card analysis-temporal-comparison-card"><strong></strong></article></template>
+    <template id="analysis-span-template"><span></span></template>
+    <template id="analysis-tokens-template"><div class="analysis-token-list"></div></template>
+    <template id="analysis-token-template"><span class="analysis-token-chip"></span></template>
+    <template id="analysis-stats-template"><div class="analysis-stat-list"></div></template>
+    <template id="analysis-stat-template"><div class="analysis-stat-row"><span class="analysis-stat-label"></span><strong class="analysis-stat-value"></strong></div></template>
+    <template id="analysis-bars-template"><div class="analysis-bar-list"></div></template>
+    <template id="analysis-bar-template"><div class="analysis-bar-row"><div class="analysis-bar-head"><span></span><strong></strong></div><div class="analysis-bar-track"><span class="analysis-bar-fill"></span></div></div></template>
+    <template id="analysis-pattern-template"><article class="analysis-pattern-card"><strong></strong></article></template>
+    <template id="analysis-account-template">
+      <article class="analysis-account-card">
+        <div class="analysis-account-card-head"><img class="analysis-account-avatar" alt=""><div class="analysis-account-identity"><p class="eyebrow"></p><strong></strong><span class="reply-target-handle"></span></div></div>
+        <div class="analysis-account-stats"></div><p class="analysis-account-preview"></p>
+      </article>
+    </template>
+    <template id="analysis-result-template">
+      <div>
+        <div class="analysis-result-overall"><p class="eyebrow"></p><div class="analysis-result-head"><strong class="analysis-result-score"></strong><span class="analysis-result-label"></span></div><p class="analysis-result-summary"></p></div>
+        <p class="analysis-result-confidence"></p><p class="analysis-result-section-title"></p><div class="analysis-result-details"></div><p class="settings-note"></p>
+      </div>
+    </template>
+    <template id="network-focus-toggle-template"><svg viewBox="0 0 24 24" aria-hidden="true"><path d=""></path></svg></template>
+
     <template id="account-switcher-item-template">
       <div class="account-chip-wrap">
         <button type="button" class="account-chip">

@@ -7,6 +7,33 @@ export function normalizeAnalysisActor(value = "") {
   return String(value || "").trim().replace(/^@+/, "");
 }
 
+/** Creates analysis workspace navigation, rendering and language refresh. @param {object} elements - Launch/export buttons and account inputs. @param {object} options - Live state, domain renderer/controller, tables and shell adapters. @returns {object} Workspace operations. */
+export function createAnalysisWorkspaceController(elements, options) {
+  /** Renders all analysis sections in their established order. @returns {void} */
+  function render() {
+    const state = options.getState(); const renderer = options.renderer;
+    renderer.summary(state.accountA, state.accountB); renderer.result(state.comparison);
+    renderer.temporal(state.accountA, state.accountB, state.comparison, options.tables.temporal(state.accountA, state.accountB, state.comparison));
+    renderer.network(state.accountA, state.accountB, state.comparison, options.tables.network(state.accountA, state.accountB, state.comparison), state.status);
+    renderer.metrics(state.comparison); renderer.patterns(state.accountA, state.accountB);
+    options.controller.controls(); options.controller.status(state.status || options.t("analysisStatusIdle"));
+  }
+  /** Navigates across pages or opens analysis for an authenticated account. @returns {void} */
+  function show() {
+    if (options.navigate()) { return; }
+    if (!options.getState().auth) { return; }
+    options.setWorkspace("analysis"); options.fullscreen(); options.persistWorkspace("analysis");
+    options.visible("analysis"); options.context(); options.authButtons(); render();
+  }
+  /** Refreshes analysis-specific translated placeholders and labels. @returns {void} */
+  function translate() {
+    for (const input of [elements.inputA, elements.inputB]) { if (input) { input.placeholder = options.t("analysisAccountPlaceholder"); } }
+    if (elements.launch) { elements.launch.textContent = options.t("analysisLaunchButton"); }
+    if (elements.exportPdf) { elements.exportPdf.textContent = options.t("analysisExportPdfButton"); }
+  }
+  return { show, render, translate };
+}
+
 /**
  * Binds Analysis account, comparison, reset, export, and option controls.
  * @param {object} elements - Analysis workspace controls.
