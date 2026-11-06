@@ -1,0 +1,241 @@
+:root {
+        color-scheme: light;
+        --bg: #eff5ff;
+        --panel: rgba(255, 255, 255, 0.92);
+        --line: rgba(88, 118, 160, 0.16);
+        --text: #10233e;
+        --muted: #627895;
+        --accent: #2d72f6;
+        --accent-soft: rgba(45, 114, 246, 0.12);
+        --own: #dce9ff;
+        --other: #ffffff;
+        --shadow: 0 24px 44px rgba(24, 41, 75, 0.12);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        font-family: "Segoe UI", Aptos, Arial, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(45, 114, 246, 0.12), transparent 24%),
+          linear-gradient(180deg, #eff6ff 0%, #edf3fb 100%);
+        color: var(--text);
+      }
+      a { color: var(--accent); }
+      mark {
+        background: #ffec99;
+        color: #10233e;
+        border-radius: 0.22em;
+        padding: 0 0.12em;
+      }
+      .dm-html-shell {
+        overflow-wrap: anywhere;
+        width: min(1100px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 28px 0 56px;
+      }
+      .dm-html-hero,
+      .dm-html-toolbar,
+      .dm-html-message {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+      }
+      .dm-html-hero,
+      .dm-html-toolbar {
+        border-radius: 24px;
+        padding: 24px;
+        margin-bottom: 18px;
+      }
+      .dm-html-kicker {
+        margin: 0 0 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.74rem;
+        color: var(--muted);
+      }
+      .dm-html-hero h1 {
+        overflow-wrap: anywhere;
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3rem);
+      }
+      .dm-html-hero p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .dm-html-partner {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 10px;
+      }
+      .dm-html-avatar {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        object-fit: cover;
+        background: #dfe8f7;
+        border: 1px solid rgba(102, 133, 178, 0.22);
+        flex: 0 0 56px;
+      }
+      .dm-html-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+      .dm-html-meta strong {
+        display: block;
+        font-size: 1.3rem;
+      }
+      .dm-html-toolbar-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+      }
+      .dm-html-field label,
+      .dm-html-status {
+        display: block;
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .dm-html-field input {
+        width: 100%;
+        min-height: 46px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        padding: 0 14px;
+        font: inherit;
+      }
+      .dm-html-toolbar button {
+        min-height: 46px;
+        border: 0;
+        border-radius: 14px;
+        padding: 0 16px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .dm-html-status {
+        margin-top: 12px;
+      }
+      .dm-html-feed {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .dm-html-message {
+        border-radius: 22px;
+        padding: 18px 20px;
+      }
+      .dm-html-message.is-own {
+        margin-left: auto;
+        width: min(78%, 760px);
+        background: linear-gradient(180deg, #edf4ff 0%, var(--own) 100%);
+      }
+      .dm-html-message.is-other {
+        margin-right: auto;
+        width: min(78%, 760px);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      }
+      .dm-html-message-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: baseline;
+      }
+      .dm-html-message-author {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .dm-html-message-avatar {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        object-fit: cover;
+        background: #dfe8f7;
+        border: 1px solid rgba(102, 133, 178, 0.22);
+        flex: 0 0 34px;
+      }
+      .dm-html-message-head strong {
+        font-size: 1rem;
+      }
+      .dm-html-message-author > div,
+      .dm-html-partner > p {
+        min-width: 0;
+      }
+      .dm-html-handle {
+        display: block;
+      }
+      .dm-html-handle,
+      .dm-html-message time {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .dm-html-text {
+        margin-top: 12px;
+        line-height: 1.65;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .dm-html-link-card {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+        padding: 12px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+        color: inherit;
+        text-decoration: none;
+      }
+      .dm-html-link-card-thumb {
+        width: 112px;
+        height: 84px;
+        object-fit: cover;
+        border-radius: 12px;
+        background: rgba(16, 35, 62, 0.08);
+      }
+      .dm-html-link-card.has-thumbnail {
+        grid-template-columns: minmax(0, 112px) minmax(0, 1fr);
+      }
+      .dm-html-link-card-copy {
+        min-width: 0;
+        display: grid;
+        gap: 6px;
+      }
+      .dm-html-link-card-copy strong,
+      .dm-html-link-card-copy span,
+      .dm-html-link-card-copy small {
+        overflow-wrap: anywhere;
+      }
+      .dm-html-link-card-copy span,
+      .dm-html-link-card-copy small {
+        color: var(--muted);
+      }
+      [hidden] { display: none !important; }
+      @media (max-width: 780px) {
+        .dm-html-toolbar-row {
+          grid-template-columns: 1fr;
+        }
+        .dm-html-message.is-own,
+        .dm-html-message.is-other {
+          width: 100%;
+        }
+        .dm-html-link-card,
+        .dm-html-link-card.has-thumbnail {
+          grid-template-columns: 1fr;
+        }
+        .dm-html-link-card-thumb {
+          width: 100%;
+          height: auto;
+          aspect-ratio: 4 / 3;
+        }
+      }

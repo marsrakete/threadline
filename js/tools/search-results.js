@@ -8,7 +8,6 @@ export function createSearchResultCardRenderer(dependencies = {}) {
     nodeTemplate,
     cloneTemplateContent,
     getDisplayModel,
-    favorites = [],
     translate,
     applyTranslatedTitle,
     setAvatarImage,
@@ -89,6 +88,10 @@ export function createSearchResultCardRenderer(dependencies = {}) {
     bookmark.textContent = "▣";
     favoriteButton.append(star, bookmark);
     applyTranslatedTitle(favoriteButton, "threadExplorerSaveButton");
+    let favorites = dependencies.favorites;
+    if (!Array.isArray(favorites)) {
+      favorites = [];
+    }
     const isSaved = favorites.some((favorite) => favorite.rootUri === post.uri);
     favoriteButton.classList.toggle("is-active", isSaved);
     let favoriteKey = "searchFavoriteSaveButton";

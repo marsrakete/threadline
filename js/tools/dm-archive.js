@@ -598,7 +598,7 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
  * @param {(parts: BlobPart[], name: string, type: string) => File} actions.createFile - Creates a browser file for download.
  * @param {(file: File, name: string) => Promise<void>} actions.shareOrDownloadFile - Shares or downloads an exported file.
  * @param {(catalog: object) => Promise<void>} actions.ensureAvatarAssets - Ensures DM avatar assets exist before visual exports.
- * @param {(catalog: object) => string} actions.buildHtmlDocument - Renders an HTML archive document.
+ * @param {(catalog: object) => string|Promise<string>} actions.buildHtmlDocument - Renders an HTML archive document.
  * @param {(catalog: object) => string} actions.getFileBaseName - Builds an export file base name.
  * @param {(catalog: object) => object[]} actions.collectMessages - Collects normalized export messages.
  * @param {(messages: object[], catalog: object) => object[][]} actions.paginatePdfMessages - Paginates messages for PDF rendering.
@@ -669,7 +669,7 @@ export function createDmArchiveExportController(actions) {
       percent: 92,
       detail: actions.translate("dmProgressHtmlDetail", { count: validCatalog.manifest?.messageCount || 0 }),
     });
-    const html = actions.buildHtmlDocument(validCatalog);
+    const html = await actions.buildHtmlDocument(validCatalog);
     const fileName = `${actions.getFileBaseName(validCatalog)}.html`;
     const file = actions.createFile([html], fileName, "text/html");
     await actions.shareOrDownloadFile(file, fileName);

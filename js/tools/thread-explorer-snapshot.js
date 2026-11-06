@@ -1641,3 +1641,114 @@ export async function renderThreadExplorerCanvasSnapshot(options = {}) {
   await onProgress({ percent: 94, step: text("threadExplorerSnapshotProgressEncode"), detail: text("threadExplorerSnapshotProgressRenderCardDetail", { index: cards.length, count: cards.length }) });
   return encodeCanvas(snapshot.canvas, mimeType);
 }
+
+/**
+ * Owns snapshot progress, one active export, cancellation and download cleanup.
+ * @param {object} elements - Export/cancel buttons, progress dialog/title/step/detail/fill/bar and status.
+ * @param {object} options - Translation, renderer, filename, download, paint/wait, AbortController,
+ * control refresh and error-reporting adapters.
+ * @returns {{download: Function, cancel: Function}} Snapshot export operations.
+ */
+export function createThreadExplorerSnapshotExportController(elements, options) {
+  for (const name of ["t", "render", "fileName", "downloadBlob", "frame", "wait", "abortController", "refresh", "report"]) {
+    if (typeof options?.[name] !== "function") {
+      throw new TypeError(`Snapshot export requires ${name}.`);
+    }
+  }
+  if (!elements?.exportButton) {
+    throw new TypeError("Snapshot export requires an export button.");
+  }
+  let active = null;
+  /** Updates the existing progress elements with literal text and a clamped percentage.
+   * @param {object} progress - Optional title, percent, step and detail. @returns {void}
+   */
+  function update(progress = {}) {
+    const percent = clampThreadExplorerSnapshotProgress(progress.percent);
+    if (elements.title) {
+      elements.title.textContent = progress.title || options.t("threadExplorerSnapshotProgressTitle");
+    }
+    if (elements.step) {
+      elements.step.textContent = progress.step || "";
+    }
+    if (elements.detail) {
+      elements.detail.textContent = progress.detail || `${percent}%`;
+    }
+    if (elements.fill) {
+      elements.fill.style.width = `${percent}%`;
+    }
+    if (elements.bar) {
+      elements.bar.setAttribute("aria-valuenow", String(percent));
+      elements.bar.setAttribute("aria-label", `${percent}%`);
+    }
+  }
+  /** Renders one PNG and releases all progress controls on success, abort or error.
+   * @returns {Promise<void>} Completion after download or reported failure.
+   */
+  async function download() {
+    if (active) {
+      return;
+    }
+    const controller = options.abortController();
+    active = controller;
+    const signal = controller.signal;
+    /** Reports progress around a paint opportunity and checks cancellation on both sides.
+     * @param {object} progress - Render phase metadata. @returns {Promise<void>} Paint completion.
+     */
+    async function reportProgress(progress = {}) {
+      throwIfThreadExplorerSnapshotAborted(signal);
+      update(progress);
+      await options.frame();
+      throwIfThreadExplorerSnapshotAborted(signal);
+    }
+    try {
+      elements.exportButton.disabled = true;
+      elements.exportButton.textContent = options.t("threadExplorerSnapshotBusy");
+      if (elements.cancelButton) {
+        elements.cancelButton.disabled = false;
+      }
+      update({ percent: 0, step: options.t("threadExplorerSnapshotProgressPreparing"), detail: options.t("threadExplorerSnapshotProgressPreparingDetail") });
+      if (elements.dialog && !elements.dialog.open) {
+        elements.dialog.showModal();
+      }
+      await reportProgress({ percent: 1, step: options.t("threadExplorerSnapshotProgressPreparing"), detail: options.t("threadExplorerSnapshotProgressPreparingDetail") });
+      const blob = await options.render("image/png", reportProgress, signal);
+      const fileName = options.fileName();
+      await reportProgress({ percent: 97, step: options.t("threadExplorerSnapshotProgressDownload"), detail: fileName });
+      options.downloadBlob(blob, fileName);
+      await reportProgress({ percent: 100, step: options.t("threadExplorerSnapshotProgressDone"), detail: fileName });
+      await options.wait(260);
+    } catch (error) {
+      let message = options.t("threadExplorerSnapshotFailed");
+      if (error?.name === "AbortError") {
+        message = options.t("threadExplorerSnapshotCancelled");
+      } else {
+        options.report(error);
+        message = error?.message || message;
+      }
+      if (elements.status) {
+        elements.status.textContent = message;
+      }
+    } finally {
+      if (elements.cancelButton) {
+        elements.cancelButton.disabled = true;
+      }
+      active = null;
+      if (elements.dialog?.open) {
+        elements.dialog.close();
+      }
+      elements.exportButton.textContent = options.t("threadExplorerSnapshotPngButton");
+      options.refresh();
+    }
+  }
+  /** Aborts the current export, retaining the dialog until the renderer unwinds.
+   * @returns {void}
+   */
+  function cancel() {
+    if (!active) {
+      return;
+    }
+    active.abort();
+    update({ percent: 100, step: options.t("threadExplorerSnapshotCancelled"), detail: options.t("threadExplorerSnapshotCancelledDetail") });
+  }
+  return { download, cancel };
+}

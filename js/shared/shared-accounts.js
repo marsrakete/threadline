@@ -3,6 +3,34 @@ const DEFAULT_AVATAR_SVG = '<svg width="90" height="90" viewBox="0 0 24 24" fill
 const DEFAULT_AVATAR_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(DEFAULT_AVATAR_SVG)}`;
 
 /**
+ * Resolves a saved account avatar by stored path, DID, original URL or remote fallback.
+ * @param {object} account - Account identity, remote URL and optional stored avatar path.
+ * @param {object[]} assets - Current cached account-avatar assets.
+ * @param {Function} dataUri - Converts a cached asset into a Data URL.
+ * @returns {string} Embedded or remote avatar URL; fallback matches update account.avatarPath.
+ */
+export function resolveStoredAccountAvatar(account = {}, assets = [], dataUri) {
+  let source = [];
+  if (Array.isArray(assets)) {
+    source = assets;
+  }
+  const avatarPath = String(account?.avatarPath || "").trim();
+  if (avatarPath) {
+    const asset = source.find((entry) => entry.path === avatarPath);
+    if (asset) {
+      return dataUri(asset);
+    }
+  }
+  const fallbackAsset = source.find((entry) =>
+    (account?.did && entry.did === account.did) || (account?.avatar && entry.url === account.avatar));
+  if (fallbackAsset) {
+    account.avatarPath = fallbackAsset.path;
+    return dataUri(fallbackAsset);
+  }
+  return String(account?.avatar || "").trim();
+}
+
+/**
  * Applies an account avatar URL to an image with the Bluesky-style fallback.
  * @param {HTMLImageElement|null} image - Target image element.
  * @param {string} avatarUrl - Optional remote avatar URL.

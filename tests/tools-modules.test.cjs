@@ -919,7 +919,7 @@ test("DM archive export controller builds JSON, HTML and PDF downloads", async (
       sharedFiles.push({ file, name });
     },
     async ensureAvatarAssets() {},
-    buildHtmlDocument() {
+    async buildHtmlDocument() {
       return "<!doctype html>";
     },
     getFileBaseName() {

@@ -234,6 +234,9 @@ export function createSearchPreferencesNormalizer(dependencies = {}) {
    * @returns {object} Stable search preference snapshot.
    */
   function normalizeSearchPreferences(preferences = {}) {
+    if (!preferences || typeof preferences !== "object") {
+      preferences = {};
+    }
     const tags = normalizeHashtags(preferences.tags || []).map((tag) => getDisplayHashtag(tag));
     let languages = [];
     if (Array.isArray(preferences.langs)) {
@@ -258,6 +261,13 @@ export function createSearchPreferencesNormalizer(dependencies = {}) {
     if (sort !== "top") {
       sort = "latest";
     }
+    let postTypeFilter = String(preferences.postTypeFilter || "").trim();
+    if (postTypeFilter === "posts") {
+      postTypeFilter = "originals";
+    }
+    if (!["originals", "replies", "quotes", "reposts", "non-reposts"].includes(postTypeFilter)) {
+      postTypeFilter = "all";
+    }
     return {
       sourceUrl: String(preferences.sourceUrl || "").trim(),
       mode,
@@ -266,7 +276,7 @@ export function createSearchPreferencesNormalizer(dependencies = {}) {
       tags,
       tagMatchMode,
       mediaFilter,
-      postTypeFilter: String(preferences.postTypeFilter || "").trim() || "all",
+      postTypeFilter,
       sort,
       excludeText: String(preferences.excludeText || "").trim(),
       mentions: String(preferences.mentions || "").trim(),

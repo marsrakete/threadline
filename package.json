@@ -1,11 +1,11 @@
 {
   "name": "threadline",
-  "version": "0.4.328",
+  "version": "0.4.356",
   "private": true,
   "scripts": {
     "check": "npm run check:encoding && node --check app.js && node --check js/core/app-translations.js && node --check sw.js && node --check js/atproto/atproto-worker.js && npm test",
     "test": "npm run test:unit && npm run test:browser",
-    "test:unit": "node --test tests/structure.test.cjs tests/module-coverage.test.cjs tests/core-shared-modules.test.cjs tests/composer-main.test.cjs tests/composer-modules.test.cjs tests/composer-image-processing.test.cjs tests/composer-document.test.cjs tests/tools-modules.test.cjs tests/atproto-adapters.test.cjs tests/worker-contract.test.cjs tests/shared-languages.test.cjs tests/shared-hashtags.test.cjs tests/app-backup.test.cjs tests/analysis-calculations.test.cjs tests/search.test.cjs",
+    "test:unit": "node --test tests/structure.test.cjs tests/module-coverage.test.cjs tests/core-shared-modules.test.cjs tests/composer-main.test.cjs tests/composer-modules.test.cjs tests/composer-image-processing.test.cjs tests/composer-document.test.cjs tests/tools-modules.test.cjs tests/atproto-adapters.test.cjs tests/worker-contract.test.cjs tests/shared-languages.test.cjs tests/shared-hashtags.test.cjs tests/shared-zip.test.cjs tests/shared-pdf.test.cjs tests/archive-html.test.cjs tests/archive-pdf.test.cjs tests/archive-media.test.cjs tests/archive-assets.test.cjs tests/archive-workspace.test.cjs tests/archive-source.test.cjs tests/dm-export.test.cjs tests/app-backup.test.cjs tests/analysis-calculations.test.cjs tests/search.test.cjs tests/search-controller.test.cjs tests/snapshot-controller.test.cjs tests/worker-search.test.cjs tests/worker-search-filters.test.cjs tests/worker-search-service.test.cjs tests/explorer-geometry.test.cjs tests/explorer-interactions.test.cjs tests/worker-dm-models.test.cjs tests/worker-dm-service.test.cjs tests/worker-archive-control.test.cjs tests/worker-archive-models.test.cjs tests/worker-archive-thread.test.cjs tests/worker-archive-wave.test.cjs tests/worker-archive-services.test.cjs tests/worker-archive-import.test.cjs tests/worker-analysis.test.cjs tests/worker-adapters.test.cjs tests/worker-session.test.cjs tests/explorer-hydration.test.cjs tests/explorer-workspace.test.cjs",
     "test:browser": "playwright test --config tests/playwright.config.cjs",
     "build:og-image": "node scripts/build-og-images.js",
     "check:encoding": "node scripts/check-encoding.js",

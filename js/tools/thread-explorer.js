@@ -553,6 +553,81 @@ export function advanceThreadExplorerPanInertia(state, elapsedMs, friction, stop
 }
 
 /**
+ * Owns the animation frame and velocity of one viewport's inertial pan.
+ * @param {object} options - Frame/clock, drag, movement, visual and edge adapters plus thresholds.
+ * @returns {object} Velocity sampling, start, cancel and active-frame operations.
+ */
+export function createThreadExplorerPanController(options) {
+  let frame = 0;
+  const velocity = { velocityX: 0, velocityY: 0 };
+  let previousTime = 0;
+
+  /** Sets the released pointer velocity in CSS pixels per millisecond.
+   * @param {number} x - Horizontal velocity.
+   * @param {number} y - Vertical velocity.
+   * @returns {void}
+   */
+  function setVelocity(x, y) {
+    velocity.velocityX = 0;
+    velocity.velocityY = 0;
+    if (Number.isFinite(x)) { velocity.velocityX = x; }
+    if (Number.isFinite(y)) { velocity.velocityY = y; }
+  }
+
+  /** Cancels animation and discards velocity, preserving an active drag's visual state.
+   * @returns {void}
+   */
+  function cancel() {
+    if (frame) { options.cancelFrame(frame); }
+    frame = 0;
+    setVelocity(0, 0);
+    if (!options.isDragging()) { options.setPanning(false); }
+  }
+
+  /** Advances movement and friction until the stop threshold is reached.
+   * @param {number} now - Animation timestamp in milliseconds.
+   * @returns {void}
+   */
+  function step(now) {
+    const elapsed = Math.max(1, now - previousTime);
+    previousTime = now;
+    options.move(velocity.velocityX * elapsed, velocity.velocityY * elapsed);
+    if (!advanceThreadExplorerPanInertia(velocity, elapsed, options.friction, options.stopVelocity)) {
+      frame = 0;
+      setVelocity(0, 0);
+      options.setPanning(false);
+      options.renderEdges();
+      return;
+    }
+    frame = options.requestFrame(step);
+  }
+
+  /** Starts inertia from the latest release sample, replacing a previous animation.
+   * @returns {void}
+   */
+  function start() {
+    const { velocityX, velocityY } = velocity;
+    cancel();
+    setVelocity(velocityX, velocityY);
+    if (Math.max(Math.abs(velocityX), Math.abs(velocityY)) < options.minVelocity) {
+      setVelocity(0, 0);
+      options.setPanning(false);
+      options.renderEdges();
+      return;
+    }
+    previousTime = options.now();
+    options.setPanning(true);
+    frame = options.requestFrame(step);
+  }
+
+  /** Reports whether a frame is pending so edge rendering can wait for the pan.
+   * @returns {boolean} Whether animation is active.
+   */
+  function isActive() { return frame !== 0; }
+  return Object.freeze({ setVelocity, start, cancel, isActive });
+}
+
+/**
  * Returns a normalized actor value without leading at signs.
  * @param {string} value - Raw actor field value.
  * @returns {string} Trimmed handle or DID.
@@ -725,6 +800,105 @@ export function buildThreadExplorerGalleryState(images = [], startIndex = 0) {
     images: normalizedImages,
     index,
   };
+}
+
+/**
+ * Owns gallery image selection and coordinates existing template-based renderers.
+ * @param {object} options - Gallery elements, thumbnail template, translation and dialog/error adapters.
+ * @returns {object} Open, render, relative-step and current-image operations.
+ */
+export function createThreadExplorerGalleryController(options) {
+  let images = [];
+  let index = 0;
+
+  /** Returns the selected normalized image, if a gallery has been opened.
+   * @returns {object|undefined} Selected image.
+   */
+  function getCurrent() {
+    return images[index];
+  }
+
+  /** Renders the selected image and thumbnail selection through the shared renderer.
+   * @returns {void}
+   */
+  function render() {
+    const image = getCurrent();
+    if (!image) {
+      return;
+    }
+    renderThreadExplorerGalleryView({ image, imageCount: images.length, selectedIndex: index,
+      elements: options.elements, translate: options.translate, applyTranslatedTitle: options.applyTranslatedTitle });
+  }
+
+  /** Opens a normalized image collection at the requested starting index.
+   * @param {object[]} entries - Raw gallery images.
+   * @param {number} startIndex - Initial selection index.
+   * @returns {void}
+   */
+  function open(entries, startIndex) {
+    const state = buildThreadExplorerGalleryState(entries, startIndex);
+    if (!state) {
+      return;
+    }
+    images = state.images;
+    index = state.index;
+    renderThreadExplorerGalleryThumbnails(options.elements.thumbs, options.templateContent, images, (selectedIndex) => {
+      index = selectedIndex;
+      render();
+    }, options.onThumbnailError);
+    render();
+    options.show();
+  }
+
+  /** Advances the selection with wrap-around, ignoring empty/zero-step galleries.
+   * @param {number} delta - Relative image movement.
+   * @returns {void}
+   */
+  function step(delta) {
+    if (images.length <= 1) {
+      return;
+    }
+    const numericDelta = Number(delta) || 0;
+    if (!numericDelta) {
+      return;
+    }
+    index = advanceThreadExplorerGalleryIndex(index, numericDelta, images.length);
+    render();
+  }
+  return Object.freeze({ open, render, step, getCurrent });
+}
+
+/**
+ * Resolves selection in current, stored and first-feed-item priority order.
+ * @param {object} options - Current URI, feed items, lazy stored-selection reader and outside-feed flag.
+ * @returns {string} Selected URI or an empty string when no selection exists.
+ */
+export function resolveThreadExplorerSelection(options) {
+  let items = [];
+  if (Array.isArray(options.items)) {
+    items = options.items;
+  }
+  const currentUri = String(options.currentUri || "").trim();
+  if (currentUri && (options.allowStoredOutsideFeed === true || containsUri(currentUri))) {
+    return currentUri;
+  }
+  const stored = options.readStoredSelection();
+  if (stored?.selectedUri && (options.allowStoredOutsideFeed === true || containsUri(stored.selectedUri))) {
+    return stored.selectedUri;
+  }
+  return String(items[0]?.post?.uri || "").trim();
+
+  /** Checks exact post membership, retaining the original URI trimming rule.
+   * @param {string} uri - Candidate post URI.
+   * @returns {boolean} Whether the URI occurs in the current feed.
+   */
+  function containsUri(uri) {
+    const normalizedUri = String(uri || "").trim();
+    if (!normalizedUri) {
+      return false;
+    }
+    return items.some((item) => String(item?.post?.uri || "").trim() === normalizedUri);
+  }
 }
 
 /**
@@ -2461,4 +2635,198 @@ export function createThreadExplorerReplyClusterWorkspace(rootRenderNode, create
     rootRenderNode,
     positionedItems: [],
   };
+}
+
+/**
+ * Normalizes locally saved Thread Explorer favorites.
+ * @param {Array<object>} favorites - Raw favorite entries from state or backup.
+ * @returns {Array<object>} Clean favorite entries with stable fields.
+ */
+export function normalizeThreadExplorerFavorites(favorites) {
+  if (!Array.isArray(favorites)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const normalized = [];
+  favorites.forEach((favorite) => {
+    const rootUri = String(favorite?.rootUri || favorite?.uri || "").trim();
+    if (!rootUri || seen.has(rootUri)) {
+      return;
+    }
+    seen.add(rootUri);
+    normalized.push({
+      rootUri,
+      selectedUri: String(favorite?.selectedUri || rootUri).trim(),
+      authorHandle: String(favorite?.authorHandle || "").trim(),
+      authorName: String(favorite?.authorName || "").trim(),
+      text: String(favorite?.text || "").trim().slice(0, 260),
+      createdAt: String(favorite?.createdAt || "").trim(),
+      savedAt: String(favorite?.savedAt || "").trim(),
+      webApp: String(favorite?.webApp || "").trim(),
+    });
+  });
+  return normalized.slice(0, 100);
+}
+
+/**
+ * Builds a favorite model from a root/search post using explicit content and clock adapters.
+ * @param {object|null} post - Normalized post to bookmark.
+ * @param {object} options - Selected URI, trimFields flag, actor/preview/web-app builders and ISO clock.
+ * @returns {object|null} Existing favorite schema, or null for an absent post URI.
+ */
+export function buildThreadExplorerFavoriteModel(post, options) {
+  let rootUri = post?.uri || "";
+  let authorHandle = String(post?.author?.handle || "");
+  let createdAt = String(post?.createdAt || post?.indexedAt || "");
+  if (options.trimFields === true) {
+    rootUri = String(rootUri).trim();
+    authorHandle = authorHandle.trim();
+    createdAt = createdAt.trim();
+  }
+  if (!rootUri) {
+    return null;
+  }
+  let selectedUri = String(options.selectedUri || post.uri);
+  if (options.trimFields === true) {
+    selectedUri = rootUri;
+  }
+  return { rootUri, selectedUri, authorHandle, authorName: options.getActorLabel(post.author),
+    text: options.getPreviewText(post), createdAt, savedAt: options.now(), webApp: options.getWebApp(post) };
+}
+
+/**
+ * Appends newly loaded feed items while preserving the first occurrence of each post URI.
+ * @param {Array<object>} currentItems - Feed items already rendered.
+ * @param {Array<object>} nextItems - Feed items returned by the newest page.
+ * @param {object} options - Append options.
+ * @param {boolean} options.groupByRoot - Whether duplicates should be detected by root URI.
+ * @returns {Array<object>} Combined feed items without duplicate post URIs.
+ */
+export function appendThreadExplorerFeedItems(currentItems, nextItems, options = {}) {
+  const seen = new Set();
+  const combined = [];
+  const items = [];
+  if (Array.isArray(currentItems)) {
+    items.push(...currentItems);
+  }
+  if (Array.isArray(nextItems)) {
+    items.push(...nextItems);
+  }
+  items.forEach((item) => {
+    let uri = String(item?.post?.uri || "").trim();
+    if (options.groupByRoot === true) {
+      uri = String(item?.post?.rootUri || item?.post?.uri || "").trim();
+    }
+    if (!uri || seen.has(uri)) {
+      return;
+    }
+    seen.add(uri);
+    combined.push(item);
+  });
+  return combined;
+}
+
+/**
+ * Returns the timestamp used to sort Thread Explorer feed items.
+ * @param {object} item - Thread Explorer feed item.
+ * @returns {number} Epoch milliseconds or zero.
+ */
+export function getThreadExplorerFeedItemSortTimestamp(item = {}) {
+  const createdAt = Date.parse(String(item?.post?.createdAt || "").trim());
+  if (Number.isFinite(createdAt)) {
+    return createdAt;
+  }
+
+  const indexedAt = Date.parse(String(item?.post?.indexedAt || "").trim());
+  if (Number.isFinite(indexedAt)) {
+    return indexedAt;
+  }
+
+  return 0;
+}
+
+/**
+ * Sorts Thread Explorer feed items by post date, newest first.
+ * @param {Array<object>} items - Feed items to sort.
+ * @returns {Array<object>} Sorted feed items without mutating the input.
+ */
+export function sortThreadExplorerFeedItemsByDate(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .map((item, index) => {
+      return {
+        item,
+        index,
+      };
+    })
+    .sort((left, right) => {
+      const leftTime = getThreadExplorerFeedItemSortTimestamp(left.item);
+      const rightTime = getThreadExplorerFeedItemSortTimestamp(right.item);
+      if (leftTime !== rightTime) {
+        return rightTime - leftTime;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => {
+      return entry.item;
+    });
+}
+
+/**
+ * Finds a normalized Thread Explorer tree node by post URI.
+ * @param {object|null} node - Current normalized tree node.
+ * @param {string} uri - AT URI to locate.
+ * @returns {object|null} Matching tree node, or null.
+ */
+export function findThreadExplorerTreeNode(node, uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!node || !normalizedUri) {
+    return null;
+  }
+
+  if (node.post?.uri === normalizedUri) {
+    return node;
+  }
+
+  if (!Array.isArray(node.replies)) {
+    return null;
+  }
+
+  for (const reply of node.replies) {
+    const found = findThreadExplorerTreeNode(reply, normalizedUri);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Finds the direct parent node for one normalized Thread Explorer post URI.
+ * @param {object|null} node - Current normalized tree node.
+ * @param {string} uri - AT URI to locate below the current node.
+ * @returns {object|null} Direct parent node, or null when the URI is the root or missing.
+ */
+export function findThreadExplorerParentNode(node, uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!node || !normalizedUri || !Array.isArray(node.replies)) {
+    return null;
+  }
+
+  for (const reply of node.replies) {
+    if (reply?.post?.uri === normalizedUri) {
+      return node;
+    }
+    const found = findThreadExplorerParentNode(reply, normalizedUri);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
 }

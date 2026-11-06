@@ -1,5 +1,32 @@
+import { createSearchModels, createSavedSearchModels } from "./js/tools/search-models.js";
+import { createSearchFormController } from "./js/tools/search-form.js";
+import { createSearchRunController, createSavedSearchController } from "./js/tools/search-controller.js";
+import { createDmExportModels } from "./js/tools/dm-export-models.js";
+import { createDmPdfRenderer } from "./js/tools/dm-pdf-rendering.js";
+import { createDmHtmlRenderer } from "./js/tools/dm-html-rendering.js";
+import { createArchiveSourceController } from "./js/tools/archive-source.js";
+import { createArchiveWorkspaceModels } from "./js/tools/archive-workspace-models.js";
+import { createArchiveWorkspaceRenderer, createArchiveWorkspaceLayout } from "./js/tools/archive-workspace-rendering.js";
+import { createArchiveRunController } from "./js/tools/archive-run-controller.js";
+import { createAssetService, getAssetExtensionFromMimeType } from "./js/shared/shared-assets.js";
+import { createArchiveAvatarAssets } from "./js/tools/archive-assets.js";
+import { createArchiveCatalogService } from "./js/tools/archive-catalog.js";
+import { createArchiveMediaModels, MEDIA_EXPORT_BATCH_SIZE } from "./js/tools/archive-media-models.js";
+import { createArchiveMediaExportController } from "./js/tools/archive-media-export.js";
+import { createArchivePdfLayout } from "./js/tools/archive-pdf-layout.js";
+import { createArchivePdfRenderer } from "./js/tools/archive-pdf-rendering.js";
+import { createArchivePdfExportController } from "./js/tools/archive-pdf-export.js";
 ﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./js/shared/shared-languages.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./js/core/app-i18n.js";
+import { createStoredZipCodec } from "./js/shared/shared-zip.js";
+import { buildArchiveThreadGroups, buildArchiveThreadDepthMap, shortenArchiveUrlForDisplay, shouldAutoFallbackArchiveHtmlToCompact, isArchiveStringLengthError, createArchiveHtmlModels } from "./js/tools/archive-html-models.js";
+import { createArchiveHtmlRenderer } from "./js/tools/archive-html-rendering.js";
+import { createArchiveHtmlTemplateLoader, createArchiveHtmlExportController } from "./js/tools/archive-html-export.js";
+
+import { createPdfFileBuilder } from "./js/shared/shared-pdf.js";
+import { createPdfTextLayout } from "./js/shared/shared-pdf-text.js";
+import { fillRoundedRect, strokeRoundedRect, drawRoundedImageContain, drawCircularImageCover } from "./js/shared/shared-canvas.js";
+
 import { createSettingsBackupCodec, createSettingsBackupController, createSettingsBackupReminder } from "./js/core/app-backup.js";
 import { createComposerLinkCardPreviewRenderer } from "./js/composer/composer-link-cards.js";
 import { createComposerMentionSourceCorrectionController } from "./js/composer/composer-mentions.js";
@@ -80,6 +107,7 @@ import {
 import {
   escapeSearchHighlightRegex,
   parseSearchQueryTerms,
+  createSearchPreferencesNormalizer,
   parseSearchTags,
   quoteSearchSummaryValue,
   splitSharedSearchQuery,
@@ -97,16 +125,20 @@ import {
 import { createSearchResultCardRenderer } from "./js/tools/search-results.js";
 import {
   buildThreadExplorerFeedSource,
-  buildThreadExplorerGalleryState,
+  createThreadExplorerGalleryController,
+  appendThreadExplorerFeedItems,
+  sortThreadExplorerFeedItemsByDate,
+  normalizeThreadExplorerFavorites,
+  resolveThreadExplorerSelection,
+  buildThreadExplorerFavoriteModel,
+  findThreadExplorerTreeNode,
+  findThreadExplorerParentNode,
   buildThreadExplorerPostWebUrl as buildThreadExplorerPostWebUrlFromData,
-  advanceThreadExplorerGalleryIndex,
   createThreadExplorerCardInteractionController,
   createThreadExplorerCardPresentationController,
   getThreadExplorerActorFocusId,
   getThreadExplorerFaviconUrl,
   getThreadExplorerGalleryFallbackDecision,
-  renderThreadExplorerGalleryThumbnails,
-  renderThreadExplorerGalleryView,
   normalizeThreadExplorerHydratedMedia,
   getThreadExplorerImageSources,
   getThreadExplorerPostImages,
@@ -213,13 +245,15 @@ import {
   updateThreadExplorerPanVelocity as updateThreadExplorerPanVelocityFromTools,
   applyThreadExplorerPanDelta as applyThreadExplorerPanDeltaFromTools,
   setThreadExplorerPanningMode as setThreadExplorerPanningModeFromTools,
-  advanceThreadExplorerPanInertia as advanceThreadExplorerPanInertiaFromTools,
+  createThreadExplorerPanController,
 } from "./js/tools/thread-explorer.js";
 import { normalizeStoredDesktopLayout as normalizeStoredDesktopLayoutFromState,
   clampDesktopWidth, createDesktopLayoutController } from "./js/core/app-layout-state.js";
-import { createThreadExplorerController, loadThreadExplorerActorFocusWorkflow, loadThreadExplorerFeedWorkflow, loadThreadExplorerThreadWorkflow, renderThreadExplorerWorkspace as renderThreadExplorerWorkspaceFromController, bindThreadExplorerWorkspaceEvents, bindThreadExplorerGlobalEvents, bindThreadExplorerDialogEvents, bindThreadExplorerSnapshotEvents } from "./js/tools/thread-explorer-controller.js";
+import { createThreadExplorerViewPreference, createThreadExplorerSelectionPreferences, createThreadExplorerFavoritesController, createThreadExplorerFeedSourcesController, createThreadExplorerGalleryFullscreenController, createThreadExplorerFocusController, createThreadExplorerRenderScheduler, createThreadExplorerZoomController, createThreadExplorerZoomResetController, createThreadExplorerCardFocusController, createThreadExplorerController, loadThreadExplorerActorFocusWorkflow, loadThreadExplorerFeedWorkflow, loadThreadExplorerThreadWorkflow, renderThreadExplorerWorkspace as renderThreadExplorerWorkspaceFromController, bindThreadExplorerWorkspaceEvents, bindThreadExplorerGlobalEvents, bindThreadExplorerDialogEvents, bindThreadExplorerSnapshotEvents } from "./js/tools/thread-explorer-controller.js";
 import {
   hydrateThreadExplorerCard,
+  createThreadExplorerLazyHydrationController,
+  hydrateThreadExplorerAvatars,
   renderThreadExplorerCardAvatar,
   renderThreadExplorerCardMedia,
   renderThreadExplorerCardEmbeds,
@@ -228,8 +262,14 @@ import {
   applyThreadExplorerAvatarHydration as applyThreadExplorerAvatarHydrationToTree,
   applyThreadExplorerAvatarCacheToTree as applyThreadExplorerAvatarCacheToTreeFromHydration,
 } from "./js/tools/thread-explorer-hydration.js";
-import { hydrateThreadExplorerMedia } from "./js/tools/thread-explorer-media-hydration.js";
+import { hydrateThreadExplorerSnapshotMedia as hydrateThreadExplorerSnapshotMediaFromTools } from "./js/tools/thread-explorer-media-hydration.js";
 import {
+  renderThreadExplorerControls,
+  renderThreadExplorerFeedSources,
+  renderThreadExplorerFavorites,
+  renderThreadExplorerReplies,
+  renderSavedSearches,
+  configureSavedSearchesDialog,
   countThreadExplorerPosts as countThreadExplorerPostsFromRendering,
   formatThreadExplorerDate as formatThreadExplorerDateFromRendering,
   getThreadExplorerActorLabel as getThreadExplorerActorLabelFromRendering,
@@ -239,7 +279,7 @@ import {
 } from "./js/tools/thread-explorer-rendering.js";
 import {
   buildThreadExplorerSnapshotFileName as buildThreadExplorerSnapshotFileNameFromData,
-  clampThreadExplorerSnapshotProgress,
+  createThreadExplorerSnapshotExportController,
   countThreadExplorerSnapshotMediaAssets as countThreadExplorerSnapshotMediaAssetsFromData,
   createThreadExplorerSnapshotAbortError,
   getThreadExplorerSnapshotScale as getThreadExplorerSnapshotScaleFromData,
@@ -304,6 +344,12 @@ import {
   ensureThreadExplorerReplyClusterRootExpanded as ensureReplyClusterRootExpandedFromLayout,
   configureThreadExplorerReplyClusterItem,
   mountThreadExplorerReplyClusterWorkspace,
+  getThreadExplorerStageBoxFromRects,
+  getThreadExplorerContentBounds,
+  calculateThreadExplorerPointZoom,
+  calculateThreadExplorerNodePan,
+  getThreadExplorerCardNeighborhoodBounds as getThreadExplorerCardNeighborhoodBoundsFromLayout,
+  calculateThreadExplorerViewportFit,
 } from "./js/tools/thread-explorer-layout.js";
 import {
   createDmArchiveController,
@@ -314,7 +360,7 @@ import {
 } from "./js/tools/dm-archive.js";
 import { clamp, setAttr, setSafeHtml, setSafeText } from "./js/core/app-utils.js";
 import { cloneTemplate, cloneTemplateContent } from "./js/shared/shared-templates.js";
-import { DEFAULT_AVATAR_URI, setAvatarImage, createSavedAccountRenderer } from "./js/shared/shared-accounts.js";
+import { DEFAULT_AVATAR_URI, setAvatarImage, createSavedAccountRenderer, resolveStoredAccountAvatar } from "./js/shared/shared-accounts.js";
 import {
   requestPostLike,
   requestPostUnlike,
@@ -442,6 +488,19 @@ import {
   getViewerLikeUri,
   isPostLikedByViewer,
 } from "./js/shared/shared-post-rendering.js";
+
+const assetService = createAssetService({
+  encodeBase64: (value) => btoa(value), decodeBase64: (value) => atob(value),
+  blob: (parts, options) => new Blob(parts, options), reader: () => new FileReader(),
+  bitmap: (blob) => createImageBitmap(blob), fetch: (url, options) => fetch(url, options),
+  encodeError: () => t("archiveAssetEncodeFailed"), loadError: (status) => t("archiveAssetLoadFailed", { status }),
+});
+const { toBase64: bytesToBase64, fromBase64: base64ToBytes, dataUri: assetToDataUri,
+  readDataUri: assetToDataUriAsync, bitmap: loadArchiveAssetBitmap } = assetService;
+
+const buildPdfFile = createPdfFileBuilder({ applicationLabel: getExportMetadataApplicationLabel, now: () => new Date() });
+const { links: extractPdfLinkRuns, wrap: buildWrappedPdfLines, draw: drawArchivePdfTextBlock, rectangle: canvasRectToPdfRect }
+  = createPdfTextLayout({ facetRuns: extractFacetRichTextRuns });
 
 const MAX_POST_LENGTH = 300;
 const MAX_POST_UTF8_BYTES = 3000;
@@ -1185,8 +1244,8 @@ let archiveSelectedHashtags = [];
 let archiveHashtagScope = "thread";
 let archiveSourceProfile = null;
 let archiveSavedSearchId = "";
-let archiveSourceValidationToken = 0;
-let archiveSourceValidationTimer = null;
+
+
 let postingHistory = [];
 let currentComposedText = "";
 let selectedPostLanguages = [];
@@ -1350,7 +1409,7 @@ const composerPostSettings = createComposerPostSettingsController({
   translate: t, normalizeLanguages: normalizePostLanguageTags, inferLanguages: inferDefaultPostLanguages,
   displayLanguage: getPostLanguageDisplayName, languageOptions: getPostLanguageOptions,
   searchLimit: MAX_SEARCH_LANGUAGES, persist: persistSettings, renderSegments,
-  renderSearchLanguages: renderSearchLanguageSummary, renderSearchSummary,
+  renderSearchLanguages: renderSearchLanguageSummary, renderSearchSummary: renderSearchWorkspace,
   enforceSearchSort: enforceSearchSortConstraints, setLocked: setComposerLocked,
   setPosted: setComposerPosted, renderReply: renderReplyTargetCard, saveDraft: queueDraftSave,
   defer: (callback, delay) => window.setTimeout(callback, delay),
@@ -1972,8 +2031,6 @@ let searchResultPreferences = null;
 let activeSearchRunId = "";
 let searchCancelPending = false;
 let searchLoading = false;
-let searchUrlImportTimer = 0;
-let searchPreferencesPersistTimer = 0;
 let archiveCatalog = null;
 let archiveJobState = null;
 let dmCatalog = null;
@@ -2080,27 +2137,46 @@ const threadExplorerDragStateHolder = {
     threadExplorerDragState = nextState;
   },
 };
-let threadExplorerPanInertiaFrame = 0;
-let threadExplorerPanVelocityX = 0;
-let threadExplorerPanVelocityY = 0;
+const threadExplorerPanController = createThreadExplorerPanController({
+  requestFrame: callback => window.requestAnimationFrame(callback),
+  cancelFrame: frame => window.cancelAnimationFrame(frame),
+  now: () => performance.now(),
+  isDragging: () => Boolean(threadExplorerDragState),
+  move: applyThreadExplorerScrollDelta,
+  setPanning: setThreadExplorerPanningMode,
+  renderEdges: scheduleThreadExplorerEdgeRender,
+  minVelocity: THREAD_EXPLORER_INERTIA_MIN_VELOCITY,
+  stopVelocity: THREAD_EXPLORER_INERTIA_STOP_VELOCITY,
+  friction: THREAD_EXPLORER_INERTIA_FRICTION,
+});
 let threadExplorerPanX = 24;
 let threadExplorerPanY = 24;
 let threadExplorerOrientation = THREAD_EXPLORER_ORIENTATION_VERTICAL;
 let threadExplorerViewMode = THREAD_EXPLORER_VIEW_MODE_TREE;
 let threadExplorerFullscreen = false;
-let threadExplorerEdgeRenderFrame = 0;
 let threadExplorerFavorites = [];
+const threadExplorerFavoritesController = createThreadExplorerFavoritesController({
+  getFavorites: () => threadExplorerFavorites,
+  setFavorites: value => { threadExplorerFavorites = value; },
+  normalize: normalizeThreadExplorerFavorites,
+  persist: persistSettings,
+});
 let savedSearches = [];
 let savedSearchDialogContext = "threadExplorer";
 let threadExplorerReactionsLoading = false;
-let threadExplorerGalleryImages = [];
-let threadExplorerGalleryIndex = 0;
-let threadExplorerGalleryPseudoFullscreen = false;
+const threadExplorerGalleryController = createThreadExplorerGalleryController({
+  elements: {
+    image: threadExplorerGalleryImage, caption: threadExplorerGalleryCaption, title: threadExplorerGalleryTitle,
+    thumbs: threadExplorerGalleryThumbs, previousButton: threadExplorerGalleryPrevButton, nextButton: threadExplorerGalleryNextButton,
+    overlayPreviousButton: threadExplorerGalleryOverlayPrevButton, overlayNextButton: threadExplorerGalleryOverlayNextButton,
+    overlayCloseButton: threadExplorerGalleryOverlayCloseButton,
+  },
+  templateContent: threadExplorerGalleryThumbTemplate.content,
+  translate: t, applyTranslatedTitle, onThumbnailError: handleThreadExplorerGalleryThumbError,
+  show: () => threadExplorerGalleryDialog.showModal(),
+});
 let threadExplorerSnapshotMediaDataUris = new Map();
 let threadExplorerRenderedMediaCache = new Map();
-let threadExplorerMediaCacheGeneration = 0;
-let threadExplorerMediaCachePrewarmController = null;
-let threadExplorerCardObserver = null;
 let threadExplorerReplyClusterLayoutState = null;
 let threadExplorerReplyClusterExpandedUris = new Set();
 const threadExplorerController = createThreadExplorerController({
@@ -2108,8 +2184,82 @@ const threadExplorerController = createThreadExplorerController({
   orientation: threadExplorerOrientation,
   viewMode: threadExplorerViewMode,
 });
+const threadExplorerRenderScheduler = createThreadExplorerRenderScheduler({
+  isClusterMode: isThreadExplorerReplyClusterModeActive,
+  isDragging: () => threadExplorerDragState?.started === true,
+  isInertiaActive: threadExplorerPanController.isActive,
+  requestFrame: callback => window.requestAnimationFrame(callback),
+  cancelFrame: frame => window.cancelAnimationFrame(frame),
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: timer => window.clearTimeout(timer),
+  renderEdges: renderThreadExplorerEdges, focusSelected: focusSelectedThreadExplorerNode,
+});
+const threadExplorerFeedSourcesController = createThreadExplorerFeedSourcesController({
+  state: {
+    get feeds() { return threadExplorerFeedSources; },
+    set feeds(value) { threadExplorerFeedSources = value; },
+    get loaded() { return threadExplorerFeedSourcesLoaded; },
+    set loaded(value) { threadExplorerFeedSourcesLoaded = value; },
+    get loading() { return threadExplorerFeedSourcesLoading; },
+    set loading(value) { threadExplorerFeedSourcesLoading = value; },
+    get accountDid() { return threadExplorerFeedSourcesAccountDid; },
+    set accountDid(value) { threadExplorerFeedSourcesAccountDid = value; },
+  },
+  getAccount() {
+    if (!authAccount) { return ""; }
+    return String(authAccountDid || "").trim();
+  },
+  request: sendToServiceWorker, render: renderThreadExplorerFeedSourceSelect,
+  onError(error) { console.warn("Thread Explorer feed sources failed.", error); },
+});
+const threadExplorerGalleryFullscreenController = createThreadExplorerGalleryFullscreenController({
+  getTarget: () => threadExplorerGalleryMain || threadExplorerGalleryImage,
+  isIos: isIosDevice,
+  getFullscreenElement: () => document.fullscreenElement,
+  exitFullscreen: () => document.exitFullscreen(),
+  isOpen: () => Boolean(threadExplorerGalleryDialog?.open),
+  step: stepThreadExplorerGallery,
+  closeDialog: () => threadExplorerGalleryDialog?.close(),
+  applyFallback(active) {
+    if (threadExplorerGalleryMain) {
+      threadExplorerGalleryMain.classList.toggle("is-inline-fullscreen", active);
+    }
+    document.body.classList.toggle("thread-explorer-gallery-fullscreen", active);
+  },
+});
+const threadExplorerFocusController = createThreadExplorerFocusController({
+  isClusterMode: isThreadExplorerReplyClusterModeActive,
+  getRootUri: () => threadExplorerTree?.post?.uri || "",
+  getSelectedUri: () => threadExplorerSelectedUri,
+  getViewportElement: () => threadExplorerThreadTree,
+  getStage: () => threadExplorerThreadStage,
+  getCard: getRenderedThreadExplorerCard,
+  getViewport: () => ({ zoom: threadExplorerZoom, panX: threadExplorerPanX, panY: threadExplorerPanY }),
+  calculatePan: calculateThreadExplorerNodePan, setViewport: setThreadExplorerViewport,
+  render: applyThreadExplorerStageTransform, renderEdges: scheduleThreadExplorerEdgeRender,
+});
+const threadExplorerSelectionPreferences = createThreadExplorerSelectionPreferences({
+  getStorage: () => window.localStorage, key: THREAD_EXPLORER_SELECTION_STORAGE_KEY,
+  getAccount: () => authAccountDid, getSource: () => threadExplorerSource,
+  normalizeSource: normalizeThreadExplorerSource, now: () => new Date().toISOString(),
+});
+const threadExplorerOrientationPreference = createThreadExplorerViewPreference({
+  getStorage: () => window.localStorage, key: THREAD_EXPLORER_ORIENTATION_STORAGE_KEY,
+  normalize: normalizeThreadExplorerOrientation, fallback: THREAD_EXPLORER_ORIENTATION_VERTICAL,
+});
+const threadExplorerViewModePreference = createThreadExplorerViewPreference({
+  getStorage: () => window.localStorage, key: THREAD_EXPLORER_VIEW_MODE_STORAGE_KEY,
+  normalize: normalizeThreadExplorerViewMode, fallback: THREAD_EXPLORER_VIEW_MODE_TREE,
+});
 let threadExplorerForceHydrateCards = false;
-let threadExplorerSnapshotAbortController = null;
+const threadExplorerLazyHydrationController = createThreadExplorerLazyHydrationController({
+  createObserver: getThreadExplorerObserverFactory(),
+  getRoot: () => threadExplorerThreadTree,
+  getStage: () => threadExplorerThreadStage,
+  isForced: () => threadExplorerForceHydrateCards,
+  getSelectedUri: () => threadExplorerSelectedUri,
+  hydrate: hydrateThreadExplorerCardContent,
+});
 let threadExplorerLikePendingUris = new Set();
 const { renderInteractionActions: renderThreadExplorerInteractionActions } = createThreadExplorerCardInteractionController({
   buildInteractionModel: buildLivePostInteractionModel,
@@ -2154,14 +2304,44 @@ const {
   handleEditButtonClick: handleThreadExplorerEditButtonClick,
 });
 let threadExplorerCardZoomState = null;
-let threadExplorerLastTouchZoomTarget = {
-  uri: "",
-  timestamp: 0,
-};
-let threadExplorerPendingCardClickTimer = 0;
-let threadExplorerPendingCardClickUri = "";
-let threadExplorerPendingZoomResetClickTimer = 0;
-let threadExplorerLastManualZoomBeforeReset = 1;
+const threadExplorerCardFocusController = createThreadExplorerCardFocusController({
+  getFocus: () => threadExplorerCardZoomState,
+  setFocus: value => { threadExplorerCardZoomState = value; },
+  getViewport: () => ({ zoom: threadExplorerZoom, panX: threadExplorerPanX, panY: threadExplorerPanY }),
+  /** Restores page and controller viewport state and schedules edges.
+   * @param {object} viewport - Saved zoom and pan.
+   * @returns {void}
+   */
+  setViewport(viewport) {
+    setThreadExplorerViewport(viewport);
+    applyThreadExplorerStageTransform();
+    scheduleThreadExplorerEdgeRender();
+  },
+  getBounds: getThreadExplorerCardNeighborhoodBounds,
+  fit: fitThreadExplorerStageToBounds,
+  select: setThreadExplorerSelectedUriLocally,
+  isInteractive: isThreadExplorerInteractiveTarget,
+  isNativeInteractive: isThreadExplorerNativeInteractiveTarget,
+  now: () => Date.now(),
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: timer => window.clearTimeout(timer),
+});
+const threadExplorerZoomResetController = createThreadExplorerZoomResetController({
+  getZoom: () => threadExplorerZoom,
+  setCenteredZoom: setThreadExplorerZoomAtViewportCenter,
+  fit: fitThreadExplorerStageToTree,
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: timer => window.clearTimeout(timer),
+});
+const threadExplorerZoomController = createThreadExplorerZoomController({
+  getViewport: () => ({ zoom: threadExplorerZoom, panX: threadExplorerPanX, panY: threadExplorerPanY }),
+  setViewport: setThreadExplorerViewport,
+  getBounds: () => threadExplorerThreadTree.getBoundingClientRect(),
+  calculatePointZoom: calculateThreadExplorerPointZoom,
+  rememberZoom: threadExplorerZoomResetController.remember,
+  render: applyThreadExplorerStageTransform,
+  renderEdges: scheduleThreadExplorerEdgeRender,
+});
 let analysisLoading = false;
 let analysisStatusLine = "";
 let analysisAccountDataA = null;
@@ -3085,21 +3265,7 @@ function getThreadExplorerSearchIdFromSource(source) {
  * @returns {void}
  */
 function persistThreadExplorerSelectionPreference(uri) {
-  const normalizedUri = String(uri || "").trim();
-  if (!normalizedUri) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(THREAD_EXPLORER_SELECTION_STORAGE_KEY, JSON.stringify({
-      accountDid: authAccountDid || "",
-      source: normalizeThreadExplorerSource(threadExplorerSource),
-      selectedUri: normalizedUri,
-      updatedAt: new Date().toISOString(),
-    }));
-  } catch {
-    // Ignore storage errors in private or restricted contexts.
-  }
+  threadExplorerSelectionPreferences.save(uri);
 }
 
 /**
@@ -3107,11 +3273,7 @@ function persistThreadExplorerSelectionPreference(uri) {
  * @returns {void}
  */
 function clearThreadExplorerSelectionPreference() {
-  try {
-    window.localStorage.removeItem(THREAD_EXPLORER_SELECTION_STORAGE_KEY);
-  } catch {
-    // Ignore storage errors in private or restricted contexts.
-  }
+  threadExplorerSelectionPreferences.clear();
 }
 
 /**
@@ -3119,29 +3281,7 @@ function clearThreadExplorerSelectionPreference() {
  * @returns {object|null} Saved source and selected URI, or null when unavailable.
  */
 function getStoredThreadExplorerSelectionPreference() {
-  try {
-    const raw = String(window.localStorage.getItem(THREAD_EXPLORER_SELECTION_STORAGE_KEY) || "").trim();
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw);
-    const selectedUri = String(parsed?.selectedUri || "").trim();
-    const accountDid = String(parsed?.accountDid || "").trim();
-    if (!selectedUri) {
-      return null;
-    }
-    if (accountDid && authAccountDid && accountDid !== authAccountDid) {
-      return null;
-    }
-
-    return {
-      source: normalizeThreadExplorerSource(parsed?.source),
-      selectedUri,
-    };
-  } catch {
-    return null;
-  }
+  return threadExplorerSelectionPreferences.read();
 }
 
 /**
@@ -3174,14 +3314,7 @@ function normalizeThreadExplorerOrientation(orientation) {
  * @returns {void}
  */
 function persistThreadExplorerOrientationPreference(orientation) {
-  try {
-    window.localStorage.setItem(
-      THREAD_EXPLORER_ORIENTATION_STORAGE_KEY,
-      normalizeThreadExplorerOrientation(orientation),
-    );
-  } catch {
-    // Ignore storage errors in private or restricted contexts.
-  }
+  threadExplorerOrientationPreference.save(orientation);
 }
 
 /**
@@ -3189,12 +3322,7 @@ function persistThreadExplorerOrientationPreference(orientation) {
  * @returns {string} Saved orientation, or the vertical default.
  */
 function getStoredThreadExplorerOrientationPreference() {
-  try {
-    const value = String(window.localStorage.getItem(THREAD_EXPLORER_ORIENTATION_STORAGE_KEY) || "").trim();
-    return normalizeThreadExplorerOrientation(value);
-  } catch {
-    return THREAD_EXPLORER_ORIENTATION_VERTICAL;
-  }
+  return threadExplorerOrientationPreference.read();
 }
 
 /**
@@ -3221,14 +3349,7 @@ function normalizeThreadExplorerViewMode(mode) {
  * @returns {void}
  */
 function persistThreadExplorerViewModePreference(mode) {
-  try {
-    window.localStorage.setItem(
-      THREAD_EXPLORER_VIEW_MODE_STORAGE_KEY,
-      normalizeThreadExplorerViewMode(mode),
-    );
-  } catch {
-    // Ignore storage errors in private or restricted contexts.
-  }
+  threadExplorerViewModePreference.save(mode);
 }
 
 /**
@@ -3236,12 +3357,7 @@ function persistThreadExplorerViewModePreference(mode) {
  * @returns {string} Saved mode, or the tree default.
  */
 function getStoredThreadExplorerViewModePreference() {
-  try {
-    const value = String(window.localStorage.getItem(THREAD_EXPLORER_VIEW_MODE_STORAGE_KEY) || "").trim();
-    return normalizeThreadExplorerViewMode(value);
-  } catch {
-    return THREAD_EXPLORER_VIEW_MODE_TREE;
-  }
+  return threadExplorerViewModePreference.read();
 }
 
 /**
@@ -3421,244 +3537,15 @@ function buildSearchHashtagSummary() { return hashtagController.getSearchSummary
  */
 function renderSearchHashtagSummary() { hashtagController.renderSearchSummary(); }
 
-function createArchiveCardHeading({ eyebrowKey, eyebrowText, titleKey, titleText, helpTopic = "" } = {}) {
-  const fragment = document.createDocumentFragment();
-  const eyebrow = document.createElement("p");
-  eyebrow.className = "eyebrow";
-  if (eyebrowKey) {
-    eyebrow.dataset.i18n = eyebrowKey;
-  }
-  eyebrow.textContent = eyebrowText || "";
-  fragment.appendChild(eyebrow);
-
-  const heading = document.createElement("div");
-  heading.className = "help-heading";
-  const title = document.createElement("h3");
-  if (titleKey) {
-    title.dataset.i18n = titleKey;
-  }
-  title.textContent = titleText || "";
-  heading.appendChild(title);
-
-  if (helpTopic) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "help-trigger";
-    button.dataset.helpTopic = helpTopic;
-    button.setAttribute("aria-label", "Hilfe zu diesem Bereich");
-    button.setAttribute("title", "Hilfe zu diesem Bereich");
-    button.textContent = "?";
-    heading.appendChild(button);
-  }
-
-  fragment.appendChild(heading);
-  return fragment;
-}
-
-function ensureArchiveWorkspaceLayout() {
-  const archiveGrid = archiveWorkspace?.querySelector(".archive-grid");
-  if (!archiveGrid) {
-    return;
-  }
-
-  archiveGrid.classList.add("archive-layout-grid");
-
-  const scopeCard = archiveSourceInput?.closest(".archive-card");
-  const pdfCard = archiveBandSizeSelect?.closest(".archive-card");
-  const loadCard = archiveNextWaveButton?.closest(".archive-card");
-  const mediaCard = archiveMediaActorInput?.closest(".archive-card");
-  const progressCard = archiveProgressTitle?.closest(".archive-card");
-  const threadCard = archiveThreadUrlInput?.closest(".archive-card");
-  const specCard = archiveSpecContent?.closest(".archive-card");
-  const hashtagSlot = archiveHashtagSlot;
-  const waveSizeLabel = archiveWaveSizeSelect?.closest("label");
-  const startHint = document.querySelector("#archive-start-hint");
-  const exportZipButton = document.querySelector("#archive-export-zip-button");
-  const exportHtmlButton = archiveActionsExportHtmlButton;
-  const exportHtmlCompactButton = archiveActionsExportHtmlCompactButton;
-  const exportPdfButton = archiveActionsExportPdfButton;
-  const importButton = archiveImportButton;
-  const resetButton = archiveResetButton;
-  const actionsNote = loadCard?.querySelector('[data-i18n="archiveActionsNote"]')
-    || archiveGrid.querySelector("#archive-export-card [data-i18n='archiveActionsNote']");
-  const threadScriptHelp = threadCard?.querySelector(".archive-script-help");
-  const progressCompactButtonRow = archiveProgressExportHtmlCompactButton?.closest(".archive-run-controls");
-  const hiddenProgressScriptHelp = progressCard?.querySelector(".archive-script-help");
-
-  if (!scopeCard || !pdfCard || !loadCard || !mediaCard || !progressCard || !threadCard || !specCard || !hashtagSlot || !waveSizeLabel || !startHint || !exportZipButton || !exportHtmlButton || !exportHtmlCompactButton || !exportPdfButton || !importButton || !resetButton) {
-    return;
-  }
-
-  progressCompactButtonRow?.remove();
-  hiddenProgressScriptHelp?.remove();
-
-  scopeCard.classList.add("archive-content-card");
-  loadCard.classList.remove("archive-actions-card");
-  loadCard.classList.add("archive-load-card");
-  pdfCard.classList.add("archive-export-config-card");
-  threadCard.classList.remove("archive-actions-card");
-  mediaCard.classList.remove("archive-actions-card");
-
-  const scopeEyebrow = scopeCard.querySelector(".eyebrow");
-  if (scopeEyebrow) {
-    scopeEyebrow.dataset.i18n = "archiveContentEyebrow";
-    scopeEyebrow.textContent = t("archiveContentEyebrow");
-  }
-  const scopeTitle = scopeCard.querySelector("h3");
-  if (scopeTitle) {
-    scopeTitle.dataset.i18n = "archiveContentTitle";
-    scopeTitle.textContent = t("archiveContentTitle");
-  }
-
-  const pdfEyebrow = pdfCard.querySelector(".eyebrow");
-  if (pdfEyebrow) {
-    pdfEyebrow.dataset.i18n = "archiveExportConfigEyebrow";
-    pdfEyebrow.textContent = t("archiveExportConfigEyebrow");
-  }
-  const pdfTitle = pdfCard.querySelector("h3");
-  if (pdfTitle) {
-    pdfTitle.dataset.i18n = "archiveExportConfigTitle";
-    pdfTitle.textContent = t("archiveExportConfigTitle");
-  }
-
-  const loadEyebrow = loadCard.querySelector(".eyebrow");
-  if (loadEyebrow) {
-    loadEyebrow.dataset.i18n = "archiveLoadEyebrow";
-    loadEyebrow.textContent = t("archiveLoadEyebrow");
-  }
-  const loadTitle = loadCard.querySelector("h3");
-  if (loadTitle) {
-    loadTitle.dataset.i18n = "archiveLoadTitle";
-    loadTitle.textContent = t("archiveLoadTitle");
-  }
-
-  let exportCard = archiveGrid.querySelector("#archive-export-card");
-  if (!exportCard) {
-    exportCard = document.createElement("section");
-    exportCard.id = "archive-export-card";
-    exportCard.className = "archive-card archive-export-card";
-    exportCard.appendChild(createArchiveCardHeading({
-      eyebrowKey: "archiveExportEyebrow",
-      eyebrowText: t("archiveExportEyebrow"),
-      titleKey: "archiveExportTitle",
-      titleText: t("archiveExportTitle"),
-      helpTopic: "archive_actions",
-    }));
-    const actions = document.createElement("div");
-    actions.className = "archive-actions";
-    exportCard.appendChild(actions);
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.dataset.i18n = "archiveActionsNote";
-    note.textContent = t("archiveActionsNote");
-    exportCard.appendChild(note);
-  }
-  const exportActions = exportCard.querySelector(".archive-actions");
-  const exportNote = exportCard.querySelector('[data-i18n="archiveActionsNote"]');
-  if (actionsNote?.parentElement === loadCard) {
-    actionsNote.remove();
-  }
-
-  let toolsHeading = archiveGrid.querySelector("#archive-tools-heading");
-  if (!toolsHeading) {
-    toolsHeading = document.createElement("div");
-    toolsHeading.id = "archive-tools-heading";
-    toolsHeading.className = "archive-tools-heading";
-    const eyebrow = document.createElement("p");
-    eyebrow.className = "eyebrow";
-    eyebrow.dataset.i18n = "archiveToolsEyebrow";
-    eyebrow.textContent = t("archiveToolsEyebrow");
-    const title = document.createElement("h3");
-    title.dataset.i18n = "archiveToolsTitle";
-    title.textContent = t("archiveToolsTitle");
-    toolsHeading.append(eyebrow, title);
-  }
-
-  let loadNote = loadCard.querySelector('[data-i18n="archiveLoadNote"]');
-  if (!loadNote) {
-    loadNote = document.createElement("p");
-    loadNote.className = "settings-note";
-    loadNote.dataset.i18n = "archiveLoadNote";
-    loadNote.textContent = t("archiveLoadNote");
-  }
-  let waveSizeHelp = loadCard.querySelector('[data-i18n="archiveWaveSizeHelp"]');
-  if (!waveSizeHelp) {
-    waveSizeHelp = document.createElement("p");
-    waveSizeHelp.className = "settings-note";
-    waveSizeHelp.dataset.i18n = "archiveWaveSizeHelp";
-    waveSizeHelp.textContent = t("archiveWaveSizeHelp");
-  }
-
-  let contentLayout = scopeCard.querySelector(".archive-content-layout");
-  let contentMain = scopeCard.querySelector(".archive-content-main");
-  let contentFilters = scopeCard.querySelector(".archive-content-filters");
-  if (!contentLayout || !contentMain || !contentFilters) {
-    contentLayout = document.createElement("div");
-    contentLayout.className = "archive-content-layout";
-    contentMain = document.createElement("div");
-    contentMain.className = "archive-content-main";
-    contentFilters = document.createElement("div");
-    contentFilters.className = "archive-content-filters";
-
-    const scopeChildren = Array.from(scopeCard.children).filter((child) => !child.classList.contains("eyebrow") && !child.classList.contains("help-heading"));
-    scopeChildren.forEach((child) => {
-      if (child !== hashtagSlot) {
-        contentMain.appendChild(child);
-      }
-    });
-    contentFilters.appendChild(hashtagSlot);
-    scopeCard.append(contentLayout);
-    contentLayout.append(contentMain, contentFilters);
-  } else if (hashtagSlot.parentElement !== contentFilters) {
-    contentFilters.appendChild(hashtagSlot);
-  }
-
-  const loadChildren = Array.from(loadCard.children).filter((child) => !child.classList.contains("eyebrow") && !child.classList.contains("help-heading"));
-  const existingLoadActions = loadCard.querySelector(".archive-actions");
-  if (existingLoadActions) {
-    existingLoadActions.remove();
-  }
-  loadChildren.forEach((child) => {
-    if (child !== startHint && child !== waveSizeLabel && child !== waveSizeHelp && child !== loadNote && child !== actionsNote) {
-      child.remove();
-    }
-  });
-  const loadActions = document.createElement("div");
-  loadActions.className = "archive-actions";
-  loadActions.append(archiveNextWaveButton, importButton, resetButton);
-  loadCard.append(startHint, waveSizeLabel, waveSizeHelp, loadActions, loadNote);
-
-  if (exportActions) {
-    exportActions.append(exportZipButton, exportHtmlButton, exportHtmlCompactButton, exportPdfButton);
-  }
-  if (exportNote) {
-    exportNote.textContent = t("archiveActionsNote");
-  }
-
-  threadScriptHelp?.remove();
-  if (threadScriptHelp && threadScriptHelp.parentElement !== specCard) {
-    specCard.appendChild(threadScriptHelp);
-  }
-
-  archiveGrid.append(progressCard, scopeCard, loadCard, pdfCard, exportCard, toolsHeading, threadCard, mediaCard, specCard);
-}
+/** Arranges archive cards through the template layout controller. @returns {void} */
+function ensureArchiveWorkspaceLayout() { archiveWorkspaceLayout.ensure(); }
 
 /**
  * Returns the normalized active search mode from the workspace controls.
  * @returns {string} One of `network`, `posts`, `reposts`, or `hashtags`.
  */
 function getSearchMode() {
-  const mode = String(searchModeSelect?.value || "network").trim();
-  if (mode === "posts") {
-    return "posts";
-  }
-  if (mode === "reposts") {
-    return "reposts";
-  }
-  if (mode === "hashtags") {
-    return "hashtags";
-  }
-  return "network";
+  return searchForm.mode();
 }
 
 /**
@@ -3666,45 +3553,7 @@ function getSearchMode() {
  * @returns {void}
  */
 function updateSearchModeUi() {
-  const mode = getSearchMode();
-  if (searchActorField) {
-    searchActorField.hidden = false;
-  }
-  if (searchTagsField) {
-    searchTagsField.hidden = false;
-  }
-  if (searchSortField) {
-    searchSortField.hidden = false;
-  }
-  if (searchModeNote) {
-    searchModeNote.textContent = t("searchModeNoteNetwork");
-  }
-
-  if (mode === "posts") {
-    if (searchSortField) {
-      searchSortField.hidden = true;
-    }
-    if (searchModeNote) {
-      searchModeNote.textContent = t("searchModeNotePosts");
-    }
-    return;
-  }
-
-  if (mode === "reposts") {
-    if (searchSortField) {
-      searchSortField.hidden = true;
-    }
-    if (searchModeNote) {
-      searchModeNote.textContent = t("searchModeNoteReposts");
-    }
-    return;
-  }
-
-  if (mode === "hashtags") {
-    if (searchModeNote) {
-      searchModeNote.textContent = t("searchModeNoteHashtags");
-    }
-  }
+  return searchForm.updateMode();
 }
 
 /**
@@ -3712,33 +3561,7 @@ function updateSearchModeUi() {
  * @returns {object} Search request payload.
  */
 function collectSearchRequestPayload() {
-  const mode = getSearchMode();
-  let actor = String(searchActorInput?.value || "").trim();
-  if (!actor && (mode === "posts" || mode === "reposts")) {
-    actor = String(authAccount || "").trim();
-  }
-  searchSelectedLanguages = normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
-  const selectedSearchTags = normalizeSelectedHashtagEntries(searchSelectedHashtags, hashtags).map((tag) => {
-    return getDisplayHashtag(tag);
-  });
-  return {
-    mode,
-    query: String(searchQueryInput?.value || "").trim(),
-    actor,
-    tags: selectedSearchTags,
-    tagMatchMode: String(searchTagMatchSelect?.value || "all").trim(),
-    mediaFilter: String(searchMediaSelect?.value || "all").trim(),
-    postTypeFilter: String(searchPostTypeSelect?.value || "all").trim(),
-    sort: String(searchSortSelect?.value || "latest").trim(),
-    excludeText: String(searchExcludeTextInput?.value || "").trim(),
-    mentions: String(searchMentionsInput?.value || "").trim(),
-    langs: [...searchSelectedLanguages],
-    lang: String(searchSelectedLanguages[0] || "").trim(),
-    domain: String(searchDomainInput?.value || "").trim(),
-    url: String(searchTargetUrlInput?.value || "").trim(),
-    since: String(searchSinceInput?.value || "").trim(),
-    until: String(searchUntilInput?.value || "").trim(),
-  };
+  return searchForm.payload();
 }
 
 /**
@@ -3746,29 +3569,7 @@ function collectSearchRequestPayload() {
  * @returns {object} Search form state for reload-safe persistence.
  */
 function getSearchPreferences() {
-  searchSelectedLanguages = normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
-  const selectedSearchTags = normalizeSelectedHashtagEntries(searchSelectedHashtags, hashtags).map((tag) => {
-    return getDisplayHashtag(tag);
-  });
-  return {
-    sourceUrl: String(searchUrlInput?.value || "").trim(),
-    mode: getSearchMode(),
-    query: String(searchQueryInput?.value || "").trim(),
-    actor: String(searchActorInput?.value || "").trim(),
-    tags: selectedSearchTags,
-    tagMatchMode: String(searchTagMatchSelect?.value || "all").trim(),
-    mediaFilter: String(searchMediaSelect?.value || "all").trim(),
-    postTypeFilter: String(searchPostTypeSelect?.value || "all").trim(),
-    sort: String(searchSortSelect?.value || "latest").trim(),
-    excludeText: String(searchExcludeTextInput?.value || "").trim(),
-    mentions: String(searchMentionsInput?.value || "").trim(),
-    langs: [...searchSelectedLanguages],
-    lang: String(searchSelectedLanguages[0] || "").trim(),
-    domain: String(searchDomainInput?.value || "").trim(),
-    url: String(searchTargetUrlInput?.value || "").trim(),
-    since: String(searchSinceInput?.value || "").trim(),
-    until: String(searchUntilInput?.value || "").trim(),
-  };
+  return searchForm.preferences();
 }
 
 /**
@@ -3777,83 +3578,7 @@ function getSearchPreferences() {
  * @returns {void}
  */
 function applySearchPreferences(preferences = {}) {
-  if (searchUrlInput) {
-    searchUrlInput.value = String(preferences.sourceUrl || "").trim();
-  }
-  if (searchModeSelect) {
-    const mode = String(preferences.mode || "").trim();
-    if (mode === "posts" || mode === "reposts" || mode === "hashtags") {
-      searchModeSelect.value = mode;
-    } else {
-      searchModeSelect.value = "network";
-    }
-  }
-  if (searchQueryInput) {
-    searchQueryInput.value = String(preferences.query || "").trim();
-  }
-  if (searchActorInput) {
-    searchActorInput.value = String(preferences.actor || "").trim();
-  }
-  const importedTags = normalizeHashtagEntries(preferences.tags || []);
-  if (importedTags.length > 0) {
-    hashtags = normalizeHashtagEntries([...(hashtags || []), ...importedTags]);
-  }
-  searchSelectedHashtags = normalizeSelectedHashtagEntries(preferences.tags || [], hashtags);
-  if (searchTagMatchSelect) {
-    const tagMatchMode = String(preferences.tagMatchMode || "").trim();
-    if (tagMatchMode === "any") {
-      searchTagMatchSelect.value = "any";
-    } else {
-      searchTagMatchSelect.value = "all";
-    }
-  }
-  if (searchMediaSelect) {
-    searchMediaSelect.value = ["images", "videos", "none"].includes(String(preferences.mediaFilter || "").trim())
-      ? String(preferences.mediaFilter || "").trim()
-      : "all";
-  }
-  if (searchPostTypeSelect) {
-    const rawPostTypeFilter = String(preferences.postTypeFilter || "").trim();
-    if (rawPostTypeFilter === "posts") {
-      searchPostTypeSelect.value = "originals";
-    } else if (["originals", "replies", "quotes", "reposts", "non-reposts"].includes(rawPostTypeFilter)) {
-      searchPostTypeSelect.value = rawPostTypeFilter;
-    } else {
-      searchPostTypeSelect.value = "all";
-    }
-  }
-  if (searchSortSelect) {
-    if (String(preferences.sort || "").trim() === "top") {
-      searchSortSelect.value = "top";
-    } else {
-      searchSortSelect.value = "latest";
-    }
-  }
-  if (searchExcludeTextInput) {
-    searchExcludeTextInput.value = String(preferences.excludeText || "").trim();
-  }
-  if (searchMentionsInput) {
-    searchMentionsInput.value = String(preferences.mentions || "").trim();
-  }
-  const storedSearchLanguages = Array.isArray(preferences.langs) ? preferences.langs : [];
-  if (storedSearchLanguages.length > 0) {
-    searchSelectedLanguages = normalizePostLanguageTags(storedSearchLanguages, MAX_SEARCH_LANGUAGES);
-  } else {
-    searchSelectedLanguages = normalizePostLanguageTags(preferences.lang ? [preferences.lang] : [], MAX_SEARCH_LANGUAGES);
-  }
-  enforceSearchSortConstraints(false);
-  if (searchDomainInput) {
-    searchDomainInput.value = String(preferences.domain || "").trim();
-  }
-  if (searchTargetUrlInput) {
-    searchTargetUrlInput.value = String(preferences.url || "").trim();
-  }
-  if (searchSinceInput) {
-    searchSinceInput.value = String(preferences.since || "").trim();
-  }
-  if (searchUntilInput) {
-    searchUntilInput.value = String(preferences.until || "").trim();
-  }
+  return searchForm.apply(preferences);
 }
 
 /**
@@ -3861,16 +3586,7 @@ function applySearchPreferences(preferences = {}) {
  * @returns {void}
  */
 function scheduleSearchPreferencesPersist() {
-  if (!appStateHydrated) {
-    return;
-  }
-  if (searchPreferencesPersistTimer) {
-    window.clearTimeout(searchPreferencesPersistTimer);
-  }
-  searchPreferencesPersistTimer = window.setTimeout(() => {
-    searchPreferencesPersistTimer = 0;
-    void persistSettings();
-  }, 280);
+  return searchForm.schedulePersist();
 }
 
 /**
@@ -3879,68 +3595,7 @@ function scheduleSearchPreferencesPersist() {
  * @returns {boolean} True when the URL was parsed successfully.
  */
 function applySearchUrlToForm(sourceUrl) {
-  const parsed = parseSavedSearchUrl(sourceUrl);
-  const params = parsed.params || {};
-  const importedTags = normalizeHashtagEntries(params.tag || []);
-  const splitQuery = splitSharedSearchQuery(params.q || "");
-
-  if (importedTags.length > 0) {
-    hashtags = normalizeHashtagEntries([...(hashtags || []), ...importedTags]);
-  }
-
-  if (searchUrlInput) {
-    searchUrlInput.value = parsed.sourceUrl;
-  }
-  if (searchModeSelect) {
-    if (Array.isArray(params.tag) && params.tag.length > 0) {
-      searchModeSelect.value = "hashtags";
-    } else {
-      searchModeSelect.value = "network";
-    }
-  }
-  if (searchQueryInput) {
-    searchQueryInput.value = splitQuery.query;
-  }
-  if (searchActorInput) {
-    searchActorInput.value = String(params.author || "").trim();
-  }
-  if (searchSortSelect) {
-    if (String(params.sort || "").trim() === "top") {
-      searchSortSelect.value = "top";
-    } else {
-      searchSortSelect.value = "latest";
-    }
-  }
-  if (searchExcludeTextInput) {
-    searchExcludeTextInput.value = splitQuery.excludeText;
-  }
-  if (searchMentionsInput) {
-    searchMentionsInput.value = String(params.mentions || "").trim();
-  }
-  searchSelectedLanguages = normalizePostLanguageTags(params.lang ? [params.lang] : [], MAX_SEARCH_LANGUAGES);
-  enforceSearchSortConstraints(false);
-  if (searchDomainInput) {
-    searchDomainInput.value = String(params.domain || "").trim();
-  }
-  if (searchTargetUrlInput) {
-    searchTargetUrlInput.value = String(params.url || "").trim();
-  }
-  if (searchSinceInput) {
-    searchSinceInput.value = String(params.since || "").trim();
-  }
-  if (searchUntilInput) {
-    searchUntilInput.value = String(params.until || "").trim();
-  }
-
-  searchSelectedHashtags = normalizeSelectedHashtagEntries(params.tag || [], hashtags);
-  updateSearchModeUi();
-  renderHashtagCloud();
-  renderSearchWorkspace();
-  if (searchUrlStatus) {
-    searchUrlStatus.textContent = t("searchUrlImported");
-  }
-  scheduleSearchPreferencesPersist();
-  return true;
+  return searchForm.applyUrl(sourceUrl);
 }
 
 /**
@@ -3948,22 +3603,7 @@ function applySearchUrlToForm(sourceUrl) {
  * @returns {void}
  */
 function importSearchUrlFromField() {
-  const rawValue = String(searchUrlInput?.value || "").trim();
-  if (!rawValue) {
-    if (searchUrlStatus) {
-      searchUrlStatus.textContent = "";
-    }
-    scheduleSearchPreferencesPersist();
-    return;
-  }
-
-  try {
-    applySearchUrlToForm(rawValue);
-  } catch (error) {
-    if (searchUrlStatus) {
-      searchUrlStatus.textContent = error?.message || t("searchUrlInvalid");
-    }
-  }
+  return searchForm.importUrl();
 }
 
 /**
@@ -3971,13 +3611,7 @@ function importSearchUrlFromField() {
  * @returns {void}
  */
 function scheduleSearchUrlImport() {
-  if (searchUrlImportTimer) {
-    window.clearTimeout(searchUrlImportTimer);
-  }
-  searchUrlImportTimer = window.setTimeout(() => {
-    searchUrlImportTimer = 0;
-    importSearchUrlFromField();
-  }, 30);
+  return searchForm.scheduleUrl();
 }
 
 /**
@@ -4113,34 +3747,7 @@ function highlightSearchQueryInElement(element, query = "") {
  * @returns {string} Localized topic fragment, or an empty string.
  */
 function buildSearchTopicText(payload = {}) {
-  const query = String(payload?.query || "").trim();
-  const tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
-  const tagMatchMode = String(payload?.tagMatchMode || "all").trim();
-  const formattedTags = tags.map((tag) => {
-    return formatHashtag(tag);
-  }).join(", ");
-
-  if (query && formattedTags) {
-    return t("searchSummaryTopicTextAndTags", {
-      query: quoteSearchSummaryValue(query),
-      tags: formattedTags,
-    });
-  }
-  if (query) {
-    return t("searchSummaryTopicText", {
-      query: quoteSearchSummaryValue(query),
-    });
-  }
-  if (formattedTags) {
-    let topicKey = "searchSummaryTopicTags";
-    if (tagMatchMode === "any" && tags.length > 1) {
-      topicKey = "searchSummaryTopicTagsAny";
-    }
-    return t(topicKey, {
-      tags: formattedTags,
-    });
-  }
-  return "";
+  return searchModels.topic(payload);
 }
 
 /**
@@ -4149,86 +3756,7 @@ function buildSearchTopicText(payload = {}) {
  * @returns {string[]} Localized filter clauses.
  */
 function buildSearchDetailTexts(payload = {}) {
-  const parts = [];
-  const mode = String(payload?.mode || "network").trim();
-  const excludeText = String(payload?.excludeText || "").trim();
-  const mediaFilter = String(payload?.mediaFilter || "").trim();
-  const postTypeFilter = String(payload?.postTypeFilter || "").trim();
-  const mentions = String(payload?.mentions || "").trim();
-  const tagMatchMode = String(payload?.tagMatchMode || "all").trim();
-  const tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
-  const langs = normalizePostLanguageTags(
-    Array.isArray(payload?.langs) && payload.langs.length > 0 ? payload.langs : (payload?.lang ? [payload.lang] : []),
-    MAX_SEARCH_LANGUAGES,
-  );
-  const domain = String(payload?.domain || "").trim();
-  const targetUrl = String(payload?.url || "").trim();
-  const since = String(payload?.since || "").trim();
-  const until = String(payload?.until || "").trim();
-  let modeLabelKey = "searchModeNetwork";
-  if (mode === "posts") {
-    modeLabelKey = "searchModePosts";
-  } else if (mode === "reposts") {
-    modeLabelKey = "searchModeReposts";
-  } else if (mode === "hashtags") {
-    modeLabelKey = "searchModeHashtags";
-  }
-
-  parts.push(t("searchSummaryDetailMode", { value: t(modeLabelKey) }));
-
-  if (excludeText) {
-    parts.push(t("searchSummaryDetailExclude", { value: quoteSearchSummaryValue(excludeText) }));
-  }
-  if (mediaFilter && mediaFilter !== "all") {
-    parts.push(t("searchSummaryDetailMedia", { value: t(`searchMedia${mediaFilter === "none" ? "NoMedia" : (mediaFilter === "images" ? "Images" : "Videos")}`) }));
-  }
-  if (postTypeFilter && postTypeFilter !== "all") {
-    let typeLabelKey = "searchPostTypeAll";
-    if (postTypeFilter === "posts" || postTypeFilter === "originals") {
-      typeLabelKey = "searchPostTypeOriginals";
-    } else if (postTypeFilter === "replies") {
-      typeLabelKey = "searchPostTypeReplies";
-    } else if (postTypeFilter === "quotes") {
-      typeLabelKey = "searchPostTypeQuotes";
-    } else if (postTypeFilter === "reposts") {
-      typeLabelKey = "searchPostTypeReposts";
-    } else if (postTypeFilter === "non-reposts") {
-      typeLabelKey = "searchPostTypeNonReposts";
-    }
-    parts.push(t("searchSummaryDetailPostType", { value: t(typeLabelKey) }));
-  }
-  if (mentions) {
-    parts.push(t("searchSummaryDetailMentions", { value: quoteSearchSummaryValue(mentions) }));
-  }
-  if (tags.length > 1) {
-    if (tagMatchMode === "any") {
-      parts.push(t("searchSummaryDetailTagMatch", { value: t("searchTagMatchAny") }));
-    } else {
-      parts.push(t("searchSummaryDetailTagMatch", { value: t("searchTagMatchAll") }));
-    }
-  }
-  if (langs.length === 1) {
-    parts.push(t("searchSummaryDetailLanguage", { value: getPostLanguageDisplayName(langs[0], currentLocale) }));
-  }
-  if (langs.length > 1) {
-    const languageLabels = langs.map((entry) => {
-      return getPostLanguageDisplayName(entry, currentLocale);
-    });
-    parts.push(t("searchSummaryDetailLanguages", { value: languageLabels.join(", ") }));
-  }
-  if (domain) {
-    parts.push(t("searchSummaryDetailDomain", { value: quoteSearchSummaryValue(domain) }));
-  }
-  if (targetUrl) {
-    parts.push(t("searchSummaryDetailUrl", { value: quoteSearchSummaryValue(targetUrl) }));
-  }
-  if (since) {
-    parts.push(t("searchSummaryDetailSince", { value: since }));
-  }
-  if (until) {
-    parts.push(t("searchSummaryDetailUntil", { value: until }));
-  }
-  return parts;
+  return searchModels.details(payload);
 }
 
 /**
@@ -4237,57 +3765,7 @@ function buildSearchDetailTexts(payload = {}) {
  * @returns {string} Localized search description.
  */
 function buildSearchSummaryText(payload = {}) {
-  const mode = String(payload?.mode || "network").trim();
-  const actor = String(payload?.actor || "").trim();
-  const topic = buildSearchTopicText(payload);
-  const ownAccount = String(authAccount || "").trim();
-  const actorLabel = actor ? quoteSearchSummaryValue(`@${actor.replace(/^@+/, "")}`) : "";
-  const isOwnAccount = Boolean(actor)
-    && Boolean(ownAccount)
-    && actor.replace(/^@+/, "").toLowerCase() === ownAccount.replace(/^@+/, "").toLowerCase();
-
-  let summary = "";
-  if (mode === "posts") {
-    if (isOwnAccount || (!actor && ownAccount)) {
-      summary = t("searchSummaryPostsOwn", { topic });
-    } else {
-      summary = t("searchSummaryPostsActor", {
-        account: actorLabel,
-        topic,
-      });
-    }
-  } else if (mode === "reposts") {
-    if (isOwnAccount || (!actor && ownAccount)) {
-      summary = t("searchSummaryRepostsOwn", { topic });
-    } else {
-      summary = t("searchSummaryRepostsActor", {
-        account: actorLabel,
-        topic,
-      });
-    }
-  } else if (mode === "hashtags") {
-    if (actorLabel) {
-      summary = t("searchSummaryHashtagsActor", {
-        account: actorLabel,
-        topic,
-      });
-    } else {
-      summary = t("searchSummaryHashtagsGlobal", { topic });
-    }
-  } else if (actorLabel) {
-    summary = t("searchSummaryNetworkActor", {
-      account: actorLabel,
-      topic,
-    });
-  } else {
-    summary = t("searchSummaryNetworkGlobal", { topic });
-  }
-
-  const details = buildSearchDetailTexts(payload);
-  if (!details.length) {
-    return summary;
-  }
-  return `${summary} ${details.join(" · ")}`;
+  return searchModels.summary(payload);
 }
 
 /**
@@ -4312,14 +3790,7 @@ function renderSearchSummary() {
  * @returns {string} Localized status line.
  */
 function buildSearchLoadedStatus(count, hasMore) {
-  if (hasMore) {
-    return t("searchStatusLoadedMore", {
-      count: formatCount(count),
-    });
-  }
-  return t("searchStatusLoaded", {
-    count: formatCount(count),
-  });
+  return searchModels.loaded(count, hasMore);
 }
 
 /**
@@ -4459,88 +3930,7 @@ function renderSearchResults() {
  * @returns {Promise<void>} Resolves after the request finished.
  */
 async function loadSearchResults(options = {}) {
-  if (!authAccount || searchLoading) {
-    return;
-  }
-
-  const append = options?.append === true && doesCurrentSearchMatchResultState();
-  enforceSearchSortConstraints(false);
-  const payload = collectSearchRequestPayload();
-  const runId = crypto.randomUUID();
-  if (!append) {
-    searchCursor = "";
-  }
-
-  activeSearchRunId = runId;
-  searchCancelPending = false;
-  searchLoading = true;
-  if (searchStatus) {
-    if (append) {
-      searchStatus.textContent = t("searchStatusLoadingMore");
-    } else {
-      searchStatus.textContent = t("searchStatusLoading");
-    }
-  }
-  renderSearchWorkspace();
-
-  try {
-    const result = await requestSearchResults(sendToServiceWorker, {
-      ...payload,
-      runId,
-      cursor: append ? searchCursor : "",
-      excludeUris: append
-        ? searchResults.map((item) => {
-            return String(item?.post?.uri || "").trim();
-          }).filter(Boolean)
-        : [],
-      limit: 25,
-    }, {
-      timeoutMs: 420000,
-      onProgress(progress) {
-        if (activeSearchRunId !== runId || !searchStatus) {
-          return;
-        }
-        if (!shouldShowDetailedSearchProgress(payload)) {
-          return;
-        }
-        searchStatus.textContent = buildSearchProgressStatus(progress);
-      },
-    });
-
-    const items = Array.isArray(result?.items) ? result.items : [];
-    if (append) {
-      searchResults = [...searchResults, ...items];
-    } else {
-      searchResults = items;
-    }
-    searchCursor = String(result?.cursor || "").trim();
-    searchResultPreferences = normalizeSearchPreferencesForStorage(payload);
-    renderSearchResults();
-    if (searchStatus) {
-      if (result?.cancelled === true) {
-        searchStatus.textContent = t("searchStatusCancelledPartial", {
-          count: formatCount(searchResults.length),
-        });
-      } else if (searchResults.length > 0) {
-        searchStatus.textContent = buildSearchLoadedStatus(searchResults.length, Boolean(searchCursor));
-      } else {
-        searchStatus.textContent = t("searchStatusEmpty");
-      }
-    }
-    await persistSettings();
-  } catch (error) {
-    console.error(error);
-    if (searchStatus) {
-      searchStatus.textContent = error?.message || t("searchStatusFailed");
-    }
-  } finally {
-    searchLoading = false;
-    if (activeSearchRunId === runId) {
-      activeSearchRunId = "";
-    }
-    searchCancelPending = false;
-    renderSearchWorkspace();
-  }
+  return searchRun.load(options);
 }
 
 /**
@@ -4608,27 +3998,7 @@ function handleSearchUseOwnAccountClick() {
  * @returns {string} Human-readable progress text.
  */
 function buildSearchProgressStatus(progress = {}) {
-  const page = Math.max(0, Number(progress?.pageCount) || 0);
-  const scanned = Math.max(0, Number(progress?.scannedCount) || 0);
-  const matches = Math.max(0, Number(progress?.matchCount) || 0);
-  const account = String(progress?.actor || "").trim();
-  const isReposts = progress?.mode === "reposts";
-
-  if (account) {
-    return t("searchStatusProgressAuthor", {
-      account: account.startsWith("@") ? account : `@${account}`,
-      page: formatCount(page),
-      scanned: formatCount(scanned),
-      matches: formatCount(matches),
-      mode: isReposts ? t("searchModeReposts") : t("searchModePosts"),
-    });
-  }
-
-  return t("searchStatusProgressGeneric", {
-    page: formatCount(page),
-    scanned: formatCount(scanned),
-    matches: formatCount(matches),
-  });
+  return searchModels.progress(progress);
 }
 
 /**
@@ -4637,28 +4007,7 @@ function buildSearchProgressStatus(progress = {}) {
  * @returns {boolean} True when detailed counters help explain local filtering.
  */
 function shouldShowDetailedSearchProgress(payload = {}) {
-  const mode = String(payload?.mode || "network").trim();
-  if (mode === "posts" || mode === "reposts") {
-    return true;
-  }
-
-  const mediaFilter = String(payload?.mediaFilter || "all").trim();
-  const postTypeFilter = String(payload?.postTypeFilter || "all").trim();
-  const languages = normalizePostLanguageTags(
-    Array.isArray(payload?.langs) && payload.langs.length > 0 ? payload.langs : (payload?.lang ? [payload.lang] : []),
-    MAX_SEARCH_LANGUAGES,
-  );
-
-  if (mediaFilter !== "all") {
-    return true;
-  }
-  if (postTypeFilter !== "all") {
-    return true;
-  }
-  if (languages.length > 1) {
-    return true;
-  }
-  return false;
+  return searchModels.detailed(payload);
 }
 
 /**
@@ -4667,75 +4016,7 @@ function shouldShowDetailedSearchProgress(payload = {}) {
  * @returns {{url: string, limitations: string[]}} URL plus unsupported Threadline filters.
  */
 function buildBskySearchUrlFromPayload(payload = {}) {
-  const params = new URLSearchParams();
-  const mode = String(payload?.mode || "network").trim();
-  const query = String(payload?.query || "").trim();
-  const excludeText = String(payload?.excludeText || "").trim();
-  const tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
-  const actor = String(payload?.actor || "").trim().replace(/^@+/, "");
-  const sort = String(payload?.sort || "latest").trim();
-  const mentions = String(payload?.mentions || "").trim();
-  const domain = String(payload?.domain || "").trim();
-  const targetUrl = String(payload?.url || "").trim();
-  const since = String(payload?.since || "").trim();
-  const until = String(payload?.until || "").trim();
-  const languages = normalizePostLanguageTags(
-    Array.isArray(payload?.langs) && payload.langs.length > 0 ? payload.langs : (payload?.lang ? [payload.lang] : []),
-    MAX_SEARCH_LANGUAGES,
-  );
-  const limitations = [];
-
-  const combinedQuery = buildSharedSearchQuery(query, excludeText);
-  if (combinedQuery) {
-    params.set("q", combinedQuery);
-  }
-  tags.forEach((tag) => {
-    params.append("tag", String(tag || "").trim().replace(/^#+/, ""));
-  });
-  if (sort === "top") {
-    params.set("sort", "top");
-  } else {
-    params.set("sort", "latest");
-  }
-  if (since) {
-    params.set("since", since);
-  }
-  if (until) {
-    params.set("until", until);
-  }
-  if (mentions) {
-    params.set("mentions", mentions);
-  }
-  if (domain) {
-    params.set("domain", domain);
-  }
-  if (targetUrl) {
-    params.set("url", targetUrl);
-  }
-  if (languages.length > 0) {
-    params.set("lang", languages[0]);
-  }
-
-  if (mode === "reposts") {
-    limitations.push(t("searchCopyUrlLimitationModeReposts"));
-  } else if (actor) {
-    params.set("author", actor);
-  }
-
-  if (String(payload?.mediaFilter || "all").trim() !== "all") {
-    limitations.push(t("searchCopyUrlLimitationMedia"));
-  }
-  if (String(payload?.postTypeFilter || "all").trim() !== "all") {
-    limitations.push(t("searchCopyUrlLimitationPostType"));
-  }
-  if (languages.length > 1) {
-    limitations.push(t("searchCopyUrlLimitationMultiLang"));
-  }
-
-  return {
-    url: `https://bsky.app/search?${params.toString()}`,
-    limitations,
-  };
+  return searchModels.sharedUrl(payload);
 }
 
 /**
@@ -4744,70 +4025,7 @@ function buildBskySearchUrlFromPayload(payload = {}) {
  * @returns {object} Normalized search preferences.
  */
 function normalizeSearchPreferencesForStorage(preferences = {}) {
-  const normalizedTags = normalizeHashtagEntries(preferences.tags || []).map((tag) => {
-    return getDisplayHashtag(tag);
-  });
-
-  let languageSource = [];
-  if (Array.isArray(preferences.langs)) {
-    languageSource = preferences.langs;
-  } else if (preferences.lang) {
-    languageSource = [preferences.lang];
-  }
-  const normalizedLanguages = normalizePostLanguageTags(languageSource, MAX_SEARCH_LANGUAGES);
-
-  let mode = String(preferences.mode || "").trim();
-  if (mode !== "posts" && mode !== "reposts" && mode !== "hashtags") {
-    mode = "network";
-  }
-
-  let mediaFilter = String(preferences.mediaFilter || "").trim();
-  if (mediaFilter !== "images" && mediaFilter !== "videos" && mediaFilter !== "none") {
-    mediaFilter = "all";
-  }
-
-  let postTypeFilter = String(preferences.postTypeFilter || "").trim();
-  if (postTypeFilter === "posts") {
-    postTypeFilter = "originals";
-  }
-  if (
-    postTypeFilter !== "originals"
-    && postTypeFilter !== "replies"
-    && postTypeFilter !== "quotes"
-    && postTypeFilter !== "reposts"
-    && postTypeFilter !== "non-reposts"
-  ) {
-    postTypeFilter = "all";
-  }
-
-  let sort = String(preferences.sort || "").trim();
-  if (sort !== "top") {
-    sort = "latest";
-  }
-  let tagMatchMode = String(preferences.tagMatchMode || "").trim();
-  if (tagMatchMode !== "any") {
-    tagMatchMode = "all";
-  }
-
-  return {
-    sourceUrl: String(preferences.sourceUrl || "").trim(),
-    mode,
-    query: String(preferences.query || "").trim(),
-    actor: String(preferences.actor || "").trim(),
-    tags: normalizedTags,
-    tagMatchMode,
-    mediaFilter,
-    postTypeFilter,
-    sort,
-    excludeText: String(preferences.excludeText || "").trim(),
-    mentions: String(preferences.mentions || "").trim(),
-    langs: normalizedLanguages,
-    lang: String(normalizedLanguages[0] || "").trim(),
-    domain: String(preferences.domain || "").trim(),
-    url: String(preferences.url || "").trim(),
-    since: String(preferences.since || "").trim(),
-    until: String(preferences.until || "").trim(),
-  };
+  return searchPreferencesNormalizer(preferences);
 }
 
 /**
@@ -4834,14 +4052,7 @@ function normalizePersistedSearchResultItems(items = []) {
  * @returns {object|null} Persistable search result state or null when nothing should be kept.
  */
 function getPersistableSearchResultState() {
-  return buildPersistableSearchResultState(
-    searchResultPreferences,
-    searchResults,
-    searchCursor,
-    MAX_PERSISTED_SEARCH_RESULTS,
-    normalizePersistedSearchResultItems,
-    normalizeSearchPreferencesForStorage,
-  );
+  return searchRun.snapshot();
 }
 
 /**
@@ -4849,36 +4060,18 @@ function getPersistableSearchResultState() {
  * @returns {boolean} True when `Mehr laden` can safely continue the current result set.
  */
 function doesCurrentSearchMatchResultState() {
-  return doesSearchResultStateMatch(
-    getSearchPreferences(),
-    searchResultPreferences,
-    normalizeSearchPreferencesForStorage,
-  );
+  return searchRun.matches();
 }
 
 /**
  * Restores persisted search results when they still match the persisted search form.
  * @param {object|null} state - Persisted search result state from local settings.
  * @param {object} currentPreferences - Persisted live search preferences.
+ * @param {object|null} startup - Startup identity used before global account hydration.
  * @returns {void}
  */
-function restorePersistedSearchResultState(state = null, currentPreferences = {}) {
-  searchResults = [];
-  searchCursor = "";
-  searchResultPreferences = null;
-
-  if (!state || typeof state !== "object") {
-    return;
-  }
-
-  const storedPreferences = normalizeSearchPreferencesForStorage(state.preferences || {});
-  searchResultPreferences = storedPreferences;
-  if (!areSearchPreferencesEqual(currentPreferences, storedPreferences)) {
-    return;
-  }
-
-  searchResults = normalizePersistedSearchResultItems(state.items);
-  searchCursor = String(state.cursor || "").trim();
+function restorePersistedSearchResultState(state = null, currentPreferences = {}, startup = null) {
+  return searchRun.restore(state, currentPreferences, startup?.handle || startup?.identifier || authAccount);
 }
 
 /**
@@ -4886,16 +4079,7 @@ function restorePersistedSearchResultState(state = null, currentPreferences = {}
  * @returns {void}
  */
 function restoreSearchStatusFromResultState() {
-  if (!searchStatus || searchLoading) {
-    return;
-  }
-
-  if (searchResults.length > 0) {
-    searchStatus.textContent = buildSearchLoadedStatus(searchResults.length, Boolean(searchCursor));
-    return;
-  }
-
-  searchStatus.textContent = t("searchStatusIdle");
+  return searchRun.restoreStatus();
 }
 
 /**
@@ -4904,44 +4088,7 @@ function restoreSearchStatusFromResultState() {
  * @returns {string} Human-readable search label.
  */
 function buildSavedSearchLabelFromPreferences(preferences = {}) {
-  const normalizedPreferences = normalizeSearchPreferencesForStorage(preferences);
-  if (normalizedPreferences.query) {
-    return normalizedPreferences.query;
-  }
-  if (normalizedPreferences.tags.length > 0) {
-    const displayTags = normalizedPreferences.tags.map((tag) => {
-      return getDisplayHashtag(tag);
-    }).filter(Boolean);
-    if (displayTags.length === 1) {
-      return `#${displayTags[0]}`;
-    }
-    if (displayTags.length > 1) {
-      return displayTags.slice(0, 2).map((tag) => `#${tag}`).join(" + ");
-    }
-  }
-  if (normalizedPreferences.actor) {
-    return `@${normalizedPreferences.actor.replace(/^@+/, "")}`;
-  }
-  if (normalizedPreferences.domain) {
-    return normalizedPreferences.domain;
-  }
-  if (normalizedPreferences.url) {
-    return normalizedPreferences.url;
-  }
-  if (normalizedPreferences.mode === "hashtags") {
-    return t("searchModeHashtags");
-  }
-  if (normalizedPreferences.mode === "reposts") {
-    return normalizedPreferences.actor
-      ? `@${normalizedPreferences.actor.replace(/^@+/, "")} · ${t("searchModeReposts")}`
-      : t("searchModeReposts");
-  }
-  if (normalizedPreferences.mode === "posts") {
-    return normalizedPreferences.actor
-      ? `@${normalizedPreferences.actor.replace(/^@+/, "")} · ${t("searchModePosts")}`
-      : t("searchModePosts");
-  }
-  return t("savedSearchFallbackTitle");
+  return searchModels.savedLabel(preferences);
 }
 
 /**
@@ -4974,32 +4121,7 @@ async function copyCurrentSearchAsBskyUrl() {
  * @returns {Promise<void>} Resolves after the cancel signal was sent.
  */
 async function cancelActiveSearchRun() {
-  if (!activeSearchRunId || searchCancelPending) {
-    return;
-  }
-
-  searchCancelPending = true;
-  if (searchStatus) {
-    searchStatus.textContent = t("searchStatusCancelling");
-  }
-  renderSearchWorkspace();
-
-  try {
-    await sendToServiceWorker("SET_SEARCH_RUN_CONTROL", {
-      runId: activeSearchRunId,
-      action: "cancel",
-    }, {
-      timeoutMs: 30000,
-    });
-  } catch (error) {
-    console.error(error);
-    if (searchStatus) {
-      searchStatus.textContent = error?.message || t("searchStatusFailed");
-    }
-  } finally {
-    searchCancelPending = false;
-    renderSearchWorkspace();
-  }
+  return searchRun.cancel();
 }
 
 /**
@@ -5008,22 +4130,10 @@ async function cancelActiveSearchRun() {
  * @returns {object|null} Favorite entry, or null when no post URI is available.
  */
 function createThreadExplorerFavoriteFromSearchResult(item = {}) {
-  const post = item?.post || null;
-  const uri = String(post?.uri || "").trim();
-  if (!uri) {
-    return null;
-  }
-
-  return {
-    rootUri: uri,
-    selectedUri: uri,
-    authorHandle: String(post.author?.handle || "").trim(),
-    authorName: getThreadExplorerActorLabel(post.author),
-    text: getThreadExplorerPreviewText(post),
-    createdAt: String(post.createdAt || post.indexedAt || "").trim(),
-    savedAt: new Date().toISOString(),
-    webApp: getThreadExplorerPostWebApp(post),
-  };
+  return buildThreadExplorerFavoriteModel(item?.post || null, {
+    trimFields: true, getActorLabel: getThreadExplorerActorLabel, getPreviewText: getThreadExplorerPreviewText,
+    getWebApp: getThreadExplorerPostWebApp, now: () => new Date().toISOString(),
+  });
 }
 
 /**
@@ -5032,14 +4142,10 @@ function createThreadExplorerFavoriteFromSearchResult(item = {}) {
  * @returns {Promise<void>} Resolves after settings were persisted.
  */
 async function saveSearchResultAsFavorite(item = {}) {
-  const favorite = createThreadExplorerFavoriteFromSearchResult(item);
-  if (!favorite) {
+  const saved = await threadExplorerFavoritesController.save(createThreadExplorerFavoriteFromSearchResult(item));
+  if (!saved) {
     return;
   }
-
-  const remaining = threadExplorerFavorites.filter((entry) => entry.rootUri !== favorite.rootUri);
-  threadExplorerFavorites = normalizeThreadExplorerFavorites([favorite, ...remaining]);
-  await persistSettings();
   renderSearchResults();
   updateThreadExplorerControls();
   setStatus(t("searchFavoriteSavedStatus"));
@@ -5215,105 +4321,12 @@ function countThreadExplorerPosts(node) {
 }
 
 /**
- * Normalizes locally saved Thread Explorer favorites.
- * @param {Array<object>} favorites - Raw favorite entries from state or backup.
- * @returns {Array<object>} Clean favorite entries with stable fields.
- */
-function normalizeThreadExplorerFavorites(favorites) {
-  if (!Array.isArray(favorites)) {
-    return [];
-  }
-
-  const seen = new Set();
-  const normalized = [];
-  favorites.forEach((favorite) => {
-    const rootUri = String(favorite?.rootUri || favorite?.uri || "").trim();
-    if (!rootUri || seen.has(rootUri)) {
-      return;
-    }
-    seen.add(rootUri);
-    normalized.push({
-      rootUri,
-      selectedUri: String(favorite?.selectedUri || rootUri).trim(),
-      authorHandle: String(favorite?.authorHandle || "").trim(),
-      authorName: String(favorite?.authorName || "").trim(),
-      text: String(favorite?.text || "").trim().slice(0, 260),
-      createdAt: String(favorite?.createdAt || "").trim(),
-      savedAt: String(favorite?.savedAt || "").trim(),
-      webApp: String(favorite?.webApp || "").trim(),
-    });
-  });
-  return normalized.slice(0, 100);
-}
-
-/**
- * Reads one string parameter from a URLSearchParams object.
- * @param {URLSearchParams} params - Search params from a Bluesky search URL.
- * @param {string} name - Parameter name.
- * @returns {string} Trimmed parameter value.
- */
-function getSavedSearchStringParam(params, name) {
-  return getSavedSearchStringParamFromSearch(params, name);
-}
-
-/**
- * Normalizes a Bluesky search sort value.
- * @param {string} value - Raw sort value from URL or saved search data.
- * @returns {string} Either "latest" or "top".
- */
-function normalizeSavedSearchSort(value) {
-  return normalizeSavedSearchSortFromSearch(value);
-}
-
-/**
  * Parses a shared Bluesky search URL into searchPosts parameters.
  * @param {string} sourceUrl - Shared bsky.app search URL.
  * @returns {object} Normalized source URL and API search params.
  */
 function parseSavedSearchUrl(sourceUrl) {
-  const raw = String(sourceUrl || "").trim();
-  if (!raw) {
-    throw new Error(t("savedSearchUrlInvalid"));
-  }
-
-  let parsedUrl = null;
-  try {
-    parsedUrl = new URL(raw);
-  } catch {
-    throw new Error(t("savedSearchUrlInvalid"));
-  }
-
-  const path = parsedUrl.pathname.replace(/\/+$/g, "");
-  const host = parsedUrl.hostname.toLowerCase();
-  if (host !== "bsky.app" && !host.endsWith(".bsky.app")) {
-    throw new Error(t("savedSearchUrlInvalid"));
-  }
-  if (path !== "/search") {
-    throw new Error(t("savedSearchUrlInvalid"));
-  }
-
-  const params = parsedUrl.searchParams;
-  const searchParams = {
-    q: getSavedSearchStringParam(params, "q"),
-    tag: params.getAll("tag").map((tag) => String(tag || "").trim().replace(/^#+/, "")).filter(Boolean),
-    sort: normalizeSavedSearchSort(getSavedSearchStringParam(params, "sort")),
-    since: getSavedSearchStringParam(params, "since"),
-    until: getSavedSearchStringParam(params, "until"),
-    author: getSavedSearchStringParam(params, "author"),
-    mentions: getSavedSearchStringParam(params, "mentions"),
-    lang: getSavedSearchStringParam(params, "lang"),
-    domain: getSavedSearchStringParam(params, "domain"),
-    url: getSavedSearchStringParam(params, "url"),
-  };
-
-  if (!searchParams.q && searchParams.tag.length === 0 && !searchParams.author && !searchParams.domain && !searchParams.url) {
-    throw new Error(t("savedSearchUrlInvalid"));
-  }
-
-  return {
-    sourceUrl: parsedUrl.toString(),
-    params: searchParams,
-  };
+  return savedSearchModels.parse(sourceUrl);
 }
 
 /**
@@ -5341,34 +4354,7 @@ function parseExcludedSearchTerms(value = "") {
  * @returns {string} Human-readable search label.
  */
 function buildSavedSearchLabel(search = {}) {
-  if (search.searchPreferences) {
-    return buildSavedSearchLabelFromPreferences(search.searchPreferences);
-  }
-  const params = search.params || {};
-  const q = String(params.q || "").trim();
-  if (q) {
-    return q;
-  }
-  let tags = [];
-  if (Array.isArray(params.tag)) {
-    tags = params.tag;
-  }
-  if (tags.length > 0) {
-    return `#${tags[0]}`;
-  }
-  const author = String(params.author || "").trim();
-  if (author) {
-    return `@${author.replace(/^@+/, "")}`;
-  }
-  const domain = String(params.domain || "").trim();
-  if (domain) {
-    return domain;
-  }
-  const url = String(params.url || "").trim();
-  if (url) {
-    return url;
-  }
-  return t("savedSearchFallbackTitle");
+  return savedSearchModels.label(search);
 }
 
 /**
@@ -5377,73 +4363,7 @@ function buildSavedSearchLabel(search = {}) {
  * @returns {string} Metadata summary for list display.
  */
 function buildSavedSearchMeta(search = {}) {
-  if (search.searchPreferences) {
-    const preferences = normalizeSearchPreferencesForStorage(search.searchPreferences);
-    const parts = [];
-    if (preferences.mode === "posts") {
-      parts.push(t("searchModePosts"));
-    } else if (preferences.mode === "reposts") {
-      parts.push(t("searchModeReposts"));
-    } else if (preferences.mode === "hashtags") {
-      parts.push(t("searchModeHashtags"));
-    } else {
-      parts.push(t("searchModeNetwork"));
-    }
-    if (preferences.actor) {
-      parts.push(`@${preferences.actor.replace(/^@+/, "")}`);
-    }
-    preferences.tags.forEach((tag) => {
-      parts.push(`#${tag}`);
-    });
-    if (preferences.tags.length > 1) {
-      if (preferences.tagMatchMode === "any") {
-        parts.push(t("searchTagMatchAny"));
-      } else {
-        parts.push(t("searchTagMatchAll"));
-      }
-    }
-    if (preferences.postTypeFilter !== "all") {
-      parts.push(preferences.postTypeFilter);
-    }
-    if (preferences.mediaFilter !== "all") {
-      parts.push(preferences.mediaFilter);
-    }
-    if (preferences.langs.length > 0) {
-      parts.push(preferences.langs.join(", "));
-    }
-    if (preferences.domain) {
-      parts.push(`domain: ${preferences.domain}`);
-    }
-    if (preferences.url) {
-      parts.push(`url: ${preferences.url}`);
-    }
-    if (parts.length > 0) {
-      return parts.join(" · ");
-    }
-  }
-
-  const params = search.params || {};
-  const parts = [];
-  let tags = [];
-  if (Array.isArray(params.tag)) {
-    tags = params.tag;
-  }
-  tags.forEach((tag) => {
-    parts.push(`#${tag}`);
-  });
-  if (params.sort) {
-    parts.push(params.sort);
-  }
-  ["author", "mentions", "lang", "domain", "since", "until"].forEach((key) => {
-    const value = String(params[key] || "").trim();
-    if (value) {
-      parts.push(`${key}: ${value}`);
-    }
-  });
-  if (parts.length === 0) {
-    return t("savedSearchMetaDefault");
-  }
-  return parts.join(" · ");
+  return savedSearchModels.meta(search);
 }
 
 /**
@@ -5452,45 +4372,7 @@ function buildSavedSearchMeta(search = {}) {
  * @returns {Array<object>} Clean saved search entries.
  */
 function normalizeSavedSearches(searches) {
-  if (!Array.isArray(searches)) {
-    return [];
-  }
-
-  const seen = new Set();
-  const normalized = [];
-  searches.forEach((search, index) => {
-    let parsed = null;
-    try {
-      parsed = parseSavedSearchUrl(search?.sourceUrl || search?.url || "");
-    } catch {
-      return;
-    }
-    const normalizedSearchPreferences = normalizeSearchPreferencesForStorage(search?.searchPreferences || parsed.params || {});
-    const sourceKey = `${parsed.sourceUrl.toLowerCase()}::${JSON.stringify(normalizedSearchPreferences)}`;
-    if (seen.has(sourceKey)) {
-      return;
-    }
-    seen.add(sourceKey);
-    let id = String(search?.id || "").trim();
-    if (!id) {
-      id = `search-${index + 1}-${Math.random().toString(36).slice(2, 8)}`;
-    }
-    const entry = {
-      id,
-      sourceUrl: parsed.sourceUrl,
-      params: parsed.params,
-      searchPreferences: normalizedSearchPreferences,
-      label: String(search?.label || "").trim(),
-      createdAt: String(search?.createdAt || new Date().toISOString()).trim(),
-      updatedAt: String(search?.updatedAt || search?.createdAt || new Date().toISOString()).trim(),
-      lastLoadedAt: String(search?.lastLoadedAt || "").trim(),
-    };
-    if (!entry.label) {
-      entry.label = buildSavedSearchLabel(entry);
-    }
-    normalized.push(entry);
-  });
-  return normalized.slice(0, 100);
+  return savedSearchModels.normalize(searches);
 }
 
 /**
@@ -5499,32 +4381,7 @@ function normalizeSavedSearches(searches) {
  * @returns {object|null} Saved search entry or null.
  */
 function getSavedSearchById(id) {
-  const normalizedId = String(id || "").trim();
-  if (!normalizedId) {
-    return null;
-  }
-  return savedSearches.find((search) => search.id === normalizedId) || null;
-}
-
-/**
- * Creates a saved search entry from a shared Bluesky search URL.
- * @param {string} sourceUrl - Shared bsky.app search URL.
- * @returns {object} Saved search entry.
- */
-function createSavedSearchFromUrl(sourceUrl) {
-  const parsed = parseSavedSearchUrl(sourceUrl);
-  const now = new Date().toISOString();
-  const entry = {
-    id: `search-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    sourceUrl: parsed.sourceUrl,
-    params: parsed.params,
-    label: "",
-    createdAt: now,
-    updatedAt: now,
-    lastLoadedAt: "",
-  };
-  entry.label = buildSavedSearchLabel(entry);
-  return entry;
+  return savedSearchModels.find(savedSearches, id);
 }
 
 /**
@@ -5583,21 +4440,11 @@ function isCurrentThreadExplorerThreadSaved() {
  * @returns {object|null} Favorite entry, or null when no thread is loaded.
  */
 function createThreadExplorerFavoriteFromCurrentThread() {
-  const rootPost = getThreadExplorerRootPost();
-  if (!rootPost?.uri) {
-    return null;
-  }
-
-  return {
-    rootUri: rootPost.uri,
-    selectedUri: String(threadExplorerSelectedUri || rootPost.uri),
-    authorHandle: String(rootPost.author?.handle || ""),
-    authorName: getThreadExplorerActorLabel(rootPost.author),
-    text: getThreadExplorerPreviewText(rootPost),
-    createdAt: String(rootPost.createdAt || rootPost.indexedAt || ""),
-    savedAt: new Date().toISOString(),
-    webApp: getThreadExplorerPostWebApp(rootPost),
-  };
+  return buildThreadExplorerFavoriteModel(getThreadExplorerRootPost(), {
+    selectedUri: threadExplorerSelectedUri,
+    getActorLabel: getThreadExplorerActorLabel, getPreviewText: getThreadExplorerPreviewText,
+    getWebApp: getThreadExplorerPostWebApp, now: () => new Date().toISOString(),
+  });
 }
 
 /**
@@ -5605,15 +4452,10 @@ function createThreadExplorerFavoriteFromCurrentThread() {
  * @returns {Promise<void>} Resolves after settings are persisted.
  */
 async function saveCurrentThreadExplorerFavorite() {
-  const favorite = createThreadExplorerFavoriteFromCurrentThread();
-  if (!favorite) {
-    return;
+  const saved = await threadExplorerFavoritesController.save(createThreadExplorerFavoriteFromCurrentThread());
+  if (saved) {
+    updateThreadExplorerControls();
   }
-
-  const remaining = threadExplorerFavorites.filter((entry) => entry.rootUri !== favorite.rootUri);
-  threadExplorerFavorites = normalizeThreadExplorerFavorites([favorite, ...remaining]);
-  await persistSettings();
-  updateThreadExplorerControls();
 }
 
 /**
@@ -5622,14 +4464,12 @@ async function saveCurrentThreadExplorerFavorite() {
  * @returns {Promise<void>} Resolves after settings are persisted.
  */
 async function removeThreadExplorerFavorite(rootUri) {
-  const normalizedUri = String(rootUri || "").trim();
-  if (!normalizedUri) {
-    return;
+  const removed = await threadExplorerFavoritesController.remove(rootUri);
+  if (removed) {
+    renderSearchResults();
+    updateThreadExplorerControls();
+    renderThreadExplorerFavoritesDialog();
   }
-  threadExplorerFavorites = threadExplorerFavorites.filter((favorite) => favorite.rootUri !== normalizedUri);
-  await persistSettings();
-  updateThreadExplorerControls();
-  renderThreadExplorerFavoritesDialog();
 }
 
 /**
@@ -6126,34 +4966,11 @@ function findSearchResultByUri(uri) {
  * @returns {void}
  */
 function renderThreadExplorerFavoritesDialog() {
-  threadExplorerFavoritesList.replaceChildren();
-  if (!threadExplorerFavorites.length) {
-    threadExplorerFavoritesStatus.textContent = t("threadExplorerFavoritesEmpty");
-    return;
-  }
-
-  threadExplorerFavoritesStatus.textContent = t("threadExplorerFavoritesLoaded", {
-    count: formatCount(threadExplorerFavorites.length),
-  });
-  threadExplorerFavorites.forEach((favorite) => {
-    const fragment = cloneTemplateContent(threadExplorerFavoriteItemTemplate);
-    const item = fragment.querySelector(".thread-explorer-favorite-item");
-    const loadButton = fragment.querySelector(".thread-explorer-favorite-load");
-    const removeButton = fragment.querySelector(".thread-explorer-favorite-remove");
-    const title = fragment.querySelector(".thread-explorer-favorite-title");
-    const meta = fragment.querySelector(".thread-explorer-favorite-meta");
-    const text = fragment.querySelector(".thread-explorer-favorite-text");
-
-    item.dataset.uri = favorite.rootUri;
-    loadButton.dataset.uri = favorite.rootUri;
-    removeButton.dataset.uri = favorite.rootUri;
-    applyTranslatedTitle(removeButton, "threadExplorerFavoriteRemoveButton");
-    title.textContent = favorite.authorName || favorite.authorHandle || t("threadExplorerUnknownAuthor");
-    meta.textContent = formatThreadExplorerDate(favorite.createdAt || favorite.savedAt);
-    text.textContent = favorite.text || t("threadExplorerNoText");
-    loadButton.addEventListener("click", handleThreadExplorerFavoriteLoadClick);
-    removeButton.addEventListener("click", handleThreadExplorerFavoriteRemoveClick);
-    threadExplorerFavoritesList.appendChild(fragment);
+  renderThreadExplorerFavorites({
+    list: threadExplorerFavoritesList, status: threadExplorerFavoritesStatus, favorites: threadExplorerFavorites,
+    template: threadExplorerFavoriteItemTemplate, cloneTemplate: cloneTemplateContent,
+    translate: t, formatCount, formatDate: formatThreadExplorerDate, applyTranslatedTitle,
+    onLoad: handleThreadExplorerFavoriteLoadClick, onRemove: handleThreadExplorerFavoriteRemoveClick,
   });
 }
 
@@ -6171,35 +4988,11 @@ function openThreadExplorerFavoritesDialog() {
  * @returns {void}
  */
 function renderSavedSearchesDialog() {
-  savedSearchesList.replaceChildren();
-  if (!savedSearches.length) {
-    savedSearchesStatus.textContent = t("savedSearchesEmpty");
-    return;
-  }
-
-  savedSearchesStatus.textContent = t("savedSearchesLoaded", {
-    count: formatCount(savedSearches.length),
-  });
-  savedSearches.forEach((search) => {
-    const fragment = cloneTemplateContent(savedSearchItemTemplate);
-    const item = fragment.querySelector(".saved-search-item");
-    const loadButton = fragment.querySelector(".saved-search-load");
-    const removeButton = fragment.querySelector(".saved-search-remove");
-    const title = fragment.querySelector(".saved-search-title");
-    const meta = fragment.querySelector(".saved-search-meta");
-    const url = fragment.querySelector(".saved-search-url");
-
-    item.dataset.id = search.id;
-    loadButton.dataset.id = search.id;
-    removeButton.dataset.id = search.id;
-    applyTranslatedTitle(removeButton, "savedSearchRemoveButton");
-    removeButton.innerHTML = createIconSvg("M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z");
-    title.textContent = search.label || buildSavedSearchLabel(search);
-    meta.textContent = buildSavedSearchMeta(search);
-    url.textContent = search.sourceUrl;
-    loadButton.addEventListener("click", handleSavedSearchLoadClick);
-    removeButton.addEventListener("click", handleSavedSearchRemoveClick);
-    savedSearchesList.appendChild(fragment);
+  renderSavedSearches({
+    list: savedSearchesList, status: savedSearchesStatus, searches: savedSearches,
+    template: savedSearchItemTemplate, cloneTemplate: cloneTemplateContent, translate: t, formatCount,
+    applyTranslatedTitle, buildLabel: buildSavedSearchLabel, buildMeta: buildSavedSearchMeta,
+    onLoad: handleSavedSearchLoadClick, onRemove: handleSavedSearchRemoveClick,
   });
 }
 
@@ -6209,51 +5002,12 @@ function renderSavedSearchesDialog() {
  * @returns {void}
  */
 function openSavedSearchesDialog(context = "threadExplorer") {
-  if (context === "archive") {
-    savedSearchDialogContext = "archive";
-  } else if (context === "search") {
-    savedSearchDialogContext = "search";
-  } else {
-    savedSearchDialogContext = "threadExplorer";
-  }
-  if (savedSearchesNote) {
-    if (savedSearchDialogContext === "search") {
-      savedSearchesNote.textContent = t("savedSearchesSearchNote");
-    } else {
-      savedSearchesNote.textContent = t("savedSearchesNote");
-    }
-  }
-  if (savedSearchUrlField) {
-    savedSearchUrlField.hidden = savedSearchDialogContext === "search";
-  }
-  if (savedSearchesActions) {
-    savedSearchesActions.hidden = savedSearchDialogContext === "search";
-  }
-  savedSearchUrlInput.value = "";
+  savedSearchDialogContext = configureSavedSearchesDialog(context, {
+    note: savedSearchesNote, urlField: savedSearchUrlField, actions: savedSearchesActions,
+    input: savedSearchUrlInput, translate: t,
+  });
   renderSavedSearchesDialog();
   savedSearchesDialog.showModal();
-}
-
-/**
- * Creates a saved search entry from full Threadline search preferences.
- * @param {object} preferences - Search preferences to store.
- * @returns {object} Saved-search entry with Threadline-specific parameters.
- */
-function createSavedSearchFromPreferences(preferences = {}) {
-  const normalizedPreferences = normalizeSearchPreferencesForStorage(preferences);
-  const urlResult = buildBskySearchUrlFromPayload(normalizedPreferences);
-  const parsed = parseSavedSearchUrl(urlResult.url);
-  const now = new Date().toISOString();
-  return {
-    id: `search-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    sourceUrl: parsed.sourceUrl,
-    params: parsed.params,
-    searchPreferences: normalizedPreferences,
-    label: buildSavedSearchLabelFromPreferences(normalizedPreferences),
-    createdAt: now,
-    updatedAt: now,
-    lastLoadedAt: "",
-  };
 }
 
 /**
@@ -6261,47 +5015,7 @@ function createSavedSearchFromPreferences(preferences = {}) {
  * @returns {Promise<void>} Resolves after settings were persisted.
  */
 async function saveCurrentSearchPreferences() {
-  const preferences = normalizeSearchPreferencesForStorage(getSearchPreferences());
-  const hasAnyValue = (
-    Boolean(preferences.query)
-    || Boolean(preferences.actor)
-    || preferences.tags.length > 0
-    || Boolean(preferences.excludeText)
-    || Boolean(preferences.mentions)
-    || preferences.langs.length > 0
-    || Boolean(preferences.domain)
-    || Boolean(preferences.url)
-    || Boolean(preferences.since)
-    || Boolean(preferences.until)
-    || preferences.mode !== "network"
-    || preferences.mediaFilter !== "all"
-    || preferences.postTypeFilter !== "all"
-  );
-  if (!hasAnyValue) {
-    if (searchStatus) {
-      searchStatus.textContent = t("searchSaveEmptyWarning");
-    }
-    return;
-  }
-
-  const existing = savedSearches.find((search) => {
-    return areSearchPreferencesEqual(search.searchPreferences || search.params || {}, preferences);
-  });
-  if (existing) {
-    if (searchStatus) {
-      searchStatus.textContent = t("searchSaveAlreadyExists");
-    }
-    return;
-  }
-
-  const entry = createSavedSearchFromPreferences(preferences);
-  savedSearches = normalizeSavedSearches([entry, ...savedSearches]);
-  await persistSettings();
-  if (searchStatus) {
-    searchStatus.textContent = t("searchSaveSuccess", {
-      title: entry.label,
-    });
-  }
+  return savedSearchController.save();
 }
 
 /**
@@ -6309,18 +5023,7 @@ async function saveCurrentSearchPreferences() {
  * @returns {Promise<void>} Resolves after settings are persisted.
  */
 async function addSavedSearchFromInput() {
-  const sourceUrl = String(savedSearchUrlInput.value || "").trim();
-  const entry = createSavedSearchFromUrl(sourceUrl);
-  const existing = savedSearches.find((search) => search.sourceUrl.toLowerCase() === entry.sourceUrl.toLowerCase());
-  if (existing) {
-    savedSearchesStatus.textContent = t("savedSearchAlreadyExists");
-    return;
-  }
-
-  savedSearches = normalizeSavedSearches([entry, ...savedSearches]);
-  savedSearchUrlInput.value = "";
-  await persistSettings();
-  renderSavedSearchesDialog();
+  return savedSearchController.addUrl(savedSearchUrlInput.value);
 }
 
 /**
@@ -6329,28 +5032,7 @@ async function addSavedSearchFromInput() {
  * @returns {Promise<void>} Resolves after settings are persisted.
  */
 async function removeSavedSearch(id) {
-  const normalizedId = String(id || "").trim();
-  if (!normalizedId) {
-    return;
-  }
-  savedSearches = savedSearches.filter((search) => search.id !== normalizedId);
-  if (getThreadExplorerSearchIdFromSource(threadExplorerSource) === normalizedId) {
-    threadExplorerSource = "follows";
-    threadExplorerCursor = "";
-    threadExplorerHasMore = true;
-    threadExplorerItems = [];
-    threadExplorerSelectedUri = "";
-    threadExplorerTree = null;
-    clearThreadExplorerRenderedMediaCache();
-    clearThreadExplorerSelectionPreference();
-  }
-  if (archiveSavedSearchId === normalizedId) {
-    archiveSavedSearchId = "";
-    renderArchiveSavedSearchNote();
-  }
-  await persistSettings();
-  renderSavedSearchesDialog();
-  renderThreadExplorerWorkspace();
+  return savedSearchController.remove(id);
 }
 
 /**
@@ -6359,17 +5041,7 @@ async function removeSavedSearch(id) {
  * @returns {Promise<void>} Resolves after the search source starts loading.
  */
 async function loadSavedSearchInThreadExplorer(id) {
-  const search = getSavedSearchById(id);
-  if (!search) {
-    return;
-  }
-  search.lastLoadedAt = new Date().toISOString();
-  search.updatedAt = search.lastLoadedAt;
-  await persistSettings();
-  if (savedSearchesDialog.open) {
-    savedSearchesDialog.close();
-  }
-  setThreadExplorerSource(`search:${search.id}`);
+  return savedSearchController.load(id, "threadExplorer");
 }
 
 /**
@@ -6378,22 +5050,7 @@ async function loadSavedSearchInThreadExplorer(id) {
  * @returns {Promise<void>} Resolves after archive preferences are persisted.
  */
 async function loadSavedSearchInArchive(id) {
-  const search = getSavedSearchById(id);
-  if (!search) {
-    return;
-  }
-  search.lastLoadedAt = new Date().toISOString();
-  search.updatedAt = search.lastLoadedAt;
-  await persistSettings();
-  if (savedSearchesDialog.open) {
-    savedSearchesDialog.close();
-  }
-  archiveSavedSearchId = search.id;
-  await persistArchivePreferences();
-  archiveThreadUrlNote.textContent = t("archiveSavedSearchSelected", {
-    label: search.label || buildSavedSearchLabel(search),
-    url: search.sourceUrl,
-  });
+  return savedSearchController.load(id, "archive");
 }
 
 /**
@@ -6402,29 +5059,7 @@ async function loadSavedSearchInArchive(id) {
  * @returns {Promise<void>} Resolves after the search form was updated.
  */
 async function loadSavedSearchInSearchWorkspace(id) {
-  const search = getSavedSearchById(id);
-  if (!search) {
-    return;
-  }
-  search.lastLoadedAt = new Date().toISOString();
-  search.updatedAt = search.lastLoadedAt;
-  await persistSettings();
-  if (savedSearchesDialog.open) {
-    savedSearchesDialog.close();
-  }
-  applySearchPreferences(search.searchPreferences || search.params || {});
-  searchResults = [];
-  searchCursor = "";
-  searchResultPreferences = null;
-  renderHashtagCloud();
-  renderSearchResults();
-  renderSearchWorkspace();
-  await persistSettings();
-  if (searchStatus) {
-    searchStatus.textContent = t("searchLoadSavedStatus", {
-      title: search.label || buildSavedSearchLabel(search),
-    });
-  }
+  return savedSearchController.load(id, "search");
 }
 
 /**
@@ -6480,121 +5115,26 @@ async function openThreadExplorerReactionsDialog(type, uri, cid) {
 }
 
 /**
- * Finds a normalized Thread Explorer tree node by post URI.
- * @param {object|null} node - Current normalized tree node.
- * @param {string} uri - AT URI to locate.
- * @returns {object|null} Matching tree node, or null.
- */
-function findThreadExplorerTreeNode(node, uri) {
-  const normalizedUri = String(uri || "").trim();
-  if (!node || !normalizedUri) {
-    return null;
-  }
-
-  if (node.post?.uri === normalizedUri) {
-    return node;
-  }
-
-  if (!Array.isArray(node.replies)) {
-    return null;
-  }
-
-  for (const reply of node.replies) {
-    const found = findThreadExplorerTreeNode(reply, normalizedUri);
-    if (found) {
-      return found;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Finds the direct parent node for one normalized Thread Explorer post URI.
- * @param {object|null} node - Current normalized tree node.
- * @param {string} uri - AT URI to locate below the current node.
- * @returns {object|null} Direct parent node, or null when the URI is the root or missing.
- */
-function findThreadExplorerParentNode(node, uri) {
-  const normalizedUri = String(uri || "").trim();
-  if (!node || !normalizedUri || !Array.isArray(node.replies)) {
-    return null;
-  }
-
-  for (const reply of node.replies) {
-    if (reply?.post?.uri === normalizedUri) {
-      return node;
-    }
-    const found = findThreadExplorerParentNode(reply, normalizedUri);
-    if (found) {
-      return found;
-    }
-  }
-
-  return null;
-}
-
-/**
  * Renders loaded replies for a Thread Explorer post into the replies dialog.
  * @param {object|null} node - Normalized tree node whose replies should be listed.
  * @returns {void}
  */
 function renderThreadExplorerRepliesDialog(node) {
-  threadExplorerRepliesList.replaceChildren();
-  let replies = [];
-  if (Array.isArray(node?.replies)) {
-    replies = node.replies;
-  }
-  const expectedCount = Number(node?.post?.replyCount) || 0;
-  threadExplorerRepliesTitle.textContent = t("threadExplorerRepliesTitle");
-
-  if (!replies.length) {
-    threadExplorerRepliesStatus.textContent = t("threadExplorerRepliesEmpty");
-    return;
-  }
-
-  threadExplorerRepliesStatus.textContent = t("threadExplorerRepliesLoaded", {
-    loaded: formatCount(replies.length),
-    total: formatCount(expectedCount),
-  });
-
-  replies.forEach((reply) => {
-    const post = reply.post || {};
-    const actor = post.author || {};
-    const fragment = cloneTemplateContent(threadExplorerActorItemTemplate);
-    const item = fragment.querySelector(".thread-explorer-actor-item");
-    const avatar = fragment.querySelector(".thread-explorer-avatar");
-    const name = fragment.querySelector(".thread-explorer-actor-name");
-    const handle = fragment.querySelector(".thread-explorer-actor-handle");
-
-    item.dataset.uri = post.uri || "";
-    item.tabIndex = 0;
-    item.setAttribute("role", "button");
-    setAvatarImage(avatar, actor.avatar, getThreadExplorerActorLabel(actor));
-    name.textContent = getThreadExplorerActorLabel(actor);
-    if (actor.handle) {
-      handle.textContent = `@${actor.handle}`;
-    } else {
-      handle.textContent = actor.did || "";
-    }
-    item.addEventListener("click", () => {
-      if (!post.uri) {
-        return;
-      }
-      threadExplorerSelectedUri = post.uri;
-      persistThreadExplorerSelectionPreference(post.uri);
+  renderThreadExplorerReplies(node, {
+    list: threadExplorerRepliesList, title: threadExplorerRepliesTitle, status: threadExplorerRepliesStatus,
+    template: threadExplorerActorItemTemplate, cloneTemplate: cloneTemplateContent, translate: t,
+    formatCount, setAvatar: setAvatarImage, getActorLabel: getThreadExplorerActorLabel,
+    /** Selects one already-loaded reply and closes its dialog.
+     * @param {string} uri - Reply URI.
+     * @returns {void}
+     */
+    selectReply(uri) {
+      threadExplorerSelectedUri = uri;
+      persistThreadExplorerSelectionPreference(uri);
       renderThreadExplorerWorkspace();
       window.requestAnimationFrame(focusSelectedThreadExplorerNode);
       threadExplorerRepliesDialog.close();
-    });
-    item.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") {
-        return;
-      }
-      event.preventDefault();
-      item.click();
-    });
-    threadExplorerRepliesList.appendChild(fragment);
+    },
   });
 }
 
@@ -6614,28 +5154,7 @@ function openThreadExplorerRepliesDialog(uri) {
  * @returns {void}
  */
 function renderThreadExplorerGalleryImage() {
-  const image = threadExplorerGalleryImages[threadExplorerGalleryIndex];
-  if (!image) {
-    return;
-  }
-  renderThreadExplorerGalleryView({
-    image,
-    imageCount: threadExplorerGalleryImages.length,
-    selectedIndex: threadExplorerGalleryIndex,
-    elements: {
-      image: threadExplorerGalleryImage,
-      caption: threadExplorerGalleryCaption,
-      title: threadExplorerGalleryTitle,
-      thumbs: threadExplorerGalleryThumbs,
-      previousButton: threadExplorerGalleryPrevButton,
-      nextButton: threadExplorerGalleryNextButton,
-      overlayPreviousButton: threadExplorerGalleryOverlayPrevButton,
-      overlayNextButton: threadExplorerGalleryOverlayNextButton,
-      overlayCloseButton: threadExplorerGalleryOverlayCloseButton,
-    },
-    translate: t,
-    applyTranslatedTitle,
-  });
+  threadExplorerGalleryController.render();
 }
 
 /**
@@ -6686,7 +5205,7 @@ function handleThreadExplorerGalleryThumbError(event) {
  */
 function handleThreadExplorerGalleryImageError(event) {
   const imageElement = event.currentTarget;
-  const image = threadExplorerGalleryImages[threadExplorerGalleryIndex];
+  const image = threadExplorerGalleryController.getCurrent();
   const fallbackDecision = getThreadExplorerGalleryFallbackDecision(
     image,
     imageElement.dataset.fallbackAttempted === "true",
@@ -6706,26 +5225,7 @@ function handleThreadExplorerGalleryImageError(event) {
  * @returns {void}
  */
 function openThreadExplorerGallery(images, startIndex) {
-  const galleryState = buildThreadExplorerGalleryState(images, startIndex);
-  if (!galleryState) {
-    return;
-  }
-
-  threadExplorerGalleryImages = galleryState.images;
-  threadExplorerGalleryIndex = galleryState.index;
-  renderThreadExplorerGalleryThumbnails(
-    threadExplorerGalleryThumbs,
-    threadExplorerGalleryThumbTemplate.content,
-    galleryState.images,
-    (index) => {
-      threadExplorerGalleryIndex = index;
-      renderThreadExplorerGalleryImage();
-    },
-    handleThreadExplorerGalleryThumbError,
-  );
-
-  renderThreadExplorerGalleryImage();
-  threadExplorerGalleryDialog.showModal();
+  threadExplorerGalleryController.open(images, startIndex);
 }
 
 /**
@@ -6734,26 +5234,7 @@ function openThreadExplorerGallery(images, startIndex) {
  * @returns {void}
  */
 function handleThreadExplorerGalleryKeydown(event) {
-  if (!threadExplorerGalleryDialog?.open) {
-    return;
-  }
-
-  if (event.key === "Escape" && threadExplorerGalleryPseudoFullscreen) {
-    event.preventDefault();
-    setThreadExplorerGalleryPseudoFullscreen(false);
-    return;
-  }
-
-  if (event.key === "ArrowLeft") {
-    event.preventDefault();
-    stepThreadExplorerGallery(-1);
-    return;
-  }
-
-  if (event.key === "ArrowRight") {
-    event.preventDefault();
-    stepThreadExplorerGallery(1);
-  }
+  threadExplorerGalleryFullscreenController.keydown(event);
 }
 
 /**
@@ -6761,27 +5242,7 @@ function handleThreadExplorerGalleryKeydown(event) {
  * @returns {Promise<void>} Resolves after the fullscreen request is attempted.
  */
 async function openThreadExplorerGalleryFullscreen() {
-  const fullscreenTarget = threadExplorerGalleryMain || threadExplorerGalleryImage;
-  if (!fullscreenTarget) {
-    return;
-  }
-
-  if (isIosDevice()) {
-    setThreadExplorerGalleryPseudoFullscreen(true);
-    return;
-  }
-
-  if (fullscreenTarget.requestFullscreen) {
-    try {
-      await fullscreenTarget.requestFullscreen();
-      setThreadExplorerGalleryPseudoFullscreen(false);
-      return;
-    } catch {
-      // Fall back to the in-app fullscreen mode below.
-    }
-  }
-
-  setThreadExplorerGalleryPseudoFullscreen(true);
+  await threadExplorerGalleryFullscreenController.open();
 }
 
 /**
@@ -6789,21 +5250,7 @@ async function openThreadExplorerGalleryFullscreen() {
  * @returns {Promise<void>} Resolves after fullscreen or dialog close was attempted.
  */
 async function closeThreadExplorerGalleryOverlay() {
-  if (document.fullscreenElement) {
-    try {
-      await document.exitFullscreen();
-      return;
-    } catch {
-      // Fall through to closing the dialog when fullscreen exit fails.
-    }
-  }
-
-  if (threadExplorerGalleryPseudoFullscreen) {
-    setThreadExplorerGalleryPseudoFullscreen(false);
-    return;
-  }
-
-  threadExplorerGalleryDialog?.close();
+  await threadExplorerGalleryFullscreenController.close();
 }
 
 /**
@@ -6812,11 +5259,7 @@ async function closeThreadExplorerGalleryOverlay() {
  * @returns {void}
  */
 function setThreadExplorerGalleryPseudoFullscreen(enabled) {
-  threadExplorerGalleryPseudoFullscreen = enabled === true;
-  if (threadExplorerGalleryMain) {
-    threadExplorerGalleryMain.classList.toggle("is-inline-fullscreen", threadExplorerGalleryPseudoFullscreen);
-  }
-  document.body.classList.toggle("thread-explorer-gallery-fullscreen", threadExplorerGalleryPseudoFullscreen);
+  threadExplorerGalleryFullscreenController.setFallback(enabled);
 }
 
 /**
@@ -6937,22 +5380,7 @@ function createThreadExplorerEdgePath(parentRect, childRect) {
  * @returns {void}
  */
 function scheduleThreadExplorerEdgeRender() {
-  if (isThreadExplorerReplyClusterModeActive()) {
-    return;
-  }
-  if (threadExplorerDragState?.started === true) {
-    return;
-  }
-  if (threadExplorerPanInertiaFrame) {
-    return;
-  }
-  if (threadExplorerEdgeRenderFrame) {
-    window.cancelAnimationFrame(threadExplorerEdgeRenderFrame);
-  }
-  threadExplorerEdgeRenderFrame = window.requestAnimationFrame(() => {
-    threadExplorerEdgeRenderFrame = 0;
-    renderThreadExplorerEdges();
-  });
+  threadExplorerRenderScheduler.scheduleEdges();
 }
 
 /**
@@ -6983,15 +5411,7 @@ function setThreadExplorerPanningMode(active) {
  * @returns {void}
  */
 function cancelThreadExplorerPanInertia() {
-  if (threadExplorerPanInertiaFrame) {
-    window.cancelAnimationFrame(threadExplorerPanInertiaFrame);
-    threadExplorerPanInertiaFrame = 0;
-  }
-  threadExplorerPanVelocityX = 0;
-  threadExplorerPanVelocityY = 0;
-  if (!threadExplorerDragState) {
-    setThreadExplorerPanningMode(false);
-  }
+  threadExplorerPanController.cancel();
 }
 
 /**
@@ -7026,56 +5446,7 @@ function updateThreadExplorerPanVelocity(state, event) {
  * @returns {void}
  */
 function startThreadExplorerPanInertia() {
-  cancelThreadExplorerPanInertia();
-
-  const velocityMagnitude = Math.max(Math.abs(threadExplorerPanVelocityX), Math.abs(threadExplorerPanVelocityY));
-  if (velocityMagnitude < THREAD_EXPLORER_INERTIA_MIN_VELOCITY) {
-    setThreadExplorerPanningMode(false);
-    scheduleThreadExplorerEdgeRender();
-    return;
-  }
-
-  let previousTime = performance.now();
-  setThreadExplorerPanningMode(true);
-
-  /**
-   * Advances one frame of inertial Thread Explorer panning.
-   * @param {number} now - Current animation frame timestamp.
-   * @returns {void}
-   */
-  function step(now) {
-    const elapsedMs = Math.max(1, now - previousTime);
-    previousTime = now;
-
-    const moveX = threadExplorerPanVelocityX * elapsedMs;
-    const moveY = threadExplorerPanVelocityY * elapsedMs;
-    applyThreadExplorerScrollDelta(moveX, moveY);
-
-    const inertiaState = {
-      velocityX: threadExplorerPanVelocityX,
-      velocityY: threadExplorerPanVelocityY,
-    };
-    const shouldContinue = advanceThreadExplorerPanInertiaFromTools(
-      inertiaState,
-      elapsedMs,
-      THREAD_EXPLORER_INERTIA_FRICTION,
-      THREAD_EXPLORER_INERTIA_STOP_VELOCITY,
-    );
-    threadExplorerPanVelocityX = inertiaState.velocityX;
-    threadExplorerPanVelocityY = inertiaState.velocityY;
-    if (!shouldContinue) {
-      threadExplorerPanInertiaFrame = 0;
-      threadExplorerPanVelocityX = 0;
-      threadExplorerPanVelocityY = 0;
-      setThreadExplorerPanningMode(false);
-      scheduleThreadExplorerEdgeRender();
-      return;
-    }
-
-    threadExplorerPanInertiaFrame = window.requestAnimationFrame(step);
-  }
-
-  threadExplorerPanInertiaFrame = window.requestAnimationFrame(step);
+  threadExplorerPanController.start();
 }
 
 /**
@@ -7124,31 +5495,16 @@ function setThreadExplorerSource(source) {
  * @returns {void}
  */
 function renderThreadExplorerFeedSourceSelect() {
-  if (!threadExplorerFeedSelect) {
-    return;
+  let activeSource = "";
+  if (getThreadExplorerFeedUriFromSource(threadExplorerSource)) {
+    activeSource = normalizeThreadExplorerSource(threadExplorerSource);
   }
-
-  const placeholder = cloneTemplateContent(threadExplorerFeedOptionTemplate);
-  const placeholderOption = placeholder.querySelector("option");
-  placeholderOption.value = "";
-  placeholderOption.textContent = t("threadExplorerFeedPickerPlaceholder");
-  threadExplorerFeedSelect.replaceChildren(placeholderOption);
-
-  threadExplorerFeedSources.forEach((feed) => {
-    const source = buildThreadExplorerFeedSource(feed.uri);
-    if (!source) {
-      return;
-    }
-    const fragment = cloneTemplateContent(threadExplorerFeedOptionTemplate);
-    const option = fragment.querySelector("option");
-    option.value = source;
-    option.textContent = feed.displayName || feed.uri;
-    threadExplorerFeedSelect.appendChild(option);
+  renderThreadExplorerFeedSources({
+    select: threadExplorerFeedSelect, template: threadExplorerFeedOptionTemplate, cloneTemplate: cloneTemplateContent,
+    feeds: threadExplorerFeedSources, buildSource: buildThreadExplorerFeedSource, activeSource,
+    placeholder: t("threadExplorerFeedPickerPlaceholder"),
+    disabled: !authAccount || threadExplorerFeedSourcesLoading || isThreadExplorerForeignAccountMode(),
   });
-
-  const activeFeedSource = getThreadExplorerFeedUriFromSource(threadExplorerSource) ? normalizeThreadExplorerSource(threadExplorerSource) : "";
-  threadExplorerFeedSelect.value = activeFeedSource;
-  threadExplorerFeedSelect.disabled = !authAccount || threadExplorerFeedSourcesLoading || isThreadExplorerForeignAccountMode();
 }
 
 /**
@@ -7158,38 +5514,11 @@ function renderThreadExplorerFeedSourceSelect() {
  * @returns {string} Current, stored, first feed, or empty selected URI.
  */
 function getThreadExplorerPreferredSelectionUri(options = {}) {
-  const allowStoredOutsideFeed = options.allowStoredOutsideFeed === true;
-  const currentUri = String(threadExplorerSelectedUri || "").trim();
-  if (currentUri && (allowStoredOutsideFeed || threadExplorerFeedContainsUri(currentUri))) {
-    return currentUri;
-  }
-
-  const storedSelection = getStoredThreadExplorerSelectionPreference();
-  if (storedSelection?.selectedUri && (allowStoredOutsideFeed || threadExplorerFeedContainsUri(storedSelection.selectedUri))) {
-    return storedSelection.selectedUri;
-  }
-
-  const firstItem = threadExplorerItems[0];
-  const firstUri = String(firstItem?.post?.uri || "").trim();
-  if (firstUri) {
-    return firstUri;
-  }
-
-  return "";
-}
-
-/**
- * Checks whether a post URI exists in the currently loaded Thread Explorer feed.
- * @param {string} uri - AT URI to look for.
- * @returns {boolean} True when the URI is present in the current feed items.
- */
-function threadExplorerFeedContainsUri(uri) {
-  const normalizedUri = String(uri || "").trim();
-  if (!normalizedUri) {
-    return false;
-  }
-
-  return threadExplorerItems.some((item) => String(item?.post?.uri || "").trim() === normalizedUri);
+  return resolveThreadExplorerSelection({
+    currentUri: threadExplorerSelectedUri, items: threadExplorerItems,
+    readStoredSelection: getStoredThreadExplorerSelectionPreference,
+    allowStoredOutsideFeed: options.allowStoredOutsideFeed === true,
+  });
 }
 
 /**
@@ -7238,51 +5567,14 @@ function applyThreadExplorerAvatarCacheToTree(node = null) {
  * @returns {Promise<void>} Resolves after cached avatar data URIs were applied.
  */
 async function hydrateThreadExplorerTreeAvatars(root = null, onProgress = async () => {}, signal = null) {
-  if (!root) {
-    return;
-  }
-  throwIfThreadExplorerSnapshotAborted(signal);
-
-  const result = await sendToServiceWorker("HYDRATE_THREAD_EXPLORER_AVATARS", {
-    root,
-  }, {
-    timeoutMs: 120000,
-    signal,
-    onProgress(progress) {
-      if (progress?.phase !== "thread_explorer_avatars") {
-        return;
-      }
-
-      const total = Math.max(0, Number(progress.total) || 0);
-      const current = Math.max(0, Number(progress.current) || 0);
-      const remaining = Math.max(0, Number(progress.remaining) || 0);
-      let percent = 5;
-      if (total > 0) {
-        percent = 5 + (current / total * 12);
-      }
-      void onProgress({
-        percent,
-        step: t("threadExplorerSnapshotProgressAvatars"),
-        detail: t("threadExplorerSnapshotProgressAvatarDetail", {
-          current,
-          total,
-          remaining,
-          hydrated: Number(progress.hydrated) || 0,
-          skipped: Number(progress.skipped) || 0,
-        }),
-      });
+  await hydrateThreadExplorerAvatars(root, {
+    signal, onProgress, request: sendToServiceWorker, translate: t,
+    throwIfAborted: throwIfThreadExplorerSnapshotAborted,
+    applyAvatars: applyThreadExplorerAvatarHydration,
+    onError(error) {
+      console.warn("Thread Explorer avatar hydration failed.", error);
     },
-  }).catch((error) => {
-    if (error?.name === "AbortError") {
-      throw error;
-    }
-    console.warn("Thread Explorer avatar hydration failed.", error);
-    return null;
   });
-
-  if (result?.avatars && typeof result.avatars === "object") {
-    applyThreadExplorerAvatarHydration(root, result.avatars);
-  }
 }
 
 /**
@@ -7294,45 +5586,16 @@ async function hydrateThreadExplorerTreeAvatars(root = null, onProgress = async 
  */
 async function hydrateThreadExplorerSnapshotMedia(root = null, onProgress = async () => {}, signal = null) {
   threadExplorerSnapshotMediaDataUris = new Map();
-  await hydrateThreadExplorerMedia(root, {
-    signal,
+  await hydrateThreadExplorerSnapshotMediaFromTools(root, {
+    signal, onProgress, translate: t,
     request(currentRoot, requestOptions) {
       return requestThreadExplorerMediaHydration(sendToServiceWorker, currentRoot, requestOptions);
     },
     throwIfAborted: throwIfThreadExplorerSnapshotAborted,
-    onProgress(progress) {
-      if (progress?.phase !== "thread_explorer_media") {
-        return;
-      }
-
-      const total = Math.max(0, Number(progress.total) || 0);
-      const current = Math.max(0, Number(progress.current) || 0);
-      const remaining = Math.max(0, Number(progress.remaining) || 0);
-      let percent = 18;
-      if (total > 0) {
-        percent = 18 + (current / total * 9);
-      }
-      void onProgress({
-        percent,
-        step: t("threadExplorerSnapshotProgressMedia"),
-        detail: t("threadExplorerSnapshotProgressMediaDownloadDetail", {
-          current,
-          total,
-          remaining,
-          hydrated: Number(progress.hydrated) || 0,
-          skipped: Number(progress.skipped) || 0,
-          cacheHits: Number(progress.cacheHits) || 0,
-          downloaded: Number(progress.downloaded) || 0,
-          concurrency: Number(progress.concurrency) || 0,
-        }),
-      });
-    },
     onError(error) {
       console.warn("Thread Explorer media hydration failed.", error);
     },
-    onMedia(media) {
-      storeThreadExplorerHydratedMedia(media);
-    },
+    onMedia: storeThreadExplorerHydratedMedia,
   });
 }
 
@@ -7349,137 +5612,6 @@ function storeThreadExplorerHydratedMedia(media = null) {
     storedCount += 1;
   });
   return storedCount;
-}
-
-/**
- * Preloads all media for the currently selected Thread Explorer thread without delaying rendering.
- * @param {object|null} root - Current Thread Explorer root node.
- * @param {number} generation - Cache generation that must still be current when the request finishes.
- * @returns {Promise<void>} Resolves after the best-effort prewarm finished.
- */
-async function prewarmThreadExplorerMediaCacheForCurrentThread(root = null, generation = 0) {
-  if (!root) {
-    return;
-  }
-
-  if (threadExplorerMediaCachePrewarmController) {
-    threadExplorerMediaCachePrewarmController.abort();
-  }
-  const controller = new AbortController();
-  threadExplorerMediaCachePrewarmController = controller;
-
-  const result = await sendToServiceWorker("HYDRATE_THREAD_EXPLORER_MEDIA", {
-    root,
-  }, {
-    timeoutMs: 420000,
-    signal: controller.signal,
-  }).catch((error) => {
-    if (error?.name === "AbortError") {
-      return null;
-    }
-    console.warn("Thread Explorer media cache prewarm failed.", error);
-    return null;
-  });
-
-  if (threadExplorerMediaCachePrewarmController === controller) {
-    threadExplorerMediaCachePrewarmController = null;
-  }
-  if (controller.signal.aborted) {
-    return;
-  }
-  if (generation !== threadExplorerMediaCacheGeneration) {
-    return;
-  }
-  if (root !== threadExplorerTree) {
-    return;
-  }
-  if (!result?.media || typeof result.media !== "object") {
-    return;
-  }
-
-  storeThreadExplorerHydratedMedia(result.media);
-  applyThreadExplorerRenderedMediaCacheToDom();
-}
-
-/**
- * Appends newly loaded feed items while preserving the first occurrence of each post URI.
- * @param {Array<object>} currentItems - Feed items already rendered.
- * @param {Array<object>} nextItems - Feed items returned by the newest page.
- * @param {object} options - Append options.
- * @param {boolean} options.groupByRoot - Whether duplicates should be detected by root URI.
- * @returns {Array<object>} Combined feed items without duplicate post URIs.
- */
-function appendThreadExplorerFeedItems(currentItems, nextItems, options = {}) {
-  const seen = new Set();
-  const combined = [];
-  const items = [];
-  if (Array.isArray(currentItems)) {
-    items.push(...currentItems);
-  }
-  if (Array.isArray(nextItems)) {
-    items.push(...nextItems);
-  }
-  items.forEach((item) => {
-    let uri = String(item?.post?.uri || "").trim();
-    if (options.groupByRoot === true) {
-      uri = String(item?.post?.rootUri || item?.post?.uri || "").trim();
-    }
-    if (!uri || seen.has(uri)) {
-      return;
-    }
-    seen.add(uri);
-    combined.push(item);
-  });
-  return combined;
-}
-
-/**
- * Returns the timestamp used to sort Thread Explorer feed items.
- * @param {object} item - Thread Explorer feed item.
- * @returns {number} Epoch milliseconds or zero.
- */
-function getThreadExplorerFeedItemSortTimestamp(item = {}) {
-  const createdAt = Date.parse(String(item?.post?.createdAt || "").trim());
-  if (Number.isFinite(createdAt)) {
-    return createdAt;
-  }
-
-  const indexedAt = Date.parse(String(item?.post?.indexedAt || "").trim());
-  if (Number.isFinite(indexedAt)) {
-    return indexedAt;
-  }
-
-  return 0;
-}
-
-/**
- * Sorts Thread Explorer feed items by post date, newest first.
- * @param {Array<object>} items - Feed items to sort.
- * @returns {Array<object>} Sorted feed items without mutating the input.
- */
-function sortThreadExplorerFeedItemsByDate(items = []) {
-  if (!Array.isArray(items)) {
-    return [];
-  }
-
-  return items
-    .map((item, index) => {
-      return {
-        item,
-        index,
-      };
-    })
-    .sort((left, right) => {
-      const leftTime = getThreadExplorerFeedItemSortTimestamp(left.item);
-      const rightTime = getThreadExplorerFeedItemSortTimestamp(right.item);
-      if (leftTime !== rightTime) {
-        return rightTime - leftTime;
-      }
-      return left.index - right.index;
-    })
-    .map((entry) => {
-      return entry.item;
-    });
 }
 
 /**
@@ -7523,111 +5655,44 @@ function toggleThreadExplorerFullscreen() {
  * @returns {void}
  */
 function updateThreadExplorerControls() {
-  const hasAuth = Boolean(authAccount);
-  const isForeignAccountMode = isThreadExplorerForeignAccountMode();
-  const isForeignActorFocusMode = isThreadExplorerForeignActorFocusMode();
-  threadExplorerUrlButton.disabled = !hasAuth || threadExplorerLoadingThread;
-  threadExplorerSearchesButton.disabled = !hasAuth;
-  if (archiveSavedSearchesButton) {
-    archiveSavedSearchesButton.disabled = !hasAuth;
-  }
-  threadExplorerRefreshButton.disabled = !hasAuth || threadExplorerLoadingFeed;
-  if (threadExplorerAccountInput) {
-    threadExplorerAccountInput.disabled = !hasAuth || threadExplorerLoadingFeed;
-    if (!threadExplorerAccountInput.matches(":focus")) {
-      threadExplorerAccountInput.value = normalizeThreadExplorerActor(threadExplorerAccountActor);
-    }
-  }
-  if (threadExplorerUseOwnAccountButton) {
-    threadExplorerUseOwnAccountButton.disabled = !hasAuth || threadExplorerLoadingFeed;
-  }
-  if (threadExplorerSourceField) {
-    threadExplorerSourceField.hidden = isForeignActorFocusMode;
-  }
-  if (threadExplorerAccountField) {
-    threadExplorerAccountField.hidden = isForeignActorFocusMode;
-  }
-  if (threadExplorerAccountModeField) {
-    threadExplorerAccountModeField.hidden = !isForeignAccountMode || isForeignActorFocusMode;
-  }
-  if (threadExplorerAccountModeSelect) {
-    threadExplorerAccountModeSelect.value = normalizeThreadExplorerAccountMode(threadExplorerAccountMode);
-    threadExplorerAccountModeSelect.disabled = !hasAuth || threadExplorerLoadingFeed || !isForeignAccountMode;
-  }
-  if (threadExplorerFeedPickerField) {
-    threadExplorerFeedPickerField.hidden = isForeignAccountMode || isForeignActorFocusMode;
-  }
-  if (threadExplorerFeedStatus) {
-    threadExplorerFeedStatus.hidden = isForeignActorFocusMode;
-  }
-  if (threadExplorerFeedList) {
-    threadExplorerFeedList.hidden = isForeignActorFocusMode;
-  }
-  threadExplorerRootButton.disabled = !threadExplorerTree;
-  threadExplorerReloadThreadButton.disabled = !hasAuth || !threadExplorerSelectedUri || threadExplorerLoadingThread;
-  threadExplorerSnapshotPngButton.disabled = !threadExplorerTree || threadExplorerLoadingThread;
-  threadExplorerSaveButton.disabled = !threadExplorerTree;
-  threadExplorerFavoritesButton.disabled = !hasAuth;
-  threadExplorerZoomOutButton.disabled = !threadExplorerTree;
-  threadExplorerZoomResetButton.disabled = !threadExplorerTree;
-  threadExplorerZoomInButton.disabled = !threadExplorerTree;
-  threadExplorerZoomResetButton.title = t("threadExplorerFitThreadButton");
-  threadExplorerZoomResetButton.setAttribute("aria-label", t("threadExplorerFitThreadButton"));
-  threadExplorerViewModeButton.disabled = !threadExplorerTree;
-  threadExplorerOrientationButton.disabled = !hasAuth || isThreadExplorerReplyClusterModeActive();
-  threadExplorerFullscreenButton.disabled = !hasAuth;
-  threadExplorerCollapseButton.disabled = !threadExplorerTree || isThreadExplorerReplyClusterModeActive();
-  threadExplorerExpandButton.disabled = !threadExplorerTree || isThreadExplorerReplyClusterModeActive();
-  if (threadExplorerFullscreenCloseButton) {
-    threadExplorerFullscreenCloseButton.disabled = !threadExplorerFullscreen;
-    threadExplorerFullscreenCloseButton.hidden = threadExplorerFullscreen !== true;
-    threadExplorerFullscreenCloseButton.title = t("threadExplorerExitFullscreenButton");
-    threadExplorerFullscreenCloseButton.setAttribute("aria-label", t("threadExplorerExitFullscreenButton"));
-  }
-  threadExplorerZoomResetButton.textContent = `${Math.round(threadExplorerZoom * 100)}%`;
-  if (isThreadExplorerReplyClusterModeActive()) {
-    threadExplorerViewModeButton.textContent = t("threadExplorerTreeViewButton");
-    threadExplorerViewModeButton.setAttribute("aria-pressed", "true");
-  } else {
-    threadExplorerViewModeButton.textContent = t("threadExplorerReplyClusterButton");
-    threadExplorerViewModeButton.setAttribute("aria-pressed", "false");
-  }
-  let saveButtonLabel = t("threadExplorerSaveButton");
-  let saveButtonActive = false;
-  if (isCurrentThreadExplorerThreadSaved()) {
-    saveButtonLabel = t("threadExplorerSavedButton");
-    saveButtonActive = true;
-  }
-  threadExplorerSaveButton.title = saveButtonLabel;
-  threadExplorerSaveButton.setAttribute("aria-label", saveButtonLabel);
-  threadExplorerSaveButton.classList.toggle("is-active", saveButtonActive);
-  if (threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
-    threadExplorerOrientationButton.textContent = t("threadExplorerVerticalButton");
-    threadExplorerOrientationButton.setAttribute("aria-pressed", "true");
-  } else {
-    threadExplorerOrientationButton.textContent = t("threadExplorerHorizontalButton");
-    threadExplorerOrientationButton.setAttribute("aria-pressed", "false");
-  }
-  if (threadExplorerFullscreen === true) {
-    threadExplorerFullscreenButton.textContent = t("threadExplorerExitFullscreenButton");
-    threadExplorerFullscreenButton.setAttribute("aria-pressed", "true");
-    threadExplorerFullscreenButton.setAttribute("aria-label", t("threadExplorerExitFullscreenButton"));
-  } else {
-    threadExplorerFullscreenButton.textContent = t("threadExplorerFullscreenButton");
-    threadExplorerFullscreenButton.setAttribute("aria-pressed", "false");
-    threadExplorerFullscreenButton.setAttribute("aria-label", t("threadExplorerFullscreenButton"));
-  }
-
-  if (threadExplorerSourceSelect) {
-    if (["mutuals", "follows", "followers"].includes(threadExplorerSource)) {
-      threadExplorerSourceSelect.value = threadExplorerSource;
-    } else {
-      threadExplorerSourceSelect.value = "follows";
-    }
-    threadExplorerSourceSelect.disabled = !hasAuth || threadExplorerLoadingFeed || isForeignAccountMode;
-  }
-  renderThreadExplorerAccountNote();
-  renderThreadExplorerFeedSourceSelect();
+  renderThreadExplorerControls({
+    threadExplorerUrlButton,
+    threadExplorerSearchesButton,
+    archiveSavedSearchesButton,
+    threadExplorerRefreshButton,
+    threadExplorerAccountInput,
+    threadExplorerUseOwnAccountButton,
+    threadExplorerSourceField,
+    threadExplorerAccountField,
+    threadExplorerAccountModeField,
+    threadExplorerAccountModeSelect,
+    threadExplorerFeedPickerField,
+    threadExplorerFeedStatus,
+    threadExplorerFeedList,
+    threadExplorerRootButton,
+    threadExplorerReloadThreadButton,
+    threadExplorerSnapshotPngButton,
+    threadExplorerSaveButton,
+    threadExplorerFavoritesButton,
+    threadExplorerZoomOutButton,
+    threadExplorerZoomResetButton,
+    threadExplorerZoomInButton,
+    threadExplorerViewModeButton,
+    threadExplorerOrientationButton,
+    threadExplorerFullscreenButton,
+    threadExplorerCollapseButton,
+    threadExplorerExpandButton,
+    threadExplorerFullscreenCloseButton,
+    threadExplorerSourceSelect,
+  }, {
+    authenticated: Boolean(authAccount), loadingThread: threadExplorerLoadingThread, loadingFeed: threadExplorerLoadingFeed,
+    foreignAccount: isThreadExplorerForeignAccountMode(), actorFocus: isThreadExplorerForeignActorFocusMode(),
+    clusterMode: isThreadExplorerReplyClusterModeActive(), saved: isCurrentThreadExplorerThreadSaved(),
+    accountActor: normalizeThreadExplorerActor(threadExplorerAccountActor), accountMode: normalizeThreadExplorerAccountMode(threadExplorerAccountMode),
+    horizontal: threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL,
+    hasTree: Boolean(threadExplorerTree), selectedUri: threadExplorerSelectedUri, fullscreen: threadExplorerFullscreen,
+    zoom: threadExplorerZoom, source: threadExplorerSource,
+  }, { translate: t, renderAccountNote: renderThreadExplorerAccountNote, renderFeedSources: renderThreadExplorerFeedSourceSelect });
 }
 
 /**
@@ -7649,40 +5714,7 @@ function renderThreadExplorerWorkspace() {
  * @returns {Promise<void>} Resolves when the dropdown sources are available.
  */
 async function loadThreadExplorerFeedSources() {
-  if (!authAccount || threadExplorerFeedSourcesLoading) {
-    return;
-  }
-  const accountDid = String(authAccountDid || "").trim();
-  if (threadExplorerFeedSourcesLoaded && threadExplorerFeedSourcesAccountDid === accountDid) {
-    return;
-  }
-  if (threadExplorerFeedSourcesAccountDid !== accountDid) {
-    threadExplorerFeedSources = [];
-    threadExplorerFeedSourcesLoaded = false;
-  }
-
-  threadExplorerFeedSourcesLoading = true;
-  renderThreadExplorerFeedSourceSelect();
-  try {
-    const result = await sendToServiceWorker("LOAD_THREAD_EXPLORER_FEED_SOURCES", {}, {
-      timeoutMs: 60000,
-    });
-    if (Array.isArray(result?.feeds)) {
-      threadExplorerFeedSources = result.feeds;
-    } else {
-      threadExplorerFeedSources = [];
-    }
-    threadExplorerFeedSourcesLoaded = true;
-    threadExplorerFeedSourcesAccountDid = accountDid;
-  } catch (error) {
-    console.warn("Thread Explorer feed sources failed.", error);
-    threadExplorerFeedSources = [];
-    threadExplorerFeedSourcesLoaded = true;
-    threadExplorerFeedSourcesAccountDid = accountDid;
-  } finally {
-    threadExplorerFeedSourcesLoading = false;
-    renderThreadExplorerFeedSourceSelect();
-  }
+  await threadExplorerFeedSourcesController.load();
 }
 
 /**
@@ -7700,6 +5732,18 @@ function applyThreadExplorerOrientation() {
 }
 
 /**
+ * Synchronizes page coordinates and the Thread Explorer viewport state controller.
+ * @param {object} viewport - Zoom, panX and panY coordinates.
+ * @returns {void}
+ */
+function setThreadExplorerViewport(viewport) {
+  threadExplorerZoom = viewport.zoom;
+  threadExplorerPanX = viewport.panX;
+  threadExplorerPanY = viewport.panY;
+  threadExplorerController.setViewport(viewport.zoom, viewport.panX, viewport.panY);
+}
+
+/**
  * Applies the current Thread Explorer pan and zoom to the stage element.
  * @returns {void}
  */
@@ -7711,29 +5755,12 @@ function applyThreadExplorerStageTransform() {
 }
 
 /**
- * Applies the current Thread Explorer zoom to the stage element.
- * @returns {void}
- */
-function applyThreadExplorerZoom() {
-  applyThreadExplorerStageTransform();
-}
-
-/**
  * Sets the Thread Explorer zoom level within supported bounds.
  * @param {number} nextZoom - Desired zoom factor.
  * @returns {void}
  */
 function setThreadExplorerZoom(nextZoom) {
-  const numericZoom = Number(nextZoom);
-  if (!Number.isFinite(numericZoom)) {
-    return;
-  }
-  threadExplorerZoom = Math.min(2, Math.max(0.01, numericZoom));
-  threadExplorerController.setViewport(threadExplorerZoom, threadExplorerPanX, threadExplorerPanY);
-  if (Math.abs(threadExplorerZoom - 1) > 0.01) {
-    threadExplorerLastManualZoomBeforeReset = threadExplorerZoom;
-  }
-  applyThreadExplorerZoom();
+  threadExplorerZoomController.setZoom(nextZoom);
 }
 
 /**
@@ -7764,18 +5791,7 @@ function toggleThreadExplorerOrientation() {
  * @returns {void}
  */
 function zoomThreadExplorerAtPoint(factor, clientX, clientY) {
-  const previousZoom = threadExplorerZoom;
-  const bounds = threadExplorerThreadTree.getBoundingClientRect();
-  const localX = clientX - bounds.left;
-  const localY = clientY - bounds.top;
-  const stageX = (localX - threadExplorerPanX) / previousZoom;
-  const stageY = (localY - threadExplorerPanY) / previousZoom;
-  setThreadExplorerZoom(previousZoom * factor);
-  threadExplorerPanX = localX - (stageX * threadExplorerZoom);
-  threadExplorerPanY = localY - (stageY * threadExplorerZoom);
-  threadExplorerController.setViewport(threadExplorerZoom, threadExplorerPanX, threadExplorerPanY);
-  applyThreadExplorerStageTransform();
-  scheduleThreadExplorerEdgeRender();
+  threadExplorerZoomController.atPoint(factor, clientX, clientY);
 }
 
 /**
@@ -7784,11 +5800,7 @@ function zoomThreadExplorerAtPoint(factor, clientX, clientY) {
  * @returns {void}
  */
 function setThreadExplorerZoomAtViewportCenter(nextZoom) {
-  const bounds = threadExplorerThreadTree.getBoundingClientRect();
-  const centerX = bounds.left + (bounds.width / 2);
-  const centerY = bounds.top + (bounds.height / 2);
-  const currentZoom = Math.max(0.01, Number(threadExplorerZoom) || 1);
-  zoomThreadExplorerAtPoint(nextZoom / currentZoom, centerX, centerY);
+  threadExplorerZoomController.atCenter(nextZoom);
 }
 
 /**
@@ -7866,22 +5878,7 @@ function renderThreadExplorerFeed() {
  * @returns {void}
  */
 function stepThreadExplorerGallery(step) {
-  const imageCount = threadExplorerGalleryImages.length;
-  if (imageCount <= 1) {
-    return;
-  }
-
-  const normalizedStep = Number(step) || 0;
-  if (!normalizedStep) {
-    return;
-  }
-
-  threadExplorerGalleryIndex = advanceThreadExplorerGalleryIndex(
-    threadExplorerGalleryIndex,
-    normalizedStep,
-    imageCount,
-  );
-  renderThreadExplorerGalleryImage();
+  threadExplorerGalleryController.step(step);
 }
 
 /**
@@ -8114,46 +6111,22 @@ function renderThreadExplorerTree() {
 }
 
 /**
+ * Returns the browser observer factory when lazy observation is supported.
+ * @returns {Function|null} Factory for IntersectionObserver instances or null.
+ */
+function getThreadExplorerObserverFactory() {
+  if (typeof IntersectionObserver !== "function") {
+    return null;
+  }
+  return (callback, options) => new IntersectionObserver(callback, options);
+}
+
+/**
  * Disconnects the current Thread Explorer lazy-card observer.
  * @returns {void}
  */
 function resetThreadExplorerLazyCardObserver() {
-  if (threadExplorerCardObserver) {
-    threadExplorerCardObserver.disconnect();
-  }
-  threadExplorerCardObserver = null;
-}
-
-/**
- * Returns the lazy-card observer for Thread Explorer post cards.
- * @returns {IntersectionObserver|null} Observer instance or null when unsupported.
- */
-function getThreadExplorerLazyCardObserver() {
-  if (threadExplorerForceHydrateCards) {
-    return null;
-  }
-  if (typeof IntersectionObserver !== "function") {
-    return null;
-  }
-  if (threadExplorerCardObserver) {
-    return threadExplorerCardObserver;
-  }
-
-  threadExplorerCardObserver = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (!entry.isIntersecting) {
-        return;
-      }
-      const card = entry.target;
-      hydrateThreadExplorerCardContent(card);
-      threadExplorerCardObserver.unobserve(card);
-    });
-  }, {
-    root: threadExplorerThreadTree,
-    rootMargin: "900px",
-    threshold: 0,
-  });
-  return threadExplorerCardObserver;
+  threadExplorerLazyHydrationController.reset();
 }
 
 /**
@@ -8250,23 +6223,7 @@ function finalizeThreadExplorerCardHydration(card = null) {
  * @returns {void}
  */
 function prepareThreadExplorerCardHydration(card = null, post = {}) {
-  if (!card || post?.isDeletedThreadAnchor === true) {
-    return;
-  }
-
-  card._threadExplorerPost = post;
-  card.classList.add("is-awaiting-content");
-  if (threadExplorerForceHydrateCards || post.uri === threadExplorerSelectedUri) {
-    hydrateThreadExplorerCardContent(card);
-    return;
-  }
-
-  const observer = getThreadExplorerLazyCardObserver();
-  if (!observer) {
-    hydrateThreadExplorerCardContent(card);
-    return;
-  }
-  observer.observe(card);
+  threadExplorerLazyHydrationController.prepare(card, post);
 }
 
 /**
@@ -8274,11 +6231,7 @@ function prepareThreadExplorerCardHydration(card = null, post = {}) {
  * @returns {void}
  */
 function hydrateVisibleThreadExplorerCards() {
-  if (threadExplorerForceHydrateCards) {
-    threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card").forEach((card) => {
-      hydrateThreadExplorerCardContent(card);
-    });
-  }
+  threadExplorerLazyHydrationController.hydrateVisible();
 }
 
 /**
@@ -8891,12 +6844,7 @@ async function selectThreadExplorerPost(uri) {
  * @returns {void}
  */
 function scheduleThreadExplorerSelectedFocus() {
-  window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-      focusSelectedThreadExplorerNode();
-      window.setTimeout(focusSelectedThreadExplorerNode, 80);
-    });
-  });
+  threadExplorerRenderScheduler.scheduleFocus();
 }
 
 /**
@@ -8922,28 +6870,7 @@ function toggleThreadExplorerNode(uri) {
  * @returns {void}
  */
 function scrollThreadExplorerToRoot() {
-  if (isThreadExplorerReplyClusterModeActive()) {
-    const rootUri = String(threadExplorerTree?.post?.uri || "").trim();
-    if (rootUri) {
-      const rootItem = findRenderedThreadExplorerNode(rootUri);
-      if (rootItem) {
-        scrollThreadExplorerNodeIntoView(rootItem, {
-          block: "center",
-          inline: "center",
-        });
-      }
-    }
-    return;
-  }
-  const firstNode = threadExplorerThreadTree.querySelector(".thread-explorer-node-item");
-  if (!firstNode) {
-    return;
-  }
-
-  scrollThreadExplorerNodeIntoView(firstNode, {
-    block: "center",
-    inline: "center",
-  });
+  threadExplorerFocusController.root();
 }
 
 /**
@@ -8955,29 +6882,7 @@ function scrollThreadExplorerToRoot() {
  * @returns {void}
  */
 function scrollThreadExplorerNodeIntoView(item, options = {}) {
-  if (!item) {
-    return;
-  }
-
-  const viewportRect = threadExplorerThreadTree.getBoundingClientRect();
-  const target = getRenderedThreadExplorerCard(item) || item;
-  const targetRect = target.getBoundingClientRect();
-  const targetWidth = targetRect.width;
-  const targetHeight = targetRect.height;
-  const visibleWidth = threadExplorerThreadTree.clientWidth;
-  const visibleHeight = threadExplorerThreadTree.clientHeight;
-  let desiredLeft = 24;
-  let desiredTop = 24;
-  if (options.inline === "center") {
-    desiredLeft = (visibleWidth - targetWidth) / 2;
-  }
-  if (options.block === "center") {
-    desiredTop = (visibleHeight - targetHeight) / 2;
-  }
-  threadExplorerPanX += desiredLeft - (targetRect.left - viewportRect.left);
-  threadExplorerPanY += desiredTop - (targetRect.top - viewportRect.top);
-  applyThreadExplorerStageTransform();
-  scheduleThreadExplorerEdgeRender();
+  threadExplorerFocusController.reveal(item, options);
 }
 
 /**
@@ -8986,18 +6891,7 @@ function scrollThreadExplorerNodeIntoView(item, options = {}) {
  * @returns {HTMLElement|null} Matching rendered node item, or null.
  */
 function findRenderedThreadExplorerNode(uri) {
-  const normalizedUri = String(uri || "").trim();
-  if (!normalizedUri) {
-    return null;
-  }
-
-  const items = threadExplorerThreadStage.querySelectorAll(".thread-explorer-node-item");
-  for (const item of items) {
-    if (item.dataset.uri === normalizedUri) {
-      return item;
-    }
-  }
-  return null;
+  return threadExplorerFocusController.find(uri);
 }
 
 /**
@@ -9009,24 +6903,11 @@ function getThreadExplorerStageBox(element = null) {
   if (!element) {
     return null;
   }
-
-  const rect = element.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) {
-    return null;
-  }
-
-  const viewportRect = threadExplorerThreadTree.getBoundingClientRect();
-  let zoom = Number(threadExplorerZoom) || 1;
-  if (zoom <= 0) {
-    zoom = 1;
-  }
-
-  return {
-    left: (rect.left - viewportRect.left - threadExplorerPanX) / zoom,
-    top: (rect.top - viewportRect.top - threadExplorerPanY) / zoom,
-    width: rect.width / zoom,
-    height: rect.height / zoom,
-  };
+  return getThreadExplorerStageBoxFromRects(
+    element.getBoundingClientRect(),
+    threadExplorerThreadTree.getBoundingClientRect(),
+    { zoom: threadExplorerZoom, panX: threadExplorerPanX, panY: threadExplorerPanY },
+  );
 }
 
 /**
@@ -9034,68 +6915,11 @@ function getThreadExplorerStageBox(element = null) {
  * @returns {{left:number, top:number, width:number, height:number}|null} Bounding box for the visible tree.
  */
 function getThreadExplorerStageContentBounds() {
-  const cards = Array.from(threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card"));
-  if (!cards.length) {
-    return null;
-  }
-
-  let minLeft = Number.POSITIVE_INFINITY;
-  let minTop = Number.POSITIVE_INFINITY;
-  let maxRight = Number.NEGATIVE_INFINITY;
-  let maxBottom = Number.NEGATIVE_INFINITY;
-
-  cards.forEach((card) => {
-    const box = getThreadExplorerStageBox(card);
-    if (!box) {
-      return;
-    }
-    minLeft = Math.min(minLeft, box.left);
-    minTop = Math.min(minTop, box.top);
-    maxRight = Math.max(maxRight, box.left + box.width);
-    maxBottom = Math.max(maxBottom, box.top + box.height);
-  });
-
-  if (!Number.isFinite(minLeft) || !Number.isFinite(minTop) || !Number.isFinite(maxRight) || !Number.isFinite(maxBottom)) {
-    return null;
-  }
-
-  return {
-    left: minLeft,
-    top: minTop,
-    width: Math.max(1, maxRight - minLeft),
-    height: Math.max(1, maxBottom - minTop),
-  };
-}
-
-/**
- * Merges one stage-space box into an accumulated bounding box.
- * @param {{left:number, top:number, width:number, height:number}|null} accumulatedBounds - Existing bounds.
- * @param {{left:number, top:number, width:number, height:number}|null} nextBounds - Box that should extend the bounds.
- * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null when nothing was available.
- */
-function mergeThreadExplorerStageBounds(accumulatedBounds, nextBounds) {
-  if (!nextBounds) {
-    return accumulatedBounds;
-  }
-  if (!accumulatedBounds) {
-    return {
-      left: nextBounds.left,
-      top: nextBounds.top,
-      width: nextBounds.width,
-      height: nextBounds.height,
-    };
-  }
-
-  const left = Math.min(accumulatedBounds.left, nextBounds.left);
-  const top = Math.min(accumulatedBounds.top, nextBounds.top);
-  const right = Math.max(accumulatedBounds.left + accumulatedBounds.width, nextBounds.left + nextBounds.width);
-  const bottom = Math.max(accumulatedBounds.top + accumulatedBounds.height, nextBounds.top + nextBounds.height);
-  return {
-    left,
-    top,
-    width: Math.max(1, right - left),
-    height: Math.max(1, bottom - top),
-  };
+  const boxes = Array.from(
+    threadExplorerThreadStage.querySelectorAll(".thread-explorer-post-card"),
+    getThreadExplorerStageBox,
+  );
+  return getThreadExplorerContentBounds(boxes);
 }
 
 /**
@@ -9107,32 +6931,14 @@ function mergeThreadExplorerStageBounds(accumulatedBounds, nextBounds) {
  * @returns {void}
  */
 function fitThreadExplorerStageToBounds(bounds, options = {}) {
-  if (!bounds) {
+  const viewport = calculateThreadExplorerViewportFit(bounds,
+    { width: threadExplorerThreadTree.clientWidth, height: threadExplorerThreadTree.clientHeight }, options);
+  if (!viewport) {
     return;
   }
-
-  const viewportWidth = Math.max(1, threadExplorerThreadTree.clientWidth);
-  const viewportHeight = Math.max(1, threadExplorerThreadTree.clientHeight);
-  const paddingX = Math.max(40, viewportWidth * 0.1);
-  const paddingY = Math.max(40, viewportHeight * 0.12);
-  const availableWidth = Math.max(1, viewportWidth - (paddingX * 2));
-  const availableHeight = Math.max(1, viewportHeight - (paddingY * 2));
-  const zoomByWidth = availableWidth / bounds.width;
-  const zoomByHeight = availableHeight / bounds.height;
-  let minimumZoom = Number(options.minZoom);
-  if (!Number.isFinite(minimumZoom)) {
-    minimumZoom = 0.08;
-  }
-  let maximumZoom = Number(options.maxZoom);
-  if (!Number.isFinite(maximumZoom)) {
-    maximumZoom = 1.85;
-  }
-  const fittedZoom = Math.min(zoomByWidth, zoomByHeight);
-  const nextZoom = Math.min(maximumZoom, Math.max(minimumZoom, fittedZoom));
-
-  threadExplorerZoom = nextZoom;
-  threadExplorerPanX = ((viewportWidth - (bounds.width * nextZoom)) / 2) - (bounds.left * nextZoom);
-  threadExplorerPanY = ((viewportHeight - (bounds.height * nextZoom)) / 2) - (bounds.top * nextZoom);
+  threadExplorerZoom = viewport.zoom;
+  threadExplorerPanX = viewport.panX;
+  threadExplorerPanY = viewport.panY;
   threadExplorerController.setViewport(threadExplorerZoom, threadExplorerPanX, threadExplorerPanY);
   applyThreadExplorerStageTransform();
   scheduleThreadExplorerEdgeRender();
@@ -9157,105 +6963,7 @@ function fitThreadExplorerStageToTree() {
  * @returns {void}
  */
 function focusSelectedThreadExplorerNode() {
-  if (isThreadExplorerReplyClusterModeActive()) {
-    const clusterUri = String(threadExplorerSelectedUri || threadExplorerTree?.post?.uri || "").trim();
-    if (!clusterUri) {
-      return;
-    }
-
-    const clusterItem = findRenderedThreadExplorerNode(clusterUri);
-    if (!clusterItem) {
-      return;
-    }
-
-    scrollThreadExplorerNodeIntoView(clusterItem, {
-      block: "center",
-      inline: "center",
-    });
-    return;
-  }
-  const rootUri = String(threadExplorerTree?.post?.uri || "").trim();
-  if (rootUri && rootUri === threadExplorerSelectedUri) {
-    scrollThreadExplorerToRoot();
-    return;
-  }
-
-  const item = findRenderedThreadExplorerNode(threadExplorerSelectedUri);
-  if (!item) {
-    return;
-  }
-  scrollThreadExplorerNodeIntoView(item, {
-    block: "center",
-    inline: "center",
-  });
-}
-
-/**
- * Finds one rendered reply-cluster node inside the current cluster layout state.
- * @param {string} uri - AT URI of the wanted reply-cluster node.
- * @param {object|null} renderNode - Recursive reply-cluster render node.
- * @returns {object|null} Matching reply-cluster render node or null.
- */
-function findThreadExplorerReplyClusterRenderNode(uri, renderNode) {
-  const normalizedUri = String(uri || "").trim();
-  if (!normalizedUri || !renderNode) {
-    return null;
-  }
-
-  if (String(renderNode?.node?.post?.uri || "").trim() === normalizedUri) {
-    return renderNode;
-  }
-
-  const children = Array.isArray(renderNode.children) ? renderNode.children : [];
-  for (const childNode of children) {
-    const matchingNode = findThreadExplorerReplyClusterRenderNode(normalizedUri, childNode);
-    if (matchingNode) {
-      return matchingNode;
-    }
-  }
-  return null;
-}
-
-/**
- * Collects one stage-space bounds box for a rendered card and its direct replies in tree view.
- * @param {HTMLElement|null} item - Rendered Thread Explorer node item.
- * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null.
- */
-function getThreadExplorerTreeCardNeighborhoodBounds(item) {
-  if (!item) {
-    return null;
-  }
-
-  let combinedBounds = null;
-  const ownCard = getRenderedThreadExplorerCard(item) || item;
-  combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, getThreadExplorerStageBox(ownCard));
-
-  const childCards = item.querySelectorAll(":scope > .thread-explorer-children > .thread-explorer-node-item > .thread-explorer-node > .thread-explorer-post-card");
-  childCards.forEach((childCard) => {
-    combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, getThreadExplorerStageBox(childCard));
-  });
-  return combinedBounds;
-}
-
-/**
- * Collects one stage-space bounds box for a rendered card and its direct replies in reply-cluster view.
- * @param {string} uri - AT URI of the clicked post card.
- * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null.
- */
-function getThreadExplorerReplyClusterCardNeighborhoodBounds(uri) {
-  const rootRenderNode = threadExplorerReplyClusterLayoutState?.rootRenderNode || null;
-  const targetNode = findThreadExplorerReplyClusterRenderNode(uri, rootRenderNode);
-  if (!targetNode) {
-    return null;
-  }
-
-  let combinedBounds = null;
-  combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, getThreadExplorerStageBox(getRenderedThreadExplorerCard(targetNode.item) || targetNode.item));
-  const children = Array.isArray(targetNode.children) ? targetNode.children : [];
-  children.forEach((childNode) => {
-    combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, getThreadExplorerStageBox(getRenderedThreadExplorerCard(childNode.item) || childNode.item));
-  });
-  return combinedBounds;
+  threadExplorerFocusController.focus();
 }
 
 /**
@@ -9264,32 +6972,12 @@ function getThreadExplorerReplyClusterCardNeighborhoodBounds(uri) {
  * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null.
  */
 function getThreadExplorerCardNeighborhoodBounds(item) {
-  const uri = String(item?.dataset?.uri || "").trim();
-  if (!uri) {
-    return null;
-  }
-
-  if (isThreadExplorerReplyClusterModeActive()) {
-    return getThreadExplorerReplyClusterCardNeighborhoodBounds(uri);
-  }
-  return getThreadExplorerTreeCardNeighborhoodBounds(item);
-}
-
-/**
- * Restores the viewport that was active before the last Thread Explorer card zoom.
- * @returns {void}
- */
-function restoreThreadExplorerCardZoomState() {
-  if (!threadExplorerCardZoomState) {
-    return;
-  }
-
-  threadExplorerZoom = threadExplorerCardZoomState.zoom;
-  threadExplorerPanX = threadExplorerCardZoomState.panX;
-  threadExplorerPanY = threadExplorerCardZoomState.panY;
-  threadExplorerCardZoomState = null;
-  applyThreadExplorerStageTransform();
-  scheduleThreadExplorerEdgeRender();
+  return getThreadExplorerCardNeighborhoodBoundsFromLayout(item, {
+    clusterMode: isThreadExplorerReplyClusterModeActive(),
+    rootRenderNode: threadExplorerReplyClusterLayoutState?.rootRenderNode || null,
+    getCard: getRenderedThreadExplorerCard,
+    getBox: getThreadExplorerStageBox,
+  });
 }
 
 /**
@@ -9297,31 +6985,7 @@ function restoreThreadExplorerCardZoomState() {
  * @returns {void}
  */
 function cancelPendingThreadExplorerCardClick() {
-  if (threadExplorerPendingCardClickTimer) {
-    window.clearTimeout(threadExplorerPendingCardClickTimer);
-    threadExplorerPendingCardClickTimer = 0;
-  }
-  threadExplorerPendingCardClickUri = "";
-}
-
-/**
- * Schedules the single-click selection for one rendered Thread Explorer post card.
- * @param {HTMLElement|null} item - Rendered Thread Explorer node item.
- * @returns {void}
- */
-function scheduleThreadExplorerCardClickSelection(item) {
-  const uri = String(item?.dataset?.uri || "").trim();
-  if (!uri) {
-    return;
-  }
-
-  cancelPendingThreadExplorerCardClick();
-  threadExplorerPendingCardClickUri = uri;
-  threadExplorerPendingCardClickTimer = window.setTimeout(() => {
-    const pendingUri = threadExplorerPendingCardClickUri;
-    cancelPendingThreadExplorerCardClick();
-    setThreadExplorerSelectedUriLocally(pendingUri);
-  }, 220);
+  threadExplorerCardFocusController.cancel();
 }
 
 /**
@@ -9330,47 +6994,7 @@ function scheduleThreadExplorerCardClickSelection(item) {
  * @returns {void}
  */
 function handleThreadExplorerCardClick(event) {
-  if (isThreadExplorerInteractiveTarget(event.target)) {
-    return;
-  }
-
-  const card = event.currentTarget;
-  const item = card?.closest(".thread-explorer-node-item");
-  scheduleThreadExplorerCardClickSelection(item);
-}
-
-/**
- * Toggles a zoom focus for one rendered Thread Explorer post card.
- * @param {HTMLElement|null} item - Rendered Thread Explorer node item.
- * @returns {void}
- */
-function toggleThreadExplorerCardZoom(item) {
-  const uri = String(item?.dataset?.uri || "").trim();
-  if (!uri) {
-    return;
-  }
-
-  if (threadExplorerCardZoomState && threadExplorerCardZoomState.uri === uri) {
-    restoreThreadExplorerCardZoomState();
-    return;
-  }
-
-  const focusBounds = getThreadExplorerCardNeighborhoodBounds(item);
-  if (!focusBounds) {
-    return;
-  }
-
-  threadExplorerCardZoomState = {
-    uri,
-    zoom: threadExplorerZoom,
-    panX: threadExplorerPanX,
-    panY: threadExplorerPanY,
-  };
-  const minimumFocusZoom = Math.min(2, Math.max(1.35, threadExplorerZoom));
-  fitThreadExplorerStageToBounds(focusBounds, {
-    minZoom: minimumFocusZoom,
-    maxZoom: 2,
-  });
+  threadExplorerCardFocusController.click(event);
 }
 
 /**
@@ -9379,16 +7003,7 @@ function toggleThreadExplorerCardZoom(item) {
  * @returns {void}
  */
 function handleThreadExplorerCardDoubleClick(event) {
-  if (isThreadExplorerNativeInteractiveTarget(event.target)) {
-    return;
-  }
-
-  cancelPendingThreadExplorerCardClick();
-  event.preventDefault();
-  event.stopPropagation();
-  const card = event.currentTarget;
-  const item = card?.closest(".thread-explorer-node-item");
-  toggleThreadExplorerCardZoom(item);
+  threadExplorerCardFocusController.doubleClick(event);
 }
 
 /**
@@ -9397,36 +7012,7 @@ function handleThreadExplorerCardDoubleClick(event) {
  * @returns {void}
  */
 function handleThreadExplorerCardPointerUp(event) {
-  if (event.pointerType !== "touch" || isThreadExplorerNativeInteractiveTarget(event.target)) {
-    return;
-  }
-
-  const card = event.currentTarget;
-  const item = card?.closest(".thread-explorer-node-item");
-  const uri = String(item?.dataset?.uri || "").trim();
-  if (!uri) {
-    return;
-  }
-
-  const now = Date.now();
-  const sameTargetTappedTwice = threadExplorerLastTouchZoomTarget.uri === uri;
-  const tappedQuicklyEnough = now - threadExplorerLastTouchZoomTarget.timestamp <= 320;
-  threadExplorerLastTouchZoomTarget = {
-    uri,
-    timestamp: now,
-  };
-  if (!sameTargetTappedTwice || !tappedQuicklyEnough) {
-    return;
-  }
-
-  cancelPendingThreadExplorerCardClick();
-  event.preventDefault();
-  event.stopPropagation();
-  threadExplorerLastTouchZoomTarget = {
-    uri: "",
-    timestamp: 0,
-  };
-  toggleThreadExplorerCardZoom(item);
+  threadExplorerCardFocusController.pointerUp(event);
 }
 
 /**
@@ -9518,8 +7104,7 @@ function handleThreadExplorerPointerUp(event) {
       }
     },
     setVelocity: (velocityX, velocityY) => {
-      threadExplorerPanVelocityX = velocityX;
-      threadExplorerPanVelocityY = velocityY;
+      threadExplorerPanController.setVelocity(velocityX, velocityY);
     },
     startInertia: startThreadExplorerPanInertia,
     setPanning: setThreadExplorerPanningMode,
@@ -9747,11 +7332,6 @@ function getThreadExplorerSnapshotDrawableMediaImage(image = null, mediaImages =
  * @returns {void}
  */
 function clearThreadExplorerRenderedMediaCache() {
-  threadExplorerMediaCacheGeneration += 1;
-  if (threadExplorerMediaCachePrewarmController) {
-    threadExplorerMediaCachePrewarmController.abort();
-    threadExplorerMediaCachePrewarmController = null;
-  }
   threadExplorerRenderedMediaCache = new Map();
   threadExplorerSnapshotMediaDataUris = new Map();
 }
@@ -10257,27 +7837,6 @@ function getThreadExplorerSnapshotCountsText(card) {
 }
 
 /**
- * Creates the standard error used when a media ZIP export is cancelled.
- * @returns {Error} Cancel error.
- */
-function createMediaExportAbortError() {
-  const error = new Error(t("archiveMediaCancelled"));
-  error.name = "AbortError";
-  return error;
-}
-
-/**
- * Throws when the current media ZIP export was cancelled.
- * @param {AbortSignal|null} signal - Abort signal for the current export.
- * @returns {void}
- */
-function throwIfMediaExportAborted(signal = null) {
-  if (signal?.aborted) {
-    throw createMediaExportAbortError();
-  }
-}
-
-/**
  * Waits until the browser has had time to paint progress updates.
  * @returns {Promise<void>} Resolves after two animation frames.
  */
@@ -10287,71 +7846,6 @@ function waitForThreadExplorerSnapshotFrame() {
       window.requestAnimationFrame(resolve);
     });
   });
-}
-
-/**
- * Updates the modal Snapshot progress UI.
- * @param {{percent?: number, step?: string, detail?: string, title?: string}} progress - Progress state to render.
- * @returns {void}
- */
-function updateThreadExplorerSnapshotProgress(progress = {}) {
-  const percent = clampThreadExplorerSnapshotProgress(progress.percent);
-  if (threadExplorerSnapshotProgressTitle) {
-    if (progress.title) {
-      threadExplorerSnapshotProgressTitle.textContent = progress.title;
-    } else {
-      threadExplorerSnapshotProgressTitle.textContent = t("threadExplorerSnapshotProgressTitle");
-    }
-  }
-  if (threadExplorerSnapshotProgressStep) {
-    threadExplorerSnapshotProgressStep.textContent = progress.step || "";
-  }
-  if (threadExplorerSnapshotProgressDetail) {
-    threadExplorerSnapshotProgressDetail.textContent = progress.detail || `${percent}%`;
-  }
-  if (threadExplorerSnapshotProgressFill) {
-    threadExplorerSnapshotProgressFill.style.width = `${percent}%`;
-  }
-  if (threadExplorerSnapshotProgressBar) {
-    threadExplorerSnapshotProgressBar.setAttribute("aria-valuenow", String(percent));
-    threadExplorerSnapshotProgressBar.setAttribute("aria-label", `${percent}%`);
-  }
-}
-
-/**
- * Shows the blocking Snapshot progress dialog.
- * @param {{percent?: number, step?: string, detail?: string, title?: string}} progress - Initial progress state.
- * @returns {void}
- */
-function openThreadExplorerSnapshotProgress(progress = {}) {
-  updateThreadExplorerSnapshotProgress(progress);
-  if (threadExplorerSnapshotProgressDialog && !threadExplorerSnapshotProgressDialog.open) {
-    threadExplorerSnapshotProgressDialog.showModal();
-  }
-}
-
-/**
- * Hides the blocking Snapshot progress dialog.
- * @returns {void}
- */
-function closeThreadExplorerSnapshotProgress() {
-  if (threadExplorerSnapshotProgressDialog && threadExplorerSnapshotProgressDialog.open) {
-    threadExplorerSnapshotProgressDialog.close();
-  }
-}
-
-/**
- * Creates an awaited progress reporter for long Snapshot export phases.
- * @param {AbortSignal|null} signal - Abort signal for the current export.
- * @returns {(progress: {percent?: number, step?: string, detail?: string, title?: string}) => Promise<void>} Progress reporter.
- */
-function createThreadExplorerSnapshotProgressReporter(signal = null) {
-  return async (progress = {}) => {
-    throwIfThreadExplorerSnapshotAborted(signal);
-    updateThreadExplorerSnapshotProgress(progress);
-    await waitForThreadExplorerSnapshotFrame();
-    throwIfThreadExplorerSnapshotAborted(signal);
-  };
 }
 
 /**
@@ -10562,81 +8056,11 @@ async function renderThreadExplorerSnapshotBlob(mimeType = "image/png", onProgre
   });
 }
 
-/**
- * Downloads the complete Thread Explorer tree as a PNG snapshot.
- * @returns {Promise<void>} Resolves after the browser download was triggered.
- */
-async function downloadThreadExplorerSnapshot() {
-  threadExplorerSnapshotAbortController = new AbortController();
-  const snapshotSignal = threadExplorerSnapshotAbortController.signal;
-  const reportProgress = createThreadExplorerSnapshotProgressReporter(snapshotSignal);
-  try {
-    threadExplorerSnapshotPngButton.disabled = true;
-    if (threadExplorerSnapshotCancelButton) {
-      threadExplorerSnapshotCancelButton.disabled = false;
-    }
-    threadExplorerSnapshotPngButton.textContent = t("threadExplorerSnapshotBusy");
-    openThreadExplorerSnapshotProgress({
-      percent: 0,
-      step: t("threadExplorerSnapshotProgressPreparing"),
-      detail: t("threadExplorerSnapshotProgressPreparingDetail"),
-    });
-    await reportProgress({
-      percent: 1,
-      step: t("threadExplorerSnapshotProgressPreparing"),
-      detail: t("threadExplorerSnapshotProgressPreparingDetail"),
-    });
-    const blob = await renderThreadExplorerSnapshotBlob("image/png", reportProgress, snapshotSignal);
-    const fileName = buildThreadExplorerSnapshotFileNameFromData(
-      threadExplorerTree?.post || {},
-      "png",
-      sanitizeThreadExplorerFileNamePart,
-    );
-    await reportProgress({
-      percent: 97,
-      step: t("threadExplorerSnapshotProgressDownload"),
-      detail: fileName,
-    });
-    downloadThreadExplorerBlob(blob, fileName);
-    await reportProgress({
-      percent: 100,
-      step: t("threadExplorerSnapshotProgressDone"),
-      detail: fileName,
-    });
-    await new Promise((resolve) => window.setTimeout(resolve, 260));
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      threadExplorerThreadStatus.textContent = t("threadExplorerSnapshotCancelled");
-    } else {
-      console.error(error);
-      threadExplorerThreadStatus.textContent = error.message || t("threadExplorerSnapshotFailed");
-    }
-  } finally {
-    if (threadExplorerSnapshotCancelButton) {
-      threadExplorerSnapshotCancelButton.disabled = true;
-    }
-    threadExplorerSnapshotAbortController = null;
-    closeThreadExplorerSnapshotProgress();
-    threadExplorerSnapshotPngButton.textContent = t("threadExplorerSnapshotPngButton");
-    updateThreadExplorerControls();
-  }
-}
+/** Exports the current tree through the snapshot controller. @returns {Promise<void>} Download completion. */
+async function downloadThreadExplorerSnapshot() { return snapshotExportController.download(); }
 
-/**
- * Cancels the currently running Thread Explorer PNG snapshot export.
- * @returns {void}
- */
-function cancelThreadExplorerSnapshotExport() {
-  if (!threadExplorerSnapshotAbortController) {
-    return;
-  }
-  threadExplorerSnapshotAbortController.abort();
-  updateThreadExplorerSnapshotProgress({
-    percent: 100,
-    step: t("threadExplorerSnapshotCancelled"),
-    detail: t("threadExplorerSnapshotCancelledDetail"),
-  });
-}
+/** Cancels the active snapshot export. @returns {void} */
+function cancelThreadExplorerSnapshotExport() { snapshotExportController.cancel(); }
 
 /**
  * Opens the Thread Explorer URL dialog and prepares the input field.
@@ -10906,60 +8330,7 @@ function handleSearchSavedClick() {
  * @returns {Promise<void>} Resolves after settings were persisted.
  */
 async function clearSearchForm() {
-  if (searchUrlInput) {
-    searchUrlInput.value = "";
-  }
-  if (searchQueryInput) {
-    searchQueryInput.value = "";
-  }
-  if (searchActorInput) {
-    searchActorInput.value = "";
-  }
-  if (searchModeSelect) {
-    searchModeSelect.value = "network";
-  }
-  if (searchMediaSelect) {
-    searchMediaSelect.value = "all";
-  }
-  if (searchPostTypeSelect) {
-    searchPostTypeSelect.value = "all";
-  }
-  if (searchSortSelect) {
-    searchSortSelect.value = "latest";
-  }
-  if (searchExcludeTextInput) {
-    searchExcludeTextInput.value = "";
-  }
-  if (searchMentionsInput) {
-    searchMentionsInput.value = "";
-  }
-  if (searchDomainInput) {
-    searchDomainInput.value = "";
-  }
-  if (searchTargetUrlInput) {
-    searchTargetUrlInput.value = "";
-  }
-  if (searchSinceInput) {
-    searchSinceInput.value = "";
-  }
-  if (searchUntilInput) {
-    searchUntilInput.value = "";
-  }
-  searchSelectedLanguages = [];
-  searchSelectedHashtags = [];
-  searchResults = [];
-  searchCursor = "";
-  searchResultPreferences = null;
-  if (searchUrlStatus) {
-    searchUrlStatus.textContent = "";
-  }
-  if (searchStatus) {
-    searchStatus.textContent = t("searchStatusIdle");
-  }
-  renderHashtagCloud();
-  renderSearchResults();
-  renderSearchWorkspace();
-  await persistSettings();
+  return searchForm.clear();
 }
 
 /**
@@ -11005,27 +8376,7 @@ function handleSavedSearchRemoveClick(event) {
  * @returns {void}
  */
 function cancelPendingThreadExplorerZoomResetClick() {
-  if (threadExplorerPendingZoomResetClickTimer) {
-    window.clearTimeout(threadExplorerPendingZoomResetClickTimer);
-    threadExplorerPendingZoomResetClickTimer = 0;
-  }
-}
-
-/**
- * Toggles the Thread Explorer between 100% and the last remembered zoom level.
- * @returns {void}
- */
-function toggleThreadExplorerZoomResetButtonMode() {
-  cancelPendingThreadExplorerZoomResetClick();
-  const currentZoom = Math.max(0.01, Number(threadExplorerZoom) || 1);
-  if (Math.abs(currentZoom - 1) <= 0.01) {
-    const restoreZoom = Math.max(0.08, Number(threadExplorerLastManualZoomBeforeReset) || 1);
-    setThreadExplorerZoomAtViewportCenter(restoreZoom);
-    return;
-  }
-
-  threadExplorerLastManualZoomBeforeReset = currentZoom;
-  setThreadExplorerZoomAtViewportCenter(1);
+  threadExplorerZoomResetController.cancel();
 }
 
 /**
@@ -11046,15 +8397,7 @@ function handleThreadExplorerZoomOutClick() {
  * @returns {void}
  */
 function handleThreadExplorerZoomResetClick(event) {
-  if (event?.detail > 1) {
-    return;
-  }
-
-  cancelPendingThreadExplorerZoomResetClick();
-  threadExplorerPendingZoomResetClickTimer = window.setTimeout(() => {
-    cancelPendingThreadExplorerZoomResetClick();
-    fitThreadExplorerStageToTree();
-  }, 220);
+  threadExplorerZoomResetController.click(event);
 }
 
 /**
@@ -11063,9 +8406,7 @@ function handleThreadExplorerZoomResetClick(event) {
  * @returns {void}
  */
 function handleThreadExplorerZoomResetDoubleClick(event) {
-  event.preventDefault();
-  event.stopPropagation();
-  toggleThreadExplorerZoomResetButtonMode();
+  threadExplorerZoomResetController.doubleClick(event);
 }
 
 /**
@@ -11187,11 +8528,6 @@ function handleThreadExplorerFavoriteRemoveClick(event) {
   void removeThreadExplorerFavorite(uri);
 }
 
-
-
-
-
-
 /** Updates analysis status. @param {string} message - Status text. @returns {void} */
 function setAnalysisStatus(message = "") {
   analysisController.status(message);
@@ -11207,35 +8543,6 @@ function formatAnalysisPercent(value) {
   return analysisController.percent(value);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /** Captures JSON-safe analysis state through the controller. @returns {object} Snapshot. */
 function getPersistableAnalysisState() {
   return analysisController.snapshot();
@@ -11245,38 +8552,6 @@ function getPersistableAnalysisState() {
 /** Restores saved analysis state. @param {object|null} state - Snapshot. @returns {void} */
 function restorePersistedAnalysisState(state = null) {
   analysisController.restore(state);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function encodePdfHexString(value) {
-  const text = String(value || "");
-  let hex = "FEFF";
-  for (let index = 0; index < text.length; index += 1) {
-    hex += text.charCodeAt(index).toString(16).padStart(4, "0").toUpperCase();
-  }
-  return `<${hex}>`;
 }
 
 /**
@@ -11296,80 +8571,6 @@ function getExportMetadataApplicationLabel() {
   return parts.join(" ");
 }
 
-/**
- * Formats a JavaScript date as a PDF metadata date.
- * @param {Date} date - Date to format.
- * @returns {string} PDF date string.
- */
-function formatPdfMetadataDate(date = new Date()) {
-  let safeDate = new Date();
-  if (date instanceof Date) {
-    safeDate = date;
-  }
-  const year = String(safeDate.getFullYear()).padStart(4, "0");
-  const month = String(safeDate.getMonth() + 1).padStart(2, "0");
-  const day = String(safeDate.getDate()).padStart(2, "0");
-  const hours = String(safeDate.getHours()).padStart(2, "0");
-  const minutes = String(safeDate.getMinutes()).padStart(2, "0");
-  const seconds = String(safeDate.getSeconds()).padStart(2, "0");
-  const offsetMinutes = -safeDate.getTimezoneOffset();
-  let sign = "+";
-  if (offsetMinutes < 0) {
-    sign = "-";
-  }
-  const absoluteOffset = Math.abs(offsetMinutes);
-  const offsetHours = String(Math.floor(absoluteOffset / 60)).padStart(2, "0");
-  const offsetRemainder = String(absoluteOffset % 60).padStart(2, "0");
-  return `D:${year}${month}${day}${hours}${minutes}${seconds}${sign}${offsetHours}'${offsetRemainder}'`;
-}
-
-/**
- * Builds a PDF Info dictionary for Threadline exports.
- * @param {string} title - Optional document title.
- * @returns {string} PDF Info dictionary object source.
- */
-function buildPdfMetadataInfoDictionary(title = "") {
-  const applicationLabel = getExportMetadataApplicationLabel();
-  const createdAt = formatPdfMetadataDate(new Date());
-  const entries = [
-    `/Author ${encodePdfHexString(applicationLabel)}`,
-    `/Creator ${encodePdfHexString(applicationLabel)}`,
-    `/Producer ${encodePdfHexString(applicationLabel)}`,
-    `/CreationDate (${escapePdfText(createdAt)})`,
-    `/ModDate (${escapePdfText(createdAt)})`,
-  ];
-  const normalizedTitle = String(title || "").trim();
-  if (normalizedTitle) {
-    entries.unshift(`/Title ${encodePdfHexString(normalizedTitle)}`);
-  }
-  return `<< ${entries.join(" ")} >>`;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/** Exports the current comparison through the analysis PDF renderer. @returns {Promise<void>} Completion. */
 async function exportAnalysisPdfReport() {
   return analysisPdfRenderer.export();
 }
@@ -11419,11 +8620,6 @@ function setNetworkAccountFieldNote(message = "") {
 function setDmContactSearchFieldNote(message = "") {
   setAccountFieldNote(dmContactSearchNote, message);
 }
-
-
-
-
-
 
 /** Updates network filter visibility and active state. @returns {void} */
 function updateNetworkFilterButtons() {
@@ -11548,732 +8744,42 @@ async function exportDmArchiveJson(catalog = dmCatalog) {
   return dmArchiveExportController.exportJson(catalog);
 }
 
+/** Resolves the selected DM partner. @param {object|null} catalog - DM catalog. @returns {object|null} Partner metadata. */
 function getDmPrimaryPartner(catalog = dmCatalog) {
-  const selectedDid = catalog?.manifest?.filters?.participantDid || dmSelectedParticipantDids[0] || "";
-  const selfDid = catalog?.manifest?.account?.did || "";
-  const conversations = Array.isArray(catalog?.conversations) ? catalog.conversations : [];
-  const recentContacts = Array.isArray(catalog?.recentContacts) ? catalog.recentContacts : [];
-  const conversationMember = conversations
-    .flatMap((convo) => Array.isArray(convo.members) ? convo.members : [])
-    .find((member) => member.did === selectedDid && member.did !== selfDid);
-  const recentContact = recentContacts.find((contact) => contact.did === selectedDid);
-  if (conversationMember || recentContact) {
-    return {
-      ...(recentContact || {}),
-      ...(conversationMember || {}),
-      did: conversationMember?.did || recentContact?.did || selectedDid,
-      handle: conversationMember?.handle || recentContact?.handle || "",
-      displayName: conversationMember?.displayName || recentContact?.displayName || conversationMember?.handle || recentContact?.handle || "",
-      avatar: conversationMember?.avatar || recentContact?.avatar || "",
-      avatarPath: conversationMember?.avatarPath || recentContact?.avatarPath || "",
-    };
-  }
-  return conversations[0]?.members?.find((member) => member?.did && member.did !== selfDid) || null;
+  return dmExportModels.partner(catalog);
 }
 
+/** Resolves a conversation title. @param {object} convo - Conversation. @param {object|null} catalog - DM catalog. @returns {string} Title. */
 function getDmConversationTitle(convo, catalog = dmCatalog) {
-  if (convo?.title) {
-    return convo.title;
-  }
-  const partner = getDmPrimaryPartner(catalog);
-  if (partner?.displayName && partner.displayName !== partner.handle) {
-    return partner.displayName;
-  }
-  if (partner?.handle) {
-    return `@${partner.handle}`;
-  }
-  return convo?.memberHandles?.join(", ") || t("dmConversationFallbackTitle");
+  return dmExportModels.title(convo, catalog);
 }
 
+/** Builds the DM export filename prefix. @param {object|null} catalog - DM catalog. @returns {string} Sanitized filename prefix. */
 function makeDmArchiveFileBaseName(catalog = dmCatalog) {
-  const ownHandle = String(catalog?.manifest?.account?.handle || authAccount || "account").replace(/[^\w.-]+/g, "-");
-  const partner = getDmPrimaryPartner(catalog);
-  const partnerPart = String(partner?.handle || partner?.did || "dm").replace(/[^\w.-]+/g, "-");
-  const datePart = formatArchiveDatePart(catalog?.manifest?.exportedAt);
-  return `threadline-dm-${ownHandle}-${partnerPart}-${datePart}`;
+  return dmExportModels.baseName(catalog);
 }
 
+/** Prepares ordered DM export messages. @param {object|null} catalog - DM catalog. @returns {object[]} Enriched message copies. */
 function collectDmMessagesForExport(catalog = dmCatalog) {
-  const conversations = Array.isArray(catalog?.conversations) ? catalog.conversations : [];
-  const convoById = new Map(conversations.map((convo) => [convo.id, convo]));
-  const memberByDid = new Map();
-  const selfDid = catalog?.manifest?.account?.did || "";
-  const selfHandle = catalog?.manifest?.account?.handle || authAccount || "";
-  const selfDisplayName = catalog?.manifest?.account?.displayName || selfHandle || "";
-  const selfAvatarPath = catalog?.manifest?.account?.avatarPath || "";
-  conversations.forEach((convo) => {
-    (convo.members || []).forEach((member) => {
-      if (member?.did && !memberByDid.has(member.did)) {
-        memberByDid.set(member.did, member);
-      }
-    });
-  });
-  return (Array.isArray(catalog?.messages) ? [...catalog.messages] : [])
-    .sort((left, right) => {
-      const leftTime = Date.parse(left.sentAt || 0) || 0;
-      const rightTime = Date.parse(right.sentAt || 0) || 0;
-      if (leftTime !== rightTime) {
-        return leftTime - rightTime;
-      }
-      return String(left.id || "").localeCompare(String(right.id || ""));
-    })
-    .map((message) => ({
-      ...message,
-      senderHandle: message.senderDid === selfDid
-        ? (message.senderHandle || selfHandle || "")
-        : (memberByDid.get(message.senderDid)?.handle || message.senderHandle || ""),
-      senderDisplayName: message.senderDid === selfDid
-        ? (message.senderDisplayName || selfDisplayName || selfHandle || message.senderDid || "")
-        : (memberByDid.get(message.senderDid)?.displayName || memberByDid.get(message.senderDid)?.handle || message.senderDisplayName || message.senderHandle || message.senderDid || ""),
-      senderAvatarPath: message.senderDid === selfDid
-        ? (message.senderAvatarPath || selfAvatarPath || "")
-        : (memberByDid.get(message.senderDid)?.avatarPath || message.senderAvatarPath || ""),
-      conversation: convoById.get(message.convoId) || null,
-    }));
+  return dmExportModels.messages(catalog);
 }
-
-function getDmArchiveMessageRange(catalog = dmCatalog) {
-  const messages = collectDmMessagesForExport(catalog);
-  const datedMessages = messages
-    .map((message) => ({
-      message,
-      timestamp: Date.parse(message.sentAt || ""),
-    }))
-    .filter((entry) => Number.isFinite(entry.timestamp))
-    .sort((left, right) => left.timestamp - right.timestamp);
-
-  if (datedMessages.length === 0) {
-    return {
-      from: catalog?.manifest?.filters?.from || "",
-      to: catalog?.manifest?.filters?.to || "",
-    };
-  }
-
-  return {
-    from: datedMessages[0].message.sentAt || "",
-    to: datedMessages[datedMessages.length - 1].message.sentAt || "",
-  };
-}
-
-function extractDmExternalCardFromEmbed(embed) {
-  return extractExternalCardFromEmbed(embed);
-}
-
-function getDmFacetLinkCard(message = {}) {
-  const linkRuns = extractPdfLinkRuns(
-    message?.text || "",
-    Array.isArray(message?.facets) ? message.facets : [],
-  ).filter((run) => run?.url);
-  if (linkRuns.length === 0) {
-    return null;
-  }
-  const firstUrl = String(linkRuns[0].url || "").trim();
-  if (!firstUrl) {
-    return null;
-  }
-  return {
-    url: firstUrl,
-    title: firstUrl,
-    description: "",
-    thumb: "",
-    thumbPath: "",
-  };
-}
-
-function getDmExternalCard(message = {}) {
-  if (message?.externalCard?.url) {
-    return message.externalCard;
-  }
-  const embeds = Array.isArray(message.embeds) ? message.embeds : [];
-  for (const embed of embeds) {
-    const card = extractDmExternalCardFromEmbed(embed);
-    if (card) {
-      return card;
-    }
-  }
-  return getDmFacetLinkCard(message);
-}
-
-function buildDmHtmlI18n() {
-  const keys = [
-    "dmHeaderEyebrow",
-    "dmHeaderTitle",
-    "dmHtmlGenerated",
-    "dmSummaryConversationsLabel",
-    "dmSummaryMessagesLabel",
-    "dmSummaryParticipantsLabel",
-    "dmConversationLabel",
-    "dmPartnerLabel",
-    "dmArchiveRangeLabel",
-    "dmArchiveRangeValue",
-    "dmHtmlSearchLabel",
-    "dmHtmlResetFilters",
-    "dmHtmlVisibleStatus",
-    "dmHtmlNoMatches",
-    "dmHtmlOpenConversation",
-    "dmHtmlNoText",
-    "closeButton",
-  ];
-
-  return Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [
-    locale,
-    Object.fromEntries(keys.map((key) => [key, translations[locale]?.[key] || translations[DEFAULT_LOCALE]?.[key] || key])),
-  ]));
-}
-
-function buildDmHtmlDocument(catalog = dmCatalog) {
-  const partner = getDmPrimaryPartner(catalog);
-  const messages = collectDmMessagesForExport(catalog);
-  const assetUris = new Map((catalog?.assets || []).map((asset) => [asset.path, assetToDataUri(asset)]));
-  const partnerAvatarUri = partner?.avatarPath ? (assetUris.get(partner.avatarPath) || "") : "";
-  const exportedAt = catalog?.manifest?.exportedAt || new Date().toISOString();
-  const ownHandle = catalog?.manifest?.account?.handle || authAccount || "";
-  const title = `${t("dmHeaderTitle")} · ${partner?.displayName || `@${partner?.handle || ""}`}`.trim();
-  const archiveRange = getDmArchiveMessageRange(catalog);
-  const rangeFrom = archiveRange.from || "";
-  const rangeTo = archiveRange.to || "";
-  const i18nPayload = JSON.stringify(buildDmHtmlI18n());
-  const localePayload = JSON.stringify(currentLocale);
-  const messagesMarkup = messages.map((message) => {
-    const senderName = message.senderDisplayName || message.senderHandle || message.senderDid || ownHandle;
-    const senderHandle = message.senderHandle ? `@${message.senderHandle}` : "";
-    const senderAvatarUri = message.senderAvatarPath ? (assetUris.get(message.senderAvatarPath) || "") : "";
-    const externalCard = getDmExternalCard(message);
-    const externalThumbUri = (externalCard?.thumbPath ? (assetUris.get(externalCard.thumbPath) || "") : "") || String(externalCard?.thumb || "").trim();
-    const searchValue = [
-      senderName,
-      senderHandle,
-      message.text || "",
-      extractPdfLinkRuns(message.text || "", message.facets || []).map((run) => run.url || "").filter(Boolean).join(" "),
-      externalCard?.title || "",
-      externalCard?.description || "",
-      externalCard?.url || "",
-    ].join(" ").replace(/\s+/g, " ").trim().toLowerCase();
-    return `
-      <article class="dm-html-message ${message.senderDid === catalog?.manifest?.account?.did ? "is-own" : "is-other"}" data-dm-message data-search="${escapeHtmlAttribute(searchValue)}">
-        <div class="dm-html-message-head">
-          <div class="dm-html-message-author">
-            ${senderAvatarUri ? `<img class="dm-html-message-avatar" src="${escapeHtmlAttribute(senderAvatarUri)}" alt="${escapeHtmlAttribute(senderName)}" loading="lazy">` : ""}
-            <div>
-              <strong data-dm-searchable="true">${escapeHtml(senderName)}</strong>
-              ${senderHandle ? `<span class="dm-html-handle" data-dm-searchable="true">${escapeHtml(senderHandle)}</span>` : ""}
-            </div>
-          </div>
-          <time datetime="${escapeHtmlAttribute(message.sentAt || "")}">${escapeHtml(formatCompactArchiveTimestamp(message.sentAt))}</time>
-        </div>
-        ${message.text ? `<div class="dm-html-text" data-dm-richtext="true">${renderArchiveHtmlRichText(message.text, message.facets || [])}</div>` : ""}
-        ${!message.text && !externalCard ? `<span class="archive-html-empty">${escapeHtml(t("dmHtmlNoText"))}</span>` : ""}
-        ${externalCard ? `
-          <a class="dm-html-link-card" href="${escapeHtmlAttribute(externalCard.url)}" target="_blank" rel="noreferrer noopener">
-            ${externalThumbUri ? `<img class="dm-html-link-card-thumb" src="${escapeHtmlAttribute(externalThumbUri)}" alt="">` : ""}
-            <span class="dm-html-link-card-copy">
-              <strong>${escapeHtml(externalCard.title || externalCard.url)}</strong>
-              ${externalCard.description ? `<span>${escapeHtml(externalCard.description)}</span>` : ""}
-              <small>${escapeHtml(shortenArchiveUrlForDisplay(externalCard.url))}</small>
-            </span>
-          </a>
-        ` : ""}
-      </article>
-    `;
-  }).join("");
-
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(title)}</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: #eff5ff;
-        --panel: rgba(255, 255, 255, 0.92);
-        --line: rgba(88, 118, 160, 0.16);
-        --text: #10233e;
-        --muted: #627895;
-        --accent: #2d72f6;
-        --accent-soft: rgba(45, 114, 246, 0.12);
-        --own: #dce9ff;
-        --other: #ffffff;
-        --shadow: 0 24px 44px rgba(24, 41, 75, 0.12);
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; }
-      body {
-        font-family: "Segoe UI", Aptos, Arial, sans-serif;
-        background:
-          radial-gradient(circle at top left, rgba(45, 114, 246, 0.12), transparent 24%),
-          linear-gradient(180deg, #eff6ff 0%, #edf3fb 100%);
-        color: var(--text);
-      }
-      a { color: var(--accent); }
-      mark {
-        background: #ffec99;
-        color: #10233e;
-        border-radius: 0.22em;
-        padding: 0 0.12em;
-      }
-      .dm-html-shell {
-        width: min(1100px, calc(100vw - 32px));
-        margin: 0 auto;
-        padding: 28px 0 56px;
-      }
-      .dm-html-hero,
-      .dm-html-toolbar,
-      .dm-html-message {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        box-shadow: var(--shadow);
-      }
-      .dm-html-hero,
-      .dm-html-toolbar {
-        border-radius: 24px;
-        padding: 24px;
-        margin-bottom: 18px;
-      }
-      .dm-html-kicker {
-        margin: 0 0 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        font-size: 0.74rem;
-        color: var(--muted);
-      }
-      .dm-html-hero h1 {
-        margin: 0;
-        font-size: clamp(2rem, 4vw, 3rem);
-      }
-      .dm-html-hero p {
-        margin: 10px 0 0;
-        color: var(--muted);
-        line-height: 1.6;
-      }
-      .dm-html-partner {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        margin-top: 10px;
-      }
-      .dm-html-avatar {
-        width: 56px;
-        height: 56px;
-        border-radius: 50%;
-        object-fit: cover;
-        background: #dfe8f7;
-        border: 1px solid rgba(102, 133, 178, 0.22);
-        flex: 0 0 56px;
-      }
-      .dm-html-meta {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 12px;
-        margin-top: 18px;
-      }
-      .dm-html-meta strong {
-        display: block;
-        font-size: 1.3rem;
-      }
-      .dm-html-toolbar-row {
-        display: grid;
-        grid-template-columns: minmax(220px, 1fr) auto;
-        gap: 12px;
-        align-items: end;
-      }
-      .dm-html-field label,
-      .dm-html-status {
-        display: block;
-        font-size: 0.82rem;
-        color: var(--muted);
-        margin-bottom: 6px;
-      }
-      .dm-html-field input {
-        width: 100%;
-        min-height: 46px;
-        border-radius: 14px;
-        border: 1px solid var(--line);
-        padding: 0 14px;
-        font: inherit;
-      }
-      .dm-html-toolbar button {
-        min-height: 46px;
-        border: 0;
-        border-radius: 14px;
-        padding: 0 16px;
-        background: var(--accent-soft);
-        color: var(--accent);
-        font: inherit;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      .dm-html-status {
-        margin-top: 12px;
-      }
-      .dm-html-feed {
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-      }
-      .dm-html-message {
-        border-radius: 22px;
-        padding: 18px 20px;
-      }
-      .dm-html-message.is-own {
-        margin-left: auto;
-        width: min(78%, 760px);
-        background: linear-gradient(180deg, #edf4ff 0%, var(--own) 100%);
-      }
-      .dm-html-message.is-other {
-        margin-right: auto;
-        width: min(78%, 760px);
-        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-      }
-      .dm-html-message-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: baseline;
-      }
-      .dm-html-message-author {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-      .dm-html-message-avatar {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
-        object-fit: cover;
-        background: #dfe8f7;
-        border: 1px solid rgba(102, 133, 178, 0.22);
-        flex: 0 0 34px;
-      }
-      .dm-html-message-head strong {
-        font-size: 1rem;
-      }
-      .dm-html-handle,
-      .dm-html-message time {
-        color: var(--muted);
-        font-size: 0.9rem;
-      }
-      .dm-html-text {
-        margin-top: 12px;
-        line-height: 1.65;
-        white-space: normal;
-        overflow-wrap: anywhere;
-      }
-      .dm-html-link-card {
-        margin-top: 14px;
-        display: grid;
-        grid-template-columns: minmax(0, 112px) minmax(0, 1fr);
-        gap: 14px;
-        padding: 12px;
-        border-radius: 18px;
-        border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.72);
-        color: inherit;
-        text-decoration: none;
-      }
-      .dm-html-link-card-thumb {
-        width: 112px;
-        height: 84px;
-        object-fit: cover;
-        border-radius: 12px;
-        background: rgba(16, 35, 62, 0.08);
-      }
-      .dm-html-link-card-copy {
-        min-width: 0;
-        display: grid;
-        gap: 6px;
-      }
-      .dm-html-link-card-copy strong,
-      .dm-html-link-card-copy span,
-      .dm-html-link-card-copy small {
-        overflow-wrap: anywhere;
-      }
-      .dm-html-link-card-copy span,
-      .dm-html-link-card-copy small {
-        color: var(--muted);
-      }
-      [hidden] { display: none !important; }
-      @media (max-width: 780px) {
-        .dm-html-toolbar-row {
-          grid-template-columns: 1fr;
-        }
-        .dm-html-message.is-own,
-        .dm-html-message.is-other {
-          width: 100%;
-        }
-        .dm-html-link-card {
-          grid-template-columns: 1fr;
-        }
-        .dm-html-link-card-thumb {
-          width: 100%;
-          height: auto;
-          aspect-ratio: 4 / 3;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="dm-html-shell">
-      <section class="dm-html-hero">
-        <p class="dm-html-kicker">${escapeHtml(t("dmHeaderEyebrow"))}</p>
-        <h1>${escapeHtml(title)}</h1>
-        <p>${escapeHtml(t("dmHtmlGenerated", { date: formatCompactArchiveTimestamp(exportedAt) }))}</p>
-        <div class="dm-html-partner">
-          ${partnerAvatarUri ? `<img class="dm-html-avatar" src="${escapeHtmlAttribute(partnerAvatarUri)}" alt="${escapeHtmlAttribute(partner?.displayName || partner?.handle || "")}" loading="lazy">` : ""}
-          <p>${escapeHtml(t("dmPartnerLabel"))}: ${escapeHtml(partner?.displayName || "")}${partner?.handle ? ` · @${escapeHtml(partner.handle)}` : ""}</p>
-        </div>
-        <p>${escapeHtml(t("dmArchiveRangeValue", {
-          from: rangeFrom ? formatCompactArchiveTimestamp(rangeFrom) : "…",
-          to: rangeTo ? formatCompactArchiveTimestamp(rangeTo) : "…",
-        }))}</p>
-        <div class="dm-html-meta">
-          <div><span>${escapeHtml(t("dmSummaryConversationsLabel"))}</span><strong>${Number(catalog?.manifest?.conversationCount) || 0}</strong></div>
-          <div><span>${escapeHtml(t("dmSummaryMessagesLabel"))}</span><strong>${Number(catalog?.manifest?.messageCount) || 0}</strong></div>
-          <div><span>${escapeHtml(t("dmSummaryParticipantsLabel"))}</span><strong>${Number(catalog?.manifest?.participantCount) || 0}</strong></div>
-        </div>
-      </section>
-      <section class="dm-html-toolbar">
-        <div class="dm-html-toolbar-row">
-          <div class="dm-html-field">
-            <label for="dm-search">${escapeHtml(t("dmHtmlSearchLabel"))}</label>
-            <input id="dm-search" type="search" placeholder="${escapeHtmlAttribute(t("dmHtmlSearchLabel"))}">
-          </div>
-          <button type="button" id="dm-reset">${escapeHtml(t("dmHtmlResetFilters"))}</button>
-        </div>
-        <p class="dm-html-status" id="dm-status">${escapeHtml(t("dmHtmlVisibleStatus", { visible: messages.length, total: messages.length }))}</p>
-      </section>
-      <section class="dm-html-feed" id="dm-feed">
-        ${messagesMarkup}
-      </section>
-    </main>
-    <script>
-      const currentLocale = ${localePayload};
-      const htmlI18n = ${i18nPayload};
-      const supported = Object.keys(htmlI18n || {});
-      const browserLocale = (navigator.languages && navigator.languages.find((entry) => supported.includes(String(entry).slice(0, 2))))
-        || (navigator.language && supported.includes(String(navigator.language).slice(0, 2)) ? String(navigator.language).slice(0, 2) : "")
-        || currentLocale
-        || "en";
-      const strings = htmlI18n[browserLocale] || htmlI18n.en || {};
-      const searchInput = document.getElementById("dm-search");
-      const resetButton = document.getElementById("dm-reset");
-      const statusNode = document.getElementById("dm-status");
-      const messages = Array.from(document.querySelectorAll("[data-dm-message]"));
-
-      function t(key, vars = {}) {
-        let value = strings[key] || key;
-        Object.entries(vars).forEach(([name, replacement]) => {
-          value = value.replace(new RegExp("\\\\{" + name + "\\\\}", "g"), String(replacement));
-        });
-        return value;
-      }
-
-      function escapeRegExp(value) {
-        return String(value).replace(/[.*+?^{}$()|[\]\\]/g, "\\$&");
-      }
-
-      function clearHighlights(node) {
-        node.querySelectorAll("mark[data-dm-highlight]").forEach((mark) => {
-          const parent = mark.parentNode;
-          if (!parent) {
-            return;
-          }
-          parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
-          parent.normalize();
-        });
-      }
-
-      function highlightNode(node, query) {
-        clearHighlights(node);
-        if (!query) {
-          return;
-        }
-        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
-        const matches = [];
-        const regex = new RegExp(escapeRegExp(query), "ig");
-        while (walker.nextNode()) {
-          const textNode = walker.currentNode;
-          if (!textNode.nodeValue || !textNode.nodeValue.trim()) {
-            continue;
-          }
-          let match;
-          while ((match = regex.exec(textNode.nodeValue))) {
-            matches.push({ node: textNode, start: match.index, end: match.index + match[0].length });
-          }
-        }
-        matches.reverse().forEach((entry) => {
-          const range = document.createRange();
-          range.setStart(entry.node, entry.start);
-          range.setEnd(entry.node, entry.end);
-          const mark = document.createElement("mark");
-          mark.setAttribute("data-dm-highlight", "true");
-          range.surroundContents(mark);
-        });
-      }
-
-      function updateFilter() {
-        const query = String(searchInput.value || "").trim().toLowerCase();
-        let visible = 0;
-        messages.forEach((message) => {
-          const haystack = String(message.dataset.search || "");
-          const matches = !query || haystack.includes(query);
-          message.hidden = !matches;
-          if (matches) {
-            visible += 1;
-          }
-          message.querySelectorAll("[data-dm-searchable], [data-dm-richtext]").forEach((node) => highlightNode(node, query));
-        });
-        statusNode.textContent = visible
-          ? t("dmHtmlVisibleStatus", { visible, total: messages.length })
-          : t("dmHtmlNoMatches");
-      }
-
-      searchInput.addEventListener("input", updateFilter);
-      resetButton.addEventListener("click", () => {
-        searchInput.value = "";
-        updateFilter();
-      });
-      updateFilter();
-    </script>
-  </body>
-</html>`;
+/** Builds a standalone DM HTML document from templates. @param {object} catalog - DM catalog. @returns {Promise<string>} Self-contained HTML. */
+async function buildDmHtmlDocument(catalog = dmCatalog) {
+  return dmHtmlRenderer.build(catalog);
 }
 
 async function exportDmHtmlFromCatalog(catalog = dmCatalog) {
   return dmArchiveExportController.exportHtml(catalog);
 }
 
-function estimateDmPdfMessageHeight(context, message, maxWidth, scale) {
-  context.font = `${13 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const lineHeight = 18 * scale;
-  const avatarOffset = message.senderAvatarPath ? (38 * scale) : 0;
-  const textLines = buildWrappedPdfLines(context, message.text || "", maxWidth - (36 * scale) - avatarOffset, message.facets || []);
-  const textHeight = Math.max(lineHeight, textLines.length * lineHeight);
-  return (72 * scale) + textHeight;
-}
-
+/** Paginates normalized DM messages. @param {object[]} messages - Ordered messages. @param {object} catalog - DM catalog. @returns {object[][]} Positioned pages. */
 function paginateDmPdfMessages(messages, catalog) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1190;
-  canvas.height = 1684;
-  const context = canvas.getContext("2d");
-  const scale = canvas.width / 595;
-  const top = 112 * scale;
-  const bottom = 88 * scale;
-  const left = 54 * scale;
-  const right = 54 * scale;
-  const maxBubbleWidth = (canvas.width - left - right) * 0.76;
-  const pages = [];
-  let currentPage = [];
-  let currentHeight = top;
-  const selfDid = catalog?.manifest?.account?.did || "";
-
-  messages.forEach((message, index) => {
-    const isOwn = message.senderDid && message.senderDid === selfDid;
-    const width = Math.max(320 * scale, maxBubbleWidth);
-    const height = estimateDmPdfMessageHeight(context, message, width, scale);
-    if (currentPage.length > 0 && currentHeight + height > canvas.height - bottom) {
-      pages.push(currentPage);
-      currentPage = [];
-      currentHeight = top;
-    }
-    currentPage.push({
-      message,
-      isOwn,
-      x: isOwn ? (canvas.width - right - width) : left,
-      y: currentHeight,
-      width,
-      height,
-    });
-    currentHeight += height + (14 * scale);
-    if (index === messages.length - 1 && currentPage.length > 0) {
-      pages.push(currentPage);
-    }
-  });
-
-  return pages.length > 0 ? pages : [[]];
+  return dmPdfRenderer.paginate(messages, catalog);
 }
 
+/** Renders one DM PDF page. @param {object} catalog - DM catalog. @param {Map} assetMap - Assets by path. @param {object[]} entries - Positioned messages. @param {number} pageIndex - Page index. @param {number} pageCount - Page count. @returns {Promise<object>} JPEG page and links. */
 async function renderDmPdfCanvasPage(catalog, assetMap, entries, pageIndex, pageCount) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1190;
-  canvas.height = 1684;
-  const context = canvas.getContext("2d");
-  const scale = canvas.width / 595;
-  const annotations = [];
-  const partner = getDmPrimaryPartner(catalog);
-  const handle = catalog?.manifest?.account?.handle || "";
-  const partnerAvatarAsset = partner?.avatarPath ? assetMap.get(partner.avatarPath) : null;
-
-  context.fillStyle = "#f3f7ff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  context.fillStyle = "#10233e";
-  context.font = `700 ${24 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(getDmConversationTitle(entries[0]?.message?.conversation || catalog?.conversations?.[0], catalog), 54 * scale, 44 * scale);
-  if (partnerAvatarAsset) {
-    const avatarBitmap = await loadArchiveAssetBitmap(partnerAvatarAsset);
-    drawCircularImageCover(context, avatarBitmap, canvas.width - (122 * scale), 30 * scale, 42 * scale);
-    avatarBitmap.close();
-  }
-  context.font = `${12 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillStyle = "#5f7593";
-  context.fillText(`${t("dmPartnerLabel")}: ${partner?.displayName || ""}${partner?.handle ? ` · @${partner.handle}` : ""}`, 54 * scale, 70 * scale);
-  context.fillText(`@${handle} · ${formatCompactArchiveTimestamp(catalog?.manifest?.exportedAt || "")}`, 54 * scale, 88 * scale);
-  context.fillText(`${pageIndex + 1}/${pageCount}`, canvas.width - (90 * scale), 88 * scale);
-
-  for (const entry of entries) {
-    const { message, isOwn, x, y, width, height } = entry;
-    fillRoundedRect(context, x, y, width, height, 20 * scale, isOwn ? "#dce9ff" : "#ffffff");
-    strokeRoundedRect(context, x, y, width, height, 20 * scale, isOwn ? "#b8cdf5" : "#d7e1f0", 1.2 * scale);
-
-    const avatarSize = 28 * scale;
-    const avatarX = x + (18 * scale);
-    const avatarY = y + (12 * scale);
-    const senderAvatarAsset = message.senderAvatarPath ? assetMap.get(message.senderAvatarPath) : null;
-    const textInsetX = senderAvatarAsset ? (avatarX + avatarSize + (10 * scale)) : (x + (18 * scale));
-
-    if (senderAvatarAsset) {
-      const avatarBitmap = await loadArchiveAssetBitmap(senderAvatarAsset);
-      drawCircularImageCover(context, avatarBitmap, avatarX, avatarY, avatarSize);
-      avatarBitmap.close();
-    }
-
-    context.fillStyle = "#10233e";
-    context.font = `700 ${13 * scale}px "Segoe UI", Aptos, sans-serif`;
-    const senderName = message.senderDisplayName || message.senderHandle || message.senderDid || handle;
-    context.fillText(senderName, textInsetX, y + (14 * scale));
-
-    if (message.senderHandle) {
-      context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
-      context.fillStyle = "#5f7593";
-      context.fillText(`@${message.senderHandle}`, textInsetX, y + (32 * scale));
-    }
-
-    context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillStyle = "#5f7593";
-    const timeLabel = formatCompactArchiveTimestamp(message.sentAt);
-    const timeWidth = context.measureText(timeLabel).width;
-    context.fillText(timeLabel, x + width - timeWidth - (18 * scale), y + (16 * scale));
-
-    context.font = `${13 * scale}px "Segoe UI", Aptos, sans-serif`;
-    const lines = buildWrappedPdfLines(context, message.text || "", width - (36 * scale) - (senderAvatarAsset ? (avatarSize + (10 * scale)) : 0), message.facets || []);
-    const textBlock = drawArchivePdfTextBlock(context, lines, textInsetX, y + (46 * scale), 18 * scale);
-    annotations.push(...textBlock.annotations.map((annotation) => ({
-      rect: canvasRectToPdfRect(annotation, canvas.width, canvas.height),
-      url: annotation.url,
-    })));
-  }
-
-  const jpegBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-  const bytes = new Uint8Array(await jpegBlob.arrayBuffer());
-  return {
-    bytes,
-    width: canvas.width,
-    height: canvas.height,
-    annotations,
-  };
+  return dmPdfRenderer.page(catalog, assetMap, entries, pageIndex, pageCount);
 }
 
 async function exportDmPdfFromCatalog(catalog = dmCatalog) {
@@ -12305,11 +8811,6 @@ async function loadDmArchive() {
 }
 
 const ARCHIVE_RANGE_MAX_MONTHS = 3;
-
-
-
-
-
 
 /**
  * Ensures the archive date inputs always contain a valid bounded range.
@@ -12377,110 +8878,11 @@ async function persistArchivePreferences() {
   await persistSettings();
 }
 
-function renderArchiveSourceState() {
-  if (!archiveSourceStatus || !archiveSourcePreview) {
-    return;
-  }
-  archiveSourcePreview.replaceChildren();
-  const rawInput = String(archiveSourceInput?.value || "").trim();
-  if (!rawInput || !archiveSourceProfile?.did) {
-    archiveSourcePreview.hidden = true;
-    if (!rawInput) {
-      archiveSourceStatus.textContent = "";
-    }
-    return;
-  }
+/** Delegates renderArchiveSourceState to the archive domain. @returns {*} Domain result. */
+function renderArchiveSourceState() { return archiveWorkspaceRenderer.source(); }
 
-  archiveSourceStatus.textContent = t("archiveSourceReady", {
-    account: archiveSourceProfile.handle || archiveSourceProfile.displayName || archiveSourceProfile.did,
-  });
-  archiveSourcePreview.hidden = false;
-
-  const avatar = document.createElement("img");
-  avatar.className = "analysis-account-avatar";
-  avatar.loading = "lazy";
-  setAvatarImage(avatar, archiveSourceProfile.avatar, archiveSourceProfile.displayName || archiveSourceProfile.handle || archiveSourceProfile.did);
-
-  const identity = document.createElement("div");
-  identity.className = "analysis-account-identity";
-  const eyebrow = document.createElement("p");
-  eyebrow.className = "eyebrow";
-  eyebrow.textContent = t("archiveSourcePreviewEyebrow");
-  const name = document.createElement("strong");
-  name.textContent = archiveSourceProfile.displayName || archiveSourceProfile.handle || archiveSourceProfile.did;
-  const handle = document.createElement("span");
-  handle.className = "reply-target-handle";
-  handle.textContent = archiveSourceProfile.handle ? `@${archiveSourceProfile.handle}` : archiveSourceProfile.did;
-  identity.append(eyebrow, name, handle);
-
-  archiveSourcePreview.append(avatar, identity);
-}
-
-async function validateArchiveSourceInput({ silentSuccess = false } = {}) {
-  const requestToken = ++archiveSourceValidationToken;
-  const rawValue = String(archiveSourceInput?.value || "").trim();
-  const normalizedActor = rawValue.replace(/^@+/, "");
-
-  if (!normalizedActor) {
-    archiveSourceProfile = null;
-    if (archiveSourceStatus) {
-      archiveSourceStatus.textContent = "";
-    }
-    renderArchiveSourceState();
-    await persistArchivePreferences();
-    return null;
-  }
-
-  if (archiveSourceStatus) {
-    archiveSourceStatus.textContent = t("archiveSourceChecking");
-  }
-
-  try {
-    const result = await sendToServiceWorker("CHECK_ANALYSIS_ACCOUNT", {
-      actor: normalizedActor,
-    }, { timeoutMs: 30000 });
-    if (requestToken !== archiveSourceValidationToken) {
-      return null;
-    }
-    archiveSourceProfile = result?.did
-      ? {
-          did: String(result.did || "").trim(),
-          handle: String(result.handle || normalizedActor).trim(),
-          displayName: String(result.displayName || result.handle || normalizedActor).trim(),
-          avatar: String(result.avatar || "").trim(),
-        }
-      : null;
-    if (!silentSuccess && archiveSourceStatus) {
-      archiveSourceStatus.textContent = t("archiveSourceValidated", {
-        account: archiveSourceProfile?.handle || normalizedActor,
-      });
-    }
-    renderArchiveSourceState();
-    await persistArchivePreferences();
-    return archiveSourceProfile;
-  } catch (error) {
-    if (requestToken !== archiveSourceValidationToken) {
-      return null;
-    }
-    archiveSourceProfile = null;
-    if (archiveSourceStatus) {
-      archiveSourceStatus.textContent = error?.message || t("archiveSourceInvalid");
-    }
-    renderArchiveSourceState();
-    await persistArchivePreferences();
-    throw error;
-  }
-}
-
-function scheduleArchiveSourceValidation() {
-  if (archiveSourceValidationTimer) {
-    window.clearTimeout(archiveSourceValidationTimer);
-  }
-  archiveSourceValidationTimer = window.setTimeout(() => {
-    archiveSourceValidationTimer = null;
-    void validateArchiveSourceInput({ silentSuccess: true }).catch(() => {});
-  }, 1800);
-}
+/** Validates the active archive source through the source controller. @param {object} options - Optional quiet validation. @returns {Promise<object|null>} Resolved source profile. */
+async function validateArchiveSourceInput(options = {}) { return archiveSourceController.validate(options); }
 
 function applyDmPartnerCache(cache = null) {
   if (!cache || (cache.accountDid && authAccountDid && cache.accountDid !== authAccountDid)) {
@@ -12521,36 +8923,14 @@ async function restoreDmPartnerCache() {
   applyDmPartnerCache(cache);
 }
 
-async function saveArchiveSession(nextSession) {
-  archiveSession = nextSession || null;
-  await sendToServiceWorker("SAVE_ARCHIVE_SESSION", { session: archiveSession }, { timeoutMs: 120000 });
-  renderArchiveStartHint();
-  renderArchiveStatusLine();
-}
+/** Delegates saveArchiveSession to the archive domain. @param {*} nextSession - Operation input. @returns {*} Domain result. */
+async function saveArchiveSession(nextSession) { return archiveRunController.saveSession(nextSession); }
 
-async function saveArchiveCatalogState(nextCatalog = archiveCatalog) {
-  archiveCatalog = nextCatalog || null;
-  try {
-    await sendToServiceWorker("SAVE_ARCHIVE_CATALOG", { catalog: archiveCatalog }, { timeoutMs: 120000 });
-  } catch (error) {
-    console.warn("Archivkatalog konnte nicht dauerhaft gespeichert werden.", error);
-  }
-}
+/** Delegates saveArchiveCatalogState to the archive domain. @param {*} nextCatalog - Operation input. @returns {*} Domain result. */
+async function saveArchiveCatalogState(nextCatalog = archiveCatalog) { return archiveRunController.saveCatalog(nextCatalog); }
 
-async function clearArchiveSession() {
-  archiveSession = null;
-  archiveCatalog = null;
-  archivePreviewState = null;
-  activeArchiveRunId = null;
-  activeArchiveRunState = "idle";
-  archiveLastCheckpoint = "";
-  archiveLastProgressAt = "";
-  archiveTransientNotice = "";
-  await sendToServiceWorker("CLEAR_ARCHIVE_SESSION", {}, { timeoutMs: 30000 });
-  await sendToServiceWorker("CLEAR_ARCHIVE_CATALOG", {}, { timeoutMs: 30000 }).catch((error) => {
-    console.warn("Archivkatalog konnte nicht geleert werden.", error);
-  });
-}
+/** Delegates clearArchiveSession to the archive domain. @returns {*} Domain result. */
+async function clearArchiveSession() { return archiveRunController.clear(); }
 
 /**
  * Updates archive scope controls and keeps the fixed range UI in sync.
@@ -12568,434 +8948,58 @@ function updateArchiveScopeFields() {
   syncArchiveDateInputBounds();
 }
 
+/** Updates archive progress state and draws its presentation. @param {object} progress - Title, step, percent and detail. @returns {void} */
 function setArchiveProgress({ title, step, percent = 0, detail = "" } = {}) {
   archiveJobState = { title, step, percent, detail };
-  if (title || step || detail || Number(percent) > 0) {
-    archiveLastProgressAt = new Date().toISOString();
-  }
-  archiveProgressTitle.textContent = title || t("archiveProgressIdleTitle");
-  archiveProgressStep.textContent = step || t("archiveProgressIdleStep");
-  archiveProgressDetail.textContent = detail || "";
-  archiveProgressFill.style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
-  renderArchiveProgressHeartbeat();
-  renderArchiveStatusLine();
+  if (title || step || detail || Number(percent) > 0) { archiveLastProgressAt = new Date().toISOString(); }
+  archiveWorkspaceRenderer.progress(archiveJobState);
 }
 
-function renderArchivePreview(preview = archivePreviewState) {
-  archivePreviewPanel.hidden = !archiveLivePreviewToggle.checked;
-  archivePreviewCard.innerHTML = "";
+/** Delegates renderArchivePreview to the archive domain. @param {*} preview - Operation input. @returns {*} Domain result. */
+function renderArchivePreview(preview = archivePreviewState) { return archiveWorkspaceRenderer.preview(preview); }
 
-  if (!archiveLivePreviewToggle.checked || !preview) {
-    const empty = document.createElement("p");
-    empty.id = "archive-preview-empty";
-    empty.className = "settings-note";
-    empty.textContent = t("archivePreviewEmpty");
-    archivePreviewCard.appendChild(empty);
-    return;
-  }
+/** Delegates renderArchiveProgressHeartbeat to the archive domain. @returns {*} Domain result. */
+function renderArchiveProgressHeartbeat() { return archiveWorkspaceRenderer.heartbeat(); }
 
-  const meta = document.createElement("p");
-  meta.className = "archive-preview-meta";
-  meta.textContent = preview.meta || "";
-  archivePreviewCard.appendChild(meta);
+/** Delegates renderArchiveBackgroundNotice to the archive domain. @returns {*} Domain result. */
+function renderArchiveBackgroundNotice() { return archiveWorkspaceRenderer.background(); }
 
-  if (preview.imageDataUrl) {
-    const image = document.createElement("img");
-    image.src = preview.imageDataUrl;
-    image.alt = preview.alt || t("archivePreviewImageAlt");
-    archivePreviewCard.appendChild(image);
-  }
+/** Delegates renderArchiveStatusLine to the archive domain. @returns {*} Domain result. */
+function renderArchiveStatusLine() { return archiveWorkspaceRenderer.status(); }
 
-  if (preview.text) {
-    const text = document.createElement("p");
-    text.className = "archive-preview-text";
-    text.textContent = preview.text;
-    archivePreviewCard.appendChild(text);
-  }
+/** Delegates renderArchiveStartHint to the archive domain. @returns {*} Domain result. */
+function renderArchiveStartHint() { return archiveWorkspaceRenderer.hint(); }
 
-  if (preview.metric) {
-    const metric = document.createElement("p");
-    metric.className = "archive-preview-meta";
-    metric.textContent = preview.metric;
-    archivePreviewCard.appendChild(metric);
-  }
-}
-
-function getArchiveCurrentWave() {
-  if (archiveSession?.waveIndex) {
-    return archiveSession.waveIndex;
-  }
-  return 1;
-}
-
-function hasActiveArchiveRun() {
-  return activeArchiveRunState === "running" || activeArchiveRunState === "paused";
-}
-
-function formatArchiveProgressTime(timestamp) {
-  if (!timestamp) {
-    return "";
-  }
-  const parsed = new Date(timestamp);
-  if (Number.isNaN(parsed.getTime())) {
-    return "";
-  }
-  return new Intl.DateTimeFormat(currentLocale, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(parsed);
-}
-
-function renderArchiveProgressHeartbeat() {
-  if (!archiveProgressHeartbeat) {
-    return;
-  }
-  const time = formatArchiveProgressTime(archiveLastProgressAt);
-  archiveProgressHeartbeat.textContent = time ? t("archiveProgressLastHeartbeat", { time }) : "";
-}
-
-function renderArchiveBackgroundNotice() {
-  if (!archiveBackgroundNotice) {
-    return;
-  }
-  const showNotice = currentWorkspace !== "archive" && hasActiveArchiveRun();
-  archiveBackgroundNotice.hidden = !showNotice;
-  if (!showNotice) {
-    archiveBackgroundNotice.textContent = "";
-    return;
-  }
-  const time = formatArchiveProgressTime(archiveLastProgressAt);
-  archiveBackgroundNotice.textContent = activeArchiveRunState === "paused"
-    ? t("archiveBackgroundNoticePaused", { time })
-    : t("archiveBackgroundNoticeRunning", { time });
-}
-
-function renderArchiveStatusLine() {
-  renderArchiveBackgroundNotice();
-  if (archiveTransientNotice) {
-    archiveRunStatusLine.textContent = archiveTransientNotice;
-    return;
-  }
-
-  const hasActiveArchiveJob = Boolean(
-    archiveJobState
-    && (String(archiveJobState.step || "").trim() || String(archiveJobState.detail || "").trim())
-    && Number(archiveJobState.percent) > 0
-    && Number(archiveJobState.percent) < 100,
-  );
-
-  if (!archiveSession && activeArchiveRunState === "idle" && !archiveLastCheckpoint && !hasActiveArchiveJob) {
-    archiveRunStatusLine.textContent = t("archiveRunStatusIdle");
-    return;
-  }
-
-  const wave = getArchiveCurrentWave();
-  const checkpoint = archiveLastCheckpoint || archivePreviewState?.meta || archiveJobState?.detail || archiveJobState?.step || "";
-
-  if (!archiveSession && activeArchiveRunState === "idle" && hasActiveArchiveJob) {
-    archiveRunStatusLine.textContent = checkpoint || t("archiveRunStatusNoCheckpoint");
-    return;
-  }
-
-  if (activeArchiveRunState === "paused") {
-    archiveRunStatusLine.textContent = t("archiveRunStatusPaused", {
-      wave,
-      checkpoint: checkpoint || t("archiveRunStatusNoCheckpoint"),
-    });
-    return;
-  }
-
-  if (activeArchiveRunState === "running") {
-    archiveRunStatusLine.textContent = t("archiveRunStatusRunning", {
-      wave,
-      checkpoint: checkpoint || t("archiveRunStatusNoCheckpoint"),
-    });
-    return;
-  }
-
-  if (archiveSession?.status === "cancelled" || activeArchiveRunState === "cancelled") {
-    archiveRunStatusLine.textContent = t("archiveRunStatusCancelled", {
-      wave,
-      checkpoint: checkpoint || t("archiveRunStatusNoCheckpoint"),
-    });
-    return;
-  }
-
-  archiveRunStatusLine.textContent = t("archiveRunStatusReady", {
-    wave,
-    checkpoint: checkpoint || t("archiveRunStatusNoCheckpoint"),
-  });
-}
-
-function renderArchiveStartHint() {
-  if (activeArchiveRunState === "paused") {
-    archiveStartHint.textContent = t("archiveStartHintPaused", {
-      wave: getArchiveCurrentWave(),
-    });
-    return;
-  }
-
-  if (archiveSession?.status === "paused" || archiveSession?.hasMore || archiveSession?.nextCursor) {
-    archiveStartHint.textContent = t("archiveStartHintIncomplete", {
-      wave: getArchiveCurrentWave(),
-    });
-    return;
-  }
-
-  if (archiveSession?.exportedPosts) {
-    archiveStartHint.textContent = t("archiveStartHintRestart", {
-      wave: 1,
-    });
-    return;
-  }
-
-  archiveStartHint.textContent = t("archiveStartHintFresh");
-}
-
-function syncArchiveActionButtonStates() {
-  if (archiveNextWaveButton && activeArchiveRunState !== "running") {
-    archiveNextWaveButton.textContent = t("archiveNextWaveButton");
-  }
-}
+/** Delegates syncArchiveActionButtonStates to the archive domain. @returns {*} Domain result. */
+function syncArchiveActionButtonStates() { return archiveWorkspaceRenderer.actionButtons(); }
 
 function syncArchiveTransientNoticeFromCatalog() {
   archiveTransientNotice = buildArchiveCatalogNotice(archiveCatalog);
 }
 
-function buildArchiveCatalogNotice(catalog = archiveCatalog) {
-  if (!catalog) {
-    return "";
-  }
+/** Delegates buildArchiveCatalogNotice to the archive domain. @param {*} catalog - Operation input. @returns {*} Domain result. */
+function buildArchiveCatalogNotice(catalog = archiveCatalog) { return archiveWorkspaceModels.notice(catalog); }
 
-  const values = {
-    posts: catalog.posts.length,
-    images: catalog.summary.imageCount,
-    skipped: catalog.summary.skippedImageCount || 0,
-  };
-  const threadImportMeta = catalog?.manifest?.threadImport || null;
+/** Delegates updateArchiveRunControls to the archive domain. @returns {*} Domain result. */
+function updateArchiveRunControls() { return archiveWorkspaceRenderer.controls(); }
 
-  if (threadImportMeta?.entryMode === "reply") {
-    return t("archiveThreadUrlImportedReplyNotice", values);
-  }
-  if (threadImportMeta?.entryMode === "root") {
-    return t("archiveThreadUrlImportedRootNotice", values);
-  }
+/** Delegates setArchiveRunControl to the archive domain. @param {*} action - Operation input. @returns {*} Domain result. */
+async function setArchiveRunControl(action) { return archiveRunController.control(action); }
 
-  return t("archiveImportedNotice", values);
-}
+/** Delegates updateArchiveSummary to the archive domain. @param {*} catalog - Operation input. @returns {*} Domain result. */
+function updateArchiveSummary(catalog = archiveCatalog) { return archiveWorkspaceRenderer.summary(catalog); }
 
-function updateArchiveRunControls() {
-  const isRunning = activeArchiveRunState === "running";
-  const isPaused = activeArchiveRunState === "paused";
-  const isMediaExportRunning = activeMediaExportState === "running" && Boolean(activeMediaExportAbortController);
-  const canPause = isRunning && Boolean(activeArchiveRunId);
-  const canResume = isPaused || (archiveSession?.status === "paused");
-  const canCancel = (Boolean(activeArchiveRunId) && (isRunning || isPaused)) || isMediaExportRunning;
-  archivePauseButton.disabled = !canPause;
-  archiveResumeButton.disabled = !canResume;
-  archiveCancelButton.disabled = !canCancel;
-  archivePauseButton.hidden = false;
-  archiveResumeButton.hidden = false;
-  archiveCancelButton.hidden = false;
-  renderArchiveBackgroundNotice();
-}
+/** Delegates renderArchiveSpec to the archive domain. @returns {*} Domain result. */
+function renderArchiveSpec() { return archiveWorkspaceRenderer.spec(); }
 
-async function setArchiveRunControl(action) {
-  if (action === "resume" && !activeArchiveRunId && (activeArchiveRunState === "paused" || archiveSession?.status === "paused")) {
-    archiveNextWaveButton?.click();
-    return;
-  }
+/** Delegates renderArchiveResults to the archive domain. @param {*} catalog - Operation input. @returns {*} Domain result. */
+function renderArchiveResults(catalog = archiveCatalog) { return archiveWorkspaceRenderer.results(catalog); }
 
-  if (!activeArchiveRunId) {
-    return;
-  }
+/** Delegates renderArchiveWorkspace to the archive domain. @returns {*} Domain result. */
+function renderArchiveWorkspace() { return archiveWorkspaceRenderer.render(); }
 
-  await sendToServiceWorker("SET_ARCHIVE_RUN_CONTROL", {
-    runId: activeArchiveRunId,
-    action,
-  }, { timeoutMs: 30000 });
-
-  if (action === "pause") {
-    activeArchiveRunState = "paused";
-  } else if (action === "resume") {
-    activeArchiveRunState = "running";
-  } else if (action === "cancel") {
-    activeArchiveRunState = "cancelled";
-    if (archiveNextWaveButton) {
-      archiveNextWaveButton.disabled = false;
-    }
-  }
-  syncArchiveActionButtonStates();
-  updateArchiveRunControls();
-  renderArchiveStatusLine();
-  renderArchiveStartHint();
-}
-
-function estimateArchiveBandCount(postCount, options = getArchivePdfOptions()) {
-  const size = Math.max(100, Math.min(1000, Number(options.bandSize) || 200));
-  return postCount > 0 ? Math.ceil(postCount / size) : 0;
-}
-
-function updateArchiveSummary(catalog = archiveCatalog) {
-  const postCount = catalog?.posts?.length || archiveSession?.exportedPosts || 0;
-  const imageCount = catalog?.summary?.imageCount || archiveSession?.exportedImages || 0;
-  const bandBase = postCount;
-  archiveSummaryPosts.textContent = String(postCount);
-  archiveSummaryImages.textContent = String(imageCount);
-  archiveSummaryBands.textContent = String(estimateArchiveBandCount(bandBase));
-}
-
-function renderArchiveSpec() {
-  const items = t("archiveSpecItems");
-  archiveSpecContent.innerHTML = "";
-  const intro = document.createElement("p");
-  intro.className = "settings-note";
-  intro.textContent = t("archiveSpecIntro");
-  archiveSpecContent.appendChild(intro);
-
-  const list = document.createElement("ol");
-  list.className = "archive-spec-list";
-  (Array.isArray(items) ? items : []).forEach((item) => {
-    const li = document.createElement("li");
-    li.textContent = item;
-    list.appendChild(li);
-  });
-  archiveSpecContent.appendChild(list);
-}
-
-function renderArchiveResults(catalog = archiveCatalog) {
-  archiveResults.innerHTML = "";
-
-  if (!catalog) {
-    const empty = document.createElement("p");
-    empty.className = "settings-note";
-    empty.textContent = archiveSession
-      ? t("archiveSessionMeta", {
-          next: archiveSession?.status === "paused" ? t("archiveSessionContinue") : t("archiveSessionComplete"),
-          exported: archiveSession.exportedPosts || 0,
-        })
-      : t("archiveResultsEmpty");
-    archiveResults.appendChild(empty);
-    return;
-  }
-
-  const card = document.createElement("article");
-  card.className = "archive-result-card";
-  const title = document.createElement("strong");
-  title.textContent = t("archiveResultsTitle", { count: catalog.posts.length });
-  const note = document.createElement("p");
-  note.className = "settings-note";
-  note.textContent = t("archiveResultsMeta", {
-    from: catalog.summary?.from || "—",
-    to: catalog.summary?.to || "—",
-    images: catalog.summary?.imageCount || 0,
-    skipped: catalog.summary?.skippedImageCount || 0,
-  });
-  const threadImportMeta = catalog?.manifest?.threadImport || null;
-  const sourceNote = document.createElement("p");
-  sourceNote.className = "settings-note";
-  if (threadImportMeta?.entryMode === "reply") {
-    sourceNote.textContent = t("archiveThreadUrlImportedReplyShort");
-  } else if (threadImportMeta?.entryMode === "root") {
-    sourceNote.textContent = t("archiveThreadUrlImportedRootShort");
-  }
-  const resume = document.createElement("p");
-  resume.className = "settings-note";
-  resume.textContent = t("archiveSessionMeta", {
-    next: archiveSession?.status === "paused" ? t("archiveSessionContinue") : t("archiveSessionComplete"),
-    exported: archiveSession?.exportedPosts || catalog.posts.length,
-  });
-  const actions = document.createElement("div");
-  actions.className = "archive-result-actions";
-
-  const zipButton = document.createElement("button");
-  zipButton.type = "button";
-  zipButton.className = "ghost-button";
-  zipButton.textContent = t("archiveDownloadZipButton");
-
-  const pdfButton = document.createElement("button");
-  pdfButton.type = "button";
-  pdfButton.className = "ghost-button";
-  pdfButton.textContent = t("archiveDownloadPdfButton");
-
-  const htmlButton = document.createElement("button");
-  htmlButton.type = "button";
-  htmlButton.className = "ghost-button";
-  const htmlTooLarge = isArchiveHtmlTooLargeForEmbeddedExport(catalog);
-  htmlButton.textContent = htmlTooLarge ? t("archiveExportHtmlTooLargeButton") : t("archiveDownloadHtmlButton");
-  htmlButton.title = htmlTooLarge ? t("archiveExportHtmlTooLargeTitle") : t("archiveDownloadHtmlButton");
-  htmlButton.disabled = htmlTooLarge;
-  if (!htmlTooLarge) {
-    bindArchiveResultExportEvents({
-      zipButton,
-      htmlButton,
-      pdfButton,
-    }, {
-      zipClick: () => { void exportArchiveZipFromCatalog(catalog); },
-      htmlClick: () => { void exportArchiveHtmlFromCatalog(catalog); },
-      pdfClick: () => { void exportArchivePdfBandsFromCatalog(catalog); },
-    });
-  } else {
-    bindArchiveResultExportEvents({
-      zipButton,
-      pdfButton,
-    }, {
-      zipClick: () => { void exportArchiveZipFromCatalog(catalog); },
-      pdfClick: () => { void exportArchivePdfBandsFromCatalog(catalog); },
-    });
-  }
-
-  actions.append(zipButton, htmlButton, pdfButton);
-  card.append(title, note);
-  if (sourceNote.textContent) {
-    card.append(sourceNote);
-  }
-  card.append(resume, actions);
-  archiveResults.appendChild(card);
-}
-
-function renderArchiveWorkspace() {
-  updateArchiveScopeFields();
-  renderArchiveSourceState();
-  renderArchiveSpec();
-  updateArchiveSummary();
-  renderArchiveResults();
-  archiveNextWaveButton.disabled = !authAccount || hasActiveArchiveRun();
-  if (archiveExportMediaZipButton) {
-    archiveExportMediaZipButton.disabled = !authAccount;
-  }
-  updateArchiveHtmlExportButtons();
-  syncArchiveActionButtonStates();
-  updateArchiveRunControls();
-  renderArchiveStatusLine();
-  renderArchiveStartHint();
-  renderArchiveProgressHeartbeat();
-  renderArchivePreview();
-  if (!archiveJobState) {
-    setArchiveProgress({});
-  } else {
-    setArchiveProgress(archiveJobState);
-  }
-}
-
-function invalidateArchiveCatalog() {
-  archiveCatalog = null;
-  archiveSession = null;
-  archivePreviewState = null;
-  activeArchiveRunId = null;
-  activeArchiveRunState = "idle";
-  archiveLastCheckpoint = "";
-  archiveLastProgressAt = "";
-  archiveTransientNotice = "";
-  void sendToServiceWorker("CLEAR_ARCHIVE_SESSION", {}, { timeoutMs: 30000 }).catch((error) => {
-    console.error(error);
-  });
-  void sendToServiceWorker("CLEAR_ARCHIVE_CATALOG", {}, { timeoutMs: 30000 }).catch((error) => {
-    console.error(error);
-  });
-  renderArchiveWorkspace();
-}
+/** Delegates invalidateArchiveCatalog to the archive domain. @returns {*} Domain result. */
+function invalidateArchiveCatalog() { return archiveRunController.invalidate(); }
 
 /** Refreshes the editing-time publish state and warnings. @returns {void} */
 function updatePublishAvailability() { composerPublishAvailability.render(); }
@@ -13103,28 +9107,7 @@ function applySidebarState() { desktopLayout.renderSidebar(); }
  * @returns {void}
  */
 function renderSearchLanguageSummary() {
-  if (!searchLanguageSummary) {
-    return;
-  }
-  searchSelectedLanguages = normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
-  if (!searchSelectedLanguages.length) {
-    searchLanguageSummary.textContent = "";
-    return;
-  }
-  if (searchSelectedLanguages.length === 1) {
-    searchLanguageSummary.textContent = t("searchLanguageSummarySingle", {
-      language: getPostLanguageDisplayName(searchSelectedLanguages[0], currentLocale),
-    });
-    return;
-  }
-
-  const labels = searchSelectedLanguages.map((tag) => {
-    return getPostLanguageDisplayName(tag, currentLocale);
-  });
-  searchLanguageSummary.textContent = t("searchLanguageSummaryMany", {
-    count: labels.length,
-    languages: labels.join(", "),
-  });
+  return searchForm.renderLanguage();
 }
 
 /**
@@ -13132,8 +9115,7 @@ function renderSearchLanguageSummary() {
  * @returns {boolean} True for multi-language search mode.
  */
 function isSearchMultiLanguageActive() {
-  searchSelectedLanguages = normalizePostLanguageTags(searchSelectedLanguages, MAX_SEARCH_LANGUAGES);
-  return searchSelectedLanguages.length > 1;
+  return searchForm.multiLanguage();
 }
 
 /**
@@ -13142,20 +9124,7 @@ function isSearchMultiLanguageActive() {
  * @returns {void}
  */
 function enforceSearchSortConstraints(announce = false) {
-  if (!searchSortSelect) {
-    return;
-  }
-  if (!isSearchMultiLanguageActive()) {
-    return;
-  }
-  if (String(searchSortSelect.value || "").trim() !== "top") {
-    return;
-  }
-
-  searchSortSelect.value = "latest";
-  if (announce) {
-    setStatus(t("searchLanguageSortLimitedStatus"));
-  }
+  return searchForm.enforceSort(announce);
 }
 
 /**
@@ -13163,16 +9132,7 @@ function enforceSearchSortConstraints(announce = false) {
  * @returns {void}
  */
 function updateSearchSortOptionState() {
-  if (!searchSortSelect) {
-    return;
-  }
-
-  const topOption = searchSortSelect.querySelector("option[value='top']");
-  if (!topOption) {
-    return;
-  }
-
-  topOption.disabled = isSearchMultiLanguageActive();
+  return searchForm.updateSort();
 }
 
 /** Refreshes the complete posting language/decorations/rules summary. @returns {void} */
@@ -13236,6 +9196,7 @@ function applyTranslations() {
     const key = element.dataset.i18n;
     element.textContent = t(key);
   });
+  restoreSearchStatusFromResultState();
 
   document.querySelectorAll("[data-i18n-title]").forEach((element) => {
     applyTranslatedTitle(element, element.dataset.i18nTitle);
@@ -13532,13 +9493,8 @@ function nextTip() {
   renderTip();
 }
 
-
-
 /** Filters selected ids against available tags. @param {*} entries - Selection. @param {object[]} availableHashtags - Records. @returns {string[]} Valid ids. */
 function normalizeSelectedHashtagEntries(entries, availableHashtags = hashtags) { return normalizeHashtagSelection(entries, availableHashtags); }
-
-
-
 
 /**
  * Resolves one hashtag identifier or object to the visible hashtag text.
@@ -13633,9 +9589,6 @@ async function shareAppRecommendation() {
     setShareStatus(t("shareUnavailable"), "error");
   }
 }
-
-
-
 
 /**
  * Returns whether one image has explicit upload transforms after applying Threadline limits.
@@ -13937,9 +9890,6 @@ function getLinkCardSettings() {
   return composerProxySettings.settings();
 }
 
-
-
-
 /**
  * Loads a remote link-card image and converts it into a data URL for preview and upload.
  * @param {string} imageUrl - Absolute HTTP(S) image URL.
@@ -13950,8 +9900,6 @@ async function fetchLinkCardImageDataUrl(imageUrl) {
     fetch: (url, options) => fetch(url, options), fileToDataUrl, translate: t,
   });
 }
-
-
 
 /**
  * Requests link-card metadata for a URL from the configured WordPress proxy.
@@ -14008,8 +9956,6 @@ function clearComposerReplyTarget(options = {}) { composerReplyController.clear(
 function getReplyTargetDisplayName(target = composerReplyTarget) {
   return getComposerReplyTargetDisplayName(normalizeReplyTarget(target));
 }
-
-
 
 /** Refreshes the reply-target preview card. @returns {void} */
 function renderReplyTargetCard() {
@@ -14102,8 +10048,6 @@ async function saveAltText() { await composerAltTextDialog.save(); }
 async function openImageEditorDialog(segmentIndex, imageIndex) {
   await composerImageEditor.open(segmentIndex, imageIndex);
 }
-
-
 
 /**
  * Adds selected files through the Composer image collection controller.
@@ -14253,572 +10197,34 @@ function parseJsonBytes(bytes) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-function makeCrcTable() {
-  const table = new Uint32Array(256);
-  for (let index = 0; index < 256; index += 1) {
-    let value = index;
-    for (let shift = 0; shift < 8; shift += 1) {
-      value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
-    }
-    table[index] = value >>> 0;
-  }
-  return table;
-}
+const archiveZipCodec = createStoredZipCodec({
+  encode: utf8Bytes,
+  now: () => new Date(),
+  invalidArchive: () => t("archiveImportInvalid"),
+  closedWriter: () => t("archiveZipWriterClosed"),
+});
 
-const CRC_TABLE = makeCrcTable();
+/**
+ * Returns a normalized archive catalog.
+ * @param {object} rawCatalog - Raw imported catalog.
+ * @returns {object} Delegated operation result.
+ */
+function normalizeImportedArchiveCatalog(rawCatalog) { return archiveCatalogFiles.normalize(rawCatalog); }
 
-function crc32(bytes) {
-  let crc = 0xffffffff;
-  for (const value of bytes) {
-    crc = CRC_TABLE[(crc ^ value) & 0xff] ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
+/**
+ * Loads a ZIP, JSON or gzip archive.
+ * @param {File} file - Selected archive file.
+ * @returns {Promise<object>} Delegated operation result.
+ */
+async function loadArchiveCatalogFromFile(file) { return archiveCatalogFiles.load(file); }
 
-function dosDateTime(date = new Date()) {
-  const year = Math.max(1980, date.getUTCFullYear());
-  const month = date.getUTCMonth() + 1;
-  const day = date.getUTCDate();
-  const hours = date.getUTCHours();
-  const minutes = date.getUTCMinutes();
-  const seconds = Math.floor(date.getUTCSeconds() / 2);
-  return {
-    time: (hours << 11) | (minutes << 5) | seconds,
-    date: ((year - 1980) << 9) | (month << 5) | day,
-  };
-}
-
-function concatUint8Arrays(chunks) {
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const merged = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return merged;
-}
-
-function buildStoredZip(entries) {
-  const localParts = [];
-  const centralParts = [];
-  let offset = 0;
-
-  for (const entry of entries) {
-    const nameBytes = utf8Bytes(entry.name);
-    const dataBytes = entry.data instanceof Uint8Array ? entry.data : new Uint8Array(entry.data);
-    const crc = crc32(dataBytes);
-    const { time, date } = dosDateTime();
-
-    const localHeader = new Uint8Array(30 + nameBytes.length);
-    const localView = new DataView(localHeader.buffer);
-    localView.setUint32(0, 0x04034b50, true);
-    localView.setUint16(4, 20, true);
-    localView.setUint16(6, 0x0800, true);
-    localView.setUint16(8, 0, true);
-    localView.setUint16(10, time, true);
-    localView.setUint16(12, date, true);
-    localView.setUint32(14, crc, true);
-    localView.setUint32(18, dataBytes.length, true);
-    localView.setUint32(22, dataBytes.length, true);
-    localView.setUint16(26, nameBytes.length, true);
-    localView.setUint16(28, 0, true);
-    localHeader.set(nameBytes, 30);
-    localParts.push(localHeader, dataBytes);
-
-    const centralHeader = new Uint8Array(46 + nameBytes.length);
-    const centralView = new DataView(centralHeader.buffer);
-    centralView.setUint32(0, 0x02014b50, true);
-    centralView.setUint16(4, 20, true);
-    centralView.setUint16(6, 20, true);
-    centralView.setUint16(8, 0x0800, true);
-    centralView.setUint16(10, 0, true);
-    centralView.setUint16(12, time, true);
-    centralView.setUint16(14, date, true);
-    centralView.setUint32(16, crc, true);
-    centralView.setUint32(20, dataBytes.length, true);
-    centralView.setUint32(24, dataBytes.length, true);
-    centralView.setUint16(28, nameBytes.length, true);
-    centralView.setUint16(30, 0, true);
-    centralView.setUint16(32, 0, true);
-    centralView.setUint16(34, 0, true);
-    centralView.setUint16(36, 0, true);
-    centralView.setUint32(38, 0, true);
-    centralView.setUint32(42, offset, true);
-    centralHeader.set(nameBytes, 46);
-    centralParts.push(centralHeader);
-
-    offset += localHeader.length + dataBytes.length;
-  }
-
-  const centralDirectory = concatUint8Arrays(centralParts);
-  const localDirectory = concatUint8Arrays(localParts);
-  const endRecord = new Uint8Array(22);
-  const endView = new DataView(endRecord.buffer);
-  endView.setUint32(0, 0x06054b50, true);
-  endView.setUint16(4, 0, true);
-  endView.setUint16(6, 0, true);
-  endView.setUint16(8, entries.length, true);
-  endView.setUint16(10, entries.length, true);
-  endView.setUint32(12, centralDirectory.length, true);
-  endView.setUint32(16, localDirectory.length, true);
-  endView.setUint16(20, 0, true);
-
-  return concatUint8Arrays([localDirectory, centralDirectory, endRecord]);
-}
-
-class StreamingZipWriter {
-  constructor(writable) {
-    this.writable = writable;
-    this.centralParts = [];
-    this.offset = 0;
-    this.entryCount = 0;
-    this.closed = false;
-  }
-
-  async addFile(name, bytes, modifiedAt = new Date()) {
-    if (this.closed) {
-      throw new Error("ZIP-Writer ist bereits geschlossen.");
-    }
-
-    const nameBytes = utf8Bytes(name);
-    const dataBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
-    const crc = crc32(dataBytes);
-    const { time, date } = dosDateTime(modifiedAt);
-
-    const localHeader = new Uint8Array(30 + nameBytes.length);
-    const localView = new DataView(localHeader.buffer);
-    localView.setUint32(0, 0x04034b50, true);
-    localView.setUint16(4, 20, true);
-    localView.setUint16(6, 0x0800, true);
-    localView.setUint16(8, 0, true);
-    localView.setUint16(10, time, true);
-    localView.setUint16(12, date, true);
-    localView.setUint32(14, crc, true);
-    localView.setUint32(18, dataBytes.length, true);
-    localView.setUint32(22, dataBytes.length, true);
-    localView.setUint16(26, nameBytes.length, true);
-    localView.setUint16(28, 0, true);
-    localHeader.set(nameBytes, 30);
-
-    const centralHeader = new Uint8Array(46 + nameBytes.length);
-    const centralView = new DataView(centralHeader.buffer);
-    centralView.setUint32(0, 0x02014b50, true);
-    centralView.setUint16(4, 20, true);
-    centralView.setUint16(6, 20, true);
-    centralView.setUint16(8, 0x0800, true);
-    centralView.setUint16(10, 0, true);
-    centralView.setUint16(12, time, true);
-    centralView.setUint16(14, date, true);
-    centralView.setUint32(16, crc, true);
-    centralView.setUint32(20, dataBytes.length, true);
-    centralView.setUint32(24, dataBytes.length, true);
-    centralView.setUint16(28, nameBytes.length, true);
-    centralView.setUint16(30, 0, true);
-    centralView.setUint16(32, 0, true);
-    centralView.setUint16(34, 0, true);
-    centralView.setUint16(36, 0, true);
-    centralView.setUint32(38, 0, true);
-    centralView.setUint32(42, this.offset, true);
-    centralHeader.set(nameBytes, 46);
-
-    await this.writable.write(localHeader);
-    await this.writable.write(dataBytes);
-    this.centralParts.push(centralHeader);
-    this.offset += localHeader.length + dataBytes.length;
-    this.entryCount += 1;
-  }
-
-  async close() {
-    if (this.closed) {
-      return;
-    }
-
-    const centralDirectory = concatUint8Arrays(this.centralParts);
-    const endRecord = new Uint8Array(22);
-    const endView = new DataView(endRecord.buffer);
-    endView.setUint32(0, 0x06054b50, true);
-    endView.setUint16(4, 0, true);
-    endView.setUint16(6, 0, true);
-    endView.setUint16(8, this.entryCount, true);
-    endView.setUint16(10, this.entryCount, true);
-    endView.setUint32(12, centralDirectory.length, true);
-    endView.setUint32(16, this.offset, true);
-    endView.setUint16(20, 0, true);
-
-    await this.writable.write(centralDirectory);
-    await this.writable.write(endRecord);
-    await this.writable.close();
-    this.closed = true;
-  }
-}
-
-function supportsStreamingZipExport() {
-  return typeof window.showSaveFilePicker === "function";
-}
-
-const MEDIA_EXPORT_SCAN_TIMEOUT_MS = 900000;
-const MEDIA_EXPORT_ITEM_TIMEOUT_MS = 45000;
-const MEDIA_EXPORT_BATCH_SIZE = 250;
-
-function buildMediaExportPostFolder(post = {}) {
-  const rawCreatedAt = String(post?.createdAt || "").trim();
-  const timestamp = Number.isNaN(Date.parse(rawCreatedAt))
-    ? "unknown-date"
-    : new Date(rawCreatedAt).toISOString().replace(/:/g, "-").replace(/\.\d{3}Z$/, "Z");
-  const year = timestamp.slice(0, 4) || "unknown";
-  const month = timestamp.slice(0, 7) || `${year}-00`;
-  const rkey = String(post?.rkey || "post")
-    .replace(/[^\w.-]+/g, "-")
-    .slice(0, 80) || "post";
-  return `posts/${year}/${month}/${timestamp}__post-${rkey}`;
-}
-
-function parseStoredZip(bytes) {
-  const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const entries = new Map();
-  let offset = 0;
-
-  while (offset + 30 <= buffer.length) {
-    const view = new DataView(buffer.buffer, buffer.byteOffset + offset);
-    const signature = view.getUint32(0, true);
-    if (signature === 0x02014b50 || signature === 0x06054b50) {
-      break;
-    }
-    if (signature !== 0x04034b50) {
-      throw new Error(t("archiveImportInvalid"));
-    }
-
-    const compression = view.getUint16(8, true);
-    if (compression !== 0) {
-      throw new Error(t("archiveImportInvalid"));
-    }
-
-    const fileNameLength = view.getUint16(26, true);
-    const extraLength = view.getUint16(28, true);
-    const compressedSize = view.getUint32(18, true);
-    const nameStart = offset + 30;
-    const dataStart = nameStart + fileNameLength + extraLength;
-    const name = new TextDecoder().decode(buffer.slice(nameStart, nameStart + fileNameLength));
-    const data = buffer.slice(dataStart, dataStart + compressedSize);
-    entries.set(name, data);
-    offset = dataStart + compressedSize;
-  }
-
-  return entries;
-}
-
-function normalizeImportedArchiveCatalog(rawCatalog) {
-  if (!rawCatalog?.posts || !Array.isArray(rawCatalog.posts)) {
-    throw new Error(t("archiveImportInvalid"));
-  }
-
-  const assets = Array.isArray(rawCatalog.assets)
-    ? rawCatalog.assets.map((asset) => ({
-        path: asset.path,
-        type: asset.type || "application/octet-stream",
-        sizeBytes: Math.max(0, Number(asset.sizeBytes) || 0),
-        bytes: asset.bytes instanceof Uint8Array ? asset.bytes : new Uint8Array(asset.bytes || []),
-      }))
-    : [];
-
-  const imageCount = assets.length;
-  const posts = rawCatalog.posts.map((post) => ({
-    ...post,
-    images: Array.isArray(post.images) ? post.images : [],
-    counts: {
-      likeCount: Number(post.counts?.likeCount) || 0,
-      replyCount: Number(post.counts?.replyCount) || 0,
-      repostCount: Number(post.counts?.repostCount) || 0,
-      quoteCount: Number(post.counts?.quoteCount) || 0,
-    },
-  }));
-
-  const postsByUri = new Map(posts.map((post) => [post.uri, post]));
-  const depthCache = new Map();
-  const getThreadDepth = (post) => {
-    if (!post?.uri) {
-      return 0;
-    }
-    if (depthCache.has(post.uri)) {
-      return depthCache.get(post.uri);
-    }
-    const parentUri = post?.thread?.parentUri || "";
-    if (!parentUri || !postsByUri.has(parentUri)) {
-      depthCache.set(post.uri, 0);
-      return 0;
-    }
-    const depth = Math.min(8, getThreadDepth(postsByUri.get(parentUri)) + 1);
-    depthCache.set(post.uri, depth);
-    return depth;
-  };
-  posts.forEach((post) => {
-    post.threadDepth = getThreadDepth(post);
-  });
-
-  return {
-    manifest: rawCatalog.manifest || {},
-    posts,
-    assets,
-    summary: {
-      imageCount,
-      skippedImageCount: Math.max(0, Number(rawCatalog.manifest?.skippedImageCount) || 0),
-      from: posts[posts.length - 1]?.createdAt || "",
-      to: posts[0]?.createdAt || "",
-    },
-  };
-}
-
-async function loadArchiveCatalogFromFile(file) {
-  if (/\.zip$/i.test(file.name)) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const entries = parseStoredZip(bytes);
-    const manifest = entries.has("manifest.json") ? parseJsonBytes(entries.get("manifest.json")) : {};
-    const posts = entries.has("posts.json") ? parseJsonBytes(entries.get("posts.json")) : null;
-    if (!posts) {
-      throw new Error(t("archiveImportInvalid"));
-    }
-    const assets = [];
-    posts.forEach((post) => {
-      (post.images || []).forEach((image) => {
-        if (!image.path || assets.some((entry) => entry.path === image.path)) {
-          return;
-        }
-        const data = entries.get(image.path);
-        if (data) {
-          assets.push({
-            path: image.path,
-            type: image.mimeType || "application/octet-stream",
-            sizeBytes: data.length,
-            bytes: data,
-          });
-        }
-      });
-    });
-    return normalizeImportedArchiveCatalog({ manifest, posts, assets });
-  }
-
-  const text = /\.gz$/i.test(file.name) ? await gunzipBlob(file) : await file.text();
-  return normalizeImportedArchiveCatalog(JSON.parse(text));
-}
-
-async function applyLoadedArchiveCatalog(catalog, sessionOverrides = {}) {
-  archivePreviewState = null;
-  activeArchiveRunId = null;
-  activeArchiveRunState = "idle";
-  archiveLastCheckpoint = "";
-  archiveCatalog = catalog;
-  archiveSession = {
-    filterKey: sessionOverrides.filterKey || "import",
-    filters: sessionOverrides.filters || null,
-    waveIndex: Number(sessionOverrides.waveIndex) || 1,
-    nextCursor: sessionOverrides.nextCursor || "",
-    hasMore: Boolean(sessionOverrides.hasMore),
-    exportedPosts: Number(sessionOverrides.exportedPosts) || archiveCatalog.posts.length,
-    exportedImages: Number(sessionOverrides.exportedImages) || archiveCatalog.summary.imageCount,
-    status: sessionOverrides.status || "completed",
-    updatedAt: new Date().toISOString(),
-  };
-  await saveArchiveSession(archiveSession);
-  await saveArchiveCatalogState(archiveCatalog);
-  archiveTransientNotice = buildArchiveCatalogNotice(archiveCatalog);
-  renderArchiveWorkspace();
-  setArchiveProgress({
-    title: t("archiveProgressDoneTitle"),
-    step: sessionOverrides.step || t("archiveImported"),
-    percent: 100,
-    detail: archiveTransientNotice,
-  });
-}
+/** Delegates applyLoadedArchiveCatalog to the archive domain. @param {*} catalog - Operation input. @param {*} sessionOverrides - Operation input. @returns {*} Domain result. */
+async function applyLoadedArchiveCatalog(catalog, sessionOverrides = {}) { return archiveRunController.apply(catalog, sessionOverrides); }
 
 function makeArchiveFileBaseName(catalog = archiveCatalog) {
   const handle = String(catalog?.manifest?.account?.handle || authAccount || "account").replace(/[^\w.-]+/g, "-");
   const datePart = formatArchiveDatePart(catalog?.manifest?.exportedAt);
   return `threadline-archive-${handle}-${datePart}`;
-}
-
-/**
- * Builds a stable key for a media-export session based on filters and toggles.
- * @param {object} options - Media-export options from the archive form.
- * @returns {string} Stable session key for reuse and resume checks.
- */
-function buildMediaExportSessionKey(options = {}) {
-  const filters = options.filters || getArchiveFilters();
-  const filterKey = serializeArchiveFilters(filters);
-  const actor = String(options.actor || authAccount || "").trim().toLowerCase();
-  const kinds = [];
-  if (options.includeImages === false) {
-    kinds.push("0");
-  } else {
-    kinds.push("1");
-  }
-  if (options.includeVideos === false) {
-    kinds.push("0");
-  } else {
-    kinds.push("1");
-  }
-  if (options.includeOther === false) {
-    kinds.push("0");
-  } else {
-    kinds.push("1");
-  }
-  return `media:${actor}:${kinds.join("")}:${filterKey}`;
-}
-
-/**
- * Builds the shared file-name base for media-export part archives.
- * @param {object} options - Media-export options from the archive form.
- * @returns {string} Base file name without the `.zip` suffix.
- */
-function buildArchiveMediaFileBaseName(options = {}) {
-  return buildArchiveMediaFileBaseNameFromData(options.actor, authAccount);
-}
-
-/**
- * Splits media entries into fixed-size batches for safer ZIP exports.
- * @param {Array} items - Media entries to split.
- * @param {number} size - Maximum number of media entries per batch.
- * @returns {Array<Array>} Chunked media-entry batches.
- */
-function chunkMediaExportEntries(items = [], size = MEDIA_EXPORT_BATCH_SIZE) {
-  let sourceItems = [];
-  if (Array.isArray(items)) {
-    sourceItems = items;
-  }
-  const chunkSize = Math.max(1, Number(size) || MEDIA_EXPORT_BATCH_SIZE);
-  const result = [];
-  for (let index = 0; index < sourceItems.length; index += chunkSize) {
-    result.push(sourceItems.slice(index, index + chunkSize));
-  }
-  return result;
-}
-
-/**
- * Reads the persisted media-export resume session from the service worker.
- * @returns {Promise<object|null>} Saved session or null.
- */
-async function loadMediaExportSession() {
-  return await sendToServiceWorker("GET_MEDIA_EXPORT_SESSION", {}, { timeoutMs: 120000 }).catch(() => null);
-}
-
-/**
- * Persists the media-export resume session in the service worker store.
- * @param {object|null} nextSession - Session state to save.
- * @returns {Promise<void>}
- */
-async function saveMediaExportSession(nextSession) {
-  await sendToServiceWorker("SAVE_MEDIA_EXPORT_SESSION", { session: nextSession || null }, { timeoutMs: 120000 });
-}
-
-/**
- * Removes any persisted media-export resume session.
- * @returns {Promise<void>}
- */
-async function clearMediaExportSession() {
-  await sendToServiceWorker("CLEAR_MEDIA_EXPORT_SESSION", {}, { timeoutMs: 30000 }).catch((error) => {
-    console.warn("Medien-Export-Sitzung konnte nicht geleert werden.", error);
-  });
-}
-
-/**
- * Checks whether a persisted media-export session can be resumed for the
- * currently selected options.
- * @param {object|null} session - Persisted media-export session.
- * @param {object} options - Current media-export options.
- * @returns {boolean} True when the session should be resumed.
- */
-function canResumeMediaExportSession(session, options) {
-  if (!session || typeof session !== "object") {
-    return false;
-  }
-  if (session.status !== "paused" && session.status !== "running") {
-    return false;
-  }
-  if (String(session.sessionKey || "") !== buildMediaExportSessionKey(options)) {
-    return false;
-  }
-  if (!Array.isArray(session.media) || session.media.length === 0) {
-    return false;
-  }
-  if (!Array.isArray(session.batches) || session.batches.length === 0) {
-    return false;
-  }
-  if ((Number(session.nextBatchIndex) || 0) >= session.batches.length) {
-    return false;
-  }
-  return true;
-}
-
-/**
- * Creates the persisted media-export resume session from the scan result.
- * @param {object} options - Media-export options used for the scan.
- * @param {object} scanned - Scan result returned by the service worker.
- * @returns {object} Normalized resume session for later batch exports.
- */
-function createMediaExportSession(options, scanned) {
-  let media = [];
-  if (Array.isArray(scanned?.media)) {
-    media = scanned.media;
-  }
-  let posts = [];
-  if (Array.isArray(scanned?.posts)) {
-    posts = scanned.posts;
-  }
-  const batches = chunkMediaExportEntries(media, MEDIA_EXPORT_BATCH_SIZE).map((entries, batchIndex) => ({
-    batchIndex,
-    itemCount: entries.length,
-  }));
-  return {
-    mode: "media-export",
-    status: "paused",
-    sessionKey: buildMediaExportSessionKey(options),
-    options,
-    manifest: scanned?.manifest || {},
-    posts,
-    media,
-    batches,
-    nextBatchIndex: 0,
-    exportedMediaCount: 0,
-    skippedMediaCount: 0,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-/**
- * Builds a lookup map for already scanned posts by URI.
- * @param {Array} scannedPosts - Posts returned from the media scan.
- * @returns {Map<string, object>} Map keyed by post URI.
- */
-function buildMediaExportPostsByUri(scannedPosts = []) {
-  let sourcePosts = [];
-  if (Array.isArray(scannedPosts)) {
-    sourcePosts = scannedPosts;
-  }
-  return new Map(sourcePosts.map((post) => [post.uri, post]));
-}
-
-/**
- * Selects the posts referenced by one media-export batch.
- * @param {Array} batchEntries - Media entries in the current batch.
- * @param {Map<string, object>} postsByUri - Post lookup map from the scan.
- * @returns {Array<object>} Deduplicated posts for this batch.
- */
-function collectMediaExportBatchPosts(batchEntries, postsByUri) {
-  const result = [];
-  const seenUris = new Set();
-  let sourceEntries = [];
-  if (Array.isArray(batchEntries)) {
-    sourceEntries = batchEntries;
-  }
-  for (const entry of sourceEntries) {
-    const postUri = String(entry?.postUri || "").trim();
-    if (!postUri || seenUris.has(postUri) || !postsByUri.has(postUri)) {
-      continue;
-    }
-    seenUris.add(postUri);
-    result.push(postsByUri.get(postUri));
-  }
-  return result;
 }
 
 /**
@@ -14855,350 +10261,17 @@ function setArchiveMediaExportControlsDisabled(disabled) {
 }
 
 /**
- * Exports matching account media into resumable ZIP parts. The function reuses a
- * stored scan result when the same options were already scanned before.
- * @returns {Promise<void>}
+ * Exports or resumes media ZIP parts.
+ * @returns {Promise<void>} Delegated operation result.
  */
-async function exportArchiveMediaZip() {
-  if (!authAccount) {
-    throw new Error(t("archiveMediaRequiresLogin"));
-  }
-  if (!supportsStreamingZipExport()) {
-    throw new Error(t("archiveMediaStreamUnsupported"));
-  }
+async function exportArchiveMediaZip() { return archiveMediaExport.export(); }
 
-  const options = getArchiveMediaExportOptions();
-  if (!options.includeImages && !options.includeVideos && !options.includeOther) {
-    throw new Error(t("archiveMediaNeedKind"));
-  }
-  const mediaExportSignal = activeMediaExportAbortController?.signal || null;
-  throwIfMediaExportAborted(mediaExportSignal);
-
-  archiveTransientNotice = "";
-  renderArchiveStatusLine();
-
-  let mediaSession = await loadMediaExportSession();
-  throwIfMediaExportAborted(mediaExportSignal);
-  if (!canResumeMediaExportSession(mediaSession, options)) {
-    setArchiveProgress({
-      title: t("archiveMediaScanTitle"),
-      step: t("archiveMediaScanStep"),
-      percent: 3,
-      detail: "",
-    });
-
-    const scanned = await sendToServiceWorker("SCAN_ACCOUNT_MEDIA_EXPORT", options, {
-      timeoutMs: MEDIA_EXPORT_SCAN_TIMEOUT_MS,
-      signal: mediaExportSignal,
-      createAbortError: createMediaExportAbortError,
-      onProgress(progress) {
-        setArchiveProgress({
-          title: progress.title || t("archiveMediaScanTitle"),
-          step: progress.step || t("archiveMediaScanStep"),
-          percent: Number.isFinite(progress.percent) ? progress.percent : 3,
-          detail: progress.detail || "",
-        });
-      },
-    });
-    throwIfMediaExportAborted(mediaExportSignal);
-    mediaSession = createMediaExportSession(options, scanned);
-    await saveMediaExportSession(mediaSession);
-  } else {
-    setArchiveProgress({
-      title: t("archiveMediaZipTitle"),
-      step: t("archiveMediaResumeStep", {
-        index: Number(mediaSession.nextBatchIndex) + 1,
-        count: mediaSession.batches.length,
-      }),
-      percent: Math.max(6, Math.round((Number(mediaSession.nextBatchIndex) / Math.max(1, mediaSession.batches.length)) * 100)),
-      detail: t("archiveMediaResumeDetail", {
-        count: Number(mediaSession.exportedMediaCount) || 0,
-        skipped: Number(mediaSession.skippedMediaCount) || 0,
-      }),
-    });
-  }
-
-  const mediaEntries = Array.isArray(mediaSession?.media) ? mediaSession.media : [];
-  if (!mediaEntries.length) {
-    await clearMediaExportSession();
-    throw new Error(t("archiveMediaNoMatches"));
-  }
-
-  const batches = Array.isArray(mediaSession.batches) ? mediaSession.batches : [];
-  const scannedPosts = Array.isArray(mediaSession.posts) ? mediaSession.posts : [];
-  const postsByUri = buildMediaExportPostsByUri(scannedPosts);
-  const baseName = buildArchiveMediaFileBaseName(options);
-
-  for (let batchIndex = Number(mediaSession.nextBatchIndex) || 0; batchIndex < batches.length; batchIndex += 1) {
-    throwIfMediaExportAborted(mediaExportSignal);
-    const batchMeta = batches[batchIndex] || {};
-    const batchStart = batchIndex * MEDIA_EXPORT_BATCH_SIZE;
-    const batchSize = Number(batchMeta.itemCount) || MEDIA_EXPORT_BATCH_SIZE;
-    const batchItems = mediaEntries.slice(batchStart, batchStart + batchSize);
-    const batchPosts = collectMediaExportBatchPosts(batchItems, postsByUri);
-    const suggestedName = buildArchiveMediaPartFileName(baseName, batchIndex, batches.length);
-    let fileHandle = null;
-
-    try {
-      fileHandle = await window.showSaveFilePicker({
-        suggestedName,
-        types: [{
-          description: t("archiveMediaFilePickerDescription"),
-          accept: {
-            "application/zip": [".zip"],
-          },
-        }],
-      });
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        mediaSession.status = "paused";
-        mediaSession.nextBatchIndex = batchIndex;
-        mediaSession.updatedAt = new Date().toISOString();
-        await saveMediaExportSession(mediaSession);
-        archiveTransientNotice = t("archiveMediaPausedDetail", {
-          index: batchIndex + 1,
-          count: batches.length,
-        });
-        renderArchiveStatusLine();
-        setArchiveProgress({
-          title: t("archiveProgressPausedTitle"),
-          step: t("archiveMediaResumeStep", { index: batchIndex + 1, count: batches.length }),
-          percent: Math.max(6, Math.round((batchIndex / Math.max(1, batches.length)) * 100)),
-          detail: archiveTransientNotice,
-        });
-        return;
-      }
-      throw new Error(t("archiveMediaFilePickerFailed"));
-    }
-
-    const writable = await fileHandle.createWritable();
-    const zipWriter = new StreamingZipWriter(writable);
-    const exportedMedia = [];
-    const skippedMedia = [];
-    const writtenPostEntries = new Set();
-
-    try {
-      for (const [itemOffset, item] of batchItems.entries()) {
-        throwIfMediaExportAborted(mediaExportSignal);
-        const overallIndex = batchStart + itemOffset;
-        const batchShare = (itemOffset + 1) / Math.max(1, batchItems.length);
-        const progressPercent = 12 + Math.round((((batchIndex + batchShare) / Math.max(1, batches.length)) * 80));
-        setArchiveProgress({
-          title: t("archiveMediaZipTitle"),
-          step: t("archiveMediaBatchStep", {
-            batch: batchIndex + 1,
-            count: batches.length,
-            index: itemOffset + 1,
-            total: batchItems.length,
-          }),
-          percent: progressPercent,
-          detail: t("archiveMediaZipRobustDetail", {
-            index: overallIndex + 1,
-            total: mediaEntries.length,
-            remaining: Math.max(0, mediaEntries.length - overallIndex - 1),
-            count: (Number(mediaSession.exportedMediaCount) || 0) + exportedMedia.length,
-            skipped: (Number(mediaSession.skippedMediaCount) || 0) + skippedMedia.length,
-          }),
-        });
-
-        try {
-          const loaded = await sendToServiceWorker("DOWNLOAD_ACCOUNT_MEDIA_ASSET", { item }, {
-            timeoutMs: MEDIA_EXPORT_ITEM_TIMEOUT_MS,
-            signal: mediaExportSignal,
-            createAbortError: createMediaExportAbortError,
-            onProgress(progress) {
-              setArchiveProgress({
-                title: t("archiveMediaZipTitle"),
-                step: progress.step || t("archiveMediaBatchStep", {
-                  batch: batchIndex + 1,
-                  count: batches.length,
-                  index: itemOffset + 1,
-                  total: batchItems.length,
-                }),
-                percent: progressPercent,
-                detail: progress.detail || t("archiveMediaZipRobustDetail", {
-                  index: overallIndex + 1,
-                  total: mediaEntries.length,
-                  remaining: Math.max(0, mediaEntries.length - overallIndex - 1),
-                  count: (Number(mediaSession.exportedMediaCount) || 0) + exportedMedia.length,
-                  skipped: (Number(mediaSession.skippedMediaCount) || 0) + skippedMedia.length,
-                }),
-              });
-            },
-          });
-          throwIfMediaExportAborted(mediaExportSignal);
-
-          const modifiedAt = loaded?.createdAt ? new Date(loaded.createdAt) : new Date();
-          const relatedPost = postsByUri.get(loaded?.postUri || item.postUri || "") || null;
-          let postFolder = "";
-          if (relatedPost?.postFolder) {
-            postFolder = String(relatedPost.postFolder).trim();
-          } else if (item.postFolder) {
-            postFolder = String(item.postFolder).trim();
-          } else if (loaded?.postFolder) {
-            postFolder = String(loaded.postFolder).trim();
-          } else {
-            postFolder = String(buildMediaExportPostFolder(relatedPost || item || loaded || {})).trim();
-          }
-
-          if (postFolder && !writtenPostEntries.has(postFolder) && relatedPost) {
-            const postSummary = {
-              ...relatedPost,
-              exportedAt: new Date().toISOString(),
-            };
-            await zipWriter.addFile(`${postFolder}/post.json`, utf8Bytes(JSON.stringify(postSummary, null, 2)), modifiedAt);
-            writtenPostEntries.add(postFolder);
-          }
-
-          await zipWriter.addFile(String(loaded.path || item.pathStem || `asset-${overallIndex + 1}`), loaded.bytes || new Uint8Array(), modifiedAt);
-          exportedMedia.push({
-            id: loaded.id || item.id || "",
-            kind: loaded.kind || item.kind || "",
-            path: loaded.path || "",
-            postFolder,
-            type: loaded.type || "",
-            sizeBytes: Number(loaded.sizeBytes) || 0,
-            createdAt: loaded.createdAt || item.createdAt || "",
-            postUri: loaded.postUri || item.postUri || "",
-            alt: loaded.alt || item.alt || "",
-            width: Number(loaded.width) || 0,
-            height: Number(loaded.height) || 0,
-          });
-        } catch (error) {
-          if (error?.name === "AbortError") {
-            throw error;
-          }
-          skippedMedia.push({
-            id: item.id || "",
-            kind: item.kind || "",
-            postFolder: String(item.postFolder || buildMediaExportPostFolder(item || {})).trim(),
-            createdAt: item.createdAt || "",
-            postUri: item.postUri || "",
-            reason: error?.message || t("archiveMediaSkippedUnknown"),
-          });
-          setArchiveProgress({
-            title: t("archiveMediaZipTitle"),
-            step: t("archiveMediaBatchStep", {
-              batch: batchIndex + 1,
-              count: batches.length,
-              index: itemOffset + 1,
-              total: batchItems.length,
-            }),
-            percent: progressPercent,
-            detail: t("archiveMediaZipRobustDetail", {
-              index: overallIndex + 1,
-              total: mediaEntries.length,
-              remaining: Math.max(0, mediaEntries.length - overallIndex - 1),
-              count: (Number(mediaSession.exportedMediaCount) || 0) + exportedMedia.length,
-              skipped: (Number(mediaSession.skippedMediaCount) || 0) + skippedMedia.length,
-            }),
-          });
-        }
-      }
-
-      throwIfMediaExportAborted(mediaExportSignal);
-      const exportManifest = {
-        ...(mediaSession?.manifest || {}),
-        exportedAt: new Date().toISOString(),
-        mediaCount: exportedMedia.length,
-        skippedMediaCount: skippedMedia.length,
-        batchIndex: batchIndex + 1,
-        batchCount: batches.length,
-        batchSize: batchItems.length,
-      };
-
-      await zipWriter.addFile("_meta/manifest.json", utf8Bytes(JSON.stringify(exportManifest, null, 2)));
-      await zipWriter.addFile("_meta/posts.json", utf8Bytes(JSON.stringify(batchPosts, null, 2)));
-      await zipWriter.addFile("_meta/media.json", utf8Bytes(JSON.stringify(exportedMedia, null, 2)));
-      if (skippedMedia.length > 0) {
-        await zipWriter.addFile("_meta/skipped-media.json", utf8Bytes(JSON.stringify(skippedMedia, null, 2)));
-      }
-      await zipWriter.close();
-    } catch (error) {
-      try {
-        await writable.abort();
-      } catch {
-        // Ignore secondary abort errors.
-      }
-      mediaSession.status = "paused";
-      mediaSession.nextBatchIndex = batchIndex;
-      mediaSession.updatedAt = new Date().toISOString();
-      await saveMediaExportSession(mediaSession);
-      throw error;
-    }
-
-    mediaSession.exportedMediaCount = (Number(mediaSession.exportedMediaCount) || 0) + exportedMedia.length;
-    mediaSession.skippedMediaCount = (Number(mediaSession.skippedMediaCount) || 0) + skippedMedia.length;
-    mediaSession.nextBatchIndex = batchIndex + 1;
-    mediaSession.status = "paused";
-    if (mediaSession.nextBatchIndex >= batches.length) {
-      mediaSession.status = "completed";
-    }
-    mediaSession.updatedAt = new Date().toISOString();
-    await saveMediaExportSession(mediaSession);
-  }
-
-  await clearMediaExportSession();
-  setArchiveProgress({
-    title: t("archiveProgressDoneTitle"),
-    step: t("archiveMediaDoneStep"),
-    percent: 100,
-    detail: t("archiveMediaDoneDetail", {
-      count: Number(mediaSession.exportedMediaCount) || 0,
-      skipped: Number(mediaSession.skippedMediaCount) || 0,
-    }),
-  });
-  archiveTransientNotice = t("archiveMediaDoneDetail", {
-    count: Number(mediaSession.exportedMediaCount) || 0,
-    skipped: Number(mediaSession.skippedMediaCount) || 0,
-  });
-  renderArchiveStatusLine();
-  setStatus(`${t("archiveProgressDoneTitle")}: ${archiveTransientNotice}`);
-}
-
-async function exportArchiveZipFromCatalog(catalog = archiveCatalog) {
-  if (!catalog) {
-    throw new Error(t("archiveNeedArchive"));
-  }
-
-  setArchiveProgress({
-    title: t("archiveProgressZipTitle"),
-    step: t("archiveProgressZipStep"),
-    percent: 92,
-    detail: t("archiveProgressZipDetail", { count: catalog.assets.length }),
-  });
-
-  const postsForJson = catalog.posts.map((post) => {
-    const { rawRecord, ...exportPost } = post;
-    return {
-    ...exportPost,
-    images: (post.images || []).map((image) => ({
-      path: image.path,
-      alt: image.alt || "",
-      width: image.width || 0,
-      height: image.height || 0,
-      mimeType: image.mimeType || "application/octet-stream",
-      sizeBytes: image.sizeBytes || 0,
-    })),
-    };
-  });
-
-  const entries = [
-    { name: "manifest.json", data: utf8Bytes(JSON.stringify(catalog.manifest, null, 2)) },
-    { name: "posts.json", data: utf8Bytes(JSON.stringify(postsForJson, null, 2)) },
-    ...catalog.assets.map((asset) => ({ name: asset.path, data: asset.bytes })),
-  ];
-  const zipBytes = buildStoredZip(entries);
-  const fileName = `${makeArchiveFileBaseName(catalog)}.zip`;
-  const file = new File([zipBytes], fileName, { type: "application/zip" });
-  await shareOrDownloadFile(file, fileName, { preferDownload: true });
-  setArchiveProgress({
-    title: t("archiveProgressDoneTitle"),
-    step: t("archiveProgressDoneStep"),
-    percent: 100,
-    detail: t("archiveExportDone"),
-  });
-}
+/**
+ * Exports the supplied or active catalog as ZIP.
+ * @param {object} catalog - Archive catalog.
+ * @returns {Promise<void>} Delegated operation result.
+ */
+async function exportArchiveZipFromCatalog(catalog = archiveCatalog) { return archiveCatalogFiles.export(catalog); }
 
 function escapeHtmlAttribute(value) {
   return escapeHtml(value)
@@ -15206,77 +10279,12 @@ function escapeHtmlAttribute(value) {
     .replace(/'/g, "&#39;");
 }
 
-function bytesToBase64(bytes) {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function base64ToBytes(value = "") {
-  const binary = atob(String(value || ""));
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
-
-function assetToDataUri(asset) {
-  return `data:${asset.type || "application/octet-stream"};base64,${bytesToBase64(asset.bytes)}`;
-}
-
-async function assetToDataUriAsync(asset) {
-  const blob = new Blob([asset?.bytes instanceof Uint8Array ? asset.bytes : new Uint8Array(asset?.bytes || [])], {
-    type: asset?.type || "application/octet-stream",
-  });
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("Asset konnte nicht als Data-URL kodiert werden."));
-    reader.readAsDataURL(blob);
-  });
-}
-
-const ARCHIVE_HTML_EMBED_RECOMMENDED_MAX_BYTES = 48 * 1024 * 1024;
-
-function getArchiveAssetTotalBytes(assets = []) {
-  return (Array.isArray(assets) ? assets : []).reduce((sum, asset) => (
-    sum + Math.max(0, Number(asset?.sizeBytes) || asset?.bytes?.length || 0)
-  ), 0);
-}
-
-function isArchiveStringLengthError(error) {
-  const message = String(error?.message || "").trim().toLowerCase();
-  return error instanceof RangeError
-    || message.includes("invalid string length")
-    || message.includes("string length");
-}
-
-function shouldAutoFallbackArchiveHtmlToCompact(assets = []) {
-  return getArchiveAssetTotalBytes(assets) > ARCHIVE_HTML_EMBED_RECOMMENDED_MAX_BYTES;
-}
-
 function isArchiveHtmlTooLargeForEmbeddedExport(catalog = archiveCatalog) {
   return Boolean(catalog) && shouldAutoFallbackArchiveHtmlToCompact(catalog.assets || []);
 }
 
-function updateArchiveHtmlExportButtons() {
-  const tooLarge = isArchiveHtmlTooLargeForEmbeddedExport();
-  const label = tooLarge ? t("archiveExportHtmlTooLargeButton") : t("archiveExportHtmlButton");
-  const title = tooLarge ? t("archiveExportHtmlTooLargeTitle") : t("archiveExportHtmlButton");
-
-  [archiveExportHtmlButton, archiveActionsExportHtmlButton].forEach((button) => {
-    if (!button) {
-      return;
-    }
-    button.textContent = label;
-    button.title = title;
-    button.disabled = tooLarge;
-  });
-}
+/** Delegates updateArchiveHtmlExportButtons to the archive domain. @returns {*} Domain result. */
+function updateArchiveHtmlExportButtons() { return archiveWorkspaceRenderer.htmlButtons(); }
 
 function waitForUiFrame() {
   return new Promise((resolve) => {
@@ -15336,23 +10344,13 @@ async function copyTextToClipboard(text) {
   helper.remove();
 }
 
+/**
+ * Resolves an account avatar through the shared cache lookup.
+ * @param {object} account - Account identity and avatar metadata.
+ * @returns {string} Embedded cache asset or remote fallback URL.
+ */
 function getStoredAccountAvatarUri(account = {}) {
-  const assets = Array.isArray(accountAvatarAssets) ? accountAvatarAssets : [];
-  const avatarPath = String(account?.avatarPath || "").trim();
-  if (avatarPath) {
-    const asset = assets.find((entry) => entry.path === avatarPath);
-    if (asset) {
-      return assetToDataUri(asset);
-    }
-  }
-  const fallbackAsset = assets.find((entry) =>
-    (account?.did && entry.did === account.did)
-    || (account?.avatar && entry.url === account.avatar));
-  if (fallbackAsset) {
-    account.avatarPath = fallbackAsset.path;
-    return assetToDataUri(fallbackAsset);
-  }
-  return String(account?.avatar || "").trim();
+  return resolveStoredAccountAvatar(account, accountAvatarAssets, assetToDataUri);
 }
 
 function applyAccountAvatarCache(cache) {
@@ -15364,132 +10362,19 @@ async function restoreAccountAvatarCache() {
   applyAccountAvatarCache(cache);
 }
 
-function getAssetExtensionFromMimeType(mimeType = "") {
-  const value = String(mimeType || "").toLowerCase();
-  if (value.includes("png")) {
-    return "png";
-  }
-  if (value.includes("webp")) {
-    return "webp";
-  }
-  if (value.includes("gif")) {
-    return "gif";
-  }
-  return "jpg";
-}
+/**
+ * Hydrates archive avatar paths through the catalog asset module.
+ * @param {object|null} catalog - Mutable catalog.
+ * @returns {Promise<object|null>} Catalog with resolved avatar paths.
+ */
+async function ensureArchiveAvatarAssets(catalog) { return catalogAvatarAssets.archive(catalog); }
 
-async function downloadRemoteAssetForCatalog(url) {
-  const response = await fetch(url, { method: "GET" });
-  if (!response.ok) {
-    throw new Error(t("archiveAssetLoadFailed", { status: response.status }));
-  }
-  return {
-    type: response.headers.get("content-type") || "application/octet-stream",
-    bytes: new Uint8Array(await response.arrayBuffer()),
-  };
-}
-
-async function ensureArchiveAvatarAssets(catalog) {
-  if (!catalog) {
-    return catalog;
-  }
-  if (!Array.isArray(catalog.assets)) {
-    catalog.assets = [];
-  }
-
-  const existingPaths = new Set(catalog.assets.map((asset) => asset.path));
-  const pathByUrl = new Map();
-  const selfAccount = savedAccounts.find((account) => account.did && account.did === authAccountDid)
-    || savedAccounts.find((account) => account.handle && account.handle === authAccount)
-    || null;
-
-  for (const post of catalog.posts || []) {
-    if (!post.authorAvatar && post.authorDid && selfAccount?.avatar && post.authorDid === selfAccount.did) {
-      post.authorAvatar = selfAccount.avatar;
-    }
-    if (!post.authorAvatarPath && post.authorAvatar && pathByUrl.has(post.authorAvatar)) {
-      post.authorAvatarPath = pathByUrl.get(post.authorAvatar) || "";
-      continue;
-    }
-    if (post.authorAvatarPath || !post.authorAvatar) {
-      continue;
-    }
-    try {
-      const blob = await downloadRemoteAssetForCatalog(post.authorAvatar);
-      const extension = getAssetExtensionFromMimeType(blob.type);
-      const slug = String(post.authorHandle || post.authorDid || "author").replace(/[^\w.-]+/g, "-").slice(0, 60) || "author";
-      const path = `avatars/${slug}.${extension}`;
-      pathByUrl.set(post.authorAvatar, path);
-      post.authorAvatarPath = path;
-      if (!existingPaths.has(path)) {
-        existingPaths.add(path);
-        catalog.assets.push({
-          path,
-          type: blob.type,
-          sizeBytes: blob.bytes.length,
-          bytes: blob.bytes,
-        });
-      }
-    } catch {
-      post.authorAvatarPath = "";
-    }
-  }
-
-  return catalog;
-}
-
-async function ensureDmAvatarAssets(catalog) {
-  if (!catalog) {
-    return catalog;
-  }
-  if (!Array.isArray(catalog.assets)) {
-    catalog.assets = [];
-  }
-
-  const selfDid = catalog?.manifest?.account?.did || authAccountDid || "";
-  const selfAvatarPath = catalog?.manifest?.account?.avatarPath || "";
-  const partner = getDmPrimaryPartner(catalog);
-  const recentByDid = new Map((Array.isArray(catalog.recentContacts) ? catalog.recentContacts : []).map((entry) => [entry.did, entry]));
-  const memberByDid = new Map();
-  (catalog.conversations || []).forEach((convo) => {
-    (convo.members || []).forEach((member) => {
-      if (member?.did && !memberByDid.has(member.did)) {
-        memberByDid.set(member.did, member);
-      }
-    });
-  });
-
-  if (partner?.did) {
-    const recent = recentByDid.get(partner.did);
-    const mergedPath = partner.avatarPath || recent?.avatarPath || memberByDid.get(partner.did)?.avatarPath || "";
-    if (mergedPath) {
-      partner.avatarPath = mergedPath;
-      if (recent) {
-        recent.avatarPath = mergedPath;
-      }
-      const member = memberByDid.get(partner.did);
-      if (member) {
-        member.avatarPath = mergedPath;
-      }
-    }
-  }
-
-  (catalog.messages || []).forEach((entry) => {
-    if (!entry || typeof entry !== "object") {
-      return;
-    }
-    if (entry.senderDid === selfDid && selfAvatarPath) {
-      entry.senderAvatarPath = entry.senderAvatarPath || selfAvatarPath;
-      return;
-    }
-    const member = memberByDid.get(entry.senderDid) || recentByDid.get(entry.senderDid);
-    if (member?.avatarPath && !entry.senderAvatarPath) {
-      entry.senderAvatarPath = member.avatarPath;
-    }
-  });
-
-  return catalog;
-}
+/**
+ * Hydrates dm avatar paths through the catalog asset module.
+ * @param {object|null} catalog - Mutable catalog.
+ * @returns {Promise<object|null>} Catalog with resolved avatar paths.
+ */
+async function ensureDmAvatarAssets(catalog) { return catalogAvatarAssets.dm(catalog); }
 
 function utf8IndexToUtf16Index(text, byteIndex) {
   const value = String(text || "");
@@ -15591,227 +10476,7 @@ function extractFacetRichTextRuns(text, facets = []) {
   return runs.length > 0 ? runs : null;
 }
 
-function renderArchiveHtmlRichText(text, facets = []) {
-  return extractPdfLinkRuns(text, facets).map((run) => {
-    const content = escapeHtml(run.text || "").replace(/\n/g, "<br>");
-    if (run.url) {
-      return `<a href="${escapeHtmlAttribute(run.url)}" target="_blank" rel="noreferrer noopener">${content}</a>`;
-    }
-    return content;
-  }).join("");
-}
-
-function buildArchiveThreadGroups(posts = []) {
-  const orderedPosts = [...posts].sort((left, right) => Date.parse(left.createdAt || 0) - Date.parse(right.createdAt || 0));
-  const groups = [];
-  const groupMap = new Map();
-
-  orderedPosts.forEach((post, index) => {
-    const key = post?.thread?.rootUri || post?.uri || `post-${index + 1}`;
-    let group = groupMap.get(key);
-    if (!group) {
-      group = {
-        key,
-        posts: [],
-      };
-      groupMap.set(key, group);
-      groups.push(group);
-    }
-    group.posts.push(post);
-  });
-
-  return groups.map((group) => {
-    const orderedThreadPosts = orderArchiveGroupPostsByThread(group.posts);
-    const createdValues = group.posts
-      .map((post) => Date.parse(post.createdAt || 0))
-      .filter((value) => Number.isFinite(value));
-    const minCreated = createdValues.length > 0 ? Math.min(...createdValues) : 0;
-    const maxCreated = createdValues.length > 0 ? Math.max(...createdValues) : 0;
-    const imageCount = orderedThreadPosts.reduce((total, post) => total + ((post.images || []).length), 0);
-    const hasReplies = orderedThreadPosts.some((post) => Boolean(post?.thread?.parentUri));
-    return {
-      ...group,
-      posts: orderedThreadPosts,
-      isThread: orderedThreadPosts.length > 1 || hasReplies,
-      hasImages: imageCount > 0,
-      imageCount,
-      minCreated,
-      maxCreated,
-    };
-  });
-}
-
-function orderArchiveGroupPostsByThread(posts = []) {
-  const byUri = new Map();
-  const childrenByParent = new Map();
-  const rootCandidates = [];
-
-  const chronological = [...posts].sort((left, right) => {
-    const leftTime = Date.parse(left.createdAt || 0) || 0;
-    const rightTime = Date.parse(right.createdAt || 0) || 0;
-    if (leftTime !== rightTime) {
-      return leftTime - rightTime;
-    }
-    return String(left.uri || "").localeCompare(String(right.uri || ""));
-  });
-
-  chronological.forEach((post) => {
-    if (post?.uri) {
-      byUri.set(post.uri, post);
-    }
-  });
-
-  chronological.forEach((post) => {
-    const parentUri = post?.thread?.parentUri || "";
-    if (parentUri && byUri.has(parentUri)) {
-      if (!childrenByParent.has(parentUri)) {
-        childrenByParent.set(parentUri, []);
-      }
-      childrenByParent.get(parentUri).push(post);
-      return;
-    }
-    rootCandidates.push(post);
-  });
-
-  const ordered = [];
-  const seen = new Set();
-
-  function visit(post) {
-    if (!post?.uri || seen.has(post.uri)) {
-      return;
-    }
-    seen.add(post.uri);
-    ordered.push(post);
-    const children = childrenByParent.get(post.uri) || [];
-    children.forEach((child) => visit(child));
-  }
-
-  const explicitRoots = rootCandidates.sort((left, right) => {
-    const leftRoot = left?.thread?.rootUri || left?.uri || "";
-    const rightRoot = right?.thread?.rootUri || right?.uri || "";
-    const leftIsRoot = leftRoot === (left?.uri || "");
-    const rightIsRoot = rightRoot === (right?.uri || "");
-    if (leftIsRoot !== rightIsRoot) {
-      return leftIsRoot ? -1 : 1;
-    }
-    const leftTime = Date.parse(left.createdAt || 0) || 0;
-    const rightTime = Date.parse(right.createdAt || 0) || 0;
-    if (leftTime !== rightTime) {
-      return leftTime - rightTime;
-    }
-    return String(left.uri || "").localeCompare(String(right.uri || ""));
-  });
-
-  explicitRoots.forEach((post) => visit(post));
-  chronological.forEach((post) => visit(post));
-  return ordered;
-}
-
-function buildArchiveHtmlToolbarStrings() {
-  return {
-    visibleStatus: t("archiveHtmlVisibleStatus"),
-    noMatches: t("archiveHtmlNoMatches"),
-    imageModalClose: t("closeButton"),
-  };
-}
-
-const ARCHIVE_HTML_TEMPLATE_SHELL_PATH = "./templates/archive-html-shell.html";
-const ARCHIVE_HTML_TEMPLATE_CLIENT_PATH = "./templates/archive-html-client.js";
-let archiveHtmlTemplateBundlePromise = null;
-
-async function loadArchiveHtmlTemplateBundle() {
-  if (!archiveHtmlTemplateBundlePromise) {
-    archiveHtmlTemplateBundlePromise = Promise.all([
-      fetch(ARCHIVE_HTML_TEMPLATE_SHELL_PATH).then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to load archive shell template: ${response.status}`);
-        }
-        return response.text();
-      }),
-      fetch(ARCHIVE_HTML_TEMPLATE_CLIENT_PATH).then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to load archive client template: ${response.status}`);
-        }
-        return response.text();
-      }),
-    ]).then(([shell, clientScript]) => ({ shell, clientScript }));
-  }
-  return archiveHtmlTemplateBundlePromise;
-}
-
-function fillArchiveHtmlTemplate(template, replacements = {}) {
-  return Object.entries(replacements).reduce(
-    (result, [key, value]) => result.split(`{{${key}}}`).join(String(value ?? "")),
-    String(template || ""),
-  );
-}
-
-function serializeArchiveHtmlInlineJson(value) {
-  return JSON.stringify(value)
-    .replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029");
-}
-
-function serializeArchiveHtmlInlineScript(value) {
-  return String(value || "").replace(/<\/script/gi, "<\\/script");
-}
-
-function buildArchiveHtmlI18n() {
-  const keys = [
-    "archiveHeaderEyebrow",
-    "archiveHtmlTitle",
-    "archiveHtmlGenerated",
-    "archiveSummaryPosts",
-    "archiveSummaryImages",
-    "archiveSkippedImagesLabel",
-    "archiveSkippedImagesNotice",
-    "archiveHtmlArchiveRangeLabel",
-    "archiveHtmlArchiveRangeValue",
-    "archiveHtmlSearchLabel",
-    "archiveFromLabel",
-    "archiveToLabel",
-    "archiveHtmlOnlyImages",
-    "archiveHtmlOnlyThreads",
-    "archiveHtmlResetFilters",
-    "archiveHtmlIndentThreads",
-    "archiveHtmlExpandThreads",
-    "archiveHtmlCollapseThreads",
-    "archiveHtmlExpandSingles",
-    "archiveHtmlCollapseSingles",
-    "archiveHtmlToggleAllOpen",
-    "archiveHtmlToggleAllClose",
-    "archiveHtmlHashtagsLabel",
-    "archiveHtmlHashtagsEmpty",
-    "archiveHtmlVisibleStatus",
-    "archiveHtmlNoMatches",
-    "archiveHtmlFilterSummary",
-    "archiveHtmlFilterHashtagsSuffix",
-    "archiveHtmlLoadImage",
-    "archiveHtmlOpenImage",
-    "archiveHtmlOpenPost",
-    "archiveHtmlEditedBadge",
-    "archiveHtmlEditDetailsButton",
-    "archiveHtmlEditDialogTitle",
-    "archiveHtmlEditDialogNote",
-    "archiveHtmlEditOriginal",
-    "archiveHtmlEditCurrent",
-    "archiveHtmlLinksSummary",
-    "archiveHtmlLinksEmpty",
-    "archiveHtmlLinksPostLabel",
-    "archiveHtmlThreadSummary",
-    "archiveHtmlSingleSummary",
-    "archiveHtmlNoText",
-    "archivePdfAltPrefix",
-    "closeButton",
-  ];
-
-  return Object.fromEntries(SUPPORTED_LOCALES.map((locale) => [
-    locale,
-    Object.fromEntries(keys.map((key) => [key, translations[locale]?.[key] || translations[DEFAULT_LOCALE]?.[key] || key])),
-  ]));
-}
-
+/** Extracts hashtag data using the shared parser. @param {*} text - Post text. @returns {object[]} Normalized hashtag values. */
 function extractArchiveHashtagsFromText(text) {
   const value = String(text || "");
   const regex = /(?:^|\s)(#[^\d\s]\S*)(?=\s|$)/gu;
@@ -15833,76 +10498,6 @@ function extractArchiveHashtagsFromText(text) {
   return matches;
 }
 
-function collectArchiveHtmlHashtags(posts = []) {
-  const seen = new Set();
-  const tags = [];
-
-  posts.forEach((post) => {
-    extractArchiveHashtagsFromText(post.text).forEach((tag) => {
-      if (seen.has(tag.normalized)) {
-        return;
-      }
-      seen.add(tag.normalized);
-      tags.push(tag);
-    });
-  });
-
-  return tags.sort((left, right) => left.value.localeCompare(right.value, currentLocale, { sensitivity: "base" }));
-}
-
-function formatArchiveHtmlDateInputValue(value) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-}
-
-function shortenArchiveUrlForDisplay(url) {
-  const value = String(url || "").trim();
-  if (!value) {
-    return "";
-  }
-  try {
-    const parsed = new URL(value);
-    const compact = `${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}${parsed.search}${parsed.hash}`;
-    return compact.length > 72 ? `${compact.slice(0, 69)}...` : compact;
-  } catch {
-    return value.length > 72 ? `${value.slice(0, 69)}...` : value;
-  }
-}
-
-function collectArchiveHtmlLinks(posts = []) {
-  const items = [];
-  posts.forEach((post) => {
-    extractPdfLinkRuns(post.text || "", post.facets || []).forEach((run) => {
-      if (!run.url || run.kind !== "link") {
-        return;
-      }
-      items.push({
-        postUri: post.uri || "",
-        postPermalink: post.permalink || "",
-        url: run.url,
-        displayUrl: shortenArchiveUrlForDisplay(run.url),
-        authorHandle: post.authorHandle || "",
-        authorDisplayName: post.authorDisplayName || "",
-        createdAt: post.createdAt || "",
-      });
-    });
-  });
-  return items.sort((left, right) => {
-    const leftTime = Date.parse(left.createdAt || 0) || 0;
-    const rightTime = Date.parse(right.createdAt || 0) || 0;
-    if (leftTime !== rightTime) {
-      return leftTime - rightTime;
-    }
-    return String(left.url || "").localeCompare(String(right.url || ""));
-  });
-}
-
 /**
  * Reads the external card stored on an archive post.
  * @param {object} post - Archive post object.
@@ -15916,2976 +10511,26 @@ function getArchiveExternalCard(post = {}) {
 }
 
 /**
- * Builds display data for an archive link card.
- * @param {object} externalCard - External card data from an archive post.
- * @returns {object} CSS class and footer text for the rendered card.
+ * Delegates standalone HTML export for the supplied or active archive.
+ * @param {object} catalog - Archive catalog, defaulting to the active catalog.
+ * @param {object} options - Optional full/compact export mode.
+ * @returns {Promise<void>} Delivery and final progress completion.
  */
-function getArchiveExternalCardDisplay(externalCard) {
-  const standardSite = normalizeStandardSiteMetadata(externalCard?.standardSite);
-  if (standardSite) {
-    const publicationFooterLabel = getPublicationCardFooterLabel(standardSite);
-    return {
-      className: "archive-html-link-card is-publication",
-      footer: `${shortenArchiveUrlForDisplay(externalCard.url)} - ${publicationFooterLabel}`,
-    };
-  }
-
-  return {
-    className: "archive-html-link-card",
-    footer: shortenArchiveUrlForDisplay(externalCard.url),
-  };
-}
-
-function buildArchiveThreadDepthMap(posts = []) {
-  const byUri = new Map(posts.map((post) => [post.uri, post]));
-  const depthCache = new Map();
-
-  function resolveDepth(post) {
-    if (!post?.uri) {
-      return 0;
-    }
-    if (depthCache.has(post.uri)) {
-      return depthCache.get(post.uri);
-    }
-
-    const parentUri = post?.thread?.parentUri || "";
-    if (!parentUri || !byUri.has(parentUri)) {
-      depthCache.set(post.uri, 0);
-      return 0;
-    }
-
-    const depth = Math.min(8, resolveDepth(byUri.get(parentUri)) + 1);
-    depthCache.set(post.uri, depth);
-    return depth;
-  }
-
-  posts.forEach((post) => {
-    resolveDepth(post);
-  });
-  return depthCache;
-}
-
-function buildArchiveHtmlFilterSummary(catalog) {
-  const filters = catalog?.manifest?.filters || {};
-  const selectedTags = Array.isArray(filters?.hashtagTags) ? filters.hashtagTags : [];
-  const filteredOutCount = Math.max(0, Number(catalog?.manifest?.hashtagFilteredOutCount) || 0);
-  const scope = filters.scope === "year"
-    ? `Jahr ${filters.year || "?"}`
-    : (filters.scope === "range"
-      ? `${filters.from || "…"} – ${filters.to || "…"}`
-      : "Kompletter Account");
-  const hashtags = selectedTags.length > 0
-    ? t("archiveHtmlFilterHashtagsSuffix", { count: selectedTags.length, skipped: filteredOutCount })
-    : "";
-  return t("archiveHtmlFilterSummary", { scope, hashtags });
-}
-
-function buildArchiveHtmlImageMarkup(post, assetUris, options = {}) {
-  return (post.images || []).map((image) => {
-    const assetUri = options.embedPostImages !== false ? (assetUris.get(image.path) || "") : "";
-    if (!assetUri && options.embedPostImages === false) {
-      const remoteUrl = String(image.remoteUrl || "").trim();
-      if (!remoteUrl) {
-        return "";
-      }
-      return `
-          <figure class="archive-html-image archive-html-image-lazy" data-archive-image-remote="${escapeHtmlAttribute(remoteUrl)}" data-archive-image-alt="${escapeHtmlAttribute(image.alt || "")}">
-            <div class="archive-html-image-placeholder">
-              <button type="button" class="archive-html-inline-load" data-archive-load-image>${escapeHtml(t("archiveHtmlLoadImage"))}</button>
-              <a class="archive-html-link" href="${escapeHtmlAttribute(remoteUrl)}" target="_blank" rel="noreferrer noopener">${escapeHtml(t("archiveHtmlOpenImage"))}</a>
-            </div>
-            ${image.alt ? `<figcaption>${escapeHtml(`${t("archivePdfAltPrefix")} ${image.alt}`)}</figcaption>` : ""}
-          </figure>
-        `;
-    }
-    if (!assetUri) {
-      return "";
-    }
-    return `
-          <figure class="archive-html-image">
-            <img src="${escapeHtmlAttribute(assetUri)}" alt="${escapeHtmlAttribute(image.alt || "")}" loading="lazy">
-            ${image.alt ? `<figcaption>${escapeHtml(`${t("archivePdfAltPrefix")} ${image.alt}`)}</figcaption>` : ""}
-          </figure>
-        `;
-  }).join("");
-}
-
-/**
- * Builds the archive HTML edit marker for a Mu-edited post.
- * @param {object} post - Archive post object.
- * @returns {string} Edit marker button markup, or an empty string.
- */
-function buildArchiveHtmlEditMarkup(post) {
-  const editInfo = post?.editInfo || null;
-  if (!editInfo?.isEdited) {
-    return "";
-  }
-
-  return `
-            <button
-              type="button"
-              class="archive-html-edit-button"
-              data-archive-edit-button
-              data-edit-created="${escapeHtmlAttribute(editInfo.createdAt || post.createdAt || "")}"
-              data-edit-updated="${escapeHtmlAttribute(editInfo.updatedAt || "")}"
-              data-edit-original="${escapeHtmlAttribute(editInfo.originalText || "")}"
-              data-edit-current="${escapeHtmlAttribute(editInfo.text || post.text || "")}"
-              title="${escapeHtmlAttribute(t("archiveHtmlEditDetailsButton"))}"
-            >${escapeHtml(t("archiveHtmlEditedBadge"))}</button>
-          `;
-}
-
-function buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap, handle, assetUris, options = {}) {
-  const createdTimestamp = Date.parse(post.createdAt || 0) || 0;
-  const hasImages = (post.images || []).length > 0;
-  const searchValue = [
-    post.text || "",
-    post.permalink || "",
-    post.uri || "",
-    post.authorHandle || handle,
-    post.authorDisplayName || "",
-    extractPdfLinkRuns(post.text || "", post.facets || []).map((run) => run.url || "").filter(Boolean).join(" "),
-  ].join(" ").replace(/\s+/g, " ").trim().toLowerCase();
-  const imagesMarkup = buildArchiveHtmlImageMarkup(post, assetUris, options);
-  const metrics = post.counts || {};
-  const depth = depthMap.get(post.uri) || 0;
-  const authorDisplay = post.authorDisplayName && post.authorDisplayName !== post.authorHandle
-    ? post.authorDisplayName
-    : "";
-  const authorAvatarUri = (post.authorAvatarPath ? (assetUris.get(post.authorAvatarPath) || "") : "") || post.authorAvatar || "";
-  const externalCard = getArchiveExternalCard(post);
-  const externalThumbUri = (externalCard?.thumbPath ? (assetUris.get(externalCard.thumbPath) || "") : "") || String(externalCard?.thumb || "").trim();
-  const externalThumbFailed = externalCard?.thumbLoadFailed === true && !externalThumbUri;
-  let externalCardDisplay = null;
-  if (externalCard) {
-    externalCardDisplay = getArchiveExternalCardDisplay(externalCard);
-  }
-  const editMarkup = buildArchiveHtmlEditMarkup(post);
-  return `
-        <article
-          class="archive-html-post"
-          data-archive-post
-          data-created="${createdTimestamp}"
-          data-has-images="${hasImages ? "true" : "false"}"
-          data-search="${escapeHtmlAttribute(searchValue)}"
-          data-depth="${depth}"
-          style="--thread-depth:${depth}"
-        >
-          <div class="archive-html-post-head">
-            <div class="archive-html-author">
-              ${authorAvatarUri ? `<img class="archive-html-avatar" src="${escapeHtmlAttribute(authorAvatarUri)}" alt="${escapeHtmlAttribute(authorDisplay || post.authorHandle || handle)}" loading="lazy">` : ""}
-              <div>
-              <p class="archive-html-kicker">${group.isThread ? `#${groupIndex + 1}.${postIndex + 1}` : `#${groupIndex + 1}`}</p>
-              <h2 data-archive-searchable="true">${escapeHtml(authorDisplay || `@${post.authorHandle || handle}`)}</h2>
-              <p class="archive-html-author-handle" data-archive-searchable="true">@${escapeHtml(post.authorHandle || handle)}</p>
-              </div>
-            </div>
-            <div class="archive-html-post-head-actions">
-              ${editMarkup}
-              <time datetime="${escapeHtmlAttribute(post.createdAt || "")}">${escapeHtml(formatHistoryTimestamp(post.createdAt))}</time>
-            </div>
-          </div>
-          <div class="archive-html-metrics">
-            <span>Likes ${metrics.likeCount || 0}</span>
-            <span>Replies ${metrics.replyCount || 0}</span>
-            <span>Reposts ${metrics.repostCount || 0}</span>
-            <span>Quotes ${metrics.quoteCount || 0}</span>
-          </div>
-          <div class="archive-html-text" data-archive-richtext="true">${post.text ? renderArchiveHtmlRichText(post.text, post.facets || []) : (!externalCard ? `<span class="archive-html-empty">${escapeHtml(t("archiveHtmlNoText"))}</span>` : "")}</div>
-          ${externalCard ? `
-            <a class="${escapeHtmlAttribute(externalCardDisplay.className)}" href="${escapeHtmlAttribute(externalCard.url)}" target="_blank" rel="noreferrer noopener">
-              ${externalThumbUri
-                ? `<img class="archive-html-link-card-thumb" src="${escapeHtmlAttribute(externalThumbUri)}" alt="">`
-                : (externalThumbFailed
-                  ? `<span class="archive-html-link-card-thumb archive-html-link-card-thumb-fallback">${escapeHtml(t("archiveLinkCardThumbFailed"))}</span>`
-                  : "")}
-              <span class="archive-html-link-card-copy">
-                <strong>${escapeHtml(externalCard.title || externalCard.url)}</strong>
-                ${externalCard.description ? `<span>${escapeHtml(externalCard.description)}</span>` : ""}
-                <small>${escapeHtml(externalCardDisplay.footer)}</small>
-              </span>
-            </a>
-          ` : ""}
-          ${imagesMarkup ? `<div class="archive-html-gallery">${imagesMarkup}</div>` : ""}
-          <div class="archive-html-footer">
-            ${post.permalink ? `<a class="archive-html-link" href="${escapeHtmlAttribute(post.permalink)}" target="_blank" rel="noreferrer noopener">${escapeHtml(t("archiveHtmlOpenPost"))}</a>` : ""}
-            <span class="archive-html-uri">${escapeHtml((post.uri || "").replace(/^at:\/\//, ""))}</span>
-          </div>
-        </article>
-      `;
-}
-
-function buildArchiveHtmlGroupMarkup(group, groupIndex, handle, assetUris, options = {}) {
-  const depthMap = buildArchiveThreadDepthMap(group.posts);
-  const summaryLabel = group.isThread
-    ? t("archiveHtmlThreadSummary", { count: group.posts.length, images: group.imageCount })
-    : t("archiveHtmlSingleSummary");
-  const postsMarkup = group.posts
-    .map((post, postIndex) => buildArchiveHtmlPostMarkup(post, group, groupIndex, postIndex, depthMap, handle, assetUris, options))
-    .join("");
-
-  if (group.isThread) {
-    return `
-        <details class="archive-html-entry archive-html-thread" data-archive-entry data-is-thread="true" data-entry-kind="thread">
-          <summary>
-            <div>
-              <strong>${escapeHtml(summaryLabel)}</strong>
-              <span>${escapeHtml(formatHistoryTimestamp(group.posts[0]?.createdAt))} – ${escapeHtml(formatHistoryTimestamp(group.posts[group.posts.length - 1]?.createdAt))}</span>
-            </div>
-            <span>${escapeHtml(t("archiveSummaryPosts"))}: ${group.posts.length}</span>
-          </summary>
-          <div class="archive-html-entry-body archive-html-thread-posts">
-            ${postsMarkup}
-          </div>
-        </details>
-      `;
-  }
-
-  return `
-      <details class="archive-html-entry archive-html-single" data-archive-entry data-is-thread="false" data-entry-kind="single">
-        <summary class="archive-html-entry-head">
-          <strong>${escapeHtml(summaryLabel)}</strong>
-          <span>${escapeHtml(formatHistoryTimestamp(group.posts[0]?.createdAt))}</span>
-        </summary>
-        <div class="archive-html-entry-body">
-          ${postsMarkup}
-        </div>
-      </details>
-    `;
-}
-
-function buildArchiveHtmlLinksMarkup(archiveLinks) {
-  if (archiveLinks.length > 0) {
-    return `
-        <details class="archive-html-entry archive-html-links">
-          <summary>
-            <div>
-              <strong>${escapeHtml(t("archiveHtmlLinksSummary", { count: archiveLinks.length }))}</strong>
-              <span>${escapeHtml(formatHistoryTimestamp(archiveLinks[0]?.createdAt))} – ${escapeHtml(formatHistoryTimestamp(archiveLinks[archiveLinks.length - 1]?.createdAt))}</span>
-            </div>
-            <span>${archiveLinks.length}</span>
-          </summary>
-          <div class="archive-html-entry-body">
-            <div class="archive-html-links-list">
-              ${archiveLinks.map((entry) => `
-                <div class="archive-html-links-row">
-                  ${entry.postPermalink
-                    ? `<a class="archive-html-link" href="${escapeHtmlAttribute(entry.postPermalink)}" target="_blank" rel="noreferrer noopener">${escapeHtml(t("archiveHtmlLinksPostLabel"))}</a>`
-                    : `<span class="archive-html-link archive-html-link-passive">${escapeHtml(t("archiveHtmlLinksPostLabel"))}</span>`}
-                  <a class="archive-html-links-target" href="${escapeHtmlAttribute(entry.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(entry.displayUrl)}</a>
-                </div>
-              `).join("")}
-            </div>
-          </div>
-        </details>
-  `;
-  }
-
-  return `
-        <details class="archive-html-entry archive-html-links">
-          <summary>
-            <div>
-              <strong>${escapeHtml(t("archiveHtmlLinksSummary", { count: 0 }))}</strong>
-            </div>
-            <span>0</span>
-          </summary>
-          <div class="archive-html-entry-body">
-            <p class="archive-html-hashtags-empty">${escapeHtml(t("archiveHtmlLinksEmpty"))}</p>
-          </div>
-        </details>
-  `;
-}
-
-function buildArchiveHtmlDocument(catalog, assetUris, options = {}) {
-  const groups = buildArchiveThreadGroups(catalog.posts || []);
-  const archiveHashtags = collectArchiveHtmlHashtags(catalog.posts || []);
-  const archiveLinks = collectArchiveHtmlLinks(catalog.posts || []);
-  const toolbarStrings = buildArchiveHtmlToolbarStrings();
-  const htmlI18n = buildArchiveHtmlI18n();
-  const handle = catalog?.manifest?.account?.handle || authAccount || "Bluesky";
-  const fromValue = formatArchiveHtmlDateInputValue(catalog?.summary?.from);
-  const toValue = formatArchiveHtmlDateInputValue(catalog?.summary?.to);
-  const exportedAtIso = catalog?.manifest?.exportedAt || new Date().toISOString();
-  const title = t("archiveHtmlTitle", { handle });
-  const skippedImageCount = Number(catalog?.summary?.skippedImageCount) || 0;
-  const filterSummaryText = buildArchiveHtmlFilterSummary(catalog);
-  const groupsMarkup = groups
-    .map((group, groupIndex) => buildArchiveHtmlGroupMarkup(group, groupIndex, handle, assetUris, options))
-    .join("");
-  const linksMarkup = buildArchiveHtmlLinksMarkup(archiveLinks);
-
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(title)}</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: #ecf4ff;
-        --panel: rgba(255, 255, 255, 0.9);
-        --panel-strong: #ffffff;
-        --text: #10233e;
-        --muted: #617895;
-        --line: rgba(84, 115, 160, 0.16);
-        --accent: #2d72f6;
-        --accent-soft: rgba(45, 114, 246, 0.12);
-        --thread-accent: #e0614a;
-        --thread-rail: rgba(224, 97, 74, 0.26);
-        --shadow: 0 24px 44px rgba(24, 41, 75, 0.12);
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; }
-      body {
-        font-family: "Segoe UI", Aptos, Arial, sans-serif;
-        background:
-          radial-gradient(circle at top left, rgba(45, 114, 246, 0.12), transparent 24%),
-          radial-gradient(circle at top right, rgba(47, 209, 183, 0.14), transparent 20%),
-          linear-gradient(180deg, #eff6ff 0%, #edf3fb 100%);
-        color: var(--text);
-      }
-      a { color: var(--accent); }
-      .archive-html-shell {
-        width: min(1200px, calc(100vw - 32px));
-        margin: 0 auto;
-        padding: 28px 0 60px;
-      }
-      .archive-html-hero,
-      .archive-html-toolbar,
-      .archive-html-entry {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 26px;
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(16px);
-      }
-      .archive-html-hero {
-        padding: 28px;
-        margin-bottom: 18px;
-      }
-      .archive-html-kicker {
-        margin: 0 0 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        font-size: 0.74rem;
-        color: var(--muted);
-      }
-      .archive-html-hero h1 {
-        margin: 0;
-        font-size: clamp(2rem, 4vw, 3rem);
-        line-height: 1.02;
-      }
-      .archive-html-hero p {
-        margin: 10px 0 0;
-        color: var(--muted);
-        line-height: 1.6;
-      }
-      .archive-html-meta {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 12px;
-        margin-top: 18px;
-      }
-      .archive-html-meta-item {
-        padding: 14px 16px;
-        border-radius: 18px;
-        background: rgba(236, 244, 255, 0.88);
-        border: 1px solid rgba(102, 133, 178, 0.14);
-      }
-      .archive-html-meta-item span {
-        display: block;
-        font-size: 0.82rem;
-        color: var(--muted);
-        margin-bottom: 4px;
-      }
-      .archive-html-warning {
-        margin: 10px 0 0;
-        padding: 12px 14px;
-        border-radius: 16px;
-        background: rgba(217, 95, 75, 0.1);
-        border: 1px solid rgba(217, 95, 75, 0.18);
-        color: #8c2f20;
-      }
-      .archive-html-toolbar {
-        position: sticky;
-        top: 14px;
-        z-index: 10;
-        padding: 18px;
-        margin-bottom: 18px;
-      }
-      body.archive-html-nojs .archive-html-toolbar {
-        display: none !important;
-      }
-      .archive-html-toolbar-grid {
-        display: grid;
-        grid-template-columns: minmax(220px, 1.2fr) repeat(2, minmax(150px, 0.8fr));
-        gap: 12px;
-      }
-      .archive-html-toolbar label,
-      .archive-html-toolbar .archive-html-checks label {
-        display: grid;
-        gap: 6px;
-        font-size: 0.92rem;
-        color: var(--muted);
-      }
-      .archive-html-toolbar input[type="search"],
-      .archive-html-toolbar input[type="date"] {
-        width: 100%;
-        border: 1px solid rgba(102, 133, 178, 0.18);
-        border-radius: 14px;
-        padding: 12px 14px;
-        background: #fff;
-        color: var(--text);
-      }
-      .archive-html-checks {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        margin-top: 14px;
-      }
-      .archive-html-toolbar-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 14px;
-      }
-      .archive-html-toolbar-actions button {
-        border: 0;
-        border-radius: 999px;
-        padding: 10px 14px;
-        background: #152846;
-        color: #fff;
-        cursor: pointer;
-      }
-      .archive-html-toolbar-actions button.secondary {
-        background: rgba(45, 114, 246, 0.1);
-        color: var(--accent);
-      }
-      .archive-html-toolbar-actions button.is-active {
-        background: #152846;
-        color: #fff;
-      }
-      .archive-html-filter-status {
-        margin: 14px 0 0;
-        color: var(--muted);
-      }
-      .archive-html-hashtags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 14px;
-      }
-      .archive-html-hashtag {
-        border: 1px solid rgba(45, 114, 246, 0.16);
-        border-radius: 999px;
-        padding: 8px 12px;
-        background: rgba(45, 114, 246, 0.08);
-        color: var(--accent);
-        cursor: pointer;
-        font: inherit;
-      }
-      .archive-html-hashtag.is-active {
-        background: #152846;
-        border-color: #152846;
-        color: #fff;
-      }
-      .archive-html-hashtags-empty {
-        margin-top: 14px;
-        color: var(--muted);
-      }
-      .archive-html-feed {
-        display: grid;
-        gap: 16px;
-      }
-      .archive-html-entry {
-        padding: 16px;
-      }
-      .archive-html-links-list {
-        display: grid;
-        gap: 10px;
-      }
-      .archive-html-links-row {
-        display: grid;
-        grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
-        gap: 12px;
-        align-items: center;
-        padding: 12px 14px;
-        border-radius: 16px;
-        background: rgba(237, 244, 255, 0.62);
-        border: 1px solid rgba(102, 133, 178, 0.12);
-      }
-      .archive-html-link-passive {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        background: rgba(21, 40, 70, 0.12);
-        color: var(--muted);
-        padding: 10px 14px;
-      }
-      .archive-html-links-target {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .archive-html-entry summary,
-      .archive-html-entry-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-        cursor: pointer;
-        list-style: none;
-        color: var(--muted);
-      }
-      .archive-html-entry summary::-webkit-details-marker { display: none; }
-      .archive-html-entry summary strong,
-      .archive-html-entry-head strong {
-        display: block;
-        color: var(--text);
-        margin-bottom: 4px;
-      }
-      .archive-html-entry-body,
-      .archive-html-thread-posts {
-        display: grid;
-        gap: 14px;
-        margin-top: 14px;
-      }
-      .archive-html-post {
-        position: relative;
-        padding: 18px;
-        border-radius: 22px;
-        background: var(--panel-strong);
-        border: 1px solid var(--line);
-        margin-left: 0;
-        transition: margin-left 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
-      }
-      body.archive-html-indent .archive-html-post[data-depth] {
-        margin-left: calc(var(--thread-depth, 0) * 26px);
-        border-color: rgba(224, 97, 74, 0.24);
-      }
-      body.archive-html-indent .archive-html-post[data-depth]::before {
-        content: "";
-        position: absolute;
-        top: 14px;
-        bottom: 14px;
-        left: -14px;
-        width: 4px;
-        border-radius: 999px;
-        background: linear-gradient(180deg, var(--thread-accent), var(--thread-rail));
-        opacity: min(1, calc(var(--thread-depth, 0) * 0.28));
-      }
-      body.archive-html-indent .archive-html-post[data-depth="0"]::before {
-        opacity: 0;
-      }
-      .archive-html-post-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: flex-start;
-        margin-bottom: 10px;
-      }
-      .archive-html-author {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-      }
-      .archive-html-avatar {
-        width: 42px;
-        height: 42px;
-        border-radius: 50%;
-        object-fit: cover;
-        background: #dfe8f7;
-        border: 1px solid rgba(102, 133, 178, 0.22);
-        flex: 0 0 42px;
-      }
-      .archive-html-post-head h2 {
-        margin: 0;
-        font-size: 1.12rem;
-      }
-      .archive-html-author-handle {
-        margin: 4px 0 0;
-        color: var(--muted);
-        font-size: 0.88rem;
-      }
-      .archive-html-post-head time {
-        color: var(--muted);
-        font-size: 0.92rem;
-        white-space: nowrap;
-      }
-      .archive-html-metrics {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 12px;
-      }
-      .archive-html-metrics span {
-        background: var(--accent-soft);
-        color: #2f538a;
-        border-radius: 999px;
-        padding: 6px 10px;
-        font-size: 0.85rem;
-      }
-      .archive-html-text {
-        line-height: 1.68;
-        font-size: 1rem;
-        word-break: break-word;
-      }
-      .archive-html-text mark {
-        background: rgba(255, 216, 102, 0.92);
-        color: #10233e;
-        border-radius: 0.25em;
-        padding: 0 0.08em;
-        box-decoration-break: clone;
-      }
-      .archive-html-empty {
-        color: var(--muted);
-      }
-      .archive-html-link-card {
-        margin-top: 14px;
-        display: grid;
-        grid-template-columns: minmax(0, 152px) minmax(0, 1fr);
-        gap: 14px;
-        align-items: stretch;
-        padding: 12px;
-        border-radius: 18px;
-        text-decoration: none;
-        color: inherit;
-        background: linear-gradient(180deg, rgba(236, 244, 255, 0.92), rgba(227, 238, 255, 0.86));
-        border: 1px solid rgba(102, 133, 178, 0.16);
-        box-shadow: 0 10px 24px rgba(24, 40, 70, 0.08);
-      }
-      .archive-html-link-card.is-publication {
-        border-color: rgba(18, 184, 166, 0.34);
-        background: linear-gradient(180deg, rgba(232, 252, 248, 0.92), rgba(226, 244, 255, 0.86));
-      }
-      .archive-html-link-card-thumb {
-        width: 100%;
-        height: 100%;
-        min-height: 106px;
-        max-height: 152px;
-        object-fit: cover;
-        border-radius: 14px;
-        background: rgba(209, 224, 246, 0.55);
-      }
-      .archive-html-link-card-thumb-fallback {
-        display: grid;
-        place-items: center;
-        padding: 16px;
-        color: #5b6f8d;
-        font-size: 0.9rem;
-        line-height: 1.4;
-        text-align: center;
-        border: 1px dashed rgba(102, 133, 178, 0.24);
-      }
-      .archive-html-link-card-copy {
-        min-width: 0;
-        display: grid;
-        gap: 8px;
-        align-content: center;
-      }
-      .archive-html-link-card-copy strong {
-        font-size: 1rem;
-        line-height: 1.35;
-        color: #10233e;
-      }
-      .archive-html-link-card-copy span {
-        color: #425e85;
-        line-height: 1.5;
-      }
-      .archive-html-link-card-copy small {
-        color: #587192;
-        font-size: 0.84rem;
-        word-break: break-word;
-      }
-      .archive-html-link-card.is-publication .archive-html-link-card-copy small {
-        color: #057f73;
-        font-weight: 800;
-      }
-      .archive-html-gallery {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 12px;
-        margin-top: 14px;
-      }
-      .archive-html-image {
-        margin: 0;
-        padding: 10px;
-        border-radius: 18px;
-        background: rgba(237, 244, 255, 0.84);
-        border: 1px solid rgba(102, 133, 178, 0.14);
-      }
-      .archive-html-image-placeholder {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        align-items: center;
-        min-height: 80px;
-      }
-      .archive-html-inline-load {
-        border: 0;
-        border-radius: 999px;
-        padding: 10px 14px;
-        background: #152846;
-        color: #fff;
-        cursor: pointer;
-      }
-      .archive-html-image img {
-        width: 100%;
-        display: block;
-        border-radius: 12px;
-        max-height: 420px;
-        object-fit: contain;
-        background: rgba(209, 224, 246, 0.55);
-        cursor: zoom-in;
-      }
-      .archive-html-image figcaption {
-        margin-top: 8px;
-        color: var(--muted);
-        font-size: 0.86rem;
-        line-height: 1.45;
-      }
-      .archive-html-footer {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: center;
-        margin-top: 14px;
-        padding-top: 12px;
-        border-top: 1px solid var(--line);
-      }
-      .archive-html-link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        background: #152846;
-        color: #fff;
-        text-decoration: none;
-        padding: 10px 14px;
-      }
-      .archive-html-uri {
-        color: var(--muted);
-        font-size: 0.84rem;
-        word-break: break-all;
-      }
-      .archive-html-lightbox[hidden] {
-        display: none !important;
-      }
-      .archive-html-lightbox {
-        position: fixed;
-        inset: 0;
-        z-index: 40;
-        background: rgba(8, 15, 28, 0.82);
-        display: grid;
-        place-items: center;
-        padding: 12px;
-      }
-      .archive-html-lightbox-inner {
-        width: min(96vw, 1400px);
-        max-width: 96vw;
-        max-height: 96vh;
-        background: rgba(19, 30, 49, 0.96);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 24px;
-        padding: 18px;
-        box-shadow: 0 28px 60px rgba(0, 0, 0, 0.35);
-        display: grid;
-        gap: 12px;
-      }
-      .archive-html-lightbox-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: center;
-        color: rgba(255, 255, 255, 0.86);
-      }
-      .archive-html-lightbox-head button {
-        border: 0;
-        border-radius: 999px;
-        padding: 10px 14px;
-        background: rgba(255, 255, 255, 0.12);
-        color: #fff;
-        cursor: pointer;
-      }
-      .archive-html-lightbox img {
-        width: auto;
-        height: auto;
-        max-width: 100%;
-        max-height: calc(96vh - 160px);
-        object-fit: contain;
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.04);
-        justify-self: center;
-      }
-      .archive-html-lightbox-caption {
-        color: rgba(255, 255, 255, 0.72);
-        line-height: 1.55;
-      }
-      [hidden] { display: none !important; }
-      @media (max-width: 860px) {
-        .archive-html-shell { width: min(100vw - 12px, 100%); padding: 14px 0 28px; }
-        .archive-html-hero,
-        .archive-html-toolbar,
-        .archive-html-entry { border-radius: 18px; }
-        .archive-html-hero { padding: 18px; margin-bottom: 12px; }
-        .archive-html-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
-        .archive-html-meta-item { padding: 11px 12px; border-radius: 14px; }
-        .archive-html-toolbar {
-          position: static;
-          top: auto;
-          padding: 12px;
-          margin-bottom: 12px;
-        }
-        .archive-html-toolbar-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 10px;
-        }
-        .archive-html-toolbar-grid > label:first-child {
-          grid-column: 1 / -1;
-        }
-        .archive-html-toolbar label,
-        .archive-html-toolbar .archive-html-checks label {
-          gap: 4px;
-          font-size: 0.84rem;
-        }
-        .archive-html-toolbar input[type="search"],
-        .archive-html-toolbar input[type="date"] {
-          padding: 10px 12px;
-          border-radius: 12px;
-          min-height: 42px;
-        }
-        .archive-html-checks {
-          gap: 10px 14px;
-          margin-top: 10px;
-        }
-        .archive-html-toolbar-actions {
-          flex-wrap: nowrap;
-          overflow-x: auto;
-          overscroll-behavior-x: contain;
-          gap: 8px;
-          margin-top: 10px;
-          padding-bottom: 2px;
-          scrollbar-width: thin;
-        }
-        .archive-html-toolbar-actions button {
-          flex: 0 0 auto;
-          white-space: nowrap;
-          padding: 9px 12px;
-        }
-        .archive-html-filter-status,
-        .archive-html-hashtags,
-        .archive-html-hashtags-empty {
-          margin-top: 10px;
-        }
-        .archive-html-feed { gap: 12px; }
-        .archive-html-entry summary,
-        .archive-html-entry-head,
-        .archive-html-post-head,
-        .archive-html-footer { flex-direction: column; align-items: flex-start; }
-        .archive-html-link-card {
-          grid-template-columns: 1fr;
-        }
-        .archive-html-link-card-thumb {
-          min-height: 0;
-          height: auto;
-          max-height: 240px;
-          aspect-ratio: 4 / 3;
-        }
-      }
-      @media (max-width: 560px) {
-        .archive-html-toolbar-grid,
-        .archive-html-meta {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
-  </head>
-  <body class="archive-html-indent archive-html-nojs">
-    <div class="archive-html-shell">
-      <header class="archive-html-hero">
-        <p class="archive-html-kicker" data-i18n-key="archiveHeaderEyebrow">${escapeHtml(t("archiveHeaderEyebrow"))}</p>
-        <h1 id="archive-page-title">${escapeHtml(title)}</h1>
-        <p id="archive-generated-copy">${escapeHtml(t("archiveHtmlGenerated", { exportedAt: formatHistoryTimestamp(exportedAtIso) }))}</p>
-        ${skippedImageCount > 0 ? `<p class="archive-html-warning" id="archive-skipped-copy">${escapeHtml(t("archiveSkippedImagesNotice", { skipped: skippedImageCount }))}</p>` : ""}
-        ${filterSummaryText ? `<p class="archive-html-warning" id="archive-filter-copy" data-i18n-key="archiveHtmlFilterSummary">${escapeHtml(filterSummaryText)}</p>` : ""}
-        <div class="archive-html-meta">
-          <div class="archive-html-meta-item">
-            <span data-i18n-key="archiveSummaryPosts">${escapeHtml(t("archiveSummaryPosts"))}</span>
-            <strong>${catalog.posts.length}</strong>
-          </div>
-          <div class="archive-html-meta-item">
-            <span data-i18n-key="archiveSummaryImages">${escapeHtml(t("archiveSummaryImages"))}</span>
-            <strong>${catalog.summary?.imageCount || 0}</strong>
-          </div>
-          ${skippedImageCount > 0 ? `
-            <div class="archive-html-meta-item">
-              <span data-i18n-key="archiveSkippedImagesLabel">${escapeHtml(t("archiveSkippedImagesLabel"))}</span>
-              <strong>${skippedImageCount}</strong>
-            </div>
-          ` : ""}
-          <div class="archive-html-meta-item">
-            <span data-i18n-key="archiveHtmlArchiveRangeLabel">${escapeHtml(t("archiveHtmlArchiveRangeLabel"))}</span>
-            <strong
-              id="archive-range-copy"
-              data-range-from="${escapeHtmlAttribute(catalog.summary?.from || "")}"
-              data-range-to="${escapeHtmlAttribute(catalog.summary?.to || "")}"
-            >${escapeHtml(t("archiveHtmlArchiveRangeValue", {
-              from: formatHistoryTimestamp(catalog.summary?.from),
-              to: formatHistoryTimestamp(catalog.summary?.to),
-            }))}</strong>
-          </div>
-        </div>
-      </header>
-
-      <section class="archive-html-toolbar">
-        <div class="archive-html-toolbar-grid">
-          <label>
-            <span data-i18n-key="archiveHtmlSearchLabel">${escapeHtml(t("archiveHtmlSearchLabel"))}</span>
-            <input id="archive-search" type="search" data-i18n-placeholder="archiveHtmlSearchLabel" placeholder="${escapeHtmlAttribute(t("archiveHtmlSearchLabel"))}">
-          </label>
-          <label>
-            <span data-i18n-key="archiveFromLabel">${escapeHtml(t("archiveFromLabel"))}</span>
-            <input id="archive-filter-from" type="date" value="${escapeHtmlAttribute(fromValue)}">
-          </label>
-          <label>
-            <span data-i18n-key="archiveToLabel">${escapeHtml(t("archiveToLabel"))}</span>
-            <input id="archive-filter-to" type="date" value="${escapeHtmlAttribute(toValue)}">
-          </label>
-        </div>
-        <div class="archive-html-checks">
-          <label><input id="archive-only-images" type="checkbox"> <span data-i18n-key="archiveHtmlOnlyImages">${escapeHtml(t("archiveHtmlOnlyImages"))}</span></label>
-          <label><input id="archive-only-threads" type="checkbox"> <span data-i18n-key="archiveHtmlOnlyThreads">${escapeHtml(t("archiveHtmlOnlyThreads"))}</span></label>
-        </div>
-        <div class="archive-html-toolbar-actions">
-          <button id="archive-reset-filters" type="button" class="secondary" data-i18n-key="archiveHtmlResetFilters">${escapeHtml(t("archiveHtmlResetFilters"))}</button>
-          <button id="archive-toggle-indent" type="button" class="secondary" data-i18n-key="archiveHtmlIndentThreads">${escapeHtml(t("archiveHtmlIndentThreads"))}</button>
-          <button id="archive-toggle-all" type="button" class="secondary" data-i18n-key="archiveHtmlToggleAllOpen">${escapeHtml(t("archiveHtmlToggleAllOpen"))}</button>
-          <button id="archive-toggle-threads" type="button" class="secondary" data-i18n-key="archiveHtmlExpandThreads">${escapeHtml(t("archiveHtmlExpandThreads"))}</button>
-          <button id="archive-toggle-singles" type="button" class="secondary" data-i18n-key="archiveHtmlExpandSingles">${escapeHtml(t("archiveHtmlExpandSingles"))}</button>
-        </div>
-        <div>
-          <label data-i18n-key="archiveHtmlHashtagsLabel">${escapeHtml(t("archiveHtmlHashtagsLabel"))}</label>
-          ${archiveHashtags.length > 0 ? `
-            <div class="archive-html-hashtags">
-              ${archiveHashtags.map((tag) => `
-                <button
-                  type="button"
-                  class="archive-html-hashtag"
-                  data-archive-hashtag="${escapeHtmlAttribute(tag.value.toLowerCase())}"
-                >${escapeHtml(tag.value)}</button>
-              `).join("")}
-            </div>
-          ` : `<p class="archive-html-hashtags-empty" data-i18n-key="archiveHtmlHashtagsEmpty">${escapeHtml(t("archiveHtmlHashtagsEmpty"))}</p>`}
-        </div>
-        <p id="archive-filter-status" class="archive-html-filter-status"></p>
-      </section>
-
-      <main id="archive-feed" class="archive-html-feed">
-        ${linksMarkup}
-        ${groupsMarkup}
-      </main>
-    </div>
-
-    <div id="archive-lightbox" class="archive-html-lightbox" hidden>
-      <div class="archive-html-lightbox-inner" role="dialog" aria-modal="true">
-        <div class="archive-html-lightbox-head">
-          <strong id="archive-lightbox-title">${escapeHtml(title)}</strong>
-          <button id="archive-lightbox-close" type="button" data-i18n-key="closeButton">${escapeHtml(toolbarStrings.imageModalClose)}</button>
-        </div>
-        <img id="archive-lightbox-image" alt="">
-        <p id="archive-lightbox-caption" class="archive-html-lightbox-caption"></p>
-      </div>
-    </div>
-
-    <script>
-      document.body.classList.remove("archive-html-nojs");
-      const archiveHtmlI18n = ${JSON.stringify(htmlI18n)};
-      const archiveRuntimeData = ${JSON.stringify({
-        handle,
-        exportedAtIso,
-        title,
-        skippedImageCount,
-        filterScope: (() => {
-          const filters = catalog?.manifest?.filters || {};
-          if (filters.scope === "year") {
-            return `Jahr ${filters.year || "?"}`;
-          }
-          if (filters.scope === "range") {
-            return `${filters.from || "…"} – ${filters.to || "…"}`;
-          }
-          return "Kompletter Account";
-        })(),
-        filterHashtagCount: Array.isArray(catalog?.manifest?.filters?.hashtagTags) ? catalog.manifest.filters.hashtagTags.length : 0,
-        filterSkippedCount: Math.max(0, Number(catalog?.manifest?.hashtagFilteredOutCount) || 0),
-      })};
-      const groups = Array.from(document.querySelectorAll("[data-archive-entry]"));
-      const browserLocales = Array.isArray(navigator.languages) && navigator.languages.length > 0
-        ? navigator.languages
-        : [navigator.language || "en"];
-      const archiveLocale = browserLocales
-        .map((value) => String(value || "").toLowerCase())
-        .map((value) => value.split("-")[0])
-        .find((value) => Object.prototype.hasOwnProperty.call(archiveHtmlI18n, value)) || "en";
-      const archiveStrings = archiveHtmlI18n[archiveLocale] || archiveHtmlI18n.en;
-      const searchInput = document.querySelector("#archive-search");
-      const fromInput = document.querySelector("#archive-filter-from");
-      const toInput = document.querySelector("#archive-filter-to");
-      const onlyImagesInput = document.querySelector("#archive-only-images");
-      const onlyThreadsInput = document.querySelector("#archive-only-threads");
-      const resetButton = document.querySelector("#archive-reset-filters");
-      const toggleAllButton = document.querySelector("#archive-toggle-all");
-      const toggleThreadsButton = document.querySelector("#archive-toggle-threads");
-      const toggleSinglesButton = document.querySelector("#archive-toggle-singles");
-      const indentButton = document.querySelector("#archive-toggle-indent");
-      const statusLine = document.querySelector("#archive-filter-status");
-      const hashtagButtons = Array.from(document.querySelectorAll("[data-archive-hashtag]"));
-      const lightbox = document.querySelector("#archive-lightbox");
-      const lightboxImage = document.querySelector("#archive-lightbox-image");
-      const lightboxCaption = document.querySelector("#archive-lightbox-caption");
-      const lightboxTitle = document.querySelector("#archive-lightbox-title");
-      const lightboxClose = document.querySelector("#archive-lightbox-close");
-      let indentThreads = true;
-      let lastAppliedQuery = "";
-      let filterApplyTimer = 0;
-
-      function formatArchiveTemplate(template, values) {
-        return String(template || "").replace(/\\{(\\w+)\\}/g, (_, key) => values[key] ?? "");
-      }
-
-      function formatArchiveDateTime(value) {
-        if (!value) {
-          return "—";
-        }
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) {
-          return "—";
-        }
-        return new Intl.DateTimeFormat(archiveLocale, {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(date);
-      }
-
-      function applyArchiveLanguage() {
-        document.documentElement.lang = archiveLocale;
-        document.querySelectorAll("[data-i18n-key]").forEach((element) => {
-          const key = element.dataset.i18nKey;
-          if (!key || !archiveStrings[key]) {
-            return;
-          }
-          element.textContent = archiveStrings[key];
-        });
-        document.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
-          const key = element.dataset.i18nPlaceholder;
-          if (!key || !archiveStrings[key]) {
-            return;
-          }
-          element.setAttribute("placeholder", archiveStrings[key]);
-        });
-
-        document.title = formatArchiveTemplate(archiveStrings.archiveHtmlTitle, {
-          handle: archiveRuntimeData.handle,
-        });
-        const pageTitle = document.querySelector("#archive-page-title");
-        if (pageTitle) {
-          pageTitle.textContent = document.title;
-        }
-        const generatedCopy = document.querySelector("#archive-generated-copy");
-        if (generatedCopy) {
-          generatedCopy.textContent = formatArchiveTemplate(archiveStrings.archiveHtmlGenerated, {
-            exportedAt: formatArchiveDateTime(archiveRuntimeData.exportedAtIso),
-          });
-        }
-        const skippedCopy = document.querySelector("#archive-skipped-copy");
-        if (skippedCopy) {
-          skippedCopy.textContent = formatArchiveTemplate(archiveStrings.archiveSkippedImagesNotice, {
-            skipped: archiveRuntimeData.skippedImageCount || 0,
-          });
-        }
-        const filterCopy = document.querySelector("#archive-filter-copy");
-        if (filterCopy) {
-          const hashtags = archiveRuntimeData.filterHashtagCount > 0
-            ? formatArchiveTemplate(archiveStrings.archiveHtmlFilterHashtagsSuffix, {
-                count: archiveRuntimeData.filterHashtagCount || 0,
-                skipped: archiveRuntimeData.filterSkippedCount || 0,
-              })
-            : "";
-          filterCopy.textContent = formatArchiveTemplate(archiveStrings.archiveHtmlFilterSummary, {
-            scope: archiveRuntimeData.filterScope || "",
-            hashtags,
-          });
-        }
-        const rangeCopy = document.querySelector("#archive-range-copy");
-        if (rangeCopy) {
-          rangeCopy.textContent = formatArchiveTemplate(archiveStrings.archiveHtmlArchiveRangeValue, {
-            from: formatArchiveDateTime(rangeCopy.dataset.rangeFrom),
-            to: formatArchiveDateTime(rangeCopy.dataset.rangeTo),
-          });
-        }
-        document.querySelectorAll("time[datetime]").forEach((element) => {
-          element.textContent = formatArchiveDateTime(element.getAttribute("datetime"));
-        });
-        syncToggleAllButton();
-      }
-
-      function getAllEntries() {
-        return Array.from(document.querySelectorAll("details[data-archive-entry]"));
-      }
-
-      function getThreadEntries() {
-        return Array.from(document.querySelectorAll("details[data-entry-kind='thread']"));
-      }
-
-      function getSingleEntries() {
-        return Array.from(document.querySelectorAll("details[data-entry-kind='single']"));
-      }
-
-      function syncToggleAllButton() {
-        if (!toggleAllButton) {
-          return;
-        }
-        const entries = getAllEntries();
-        const allOpen = entries.length > 0 && entries.every((entry) => entry.open);
-        const key = allOpen ? "archiveHtmlToggleAllClose" : "archiveHtmlToggleAllOpen";
-        toggleAllButton.dataset.i18nKey = key;
-        toggleAllButton.textContent = archiveStrings[key] || key;
-      }
-
-      function syncSectionToggleButtons() {
-        const threadEntries = getThreadEntries();
-        const singleEntries = getSingleEntries();
-        const allThreadsOpen = threadEntries.length > 0 && threadEntries.every((entry) => entry.open);
-        const allSinglesOpen = singleEntries.length > 0 && singleEntries.every((entry) => entry.open);
-        const threadKey = allThreadsOpen ? "archiveHtmlCollapseThreads" : "archiveHtmlExpandThreads";
-        const singleKey = allSinglesOpen ? "archiveHtmlCollapseSingles" : "archiveHtmlExpandSingles";
-        if (toggleThreadsButton) {
-          toggleThreadsButton.dataset.i18nKey = threadKey;
-          toggleThreadsButton.textContent = archiveStrings[threadKey] || threadKey;
-        }
-        if (toggleSinglesButton) {
-          toggleSinglesButton.dataset.i18nKey = singleKey;
-          toggleSinglesButton.textContent = archiveStrings[singleKey] || singleKey;
-        }
-      }
-
-      function clearArchiveHighlights(element) {
-        element.querySelectorAll("mark[data-archive-highlight='true']").forEach((mark) => {
-          const parent = mark.parentNode;
-          if (!parent) {
-            return;
-          }
-          parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
-          parent.normalize();
-        });
-      }
-
-      function highlightArchiveQueryInElement(element, query) {
-        clearArchiveHighlights(element);
-        if (!query) {
-          return;
-        }
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
-          acceptNode(node) {
-            if (!node.nodeValue || !node.nodeValue.trim()) {
-              return NodeFilter.FILTER_REJECT;
-            }
-            const parentTag = node.parentElement?.tagName || "";
-            if (parentTag === "MARK" || parentTag === "SCRIPT" || parentTag === "STYLE") {
-              return NodeFilter.FILTER_REJECT;
-            }
-            return NodeFilter.FILTER_ACCEPT;
-          },
-        });
-        const textNodes = [];
-        while (walker.nextNode()) {
-          textNodes.push(walker.currentNode);
-        }
-        textNodes.forEach((node) => {
-          const source = node.nodeValue || "";
-          const lower = source.toLowerCase();
-          const lowerQuery = query.toLowerCase();
-          let startIndex = 0;
-          let matchIndex = lower.indexOf(lowerQuery, startIndex);
-          if (matchIndex === -1) {
-            return;
-          }
-          const fragment = document.createDocumentFragment();
-          while (matchIndex !== -1) {
-            if (matchIndex > startIndex) {
-              fragment.appendChild(document.createTextNode(source.slice(startIndex, matchIndex)));
-            }
-            const mark = document.createElement("mark");
-            mark.dataset.archiveHighlight = "true";
-            mark.textContent = source.slice(matchIndex, matchIndex + lowerQuery.length);
-            fragment.appendChild(mark);
-            startIndex = matchIndex + lowerQuery.length;
-            matchIndex = lower.indexOf(lowerQuery, startIndex);
-          }
-          if (startIndex < source.length) {
-            fragment.appendChild(document.createTextNode(source.slice(startIndex)));
-          }
-          node.parentNode?.replaceChild(fragment, node);
-        });
-      }
-
-      function syncHashtagState() {
-        const query = String(searchInput.value || "").trim().toLowerCase();
-        hashtagButtons.forEach((button) => {
-          button.classList.toggle("is-active", query === String(button.dataset.archiveHashtag || "").trim().toLowerCase());
-        });
-      }
-
-      function refreshArchiveHighlights(query) {
-        const normalizedQuery = String(query || "").trim().toLowerCase();
-        const queryChanged = normalizedQuery !== lastAppliedQuery;
-
-        if (queryChanged && lastAppliedQuery) {
-          document.querySelectorAll("[data-archive-richtext='true'], [data-archive-searchable='true']").forEach((element) => {
-            clearArchiveHighlights(element);
-          });
-        }
-
-        if (!normalizedQuery) {
-          lastAppliedQuery = "";
-          return;
-        }
-
-        const visibleElements = [];
-        document.querySelectorAll("[data-archive-post]:not([hidden])").forEach((post) => {
-          visibleElements.push(...post.querySelectorAll("[data-archive-richtext='true'], [data-archive-searchable='true']"));
-        });
-        visibleElements.forEach((element) => {
-          highlightArchiveQueryInElement(element, normalizedQuery);
-        });
-        lastAppliedQuery = normalizedQuery;
-      }
-
-      function applyArchiveFilters() {
-        const query = String(searchInput.value || "").trim().toLowerCase();
-        const fromValue = fromInput.value ? Date.parse(fromInput.value + "T00:00:00Z") : null;
-        const toValue = toInput.value ? Date.parse(toInput.value + "T23:59:59Z") : null;
-        const onlyImages = onlyImagesInput.checked;
-        const onlyThreads = onlyThreadsInput.checked;
-        let visibleEntries = 0;
-        let visibleThreads = 0;
-        let visiblePosts = 0;
-
-        groups.forEach((group) => {
-          const isThread = group.dataset.isThread === "true";
-          const posts = Array.from(group.querySelectorAll("[data-archive-post]"));
-          const groupMatchesQuery = query
-            ? posts.some((post) => String(post.dataset.search || "").includes(query))
-            : false;
-          let groupVisiblePosts = 0;
-
-          posts.forEach((post) => {
-            const created = Number(post.dataset.created || 0);
-            const hasImages = post.dataset.hasImages === "true";
-            const haystack = String(post.dataset.search || "");
-            let visibleBase = true;
-
-            if (fromValue && created < fromValue) {
-              visibleBase = false;
-            }
-            if (toValue && created > toValue) {
-              visibleBase = false;
-            }
-            if (onlyImages && !hasImages) {
-              visibleBase = false;
-            }
-            const queryMatch = !query || haystack.includes(query);
-            const visible = query
-              ? (isThread && groupMatchesQuery ? visibleBase : (visibleBase && queryMatch))
-              : visibleBase;
-
-            post.hidden = !visible;
-            if (visible) {
-              groupVisiblePosts += 1;
-              visiblePosts += 1;
-            }
-          });
-
-          const groupVisible = groupVisiblePosts > 0 && (!onlyThreads || isThread);
-          group.hidden = !groupVisible;
-          if (groupVisible) {
-            visibleEntries += 1;
-            if (isThread) {
-              visibleThreads += 1;
-            }
-          }
-        });
-
-        statusLine.textContent = visiblePosts > 0
-          ? formatArchiveTemplate(archiveStrings.archiveHtmlVisibleStatus, {
-              entries: visibleEntries,
-              threads: visibleThreads,
-              posts: visiblePosts,
-            })
-          : archiveStrings.archiveHtmlNoMatches;
-        refreshArchiveHighlights(query);
-        syncHashtagState();
-        syncToggleAllButton();
-        syncSectionToggleButtons();
-      }
-
-      function queueArchiveFilterApply(delay = 120) {
-        window.clearTimeout(filterApplyTimer);
-        filterApplyTimer = window.setTimeout(() => {
-          applyArchiveFilters();
-        }, delay);
-      }
-
-      function syncIndentButton() {
-        if (!indentButton) {
-          return;
-        }
-        indentButton.classList.toggle("is-active", indentThreads);
-        document.body.classList.toggle("archive-html-indent", indentThreads);
-      }
-
-      searchInput.addEventListener("input", () => queueArchiveFilterApply(140));
-      [fromInput, toInput, onlyImagesInput, onlyThreadsInput].forEach((element) => {
-        element.addEventListener("input", () => applyArchiveFilters());
-        element.addEventListener("change", () => applyArchiveFilters());
-      });
-
-      resetButton?.addEventListener("click", () => {
-        searchInput.value = "";
-        fromInput.value = ${JSON.stringify(fromValue)};
-        toInput.value = ${JSON.stringify(toValue)};
-        onlyImagesInput.checked = false;
-        onlyThreadsInput.checked = false;
-        applyArchiveFilters();
-      });
-
-      toggleThreadsButton?.addEventListener("click", () => {
-        const threadEntries = getThreadEntries().filter((entry) => !entry.hidden);
-        const shouldOpen = threadEntries.some((entry) => !entry.open);
-        threadEntries.forEach((item) => {
-          item.open = shouldOpen;
-        });
-        syncToggleAllButton();
-        syncSectionToggleButtons();
-      });
-
-      toggleSinglesButton?.addEventListener("click", () => {
-        const singleEntries = getSingleEntries().filter((entry) => !entry.hidden);
-        const shouldOpen = singleEntries.some((entry) => !entry.open);
-        singleEntries.forEach((item) => {
-          item.open = shouldOpen;
-        });
-        syncToggleAllButton();
-        syncSectionToggleButtons();
-      });
-
-      toggleAllButton?.addEventListener("click", () => {
-        const entries = getAllEntries().filter((entry) => !entry.hidden);
-        const shouldOpen = entries.some((entry) => !entry.open);
-        entries.forEach((entry) => {
-          entry.open = shouldOpen;
-        });
-        syncToggleAllButton();
-        syncSectionToggleButtons();
-      });
-
-      indentButton?.addEventListener("click", () => {
-        indentThreads = !indentThreads;
-        syncIndentButton();
-      });
-
-      document.querySelectorAll("[data-archive-load-image]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const figure = button.closest("[data-archive-image-remote]");
-          const remoteUrl = String(figure?.getAttribute("data-archive-image-remote") || "").trim();
-          const remoteAlt = String(figure?.getAttribute("data-archive-image-alt") || "").trim();
-          if (!figure || !remoteUrl || figure.querySelector("img")) {
-            return;
-          }
-          const image = document.createElement("img");
-          image.src = remoteUrl;
-          image.alt = remoteAlt;
-          image.loading = "lazy";
-          image.addEventListener("click", () => {
-            lightbox.hidden = false;
-            lightboxImage.src = image.src;
-            lightboxImage.alt = image.alt || "";
-            lightboxTitle.textContent = image.closest("[data-archive-post]")?.querySelector(".archive-html-author-handle")?.textContent || ${JSON.stringify(title)};
-            lightboxCaption.textContent = image.alt || "";
-          });
-          const placeholder = figure.querySelector(".archive-html-image-placeholder");
-          if (placeholder) {
-            placeholder.replaceWith(image);
-          } else {
-            figure.prepend(image);
-          }
-        });
-      });
-
-      getAllEntries().forEach((entry) => {
-        entry.addEventListener("toggle", () => {
-          syncToggleAllButton();
-          syncSectionToggleButtons();
-        });
-      });
-
-      hashtagButtons.forEach((button) => {
-        button.addEventListener("click", () => {
-          const tag = String(button.dataset.archiveHashtag || "").trim();
-          searchInput.value = String(searchInput.value || "").trim().toLowerCase() === tag.toLowerCase() ? "" : tag;
-          applyArchiveFilters();
-        });
-      });
-
-      document.querySelectorAll(".archive-html-image img").forEach((image) => {
-        image.addEventListener("click", () => {
-          lightbox.hidden = false;
-          lightboxImage.src = image.src;
-          lightboxImage.alt = image.alt || "";
-          lightboxTitle.textContent = image.closest("[data-archive-post]")?.querySelector(".archive-html-author-handle")?.textContent || ${JSON.stringify(title)};
-          lightboxCaption.textContent = image.alt || "";
-        });
-      });
-
-      function closeLightbox() {
-        lightbox.hidden = true;
-        lightboxImage.src = "";
-        lightboxImage.alt = "";
-        lightboxCaption.textContent = "";
-      }
-
-      lightboxClose.addEventListener("click", closeLightbox);
-      lightbox.addEventListener("click", (event) => {
-        if (event.target === lightbox) {
-          closeLightbox();
-        }
-      });
-      document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !lightbox.hidden) {
-          closeLightbox();
-        }
-      });
-
-      applyArchiveLanguage();
-      applyArchiveFilters();
-      syncIndentButton();
-    </script>
-  </body>
-</html>`;
-}
-
-async function buildArchiveHtmlDocumentFromTemplate(catalog, assetUris, options = {}) {
-  const groups = buildArchiveThreadGroups(catalog.posts || []);
-  const archiveHashtags = collectArchiveHtmlHashtags(catalog.posts || []);
-  const archiveLinks = collectArchiveHtmlLinks(catalog.posts || []);
-  const htmlI18n = buildArchiveHtmlI18n();
-  const handle = catalog?.manifest?.account?.handle || authAccount || "Bluesky";
-  const fromValue = formatArchiveHtmlDateInputValue(catalog?.summary?.from);
-  const toValue = formatArchiveHtmlDateInputValue(catalog?.summary?.to);
-  const exportedAtIso = catalog?.manifest?.exportedAt || new Date().toISOString();
-  const title = t("archiveHtmlTitle", { handle });
-  const skippedImageCount = Number(catalog?.summary?.skippedImageCount) || 0;
-  const filterSummaryText = buildArchiveHtmlFilterSummary(catalog);
-  const groupsMarkup = groups
-    .map((group, groupIndex) => buildArchiveHtmlGroupMarkup(group, groupIndex, handle, assetUris, options))
-    .join("");
-  const linksMarkup = buildArchiveHtmlLinksMarkup(archiveLinks);
-  const metaItemsMarkup = [
-    `
-      <div class="archive-html-meta-item">
-        <span data-i18n-key="archiveSummaryPosts">${escapeHtml(t("archiveSummaryPosts"))}</span>
-        <strong>${catalog.posts.length}</strong>
-      </div>
-    `,
-    `
-      <div class="archive-html-meta-item">
-        <span data-i18n-key="archiveSummaryImages">${escapeHtml(t("archiveSummaryImages"))}</span>
-        <strong>${catalog.summary?.imageCount || 0}</strong>
-      </div>
-    `,
-    skippedImageCount > 0
-      ? `
-        <div class="archive-html-meta-item">
-          <span data-i18n-key="archiveSkippedImagesLabel">${escapeHtml(t("archiveSkippedImagesLabel"))}</span>
-          <strong>${skippedImageCount}</strong>
-        </div>
-      `
-      : "",
-    `
-      <div class="archive-html-meta-item">
-        <span data-i18n-key="archiveHtmlArchiveRangeLabel">${escapeHtml(t("archiveHtmlArchiveRangeLabel"))}</span>
-        <strong
-          id="archive-range-copy"
-          data-range-from="${escapeHtmlAttribute(catalog.summary?.from || "")}"
-          data-range-to="${escapeHtmlAttribute(catalog.summary?.to || "")}"
-        >${escapeHtml(t("archiveHtmlArchiveRangeValue", {
-          from: formatHistoryTimestamp(catalog.summary?.from),
-          to: formatHistoryTimestamp(catalog.summary?.to),
-        }))}</strong>
-      </div>
-    `,
-  ].join("");
-  const hashtagsMarkup = archiveHashtags.length > 0
-    ? `
-      <div class="archive-html-hashtags">
-        ${archiveHashtags.map((tag) => `
-          <button
-            type="button"
-            class="archive-html-hashtag"
-            data-archive-hashtag="${escapeHtmlAttribute(tag.value.toLowerCase())}"
-          >${escapeHtml(tag.value)}</button>
-        `).join("")}
-      </div>
-    `
-    : `<p class="archive-html-hashtags-empty" data-i18n-key="archiveHtmlHashtagsEmpty">${escapeHtml(t("archiveHtmlHashtagsEmpty"))}</p>`;
-  const bootstrapJson = serializeArchiveHtmlInlineJson({
-    htmlI18n,
-    defaults: {
-      fromValue,
-      toValue,
-    },
-    runtimeData: {
-      handle,
-      exportedAtIso,
-      title,
-      skippedImageCount,
-      filterScope: (() => {
-        const filters = catalog?.manifest?.filters || {};
-        if (filters.scope === "year") {
-          return `Jahr ${filters.year || "?"}`;
-        }
-        if (filters.scope === "range") {
-          return `${filters.from || "..."} - ${filters.to || "..."}`;
-        }
-        return "Kompletter Account";
-      })(),
-      filterHashtagCount: Array.isArray(catalog?.manifest?.filters?.hashtagTags) ? catalog.manifest.filters.hashtagTags.length : 0,
-      filterSkippedCount: Math.max(0, Number(catalog?.manifest?.hashtagFilteredOutCount) || 0),
-    },
-  });
-  const { shell, clientScript } = await loadArchiveHtmlTemplateBundle();
-  return fillArchiveHtmlTemplate(shell, {
-    documentTitle: escapeHtml(title),
-    heroKicker: escapeHtml(t("archiveHeaderEyebrow")),
-    pageTitle: escapeHtml(title),
-    generatedCopy: escapeHtml(t("archiveHtmlGenerated", { exportedAt: formatHistoryTimestamp(exportedAtIso) })),
-    skippedCopyMarkup: skippedImageCount > 0 ? `<p class="archive-html-warning" id="archive-skipped-copy">${escapeHtml(t("archiveSkippedImagesNotice", { skipped: skippedImageCount }))}</p>` : "",
-    filterCopyMarkup: filterSummaryText ? `<p class="archive-html-warning" id="archive-filter-copy" data-i18n-key="archiveHtmlFilterSummary">${escapeHtml(filterSummaryText)}</p>` : "",
-    metaItemsMarkup,
-    searchLabel: escapeHtml(t("archiveHtmlSearchLabel")),
-    searchPlaceholder: escapeHtmlAttribute(t("archiveHtmlSearchLabel")),
-    fromLabel: escapeHtml(t("archiveFromLabel")),
-    fromValue: escapeHtmlAttribute(fromValue),
-    toLabel: escapeHtml(t("archiveToLabel")),
-    toValue: escapeHtmlAttribute(toValue),
-    onlyImagesLabel: escapeHtml(t("archiveHtmlOnlyImages")),
-    onlyThreadsLabel: escapeHtml(t("archiveHtmlOnlyThreads")),
-    resetFiltersLabel: escapeHtml(t("archiveHtmlResetFilters")),
-    indentThreadsLabel: escapeHtml(t("archiveHtmlIndentThreads")),
-    toggleAllLabel: escapeHtml(t("archiveHtmlToggleAllOpen")),
-    toggleThreadsLabel: escapeHtml(t("archiveHtmlExpandThreads")),
-    toggleSinglesLabel: escapeHtml(t("archiveHtmlExpandSingles")),
-    hashtagsLabel: escapeHtml(t("archiveHtmlHashtagsLabel")),
-    hashtagsMarkup,
-    linksMarkup,
-    groupsMarkup,
-    lightboxTitle: escapeHtml(title),
-    lightboxCloseLabel: escapeHtml(t("closeButton")),
-    editDialogTitle: escapeHtml(t("archiveHtmlEditDialogTitle")),
-    editDialogNote: escapeHtml(t("archiveHtmlEditDialogNote")),
-    editOriginalLabel: escapeHtml(t("archiveHtmlEditOriginal")),
-    editCurrentLabel: escapeHtml(t("archiveHtmlEditCurrent")),
-    bootstrapJson,
-    clientScript: serializeArchiveHtmlInlineScript(clientScript),
-  });
-}
-
 async function exportArchiveHtmlFromCatalog(catalog = archiveCatalog, options = {}) {
-  if (!catalog) {
-    throw new Error(t("archiveNeedArchive"));
-  }
-  await ensureArchiveAvatarAssets(catalog);
-
-  const assets = Array.isArray(catalog.assets) ? catalog.assets : [];
-  const compactMode = options.mode === "compact";
-  const assetUris = new Map();
-  const autoFallbackToCompact = !compactMode && shouldAutoFallbackArchiveHtmlToCompact(assets);
-  const effectiveCompactMode = compactMode || autoFallbackToCompact;
-
-  setArchiveProgress({
-    title: t("archiveProgressHtmlTitle"),
-    step: t("archiveProgressHtmlStep"),
-    percent: 76,
-    detail: effectiveCompactMode
-      ? t("archiveProgressHtmlCompactDetail")
-      : t("archiveProgressHtmlDetail", { count: assets.length }),
-  });
-
-  if (!effectiveCompactMode) {
-    try {
-      for (const [index, asset] of assets.entries()) {
-        assetUris.set(asset.path, await assetToDataUriAsync(asset));
-        if ((index + 1) % 8 === 0 || index + 1 === assets.length) {
-          setArchiveProgress({
-            title: t("archiveProgressHtmlTitle"),
-            step: t("archiveProgressHtmlStep"),
-            percent: 76 + Math.round(((index + 1) / Math.max(1, assets.length)) * 18),
-            detail: t("archiveProgressHtmlDetail", { count: assets.length }),
-          });
-          await waitForUiFrame();
-        }
-      }
-    } catch (error) {
-      if (!isArchiveStringLengthError(error)) {
-        throw error;
-      }
-      assetUris.clear();
-    }
-  }
-
-  const fallbackTriggered = effectiveCompactMode || (!compactMode && assetUris.size === 0 && assets.length > 0);
-  if (fallbackTriggered) {
-    setArchiveProgress({
-      title: t("archiveProgressHtmlTitle"),
-      step: t("archiveProgressHtmlStep"),
-      percent: 94,
-      detail: t("archiveHtmlAutoCompactNotice"),
-    });
-    await waitForUiFrame();
-  }
-
-  let html = "";
-  try {
-    html = await buildArchiveHtmlDocumentFromTemplate(catalog, assetUris, {
-      embedPostImages: !fallbackTriggered,
-      mode: fallbackTriggered ? "compact" : "full",
-    });
-  } catch (error) {
-    if (!isArchiveStringLengthError(error) || fallbackTriggered) {
-      throw error;
-    }
-    assetUris.clear();
-    setArchiveProgress({
-      title: t("archiveProgressHtmlTitle"),
-      step: t("archiveProgressHtmlStep"),
-      percent: 94,
-      detail: t("archiveHtmlAutoCompactNotice"),
-    });
-    await waitForUiFrame();
-    html = await buildArchiveHtmlDocumentFromTemplate(catalog, assetUris, {
-      embedPostImages: false,
-      mode: "compact",
-    });
-  }
-
-  const fileName = `${makeArchiveFileBaseName(catalog)}${fallbackTriggered ? "-compact" : ""}.html`;
-  const file = new File([html], fileName, { type: "text/html" });
-  await shareOrDownloadFile(file, fileName, { preferDownload: true });
-  setArchiveProgress({
-    title: t("archiveProgressDoneTitle"),
-    step: t("archiveProgressDoneStep"),
-    percent: 100,
-    detail: fallbackTriggered ? t("archiveHtmlCompactDone") : t("archiveHtmlDone"),
-  });
-}
-
-function escapePdfText(value) {
-  return String(value || "")
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)");
-}
-
-async function loadArchiveAssetBitmap(asset) {
-  const blob = new Blob([asset.bytes], { type: asset.type || "image/png" });
-  return createImageBitmap(blob);
-}
-
-function extractPdfLinkRuns(text, facets = []) {
-  const facetRuns = extractFacetRichTextRuns(text, facets);
-  if (facetRuns) {
-    return facetRuns;
-  }
-
-  const value = String(text || "");
-  const regex = /(^|\s|\()((https?:\/\/[^\s]+)|((?<domain>[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})[^\s]*))/gim;
-  const runs = [];
-  let cursor = 0;
-  let match;
-
-  while ((match = regex.exec(value))) {
-    let uri = match[2];
-    const start = match.index + match[1].length;
-    let end = start + match[2].length;
-    const consumedEnd = start + match[2].length;
-
-    if (!uri.startsWith("http")) {
-      uri = `https://${uri}`;
-    }
-
-    while (/[.,;!?]$/.test(uri)) {
-      uri = uri.slice(0, -1);
-      end -= 1;
-    }
-
-    if (/[)]$/.test(uri) && !uri.includes("(")) {
-      uri = uri.slice(0, -1);
-      end -= 1;
-    }
-
-    if (start > cursor) {
-      runs.push({ text: value.slice(cursor, start) });
-    }
-    runs.push({
-      text: value.slice(start, end),
-      url: uri,
-    });
-    if (end < consumedEnd) {
-      runs.push({ text: value.slice(end, consumedEnd) });
-    }
-    cursor = consumedEnd;
-  }
-
-  if (cursor < value.length) {
-    runs.push({ text: value.slice(cursor) });
-  }
-
-  return runs.length > 0 ? runs : [{ text: value }];
-}
-
-function buildPdfTextTokens(text, facets = []) {
-  const runs = extractPdfLinkRuns(text, facets);
-  const tokens = [];
-
-  for (const run of runs) {
-    const parts = String(run.text || "").split("\n");
-    parts.forEach((part, partIndex) => {
-      const chunks = part.match(/\S+\s*|\s+/g) || (part ? [part] : []);
-      chunks.forEach((chunk) => {
-        tokens.push({
-          text: chunk,
-          url: run.url || "",
-        });
-      });
-      if (partIndex < parts.length - 1) {
-        tokens.push({ text: "\n", newline: true });
-      }
-    });
-  }
-
-  return tokens;
-}
-
-function fitPdfTokenToWidth(context, text, maxWidth) {
-  if (!text) {
-    return "";
-  }
-  let fitted = "";
-  for (const char of text) {
-    const candidate = fitted + char;
-    if (!fitted || context.measureText(candidate).width <= maxWidth) {
-      fitted = candidate;
-    } else {
-      break;
-    }
-  }
-  return fitted || text.slice(0, 1);
-}
-
-function buildWrappedPdfLines(context, text, maxWidth, facets = []) {
-  const tokens = buildPdfTextTokens(text, facets);
-  const lines = [];
-  let currentFragments = [];
-  let currentWidth = 0;
-
-  function pushLine() {
-    lines.push({
-      fragments: currentFragments,
-      width: currentWidth,
-    });
-    currentFragments = [];
-    currentWidth = 0;
-  }
-
-  function appendFragment(textValue, url) {
-    if (!textValue) {
-      return;
-    }
-    const width = context.measureText(textValue).width;
-    currentFragments.push({ text: textValue, url, width });
-    currentWidth += width;
-  }
-
-  for (const token of tokens) {
-    if (token.newline) {
-      pushLine();
-      continue;
-    }
-
-    let remaining = token.text;
-    while (remaining) {
-      if (currentWidth === 0) {
-        remaining = remaining.replace(/^\s+/, "");
-        if (!remaining) {
-          break;
-        }
-      }
-
-      const availableWidth = Math.max(1, maxWidth - currentWidth);
-      const remainingWidth = context.measureText(remaining).width;
-
-      if (remainingWidth <= availableWidth) {
-        appendFragment(remaining, token.url);
-        remaining = "";
-        continue;
-      }
-
-      if (currentWidth > 0) {
-        pushLine();
-        continue;
-      }
-
-      const fitted = fitPdfTokenToWidth(context, remaining, availableWidth);
-      appendFragment(fitted, token.url);
-      remaining = remaining.slice(fitted.length);
-      if (remaining) {
-        pushLine();
-      }
-    }
-  }
-
-  if (currentFragments.length > 0 || lines.length === 0) {
-    pushLine();
-  }
-
-  return lines;
-}
-
-function roundRectPath(context, x, y, width, height, radius) {
-  const r = Math.min(radius, width / 2, height / 2);
-  context.beginPath();
-  context.moveTo(x + r, y);
-  context.arcTo(x + width, y, x + width, y + height, r);
-  context.arcTo(x + width, y + height, x, y + height, r);
-  context.arcTo(x, y + height, x, y, r);
-  context.arcTo(x, y, x + width, y, r);
-  context.closePath();
-}
-
-function fillRoundedRect(context, x, y, width, height, radius, fillStyle) {
-  context.save();
-  roundRectPath(context, x, y, width, height, radius);
-  context.fillStyle = fillStyle;
-  context.fill();
-  context.restore();
-}
-
-function strokeRoundedRect(context, x, y, width, height, radius, strokeStyle, lineWidth = 1) {
-  context.save();
-  roundRectPath(context, x, y, width, height, radius);
-  context.strokeStyle = strokeStyle;
-  context.lineWidth = lineWidth;
-  context.stroke();
-  context.restore();
-}
-
-function drawRoundedImageContain(context, bitmap, x, y, width, height, radius, background = "#dfe9fb") {
-  context.save();
-  roundRectPath(context, x, y, width, height, radius);
-  context.clip();
-  context.fillStyle = background;
-  context.fillRect(x, y, width, height);
-
-  const ratio = Math.min(width / bitmap.width, height / bitmap.height);
-  const drawWidth = bitmap.width * ratio;
-  const drawHeight = bitmap.height * ratio;
-  const offsetX = x + ((width - drawWidth) / 2);
-  const offsetY = y + ((height - drawHeight) / 2);
-  context.drawImage(bitmap, offsetX, offsetY, drawWidth, drawHeight);
-  context.restore();
-}
-
-function drawCircularImageCover(context, bitmap, x, y, size, background = "#dfe9fb") {
-  context.save();
-  context.beginPath();
-  context.arc(x + (size / 2), y + (size / 2), size / 2, 0, Math.PI * 2);
-  context.closePath();
-  context.clip();
-  context.fillStyle = background;
-  context.fillRect(x, y, size, size);
-
-  const ratio = Math.max(size / bitmap.width, size / bitmap.height);
-  const drawWidth = bitmap.width * ratio;
-  const drawHeight = bitmap.height * ratio;
-  const offsetX = x + ((size - drawWidth) / 2);
-  const offsetY = y + ((size - drawHeight) / 2);
-  context.drawImage(bitmap, offsetX, offsetY, drawWidth, drawHeight);
-  context.restore();
-}
-
-function getArchivePdfImagePreset(options) {
-  if (options.imageSize === "large") {
-    return { singleMaxHeight: 250, gridCellMaxHeight: 160, gap: 10 };
-  }
-  if (options.imageSize === "small") {
-    return { singleMaxHeight: 150, gridCellMaxHeight: 92, gap: 8 };
-  }
-  return { singleMaxHeight: 190, gridCellMaxHeight: 122, gap: 9 };
-}
-
-function getArchivePdfImageFrames(post, contentWidth, options, scale) {
-  const images = Array.isArray(post.images) ? post.images.slice(0, MAX_IMAGES_PER_SEGMENT) : [];
-  if (images.length === 0) {
-    return { frames: [], totalHeight: 0 };
-  }
-
-  const preset = getArchivePdfImagePreset(options);
-  const gap = preset.gap * scale;
-  const captionLineHeight = 12 * scale;
-
-  if (images.length === 1) {
-    const image = images[0];
-    const ratio = image.width && image.height ? image.width / image.height : (16 / 9);
-    const height = Math.min(preset.singleMaxHeight * scale, contentWidth / Math.max(ratio, 0.5));
-    const captionLines = image.alt ? 2 : 0;
-    return {
-      frames: [{
-        image,
-        x: 0,
-        y: 0,
-        width: contentWidth,
-        height,
-        captionLines,
-        captionHeight: captionLines * captionLineHeight,
-      }],
-      totalHeight: height + (captionLines * captionLineHeight),
-    };
-  }
-
-  const cellWidth = (contentWidth - gap) / 2;
-  const frames = [];
-  let cursorY = 0;
-
-  for (let index = 0; index < images.length; index += 2) {
-    const rowImages = images.slice(index, index + 2);
-    const rowHeights = rowImages.map((image) => {
-      const ratio = image.width && image.height ? image.width / image.height : 1;
-      return Math.min(preset.gridCellMaxHeight * scale, cellWidth / Math.max(ratio, 0.66));
-    });
-    const rowHeight = Math.max(...rowHeights, 72 * scale);
-    const captionHeights = rowImages.map((image) => image.alt ? (2 * captionLineHeight) : 0);
-    const rowCaptionHeight = Math.max(0, ...captionHeights);
-
-    rowImages.forEach((image, column) => {
-      frames.push({
-        image,
-        x: column * (cellWidth + gap),
-        y: cursorY,
-        width: cellWidth,
-        height: rowHeight,
-        captionLines: image.alt ? 2 : 0,
-        captionHeight: image.alt ? (2 * captionLineHeight) : 0,
-      });
-    });
-
-    cursorY += rowHeight + rowCaptionHeight;
-    if (index + 2 < images.length) {
-      cursorY += gap;
-    }
-  }
-
-  return {
-    frames,
-    totalHeight: cursorY,
-  };
-}
-
-function getArchivePdfExternalCardLayout(context, post, contentWidth, scale) {
-  const externalCard = getArchiveExternalCard(post);
-  if (!externalCard) {
-    return null;
-  }
-
-  const cardPadding = 11 * scale;
-  const gap = 10 * scale;
-  const hasThumb = Boolean(externalCard.thumbPath);
-  const thumbFailed = externalCard.thumbLoadFailed === true && !hasThumb;
-  const hasThumbSlot = hasThumb || thumbFailed;
-  const thumbWidth = hasThumbSlot ? Math.min(116 * scale, contentWidth * 0.3) : 0;
-  const thumbHeight = hasThumbSlot ? (thumbWidth * 0.74) : 0;
-  const textWidth = Math.max(120 * scale, contentWidth - (cardPadding * 2) - (hasThumbSlot ? (thumbWidth + gap) : 0));
-  const displayUrl = shortenArchiveUrlForDisplay(externalCard.url);
-
-  context.font = `700 ${10.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const titleLines = buildWrappedPdfLines(context, externalCard.title || externalCard.url, textWidth).slice(0, 2);
-  context.font = `${9.2 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const descriptionLines = externalCard.description
-    ? buildWrappedPdfLines(context, externalCard.description, textWidth).slice(0, 3)
-    : [];
-  const failedLines = thumbFailed
-    ? buildWrappedPdfLines(context, t("archiveLinkCardThumbFailed"), thumbWidth ? Math.max(48 * scale, thumbWidth - (14 * scale)) : textWidth).slice(0, 3)
-    : [];
-  context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const urlLines = buildWrappedPdfLines(context, displayUrl, textWidth).slice(0, 2);
-
-  const titleHeight = titleLines.length * (13 * scale);
-  const descriptionHeight = descriptionLines.length * (11.5 * scale);
-  const urlHeight = urlLines.length * (10.5 * scale);
-  const textHeight = titleHeight + (descriptionLines.length ? descriptionHeight + (4 * scale) : 0) + (urlLines.length ? urlHeight + (5 * scale) : 0);
-  const contentHeight = Math.max(hasThumb ? thumbHeight : 0, textHeight);
-
-  return {
-    card: externalCard,
-    hasThumb,
-    thumbFailed,
-    hasThumbSlot,
-    thumbWidth,
-    thumbHeight,
-    textWidth,
-    cardPadding,
-    gap,
-    titleLines,
-    descriptionLines,
-    failedLines,
-    urlLines,
-    height: contentHeight + (cardPadding * 2),
-  };
-}
-
-function drawArchivePdfMetricPill(context, label, x, y, scale) {
-  const paddingX = 8 * scale;
-  const width = context.measureText(label).width + (paddingX * 2);
-  const height = 18 * scale;
-  fillRoundedRect(context, x, y, width, height, 9 * scale, "#edf4ff");
-  strokeRoundedRect(context, x, y, width, height, 9 * scale, "#d0ddf6", 1 * scale);
-  context.fillStyle = "#3d5f8f";
-  context.fillText(label, x + paddingX, y + (4 * scale));
-  return width;
-}
-
-function buildArchivePostMetricLabels(post) {
-  return buildPostMetricLabels(post);
-}
-
-function estimateArchivePostCardHeight(context, post, options, scale, cardWidth, layoutMode = "standalone") {
-  const innerPadding = 16 * scale;
-  const depthIndent = layoutMode === "standalone" && options.indentThreads
-    ? Math.min(4, Number(post?.threadDepth) || 0) * (18 * scale)
-    : 0;
-  const avatarOffset = post?.authorAvatarPath ? ((28 * scale) + (10 * scale)) : 0;
-  const contentWidth = cardWidth - (innerPadding * 2) - depthIndent - avatarOffset;
-  const headerHeight = 42 * scale;
-  const metricsHeight = options.includeMetrics ? (28 * scale) : 0;
-  let editMarkerHeight = 0;
-  if (post?.editInfo?.isEdited === true) {
-    editMarkerHeight = 20 * scale;
-  }
-  const textLineHeight = 15 * scale;
-
-  context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const textLines = buildWrappedPdfLines(context, post.text || "", contentWidth, post.facets || []);
-  let totalHeight = innerPadding + headerHeight + metricsHeight + editMarkerHeight + (textLines.length * textLineHeight) + (12 * scale);
-
-  const externalCardLayout = getArchivePdfExternalCardLayout(context, post, contentWidth, scale);
-  if (externalCardLayout) {
-    totalHeight += externalCardLayout.height + (12 * scale);
-  }
-
-  const imageLayout = getArchivePdfImageFrames(post, contentWidth, options, scale);
-  if (imageLayout.totalHeight > 0) {
-    totalHeight += imageLayout.totalHeight + (12 * scale);
-  }
-
-  totalHeight += 28 * scale;
-  return totalHeight + innerPadding;
-}
-
-function drawArchivePdfTextBlock(context, lines, x, y, lineHeight) {
-  const annotations = [];
-  context.textBaseline = "top";
-
-  lines.forEach((line, lineIndex) => {
-    let cursorX = x;
-    const lineY = y + (lineIndex * lineHeight);
-
-    line.fragments.forEach((fragment) => {
-      if (!fragment.text) {
-        return;
-      }
-
-      context.fillStyle = fragment.url ? "#1d4ed8" : "#17233a";
-      context.fillText(fragment.text, cursorX, lineY);
-
-      if (fragment.url) {
-        const underlineY = lineY + lineHeight - 2;
-        context.fillRect(cursorX, underlineY, fragment.width, Math.max(1, lineHeight * 0.08));
-        annotations.push({
-          x: cursorX,
-          y: lineY,
-          width: fragment.width,
-          height: lineHeight,
-          url: fragment.url,
-        });
-      }
-
-      cursorX += fragment.width;
-    });
-  });
-
-  return {
-    height: lines.length * lineHeight,
-    annotations,
-  };
-}
-
-function canvasRectToPdfRect(rect, canvasWidth, canvasHeight) {
-  const scaleX = 595 / canvasWidth;
-  const scaleY = 842 / canvasHeight;
-  return [
-    Number((rect.x * scaleX).toFixed(2)),
-    Number(((canvasHeight - (rect.y + rect.height)) * scaleY).toFixed(2)),
-    Number(((rect.x + rect.width) * scaleX).toFixed(2)),
-    Number(((canvasHeight - rect.y) * scaleY).toFixed(2)),
-  ];
+  await archiveHtmlExport.export(catalog, options);
 }
 
 /**
- * Builds a text-only PDF blob with Threadline file metadata.
- * @param {Array<object>} pages - Text PDF pages.
- * @param {object} metadata - Optional metadata values.
- * @param {string} metadata.title - Optional PDF title.
- * @returns {Blob} PDF blob.
+ * Exports PDF volumes for the supplied or active archive.
+ * @param {object} catalog - Archive catalog.
+ * @returns {Promise<void>} Completed PDF delivery.
  */
-function buildTextPdfFile(pages, metadata = {}) {
-  const encoder = new TextEncoder();
-  const objects = [null];
-
-  function addObject(data) {
-    objects.push(data);
-    return objects.length - 1;
-  }
-
-  const fontRegularId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-  const fontBoldId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
-  const pageIds = [];
-
-  for (const page of pages) {
-    const contentBytes = encoder.encode(page.content || "");
-    const contentId = addObject({
-      header: `<< /Length ${contentBytes.length} >>\nstream\n`,
-      bytes: contentBytes,
-      footer: "\nendstream",
-    });
-
-    const annotationIds = (page.annotations || []).map((annotation) => addObject(
-      `<< /Type /Annot /Subtype /Link /Rect [${annotation.rect.join(" ")}] /Border [0 0 0] /A << /S /URI /URI (${escapePdfText(annotation.url)}) >> >>`,
-    ));
-
-    const resources = `<< /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >> >>`;
-    const annotations = annotationIds.length > 0 ? ` /Annots [${annotationIds.map((id) => `${id} 0 R`).join(" ")}]` : "";
-    pageIds.push(addObject(`<< /Type /Page /Parent PAGES_REF /MediaBox [0 0 595 842] /Resources ${resources} /Contents ${contentId} 0 R${annotations} >>`));
-  }
-
-  const pagesId = addObject(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`);
-  objects[pagesId] = objects[pagesId].replace("PAGES_REF", `${pagesId} 0 R`);
-  for (const pageId of pageIds) {
-    objects[pageId] = objects[pageId].replace("PAGES_REF", `${pagesId} 0 R`);
-  }
-  const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
-  const infoId = addObject(buildPdfMetadataInfoDictionary(metadata.title || ""));
-
-  const parts = [encoder.encode("%PDF-1.4\n")];
-  const offsets = [0];
-  let length = parts[0].length;
-
-  for (let index = 1; index < objects.length; index += 1) {
-    offsets[index] = length;
-    const object = objects[index];
-    const prefix = encoder.encode(`${index} 0 obj\n`);
-    const suffix = encoder.encode("\nendobj\n");
-    parts.push(prefix);
-    length += prefix.length;
-    if (typeof object === "string") {
-      const body = encoder.encode(object);
-      parts.push(body);
-      length += body.length;
-    } else {
-      const header = encoder.encode(object.header);
-      const footer = encoder.encode(object.footer);
-      parts.push(header, object.bytes, footer);
-      length += header.length + object.bytes.length + footer.length;
-    }
-    parts.push(suffix);
-    length += suffix.length;
-  }
-
-  const xrefOffset = length;
-  const xref = ["xref", `0 ${objects.length}`, "0000000000 65535 f "];
-  for (let index = 1; index < objects.length; index += 1) {
-    xref.push(`${String(offsets[index]).padStart(10, "0")} 00000 n `);
-  }
-  const trailer = `trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R /Info ${infoId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  parts.push(encoder.encode(`${xref.join("\n")}\n${trailer}`));
-
-  return new Blob(parts, { type: "application/pdf" });
-}
-
-function getArchiveThreadGroupKey(post) {
-  return post?.thread?.rootUri || post?.uri || "";
-}
-
-function getArchivePdfThreadBlockFrame(baseX, baseWidth, post, options, scale) {
-  const depth = options.indentThreads ? Math.min(4, Number(post?.threadDepth) || 0) : 0;
-  const indent = depth * (18 * scale);
-  return {
-    depth,
-    indent,
-    x: baseX + indent,
-    width: Math.max(220 * scale, baseWidth - indent),
-  };
-}
-
-async function drawArchivePdfPostCard(
-  context,
-  assetMap,
-  post,
-  x,
-  y,
-  width,
-  options,
-  scale,
-  canvasWidth,
-  canvasHeight,
-  layout = {},
-) {
-  const innerPadding = 16 * scale;
-  const annotations = [];
-  const integrated = layout.mode === "integrated";
-  const cardHeight = estimateArchivePostCardHeight(
-    context,
-    post,
-    options,
-    scale,
-    width,
-    integrated ? "integrated" : "standalone",
-  );
-  const isReply = integrated ? (layout.depth || 0) > 0 : false;
-  const cardRadius = integrated ? (14 * scale) : (18 * scale);
-  const cardFill = integrated
-    ? (isReply ? "#f8fbff" : "#ffffff")
-    : "#ffffff";
-  const cardStroke = integrated
-    ? (isReply ? "#d9e5f5" : "#d2deef")
-    : "#d7e3f5";
-
-  if (!integrated) {
-    context.save();
-    context.shadowColor = "rgba(20, 35, 60, 0.08)";
-    context.shadowBlur = 18 * scale;
-    context.shadowOffsetY = 7 * scale;
-    fillRoundedRect(context, x, y, width, cardHeight, cardRadius, cardFill);
-    context.restore();
-  } else {
-    fillRoundedRect(context, x, y, width, cardHeight, cardRadius, cardFill);
-  }
-  strokeRoundedRect(context, x, y, width, cardHeight, cardRadius, cardStroke, integrated ? (1 * scale) : (1.2 * scale));
-  if (!integrated) {
-    fillRoundedRect(context, x + (10 * scale), y + (14 * scale), 4 * scale, cardHeight - (28 * scale), 3 * scale, "#4e8cff");
-  }
-
-  let cursorY = y + innerPadding;
-  const textStartX = x + innerPadding + (integrated ? 0 : (8 * scale));
-  const depthIndent = 0;
-  const avatarSize = 28 * scale;
-  const avatarGap = 10 * scale;
-  const avatarAsset = post.authorAvatarPath ? assetMap.get(post.authorAvatarPath) : null;
-  const avatarOffset = avatarAsset ? (avatarSize + avatarGap) : 0;
-  const cardContentX = textStartX + depthIndent + avatarOffset;
-  const contentWidth = width - (innerPadding * 2) - depthIndent - avatarOffset;
-
-  if (integrated && isReply) {
-    fillRoundedRect(context, x + (10 * scale), y + (12 * scale), 3 * scale, cardHeight - (24 * scale), 2 * scale, "#d95f4b");
-  } else if (!integrated && (Number(post?.threadDepth) || 0) > 0) {
-    fillRoundedRect(context, cardContentX - (12 * scale), y + (14 * scale), 4 * scale, cardHeight - (28 * scale), 3 * scale, "#d95f4b");
-  }
-
-  context.textBaseline = "top";
-  if (avatarAsset) {
-    const avatarBitmap = await loadArchiveAssetBitmap(avatarAsset);
-    drawCircularImageCover(context, avatarBitmap, textStartX, cursorY, avatarSize);
-    avatarBitmap.close();
-  }
-  context.fillStyle = "#13213c";
-  context.font = `700 ${14 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const pdfAuthorTitle = post.authorDisplayName || post.authorHandle || authAccount || "Bluesky";
-  context.fillText(pdfAuthorTitle, cardContentX, cursorY);
-
-  context.fillStyle = "#577194";
-  context.font = `${9.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(`@${post.authorHandle || authAccount || "bluesky"}`, cardContentX, cursorY + (16 * scale));
-  const dateText = formatHistoryTimestamp(post.createdAt);
-  const dateWidth = context.measureText(dateText).width;
-  context.fillText(dateText, x + width - innerPadding - dateWidth, cursorY + (2 * scale));
-  cursorY += 32 * scale;
-
-  if (options.includeMetrics) {
-    context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-    let pillX = cardContentX;
-    const pillY = cursorY;
-    for (const label of buildArchivePostMetricLabels(post)) {
-      pillX += drawArchivePdfMetricPill(context, label, pillX, pillY, scale) + (6 * scale);
-    }
-    cursorY += 28 * scale;
-  }
-
-  if (post?.editInfo?.isEdited === true) {
-    context.fillStyle = "#92560d";
-    context.font = `700 ${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(t("archiveHtmlEditedBadge"), cardContentX, cursorY);
-    cursorY += 20 * scale;
-  }
-
-  context.fillStyle = "#17233a";
-  context.font = `${11 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const textLines = buildWrappedPdfLines(context, post.text || "", contentWidth, post.facets || []);
-  const textBlock = drawArchivePdfTextBlock(context, textLines, cardContentX, cursorY, 15 * scale);
-  annotations.push(...textBlock.annotations.map((annotation) => ({
-    rect: canvasRectToPdfRect(annotation, canvasWidth, canvasHeight),
-    url: annotation.url,
-  })));
-  cursorY += textBlock.height + (12 * scale);
-
-  const externalCardLayout = getArchivePdfExternalCardLayout(context, post, contentWidth, scale);
-  if (externalCardLayout) {
-    const cardX = cardContentX;
-    const cardY = cursorY;
-    fillRoundedRect(context, cardX, cardY, contentWidth, externalCardLayout.height, 14 * scale, "#eef4ff");
-    strokeRoundedRect(context, cardX, cardY, contentWidth, externalCardLayout.height, 14 * scale, "#d2def0", 1 * scale);
-
-    let textX = cardX + externalCardLayout.cardPadding;
-    const textY = cardY + externalCardLayout.cardPadding;
-    if (externalCardLayout.hasThumbSlot) {
-      const thumbX = cardX + externalCardLayout.cardPadding;
-      const thumbY = cardY + externalCardLayout.cardPadding;
-      const thumbAsset = assetMap.get(externalCardLayout.card.thumbPath);
-      if (thumbAsset && externalCardLayout.hasThumb) {
-        const thumbBitmap = await loadArchiveAssetBitmap(thumbAsset);
-        drawRoundedImageContain(context, thumbBitmap, thumbX, thumbY, externalCardLayout.thumbWidth, externalCardLayout.thumbHeight, 10 * scale, "#dfe8f7");
-        thumbBitmap.close();
-      } else {
-        fillRoundedRect(context, thumbX, thumbY, externalCardLayout.thumbWidth, externalCardLayout.thumbHeight, 10 * scale, "#dfe8f7");
-        if (externalCardLayout.thumbFailed) {
-          context.fillStyle = "#5b6f8d";
-          context.font = `${8.4 * scale}px "Segoe UI", Aptos, sans-serif`;
-          drawArchivePdfTextBlock(
-            context,
-            externalCardLayout.failedLines,
-            thumbX + (7 * scale),
-            thumbY + (10 * scale),
-            10.5 * scale,
-          );
-        }
-      }
-      strokeRoundedRect(context, thumbX, thumbY, externalCardLayout.thumbWidth, externalCardLayout.thumbHeight, 10 * scale, "#d5e0f2", 1 * scale);
-      textX += externalCardLayout.thumbWidth + externalCardLayout.gap;
-    }
-
-    context.fillStyle = "#122642";
-    context.font = `700 ${10.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-    const titleBlock = drawArchivePdfTextBlock(context, externalCardLayout.titleLines, textX, textY, 13 * scale);
-    let cardTextY = textY + titleBlock.height;
-
-    if (externalCardLayout.descriptionLines.length > 0) {
-      cardTextY += 4 * scale;
-      context.fillStyle = "#415b81";
-      context.font = `${9.2 * scale}px "Segoe UI", Aptos, sans-serif`;
-      const descriptionBlock = drawArchivePdfTextBlock(context, externalCardLayout.descriptionLines, textX, cardTextY, 11.5 * scale);
-      cardTextY += descriptionBlock.height;
-    }
-
-    if (externalCardLayout.urlLines.length > 0) {
-      cardTextY += 5 * scale;
-      context.fillStyle = "#1d4ed8";
-      context.font = `${8.6 * scale}px "Segoe UI", Aptos, sans-serif`;
-      drawArchivePdfTextBlock(context, externalCardLayout.urlLines, textX, cardTextY, 10.5 * scale);
-    }
-
-    annotations.push({
-      rect: canvasRectToPdfRect({
-        x: cardX,
-        y: cardY,
-        width: contentWidth,
-        height: externalCardLayout.height,
-      }, canvasWidth, canvasHeight),
-      url: externalCardLayout.card.url,
-    });
-    cursorY += externalCardLayout.height + (12 * scale);
-  }
-
-  const imageLayout = getArchivePdfImageFrames(post, contentWidth, options, scale);
-  for (const frame of imageLayout.frames) {
-    const asset = assetMap.get(frame.image.path);
-    const frameX = cardContentX + frame.x;
-    const frameY = cursorY + frame.y;
-
-    if (asset) {
-      const bitmap = await loadArchiveAssetBitmap(asset);
-      drawRoundedImageContain(context, bitmap, frameX, frameY, frame.width, frame.height, 12 * scale);
-      bitmap.close();
-    } else {
-      fillRoundedRect(context, frameX, frameY, frame.width, frame.height, 12 * scale, "#eaf1fb");
-    }
-    strokeRoundedRect(context, frameX, frameY, frame.width, frame.height, 12 * scale, "#d5e0f2", 1 * scale);
-
-    if (frame.image.alt) {
-      context.fillStyle = "#5d7394";
-      context.font = `${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-      const altLines = buildWrappedPdfLines(context, `${t("archivePdfAltPrefix")} ${frame.image.alt}`, frame.width);
-      drawArchivePdfTextBlock(context, altLines.slice(0, frame.captionLines || 2), frameX, frameY + frame.height + (4 * scale), 12 * scale);
-    }
-  }
-
-  if (imageLayout.totalHeight > 0) {
-    cursorY += imageLayout.totalHeight + (10 * scale);
-  }
-
-  const footerY = y + cardHeight - innerPadding - (18 * scale);
-  const permalinkText = post.permalink || post.uri || "";
-  const buttonLabel = permalinkText ? "Post auf Bluesky" : "";
-  if (buttonLabel) {
-    context.font = `700 ${9 * scale}px "Segoe UI", Aptos, sans-serif`;
-    const buttonWidth = context.measureText(buttonLabel).width + (22 * scale);
-    fillRoundedRect(context, cardContentX, footerY, buttonWidth, 20 * scale, 10 * scale, "#122642");
-    context.fillStyle = "#ffffff";
-    context.fillText(buttonLabel, cardContentX + (11 * scale), footerY + (4.5 * scale));
-    annotations.push({
-      rect: canvasRectToPdfRect({
-        x: cardContentX,
-        y: footerY,
-        width: buttonWidth,
-        height: 20 * scale,
-      }, canvasWidth, canvasHeight),
-      url: permalinkText,
-    });
-  }
-
-  context.fillStyle = "#7489a5";
-  context.font = `${8.2 * scale}px "Segoe UI", Aptos, sans-serif`;
-  const uriLabel = (post.uri || "").replace(/^at:\/\//, "");
-  if (uriLabel) {
-    const maxUriWidth = width - (innerPadding * 2) - (140 * scale);
-    let clipped = uriLabel;
-    while (clipped && context.measureText(clipped).width > maxUriWidth) {
-      clipped = `${clipped.slice(0, -2)}…`;
-    }
-    context.fillText(clipped, x + width - innerPadding - context.measureText(clipped).width, footerY + (5 * scale));
-  }
-
-  return { height: cardHeight, annotations };
-}
-
-async function renderArchivePdfCanvasPage(catalog, posts, pageIndex, pageCount, bandIndex, bandCount, options) {
-  const assetMap = new Map((catalog.assets || []).map((asset) => [asset.path, asset]));
-  const canvas = document.createElement("canvas");
-  canvas.width = 1190;
-  canvas.height = 1684;
-  const context = canvas.getContext("2d");
-  const scale = canvas.width / 595;
-  const margin = 28 * scale;
-  const pageWidth = canvas.width - (margin * 2);
-  const pageHeight = canvas.height - (margin * 2);
-  const cardGap = 16 * scale;
-  const headerHeight = 42 * scale;
-  let cursorY = margin + headerHeight;
-  const annotations = [];
-
-  const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
-  gradient.addColorStop(0, "#f3f8ff");
-  gradient.addColorStop(1, "#e7eef9");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  fillRoundedRect(context, margin, margin, pageWidth, pageHeight, 22 * scale, "rgba(255,255,255,0.42)");
-  strokeRoundedRect(context, margin, margin, pageWidth, pageHeight, 22 * scale, "#d5e1f3", 1.2 * scale);
-
-  context.textBaseline = "top";
-  context.fillStyle = "#10233e";
-  context.font = `700 ${16 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(catalog?.account?.handle || authAccount || "Bluesky Archiv", margin + (18 * scale), margin + (14 * scale));
-
-  context.fillStyle = "#587192";
-  context.font = `${9.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-  context.fillText(`Band ${bandIndex + 1}/${bandCount}`, margin + (18 * scale), margin + (34 * scale));
-  const pageCounter = `Seite ${pageIndex + 1}/${pageCount}`;
-  const pageCounterWidth = context.measureText(pageCounter).width;
-  context.fillText(pageCounter, margin + pageWidth - (18 * scale) - pageCounterWidth, margin + (24 * scale));
-  const skippedImageCount = Number(catalog?.summary?.skippedImageCount) || 0;
-  if (skippedImageCount > 0) {
-    context.fillStyle = "#a33e2d";
-    context.font = `${8.8 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(t("archiveSkippedImagesPdfNotice", { skipped: skippedImageCount }), margin + (18 * scale), margin + (48 * scale));
-  }
-
-  const baseCardX = margin + (18 * scale);
-  const baseCardWidth = pageWidth - (36 * scale);
-  const laidOutPosts = [];
-  for (const post of posts) {
-    const frame = getArchivePdfThreadBlockFrame(baseCardX, baseCardWidth, post, options, scale);
-    const cardHeight = estimateArchivePostCardHeight(
-      context,
-      post,
-      options,
-      scale,
-      frame.width,
-      "integrated",
-    );
-    laidOutPosts.push({
-      post,
-      y: cursorY,
-      cardHeight,
-      x: frame.x,
-      width: frame.width,
-      depth: frame.depth,
-      groupKey: getArchiveThreadGroupKey(post),
-    });
-    cursorY += cardHeight + cardGap;
-  }
-
-  const pageGroups = [];
-  laidOutPosts.forEach((entry) => {
-    const currentGroup = pageGroups[pageGroups.length - 1];
-    if (!currentGroup || currentGroup.groupKey !== entry.groupKey) {
-      pageGroups.push({
-        groupKey: entry.groupKey,
-        entries: [entry],
-      });
-    } else {
-      currentGroup.entries.push(entry);
-    }
-  });
-
-  pageGroups.forEach((group) => {
-    if (group.entries.length <= 1 && !(group.entries[0]?.post?.threadDepth > 0)) {
-      return;
-    }
-    const first = group.entries[0];
-    const last = group.entries[group.entries.length - 1];
-    const groupX = baseCardX - (6 * scale);
-    const groupY = first.y - (10 * scale);
-    const groupWidth = baseCardWidth + (12 * scale);
-    const groupHeight = (last.y + last.cardHeight) - first.y + (20 * scale);
-    fillRoundedRect(context, groupX, groupY, groupWidth, groupHeight, 22 * scale, "rgba(255,255,255,0.72)");
-    strokeRoundedRect(context, groupX, groupY, groupWidth, groupHeight, 22 * scale, "#d7e3f5", 1 * scale);
-    fillRoundedRect(context, groupX + (10 * scale), groupY + (14 * scale), 4 * scale, groupHeight - (28 * scale), 3 * scale, "#d95f4b");
-  });
-
-  for (const entry of laidOutPosts) {
-    const inThreadGroup = (entry.depth || 0) > 0
-      || pageGroups.some((group) => group.groupKey === entry.groupKey && group.entries.length > 1);
-    const card = await drawArchivePdfPostCard(
-      context,
-      assetMap,
-      entry.post,
-      entry.x,
-      entry.y,
-      entry.width,
-      options,
-      scale,
-      canvas.width,
-      canvas.height,
-      inThreadGroup ? {
-        mode: "integrated",
-        depth: entry.depth,
-      } : {},
-    );
-    annotations.push(...card.annotations);
-  }
-
-  const jpegBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-  const bytes = new Uint8Array(await jpegBlob.arrayBuffer());
-  return {
-    bytes,
-    width: canvas.width,
-    height: canvas.height,
-    annotations,
-  };
-}
-
-function paginateArchivePdfPosts(posts, options) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1190;
-  canvas.height = 1684;
-  const context = canvas.getContext("2d");
-  const scale = canvas.width / 595;
-  const margin = 28 * scale;
-  const pageHeight = canvas.height - (margin * 2);
-  const headerHeight = 42 * scale;
-  const cardGap = 16 * scale;
-  const baseCardWidth = canvas.width - (margin * 2) - (36 * scale);
-  const usableHeight = pageHeight - headerHeight - (18 * scale);
-  const pages = [];
-  let currentPage = [];
-  let currentHeight = 0;
-
-  for (const post of posts) {
-    const frame = getArchivePdfThreadBlockFrame(0, baseCardWidth, post, options, scale);
-    const cardHeight = estimateArchivePostCardHeight(context, post, options, scale, frame.width, "integrated");
-    const nextHeight = currentPage.length === 0 ? cardHeight : currentHeight + cardGap + cardHeight;
-
-    if (currentPage.length > 0 && nextHeight > usableHeight) {
-      pages.push(currentPage);
-      currentPage = [post];
-      currentHeight = cardHeight;
-    } else {
-      currentPage.push(post);
-      currentHeight = nextHeight;
-    }
-  }
-
-  if (currentPage.length > 0) {
-    pages.push(currentPage);
-  }
-
-  return pages;
-}
-
-/**
- * Builds an image-backed PDF blob with Threadline file metadata.
- * @param {Array<object>} pages - PDF pages with content, images and annotations.
- * @param {object} metadata - Optional metadata values.
- * @param {string} metadata.title - Optional PDF title.
- * @returns {Blob} PDF blob.
- */
-function buildPdfFile(pages, metadata = {}) {
-  const encoder = new TextEncoder();
-  const objects = [null];
-  const fontRegularId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-  const fontBoldId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
-
-  function addObject(data) {
-    objects.push(data);
-    return objects.length - 1;
-  }
-  const pageIds = [];
-
-  for (const page of pages) {
-    const xObjects = {};
-    for (const image of page.images) {
-      const imageId = addObject({
-        header: `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.length} >>\nstream\n`,
-        bytes: image.bytes,
-        footer: "\nendstream",
-      });
-      xObjects[image.name] = imageId;
-    }
-
-    const contentBytes = encoder.encode(page.content);
-    const contentId = addObject({
-      header: `<< /Length ${contentBytes.length} >>\nstream\n`,
-      bytes: contentBytes,
-      footer: "\nendstream",
-    });
-
-    const annotationIds = (page.annotations || []).map((annotation) => addObject(
-      `<< /Type /Annot /Subtype /Link /Rect [${annotation.rect.join(" ")}] /Border [0 0 0] /A << /S /URI /URI (${escapePdfText(annotation.url)}) >> >>`,
-    ));
-
-    const xObjectEntries = Object.entries(xObjects)
-      .map(([name, id]) => `/${name} ${id} 0 R`)
-      .join(" ");
-    const xObjectResource = xObjectEntries ? `/XObject << ${xObjectEntries} >> ` : "";
-    const resources = `<< /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >> ${xObjectResource}>>`;
-    const annotations = annotationIds.length > 0 ? ` /Annots [${annotationIds.map((id) => `${id} 0 R`).join(" ")}]` : "";
-    pageIds.push(addObject(`<< /Type /Page /Parent PAGES_REF /MediaBox [0 0 595 842] /Resources ${resources} /Contents ${contentId} 0 R${annotations} >>`));
-  }
-
-  const pagesId = addObject(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`);
-  objects[pagesId] = objects[pagesId].replace("PAGES_REF", `${pagesId} 0 R`);
-  for (const pageId of pageIds) {
-    objects[pageId] = objects[pageId].replace("PAGES_REF", `${pagesId} 0 R`);
-  }
-  const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
-  const infoId = addObject(buildPdfMetadataInfoDictionary(metadata.title || ""));
-
-  const parts = [encoder.encode("%PDF-1.4\n")];
-  const offsets = [0];
-  let length = parts[0].length;
-
-  for (let index = 1; index < objects.length; index += 1) {
-    offsets[index] = length;
-    const object = objects[index];
-    const prefix = encoder.encode(`${index} 0 obj\n`);
-    const suffix = encoder.encode("\nendobj\n");
-    parts.push(prefix);
-    length += prefix.length;
-    if (typeof object === "string") {
-      const body = encoder.encode(object);
-      parts.push(body);
-      length += body.length;
-    } else {
-      const header = encoder.encode(object.header);
-      const footer = encoder.encode(object.footer);
-      parts.push(header, object.bytes, footer);
-      length += header.length + object.bytes.length + footer.length;
-    }
-    parts.push(suffix);
-    length += suffix.length;
-  }
-
-  const xrefOffset = length;
-  const xref = ["xref", `0 ${objects.length}`, "0000000000 65535 f "];
-  for (let index = 1; index < objects.length; index += 1) {
-    xref.push(`${String(offsets[index]).padStart(10, "0")} 00000 n `);
-  }
-  const trailer = `trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R /Info ${infoId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  parts.push(encoder.encode(`${xref.join("\n")}\n${trailer}`));
-
-  return new Blob(parts, { type: "application/pdf" });
-}
-
-async function buildArchivePdfBand(catalog, posts, bandIndex, bandCount, options, progressCallback = null) {
-  const pagePosts = paginateArchivePdfPosts(posts, options);
-  const pages = [];
-
-  for (const [pageIndex, page] of pagePosts.entries()) {
-    if (typeof progressCallback === "function") {
-      progressCallback({
-        pageIndex,
-        pageCount: pagePosts.length,
-      });
-    }
-    await waitForUiFrame();
-    const renderedPage = await renderArchivePdfCanvasPage(catalog, page, pageIndex, pagePosts.length, bandIndex, bandCount, options);
-    pages.push({
-      content: `q 595 0 0 842 0 0 cm /PageImage${pageIndex + 1} Do Q`,
-      images: [{
-        name: `PageImage${pageIndex + 1}`,
-        width: renderedPage.width,
-        height: renderedPage.height,
-        bytes: renderedPage.bytes,
-      }],
-      annotations: renderedPage.annotations,
-    });
-  }
-
-  return buildPdfFile(pages, {
-    title: catalog?.account?.handle || authAccount || "Threadline Archiv",
-  });
-}
-
-function splitArchiveIntoBands(posts, options) {
-  const size = Math.max(100, Math.min(1000, Number(options.bandSize) || 200));
-  const orderedPosts = buildArchiveThreadGroups(posts).flatMap((group) => group.posts);
-  const bands = [];
-  let current = [];
-
-  for (const post of orderedPosts) {
-    const currentGroup = current[current.length - 1]?.thread?.rootUri || current[current.length - 1]?.uri || "";
-    const nextGroup = post?.thread?.rootUri || post?.uri || "";
-    const canOverflowForThread = options.keepThreadsTogether
-      && current.length > 0
-      && current.length >= size
-      && currentGroup
-      && currentGroup === nextGroup;
-
-    if (current.length >= size && !canOverflowForThread) {
-      bands.push(current);
-      current = [];
-    }
-    current.push(post);
-  }
-
-  if (current.length > 0) {
-    bands.push(current);
-  }
-
-  return bands;
-}
-
 async function exportArchivePdfBandsFromCatalog(catalog = archiveCatalog) {
-  if (!catalog) {
-    throw new Error(t("archiveNeedArchive"));
-  }
-  setArchiveProgress({
-    title: t("archiveProgressPdfTitle"),
-    step: t("archiveProgressPdfStep", { index: 1, count: 1 }),
-    percent: 3,
-    detail: t("archiveProgressPdfPreparing"),
-  });
-  await waitForUiFrame();
-  await ensureArchiveAvatarAssets(catalog);
-
-  const options = getArchivePdfOptions();
-  const orderedPosts = buildArchiveThreadGroups([...catalog.posts].reverse()).flatMap((group) => group.posts);
-  const bands = splitArchiveIntoBands(orderedPosts, options);
-  const baseName = makeArchiveFileBaseName(catalog);
-
-  for (const [bandIndex, posts] of bands.entries()) {
-    setArchiveProgress({
-      title: t("archiveProgressPdfTitle"),
-      step: t("archiveProgressPdfStep", { index: bandIndex + 1, count: bands.length }),
-      percent: Math.max(6, Math.round((bandIndex / Math.max(1, bands.length)) * 100)),
-      detail: t("archiveProgressPdfDetail", { posts: posts.length }),
-    });
-    await waitForUiFrame();
-    const blob = await buildArchivePdfBand(catalog, posts, bandIndex, bands.length, options, ({ pageIndex, pageCount }) => {
-      const bandBase = bandIndex / Math.max(1, bands.length);
-      const pageShare = pageCount > 0 ? ((pageIndex + 1) / pageCount) : 1;
-      const percent = Math.min(99, Math.round((bandBase + (pageShare / Math.max(1, bands.length))) * 100));
-      setArchiveProgress({
-        title: t("archiveProgressPdfTitle"),
-        step: t("archiveProgressPdfStep", { index: bandIndex + 1, count: bands.length }),
-        percent,
-        detail: t("archiveProgressPdfPageDetail", {
-          posts: posts.length,
-          page: pageIndex + 1,
-          pages: pageCount,
-        }),
-      });
-    });
-    const fileName = `${baseName}-band-${String(bandIndex + 1).padStart(3, "0")}.pdf`;
-    const file = new File([blob], fileName, { type: "application/pdf" });
-    await shareOrDownloadFile(file, fileName, { preferDownload: true });
-  }
-
-  setArchiveProgress({
-    title: t("archiveProgressDoneTitle"),
-    step: t("archiveProgressDoneStep"),
-    percent: 100,
-    detail: t("archivePdfDone", { count: bands.length }),
-  });
+  await archivePdfExport.export(catalog);
 }
 
-async function ensureArchiveCatalogLoaded(forceRefresh = false) {
-  if (archiveCatalog && !forceRefresh) {
-    return archiveCatalog;
-  }
-
-  const rawSource = String(archiveSourceInput?.value || "").trim();
-  if (rawSource && !archiveSourceProfile?.did) {
-    await validateArchiveSourceInput();
-  }
-
-  const filters = getArchiveFilters();
-  const filterKey = serializeArchiveFilters(filters);
-  const currentSession = archiveSession && archiveSession.filterKey === filterKey ? archiveSession : null;
-  const resumeCatalog = currentSession ? archiveCatalog : null;
-
-  setArchiveProgress({
-    title: t("archiveProgressFetchTitle"),
-    step: t("archiveProgressFetchStep"),
-    percent: 3,
-    detail: t("archiveProgressFetchIntro"),
-  });
-  archivePreviewState = null;
-  archiveTransientNotice = "";
-  activeArchiveRunId = crypto.randomUUID();
-  activeArchiveRunState = "running";
-  updateArchiveRunControls();
-  renderArchivePreview();
-  renderArchiveStatusLine();
-
-  let catalog;
-  try {
-    catalog = await sendToServiceWorker("EXPORT_ACCOUNT_ARCHIVE_WAVE", {
-      runId: activeArchiveRunId,
-      filters,
-      maxPosts: getArchiveWaveSize(),
-      waveIndex: 1,
-      cursor: currentSession?.status === "paused" ? (currentSession?.nextCursor || "") : "",
-      existingCatalog: currentSession?.status === "paused" ? resumeCatalog : null,
-      existingSession: currentSession?.status === "paused" ? currentSession : null,
-    }, {
-      timeoutMs: 600000,
-      onProgress(progress) {
-        const progressDetail = [
-          progress.detail || "",
-          progress.preview?.metric || "",
-          progress.preview?.meta || "",
-        ].filter(Boolean).join(" \u2022 ");
-        setArchiveProgress({
-          title: progress.title || archiveJobState?.title || t("archiveProgressFetchTitle"),
-          step: progress.step || archiveJobState?.step || t("archiveProgressFetchStep"),
-          percent: Number.isFinite(progress.percent) ? progress.percent : (archiveJobState?.percent || 0),
-          detail: progressDetail || archiveJobState?.detail || t("archiveProgressFetchIntro"),
-        });
-        if (progress.checkpoint) {
-          archiveLastCheckpoint = progress.checkpoint;
-        } else if (progress.preview?.meta) {
-          archiveLastCheckpoint = progress.preview.meta;
-        } else if (progress.detail) {
-          archiveLastCheckpoint = progress.detail;
-        }
-        if (progress.preview) {
-          archivePreviewState = progress.preview;
-          renderArchivePreview();
-        }
-        if (progress.state === "paused") {
-          activeArchiveRunState = "paused";
-          updateArchiveRunControls();
-          renderArchiveStatusLine();
-          renderArchiveStartHint();
-        } else if (progress.state === "running") {
-          activeArchiveRunState = "running";
-          updateArchiveRunControls();
-          renderArchiveStatusLine();
-          renderArchiveStartHint();
-        }
-      },
-    });
-  } catch (error) {
-    activeArchiveRunState = "idle";
-    activeArchiveRunId = null;
-    updateArchiveRunControls();
-    throw error;
-  }
-
-  archiveCatalog = normalizeImportedArchiveCatalog(catalog);
-  archiveSession = {
-    filterKey,
-    filters,
-    waveIndex: 1,
-    nextCursor: catalog.session?.nextCursor || "",
-    hasMore: Boolean(catalog.session?.hasMore),
-    exportedPosts: Number(catalog.session?.exportedPosts) || archiveCatalog.posts.length,
-    exportedImages: Number(catalog.session?.exportedImages) || archiveCatalog.summary.imageCount,
-    status: catalog.session?.status || "completed",
-    pageCount: Number(catalog.session?.pageCount) || 0,
-    phase: String(catalog.session?.phase || ""),
-    errorMessage: String(catalog.session?.errorMessage || ""),
-    updatedAt: new Date().toISOString(),
-  };
-  await saveArchiveSession(archiveSession);
-  await saveArchiveCatalogState(archiveCatalog);
-  activeArchiveRunId = null;
-  activeArchiveRunState = catalog.session?.status === "cancelled"
-    ? "cancelled"
-    : (catalog.session?.status === "paused" ? "paused" : "idle");
-  archiveTransientNotice = catalog.session?.status === "cancelled"
-    ? t("archiveWaveCancelledNotice")
-    : (catalog.session?.status === "paused"
-      ? t("archiveWavePausedNotice", {
-          message: catalog.session?.errorMessage || t("archiveWavePausedDefault"),
-        })
-      : t("archiveWaveLoadedNotice", {
-          posts: archiveCatalog.posts.length,
-          images: archiveCatalog.summary.imageCount,
-        }));
-  setArchiveProgress({
-    title: catalog.session?.status === "paused" ? t("archiveProgressPausedTitle") : t("archiveProgressDoneTitle"),
-    step: catalog.session?.status === "paused" ? t("archiveWavePausedStep") : t("archiveWaveLoadedStep"),
-    percent: 100,
-    detail: archiveTransientNotice,
-  });
-  updateArchiveRunControls();
-  renderArchiveStatusLine();
-  renderArchiveStartHint();
-  updateArchiveSummary(archiveCatalog);
-  renderArchiveResults(archiveCatalog);
-  return archiveCatalog;
-}
+/** Delegates ensureArchiveCatalogLoaded to the archive domain. @param {*} forceRefresh - Operation input. @returns {*} Domain result. */
+async function ensureArchiveCatalogLoaded(forceRefresh = false) { return archiveRunController.ensure(forceRefresh); }
 
 function tokenizePostEditText(text) {
   return String(text || "").match(/\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]+/gu) || [];
@@ -19009,92 +10654,8 @@ async function checkPostEditMetadata() {
   renderPostEditCheckResult(result);
 }
 
-async function importArchiveThreadFromUrl() {
-  const threadUrl = String(archiveThreadUrlInput?.value || "").trim();
-  const importMode = archiveThreadImportModeSelect?.value === "tree"
-    ? "tree"
-    : (archiveThreadImportModeSelect?.value === "author" ? "author" : "path");
-  if (!threadUrl) {
-    throw new Error(t("archiveThreadUrlInvalid"));
-  }
-
-  setArchiveProgress({
-    title: t("archiveThreadUrlLoadingTitle"),
-    step: t("archiveThreadUrlLoadingStep"),
-    percent: 4,
-    detail: threadUrl,
-  });
-  archivePreviewState = null;
-  archiveTransientNotice = "";
-  activeArchiveRunId = crypto.randomUUID();
-  activeArchiveRunState = "running";
-  updateArchiveRunControls();
-  renderArchivePreview();
-  renderArchiveStatusLine();
-
-  let catalog;
-  try {
-    catalog = await sendToServiceWorker("IMPORT_ARCHIVE_THREAD_FROM_URL", {
-      runId: activeArchiveRunId,
-      url: threadUrl,
-      importMode,
-    }, {
-      timeoutMs: 600000,
-      onProgress(progress) {
-        const progressDetail = [
-          progress.detail || "",
-          progress.preview?.metric || "",
-          progress.preview?.meta || "",
-        ].filter(Boolean).join(" \u2022 ");
-        setArchiveProgress({
-          title: progress.title || archiveJobState?.title || t("archiveThreadUrlLoadingTitle"),
-          step: progress.step || archiveJobState?.step || t("archiveThreadUrlLoadingStep"),
-          percent: Number.isFinite(progress.percent) ? progress.percent : (archiveJobState?.percent || 0),
-          detail: progressDetail || archiveJobState?.detail || threadUrl,
-        });
-        if (progress.checkpoint) {
-          archiveLastCheckpoint = progress.checkpoint;
-        } else if (progress.preview?.meta) {
-          archiveLastCheckpoint = progress.preview.meta;
-        } else if (progress.detail) {
-          archiveLastCheckpoint = progress.detail;
-        }
-        if (progress.preview) {
-          archivePreviewState = progress.preview;
-          renderArchivePreview();
-        }
-        if (progress.state === "paused") {
-          activeArchiveRunState = "paused";
-        } else if (progress.state === "running") {
-          activeArchiveRunState = "running";
-        }
-        updateArchiveRunControls();
-        renderArchiveStatusLine();
-        renderArchiveStartHint();
-      },
-    });
-  } catch (error) {
-    activeArchiveRunState = "idle";
-    activeArchiveRunId = null;
-    updateArchiveRunControls();
-    throw error;
-  }
-
-  activeArchiveRunState = "idle";
-  activeArchiveRunId = null;
-  updateArchiveRunControls();
-  await applyLoadedArchiveCatalog(normalizeImportedArchiveCatalog(catalog), {
-    filterKey: `thread-url:${catalog?.manifest?.threadImport?.entryUri || threadUrl}`,
-    filters: null,
-    waveIndex: 1,
-    nextCursor: "",
-    hasMore: false,
-    exportedPosts: catalog?.posts?.length || 0,
-    exportedImages: Array.isArray(catalog?.assets) ? catalog.assets.length : 0,
-    status: "completed",
-    step: t("archiveThreadUrlImportedStep"),
-  });
-}
+/** Delegates importArchiveThreadFromUrl to the archive domain. @returns {*} Domain result. */
+async function importArchiveThreadFromUrl() { return archiveRunController.importThread(); }
 
 
 /** Rebuilds the active-context hashtag controls. @returns {void} */
@@ -19141,10 +10702,6 @@ function getSettingsSnapshot() {
 
 /** Persists the latest settings through the existing serialized queue. @returns {Promise<void>} Completion. */
 async function persistSettings() { await applicationStorage.persist(); }
-
-
-
-
 
 /**
  * Exports the current settings backup and records the successful export time.
@@ -19349,9 +10906,6 @@ async function recordPublishedThread(result, preparedSegments) {
   });
 }
 
-
-
-
 /**
  * Builds the public profile URL for a resolved mention.
  * @param {string} handle - Normalized handle without leading at sign.
@@ -19405,17 +10959,8 @@ function applyAccountPickerSelection(actor = {}) {
   accountPickerController.select(actor);
 }
 
-/**
- * Updates the archive source field from the shared account picker and refreshes its preview.
- * @param {object} actor - Chosen account search result.
- * @param {string} value - Preferred field value, usually the handle.
- * @returns {void}
- */
-function applyArchiveSourcePickerSelection(actor, value) {
-  const normalizedValue = String(value || actor?.handle || actor?.did || "").trim();
-  setPickerInputValue(archiveSourceInput, normalizedValue);
-  void validateArchiveSourceInput({ silentSuccess: false }).catch(() => {});
-}
+/** Applies a picked archive account. @param {object} actor - Picker result. @param {string} value - Preferred field value. @returns {void} */
+function applyArchiveSourcePickerSelection(actor, value) { archiveSourceController.select(actor, value); }
 
 /**
  * Applies a chosen account to the DM partner search and selects a loaded partner when possible.
@@ -19612,9 +11157,6 @@ function escapeHtml(value) {
 /** Opens contextual help. @param {string} topicId - Topic identifier. @returns {void} */
 function openInlineHelpTopic(topicId) { helpController.openTopic(topicId); }
 
-
-
-
 /**
  * Builds length diagnostics and advice for one segment in Bluesky terms.
  * @param {string} text - Segment text to inspect.
@@ -19670,11 +11212,6 @@ function updateComposerLengthWarning(segments) {
  * @returns {string} Localized counter label for the composer header.
  */
 function formatComposerCharacterCount(text) { return formatComposerCharacterCountFromModule(text, countGraphemes, t); }
-
-
-function createIconSvg(path) {
-  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"></path></svg>`;
-}
 
 /**
  * Renders segment images through the template-based Composer image module.
@@ -19937,15 +11474,18 @@ bindSearchWorkspaceEvents({
   urlPaste: scheduleSearchUrlImport,
   urlChange: importSearchUrlFromField,
   summaryInput: () => {
-    renderSearchSummary();
+    renderSearchWorkspace();
     scheduleSearchPreferencesPersist();
   },
   sortChange: () => {
     enforceSearchSortConstraints(true);
-    renderSearchSummary();
+    renderSearchWorkspace();
     scheduleSearchPreferencesPersist();
   },
-  persistInput: scheduleSearchPreferencesPersist,
+  persistInput: () => {
+    renderSearchWorkspace();
+    scheduleSearchPreferencesPersist();
+  },
   runClick: () => {
     void loadSearchResults({ append: false });
   },
@@ -20107,8 +11647,6 @@ bindToolsWorkspaceNavigationEvents({
   dmClick: showDmWorkspace,
 });
 
-
-
 bindNetworkViewportControls({
   stage: networkStageSvg,
   shapeToggle: networkShapeToggleButton,
@@ -20120,10 +11658,6 @@ bindNetworkViewportControls({
   zoomAtPoint: zoomNetworkStageAtPoint,
   resetZoom: resetNetworkStageView,
 });
-
-
-
-
 
 bindArchivePreferenceEvents({
   scope: archiveScopeSelect,
@@ -20146,16 +11680,7 @@ bindArchivePreferenceEvents({
     invalidateArchiveCatalog();
     void persistArchivePreferences();
   },
-  sourceInput: () => {
-    archiveSourceProfile = null;
-    if (archiveSourceStatus) {
-      archiveSourceStatus.textContent = "";
-    }
-    renderArchiveSourceState();
-    scheduleArchiveSourceValidation();
-    invalidateArchiveCatalog();
-    void persistArchivePreferences();
-  },
+  sourceInput: () => archiveSourceController.input(),
   sourceBlur: () => {
     void validateArchiveSourceInput({ silentSuccess: false }).catch(() => {});
   },
@@ -21448,6 +12973,290 @@ const pendingNavigation = createPendingNavigationController({
   read: readBrowserStorageValue, write: writeBrowserStorageValue, remove: removeBrowserStorageValue,
   href: () => window.location.href,
 });
+const loadArchiveHtmlTemplates = createArchiveHtmlTemplateLoader({
+  fetch: (path) => fetch(path),
+  error: (status) => t("archiveHtmlTemplateLoadFailed", { status }),
+});
+const archiveHtmlModels = createArchiveHtmlModels({
+  t, locale: () => currentLocale, extractHashtags: extractArchiveHashtagsFromText,
+  linkRuns: extractPdfLinkRuns, account: () => authAccount, now: () => new Date(),
+  locales: SUPPORTED_LOCALES, translations, defaultLocale: DEFAULT_LOCALE,
+  normalizeStandardSite: normalizeStandardSiteMetadata, publicationFooter: getPublicationCardFooterLabel,
+});
+const archiveHtmlRenderer = createArchiveHtmlRenderer({
+  models: archiveHtmlModels, loadTemplates: loadArchiveHtmlTemplates,
+  parse: (html) => new DOMParser().parseFromString(html, "text/html"),
+  t, timestamp: formatHistoryTimestamp, linkRuns: extractPdfLinkRuns,
+  depths: buildArchiveThreadDepthMap, escape: escapeHtml, escapeAttribute: escapeHtmlAttribute,
+});
+const archiveHtmlExport = createArchiveHtmlExportController({
+  t, ensureAvatars: ensureArchiveAvatarAssets, encodeAsset: assetToDataUriAsync,
+  shouldCompact: shouldAutoFallbackArchiveHtmlToCompact, isSizeError: isArchiveStringLengthError,
+  build: archiveHtmlRenderer.build, progress: setArchiveProgress, frame: waitForUiFrame,
+  baseName: makeArchiveFileBaseName, file: (html, name) => new File([html], name, { type: "text/html" }),
+  deliver: shareOrDownloadFile,
+});
+
+const archivePdfLayout = createArchivePdfLayout({
+  externalCard: getArchiveExternalCard, shortenUrl: shortenArchiveUrlForDisplay, wrap: buildWrappedPdfLines,
+  t, groups: buildArchiveThreadGroups, canvas: () => document.createElement("canvas"), maxImages: MAX_IMAGES_PER_SEGMENT,
+});
+const archivePdfRenderer = createArchivePdfRenderer({
+  ...archivePdfLayout, fill: fillRoundedRect, stroke: strokeRoundedRect, circle: drawCircularImageCover,
+  image: drawRoundedImageContain, bitmap: loadArchiveAssetBitmap, metrics: buildPostMetricLabels, wrap: buildWrappedPdfLines,
+  text: drawArchivePdfTextBlock, rectangle: canvasRectToPdfRect, timestamp: formatHistoryTimestamp, t,
+  canvas: () => document.createElement("canvas"), account: () => authAccount,
+});
+const archivePdfExport = createArchivePdfExportController({
+  paginate: archivePdfLayout.paginate, page: archivePdfRenderer.page, pdf: buildPdfFile, frame: waitForUiFrame,
+  t, progress: setArchiveProgress, ensureAvatars: ensureArchiveAvatarAssets, options: getArchivePdfOptions,
+  groups: buildArchiveThreadGroups, bands: archivePdfLayout.bands, baseName: makeArchiveFileBaseName,
+  deliver: shareOrDownloadFile, account: () => authAccount,
+  file: (blob, name) => new File([blob], name, { type: "application/pdf" }),
+});
+
+const archiveCatalogFiles = createArchiveCatalogService({
+  t, depths: buildArchiveThreadDepthMap, parseZip: archiveZipCodec.parse, parseJson: parseJsonBytes, gunzip: gunzipBlob,
+  encode: utf8Bytes, zip: archiveZipCodec.build, baseName: makeArchiveFileBaseName,
+  file: (bytes, name) => new File([bytes], name, { type: "application/zip" }), deliver: shareOrDownloadFile, progress: setArchiveProgress,
+});
+const archiveMediaModels = createArchiveMediaModels({ filters: getArchiveFilters, serialize: serializeArchiveFilters, account: () => authAccount, now: () => new Date() });
+const archiveMediaExport = createArchiveMediaExportController({
+  ...archiveMediaModels, batchSize: MEDIA_EXPORT_BATCH_SIZE, t, account: () => authAccount,
+  supported: () => typeof window.showSaveFilePicker === "function", options: getArchiveMediaExportOptions,
+  signal: () => activeMediaExportAbortController?.signal || null,
+  notice: (value) => { archiveTransientNotice = value; renderArchiveStatusLine(); },
+  request: sendToServiceWorker, progress: setArchiveProgress, status: setStatus, encode: utf8Bytes,
+  partName: buildArchiveMediaPartFileName, baseName: (options) => buildArchiveMediaFileBaseNameFromData(options.actor, authAccount),
+  pick: (options) => window.showSaveFilePicker(options), writer: archiveZipCodec.createWriter,
+  warn: (...args) => console.warn(...args), now: () => new Date(),
+});
+
+const catalogAvatarAssets = createArchiveAvatarAssets({
+  state: () => ({ accounts: savedAccounts, did: authAccountDid, handle: authAccount }),
+  partner: getDmPrimaryPartner, download: assetService.download, extension: getAssetExtensionFromMimeType,
+});
+
+/** Reads archive state for domain controllers and presentation. @returns {object} Current state and selected form values. */
+function getArchiveWorkspaceState() {
+  return { catalog: archiveCatalog, session: archiveSession, preview: archivePreviewState, runId: activeArchiveRunId, runState: activeArchiveRunState, checkpoint: archiveLastCheckpoint, lastProgressAt: archiveLastProgressAt, notice: archiveTransientNotice, job: archiveJobState,
+  mediaRunning: activeMediaExportState === "running" && Boolean(activeMediaExportAbortController),
+  workspace: currentWorkspace, account: authAccount, profile: archiveSourceProfile, source: String(archiveSourceInput?.value || "").trim(),
+  livePreview: archiveLivePreviewToggle.checked, pdfOptions: getArchivePdfOptions(),
+  };
+}
+/** Applies explicit archive state patches. @param {object} patch - Updated state fields. @returns {void} */
+function applyArchiveRunPatch(patch) {
+  if (Object.hasOwn(patch, "catalog")) { archiveCatalog = patch.catalog; }
+  if (Object.hasOwn(patch, "session")) { archiveSession = patch.session; }
+  if (Object.hasOwn(patch, "preview")) { archivePreviewState = patch.preview; }
+  if (Object.hasOwn(patch, "runId")) { activeArchiveRunId = patch.runId; }
+  if (Object.hasOwn(patch, "runState")) { activeArchiveRunState = patch.runState; }
+  if (Object.hasOwn(patch, "checkpoint")) { archiveLastCheckpoint = patch.checkpoint; }
+  if (Object.hasOwn(patch, "lastProgressAt")) { archiveLastProgressAt = patch.lastProgressAt; }
+  if (Object.hasOwn(patch, "notice")) { archiveTransientNotice = patch.notice; }
+  if (Object.hasOwn(patch, "job")) { archiveJobState = patch.job; }
+}
+const archiveWorkspaceModels = createArchiveWorkspaceModels({ t, locale: () => currentLocale });
+const archiveWorkspaceRenderer = createArchiveWorkspaceRenderer({
+  sourceStatus: archiveSourceStatus,
+  sourcePreview: archiveSourcePreview,
+  progressTitle: archiveProgressTitle,
+  progressStep: archiveProgressStep,
+  progressDetail: archiveProgressDetail,
+  progressFill: archiveProgressFill,
+  previewPanel: archivePreviewPanel,
+  previewCard: archivePreviewCard,
+  heartbeat: archiveProgressHeartbeat,
+  background: archiveBackgroundNotice,
+  status: archiveRunStatusLine,
+  startHint: archiveStartHint,
+  nextWave: archiveNextWaveButton,
+  mediaExport: archiveExportMediaZipButton,
+  pause: archivePauseButton,
+  resume: archiveResumeButton,
+  cancel: archiveCancelButton,
+  summaryPosts: archiveSummaryPosts,
+  summaryImages: archiveSummaryImages,
+  summaryBands: archiveSummaryBands,
+  spec: archiveSpecContent,
+  results: archiveResults,
+  htmlButtons: [archiveExportHtmlButton, archiveActionsExportHtmlButton],
+  sourceTemplate: document.querySelector("#archive-workspace-source-template"),
+  noteTemplate: document.querySelector("#archive-workspace-note-template"),
+  previewTemplate: document.querySelector("#archive-workspace-preview-template"),
+  specTemplate: document.querySelector("#archive-workspace-spec-template"),
+  specItemTemplate: document.querySelector("#archive-workspace-spec-item-template"),
+  resultTemplate: document.querySelector("#archive-workspace-result-template"),
+}, { state: getArchiveWorkspaceState, models: archiveWorkspaceModels, t, avatar: setAvatarImage,
+  tooLarge: isArchiveHtmlTooLargeForEmbeddedExport, bindResult: bindArchiveResultExportEvents,
+  zip: exportArchiveZipFromCatalog, html: exportArchiveHtmlFromCatalog, pdf: exportArchivePdfBandsFromCatalog,
+  scope: updateArchiveScopeFields, progress: setArchiveProgress,
+});
+const archiveRunController = createArchiveRunController({
+  state: getArchiveWorkspaceState, setState: applyArchiveRunPatch, t, request: sendToServiceWorker,
+  hint: renderArchiveStartHint, status: renderArchiveStatusLine, actionButtons: syncArchiveActionButtonStates, controls: updateArchiveRunControls,
+  filters: getArchiveFilters, serialize: serializeArchiveFilters, validateSource: validateArchiveSourceInput, progress: setArchiveProgress,
+  preview: renderArchivePreview, waveSize: getArchiveWaveSize, normalize: normalizeImportedArchiveCatalog, summary: updateArchiveSummary,
+  results: renderArchiveResults, render: renderArchiveWorkspace, notice: buildArchiveCatalogNotice,
+  source: () => archiveSourceInput?.value || "", sourceProfile: () => archiveSourceProfile,
+  threadUrl: () => archiveThreadUrlInput?.value || "", threadMode: () => archiveThreadImportModeSelect?.value,
+  nextWave: () => archiveNextWaveButton?.click(), enableNextWave: () => { if (archiveNextWaveButton) { archiveNextWaveButton.disabled = false; } },
+  runId: () => crypto.randomUUID(), now: () => new Date(), warn: (...args) => console.warn(...args), error: (error) => console.error(error),
+});
+
+const archiveSourceController = createArchiveSourceController({
+  value: () => archiveSourceInput?.value || "", write: (value) => setPickerInputValue(archiveSourceInput, value),
+  profile: (value) => { archiveSourceProfile = value; }, status: (value) => { if (archiveSourceStatus) { archiveSourceStatus.textContent = value; } },
+  render: renderArchiveSourceState, persist: persistArchivePreferences, invalidate: invalidateArchiveCatalog,
+  request: sendToServiceWorker, t, schedule: (callback, delay) => window.setTimeout(callback, delay), clear: (timer) => window.clearTimeout(timer),
+});
+const archiveWorkspaceLayout = createArchiveWorkspaceLayout({
+  workspace: archiveWorkspace,
+  source: archiveSourceInput,
+  band: archiveBandSizeSelect,
+  nextWave: archiveNextWaveButton,
+  mediaActor: archiveMediaActorInput,
+  progressTitle: archiveProgressTitle,
+  threadUrl: archiveThreadUrlInput,
+  spec: archiveSpecContent,
+  hashtags: archiveHashtagSlot,
+  waveSize: archiveWaveSizeSelect,
+  exportHtml: archiveActionsExportHtmlButton,
+  exportCompact: archiveActionsExportHtmlCompactButton,
+  exportPdf: archiveActionsExportPdfButton,
+  importButton: archiveImportButton,
+  reset: archiveResetButton,
+  progressCompact: archiveProgressExportHtmlCompactButton,
+  startHint: archiveStartHint, exportZip: archiveExportZipButton,
+}, {
+  exportTemplate: document.querySelector("#archive-layout-export-template"), toolsTemplate: document.querySelector("#archive-layout-tools-template"),
+  contentTemplate: document.querySelector("#archive-layout-content-template"), actionsTemplate: document.querySelector("#archive-layout-actions-template"),
+  noteTemplate: document.querySelector("#archive-workspace-note-template"),
+}, t);
+
+const dmExportModels = createDmExportModels({
+ t, date: formatArchiveDatePart, extractCard: extractExternalCardFromEmbed, links: extractPdfLinkRuns,
+ account: () => authAccount, selection: () => dmSelectedParticipantDids, now: () => new Date(),
+ locales: SUPPORTED_LOCALES, translations, defaultLocale: DEFAULT_LOCALE,
+});
+const dmPdfRenderer = createDmPdfRenderer({
+ partner: dmExportModels.partner, title: dmExportModels.title, wrap: buildWrappedPdfLines, bitmap: loadArchiveAssetBitmap,
+ circle: drawCircularImageCover, timestamp: formatCompactArchiveTimestamp, fill: fillRoundedRect, stroke: strokeRoundedRect,
+ text: drawArchivePdfTextBlock, rectangle: canvasRectToPdfRect, t, canvas: () => document.createElement("canvas"),
+});
+const dmHtmlRenderer = createDmHtmlRenderer({
+ models: dmExportModels, t, locale: () => currentLocale, account: () => authAccount, now: () => new Date(),
+ assetUri: assetToDataUri, timestamp: formatCompactArchiveTimestamp, shorten: shortenArchiveUrlForDisplay, links: extractPdfLinkRuns,
+ fetch: (url) => fetch(url), parse: (html) => new DOMParser().parseFromString(html, "text/html"),
+ error: (status) => t("archiveHtmlTemplateLoadFailed", { status }),
+});
+
+const searchState = {
+  get hashtags() { return hashtags; },
+  set hashtags(value) { hashtags = value; },
+  get searchSelectedHashtags() { return searchSelectedHashtags; },
+  set searchSelectedHashtags(value) { searchSelectedHashtags = value; },
+  get searchSelectedLanguages() { return searchSelectedLanguages; },
+  set searchSelectedLanguages(value) { searchSelectedLanguages = value; },
+  get searchResults() { return searchResults; },
+  set searchResults(value) { searchResults = value; },
+  get searchCursor() { return searchCursor; },
+  set searchCursor(value) { searchCursor = value; },
+  get searchResultPreferences() { return searchResultPreferences; },
+  set searchResultPreferences(value) { searchResultPreferences = value; },
+  get activeSearchRunId() { return activeSearchRunId; },
+  set activeSearchRunId(value) { activeSearchRunId = value; },
+  get searchCancelPending() { return searchCancelPending; },
+  set searchCancelPending(value) { searchCancelPending = value; },
+  get searchLoading() { return searchLoading; },
+  set searchLoading(value) { searchLoading = value; },
+};
+const searchPreferencesNormalizer = createSearchPreferencesNormalizer({
+ normalizeHashtags: normalizeHashtagEntries, getDisplayHashtag, normalizeLanguages: normalizePostLanguageTags, maxLanguages: MAX_SEARCH_LANGUAGES,
+});
+const searchModels = createSearchModels({
+ t, count: formatCount, formatTag: formatHashtag, displayTag: getDisplayHashtag, quote: quoteSearchSummaryValue,
+ languages: normalizePostLanguageTags, languageName: getPostLanguageDisplayName, sharedQuery: buildSharedSearchQuery,
+ normalize: normalizeSearchPreferencesForStorage, account: () => authAccount, locale: () => currentLocale, maxLanguages: MAX_SEARCH_LANGUAGES,
+});
+const savedSearchModels = createSavedSearchModels({
+  translate: t, normalizePreferences: normalizeSearchPreferencesForStorage,
+  labelFromPreferences: buildSavedSearchLabelFromPreferences, sharedUrl: buildBskySearchUrlFromPayload,
+  getString: getSavedSearchStringParamFromSearch, normalizeSort: normalizeSavedSearchSortFromSearch,
+  now: () => new Date().toISOString(), timestamp: () => Date.now(), random: () => Math.random(),
+});
+const searchForm = createSearchFormController({
+ state: searchState, elements: { searchModeSelect, searchActorField, searchTagsField, searchSortField, searchModeNote, searchActorInput, searchQueryInput, searchTagMatchSelect, searchMediaSelect, searchPostTypeSelect, searchSortSelect, searchExcludeTextInput, searchMentionsInput, searchDomainInput, searchTargetUrlInput, searchSinceInput, searchUntilInput, searchUrlInput, searchUrlStatus, searchStatus, searchLanguageSummary },
+ maxLanguages: MAX_SEARCH_LANGUAGES, t, languages: normalizePostLanguageTags, selectedTags: normalizeSelectedHashtagEntries,
+ displayTag: getDisplayHashtag, tags: normalizeHashtagEntries, parseUrl: parseSavedSearchUrl, splitQuery: splitSharedSearchQuery,
+ renderTags: renderHashtagCloud, renderWorkspace: renderSearchWorkspace, renderResults: renderSearchResults, persist: persistSettings,
+ announce: setStatus, languageName: getPostLanguageDisplayName, account: () => authAccount, locale: () => currentLocale, hydrated: () => appStateHydrated,
+ schedule: (callback, delay) => window.setTimeout(callback, delay), clearTimer: (id) => window.clearTimeout(id), invalidate: () => searchRun.invalidate(),
+});
+const searchRun = createSearchRunController({
+ state: searchState, account: () => authAccount, payload: collectSearchRequestPayload, preferences: getSearchPreferences,
+ enforceSort: enforceSearchSortConstraints, normalize: normalizeSearchPreferencesForStorage, items: normalizePersistedSearchResultItems,
+ snapshot: buildPersistableSearchResultState, match: doesSearchResultStateMatch, request: (payload, options) => requestSearchResults(sendToServiceWorker, payload, options),
+ control: (payload, options) => sendToServiceWorker("SET_SEARCH_RUN_CONTROL", payload, options),
+ id: () => crypto.randomUUID(), detailed: shouldShowDetailedSearchProgress, progress: buildSearchProgressStatus, loaded: buildSearchLoadedStatus,
+ status: (text) => { if (searchStatus) { searchStatus.textContent = text; } }, render: renderSearchWorkspace, results: renderSearchResults,
+ persist: persistSettings, t, count: formatCount, report: (error) => console.error(error), maxItems: MAX_PERSISTED_SEARCH_RESULTS,
+});
+
+const savedSearchController = createSavedSearchController({
+  models: savedSearchModels, getSearches: () => savedSearches, setSearches: (value) => { savedSearches = value; },
+  preferences: getSearchPreferences, normalizePreferences: normalizeSearchPreferencesForStorage, equal: areSearchPreferencesEqual,
+  persist: persistSettings, now: () => new Date().toISOString(), t,
+  status: (text) => { if (searchStatus) { searchStatus.textContent = text; } },
+  dialogStatus: (text) => { savedSearchesStatus.textContent = text; }, clearInput: () => { savedSearchUrlInput.value = ""; },
+  renderDialog: renderSavedSearchesDialog, closeDialog: () => { if (savedSearchesDialog.open) { savedSearchesDialog.close(); } },
+  explorerSearchId: () => getThreadExplorerSearchIdFromSource(threadExplorerSource),
+  resetExplorer: () => {
+    threadExplorerSource = "follows";
+    threadExplorerCursor = "";
+    threadExplorerHasMore = true;
+    threadExplorerItems = [];
+    threadExplorerSelectedUri = "";
+    threadExplorerTree = null;
+    clearThreadExplorerRenderedMediaCache();
+    clearThreadExplorerSelectionPreference();
+  },
+  renderExplorer: renderThreadExplorerWorkspace, archiveSearchId: () => archiveSavedSearchId,
+  clearArchive: () => { archiveSavedSearchId = ""; renderArchiveSavedSearchNote(); },
+  applyExplorer: setThreadExplorerSource,
+  applyArchive: async (search) => {
+    archiveSavedSearchId = search.id;
+    await persistArchivePreferences();
+    archiveThreadUrlNote.textContent = t("archiveSavedSearchSelected", {
+      label: search.label || buildSavedSearchLabel(search), url: search.sourceUrl,
+    });
+  },
+  invalidateSearch: () => searchRun.invalidate(),
+  applySearch: (preferences) => {
+    applySearchPreferences(preferences);
+    searchResults = [];
+    searchCursor = "";
+    searchResultPreferences = null;
+    renderHashtagCloud();
+    renderSearchResults();
+    renderSearchWorkspace();
+  },
+});
+
+const snapshotExportController = createThreadExplorerSnapshotExportController({
+ exportButton: threadExplorerSnapshotPngButton, cancelButton: threadExplorerSnapshotCancelButton,
+ dialog: threadExplorerSnapshotProgressDialog, title: threadExplorerSnapshotProgressTitle,
+ step: threadExplorerSnapshotProgressStep, detail: threadExplorerSnapshotProgressDetail,
+ fill: threadExplorerSnapshotProgressFill, bar: threadExplorerSnapshotProgressBar, status: threadExplorerThreadStatus,
+}, {
+ t, render: renderThreadExplorerSnapshotBlob,
+ fileName: () => buildThreadExplorerSnapshotFileNameFromData(threadExplorerTree?.post || {}, "png", sanitizeThreadExplorerFileNamePart),
+ downloadBlob: downloadThreadExplorerBlob, frame: waitForThreadExplorerSnapshotFrame,
+ wait: (delay) => new Promise((resolve) => window.setTimeout(resolve, delay)),
+ abortController: () => new AbortController(), refresh: updateThreadExplorerControls, report: (error) => console.error(error),
+});
+
 const applicationStorage = createApplicationStorage({
   request: sendToServiceWorker, queue: settingsSaveQueue, snapshot: getSettingsSnapshot,
   report: (error) => console.error(error), setStatus,

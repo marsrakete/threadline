@@ -64,7 +64,7 @@ export function createApplicationHydrationController(elements, options) {
         searchSelectedHashtags: options.normalize.selection(state.searchSelectedHashtags, hashtags) });
       const search = options.normalize.search(state.searchPreferences || {});
       options.applySearch(search);
-      options.restoreSearch(state.searchResultState, search);
+      options.restoreSearch(state.searchResultState, search, state);
       options.renderSearch(); options.restoreSearchStatus();
       const document = {
         hashtagPlacement: options.normalize.placement(state.hashtagPlacement),

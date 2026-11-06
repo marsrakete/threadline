@@ -33,6 +33,135 @@ export function hydrateThreadExplorerCard(card = null, post = null, options = {}
 }
 
 /**
+ * Coordinates lazy card hydration and owns the observer for one explorer workspace.
+ * @param {object} options - Observer factory, root/stage, forced mode, selected URI and hydrate adapters.
+ * @returns {object} Prepare, forced-visible hydration and observer-reset operations.
+ */
+export function createThreadExplorerLazyHydrationController(options) {
+  let observer = null;
+
+  /** Disconnects the observer and invalidates any callbacks already queued by it.
+   * @returns {void}
+   */
+  function reset() {
+    if (observer) {
+      observer.disconnect();
+    }
+    observer = null;
+  }
+
+  /** Lazily creates an observer when the browser supports it and forced mode is off.
+   * @returns {IntersectionObserver|null} Active observer or null for immediate hydration.
+   */
+  function getObserver() {
+    if (options.isForced() || typeof options.createObserver !== "function") {
+      return null;
+    }
+    if (observer) {
+      return observer;
+    }
+    const currentObserver = options.createObserver((entries) => {
+      if (observer !== currentObserver) {
+        return;
+      }
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting || observer !== currentObserver) {
+          return;
+        }
+        options.hydrate(entry.target);
+        currentObserver.unobserve(entry.target);
+      });
+    }, { root: options.getRoot(), rootMargin: "900px", threshold: 0 });
+    observer = currentObserver;
+    return observer;
+  }
+
+  /** Associates a post with its card and hydrates selected/forced cards immediately.
+   * @param {HTMLElement|null} card - Rendered post card.
+   * @param {object} post - Normalized post.
+   * @returns {void}
+   */
+  function prepare(card = null, post = {}) {
+    if (!card || post?.isDeletedThreadAnchor === true) {
+      return;
+    }
+    card._threadExplorerPost = post;
+    card.classList.add("is-awaiting-content");
+    if (options.isForced() || post.uri === options.getSelectedUri()) {
+      options.hydrate(card);
+      return;
+    }
+    const currentObserver = getObserver();
+    if (!currentObserver) {
+      options.hydrate(card);
+      return;
+    }
+    currentObserver.observe(card);
+  }
+
+  /** Hydrates all rendered cards when snapshot rendering forces complete content.
+   * @returns {void}
+   */
+  function hydrateVisible() {
+    if (options.isForced()) {
+      options.getStage().querySelectorAll(".thread-explorer-post-card").forEach((card) => {
+        options.hydrate(card);
+      });
+    }
+  }
+  return Object.freeze({ reset, prepare, hydrateVisible });
+}
+
+/**
+ * Hydrates snapshot avatars through the worker and translates its progress reports.
+ * @param {object|null} root - Thread root to enrich with cached avatars.
+ * @param {object} options - Request, abort, translation, progress, error and avatar-result adapters.
+ * @returns {Promise<void>} Resolves after optional avatar data has been applied.
+ */
+export async function hydrateThreadExplorerAvatars(root = null, options = {}) {
+  if (!root) {
+    return;
+  }
+  options.throwIfAborted(options.signal || null);
+  const result = await options.request("HYDRATE_THREAD_EXPLORER_AVATARS", { root }, {
+    timeoutMs: 120000,
+    signal: options.signal || null,
+    /** Maps worker avatar progress to the snapshot's progress range.
+     * @param {object} progress - Worker phase and counters.
+     * @returns {void}
+     */
+    onProgress(progress) {
+      if (progress?.phase !== "thread_explorer_avatars") {
+        return;
+      }
+      const total = Math.max(0, Number(progress.total) || 0);
+      const current = Math.max(0, Number(progress.current) || 0);
+      const remaining = Math.max(0, Number(progress.remaining) || 0);
+      let percent = 5;
+      if (total > 0) {
+        percent = 5 + (current / total * 12);
+      }
+      void options.onProgress({
+        percent,
+        step: options.translate("threadExplorerSnapshotProgressAvatars"),
+        detail: options.translate("threadExplorerSnapshotProgressAvatarDetail", {
+          current, total, remaining, hydrated: Number(progress.hydrated) || 0, skipped: Number(progress.skipped) || 0,
+        }),
+      });
+    },
+  }).catch((error) => {
+    if (error?.name === "AbortError") {
+      throw error;
+    }
+    options.onError(error);
+    return null;
+  });
+  if (result?.avatars && typeof result.avatars === "object") {
+    options.applyAvatars(root, result.avatars);
+  }
+}
+
+/**
  * Applies an actor avatar to a hydrated Thread Explorer card.
  * @param {HTMLElement|null} card - Rendered post card.
  * @param {object|null} post - Post whose author supplies the avatar.

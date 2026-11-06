@@ -906,7 +906,7 @@
                 <span class="thread-explorer-favorite-meta saved-search-meta"></span>
                 <span class="thread-explorer-favorite-text saved-search-url"></span>
               </button>
-              <button type="button" class="thread-explorer-favorite-remove saved-search-remove" data-i18n-title="savedSearchRemoveButton" title="Entfernen"></button>
+              <button type="button" class="thread-explorer-favorite-remove saved-search-remove" data-i18n-title="savedSearchRemoveButton" title="Entfernen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path></svg></button>
             </article>
           </template>
 
@@ -2740,6 +2740,24 @@
         </svg>
       </button>
     </template>
+
+    <template id="archive-workspace-source-template"><img class="analysis-account-avatar" loading="lazy" alt=""><div class="analysis-account-identity"><p class="eyebrow"></p><strong></strong><span class="reply-target-handle"></span></div></template>
+    <template id="archive-workspace-note-template"><p class="settings-note"></p></template>
+    <template id="archive-workspace-preview-template"><p class="archive-preview-meta" data-slot="meta"></p><img alt=""><p class="archive-preview-text" data-slot="text"></p><p class="archive-preview-meta" data-slot="metric"></p></template>
+    <template id="archive-workspace-spec-template"><p class="settings-note"></p><ol class="archive-spec-list"></ol></template>
+    <template id="archive-workspace-spec-item-template"><li></li></template>
+    <template id="archive-workspace-result-template"><article class="archive-result-card"><strong></strong><p class="settings-note" data-slot="meta"></p><p class="settings-note" data-slot="source"></p><p class="settings-note" data-slot="resume"></p><div class="archive-result-actions"><button type="button" class="ghost-button" data-action="zip"></button><button type="button" class="ghost-button" data-action="html"></button><button type="button" class="ghost-button" data-action="pdf"></button></div></article></template>
+
+    <template id="archive-layout-export-template">
+      <section id="archive-export-card" class="archive-card archive-export-card">
+        <p class="eyebrow" data-i18n="archiveExportEyebrow"></p>
+        <div class="help-heading"><h3 data-i18n="archiveExportTitle"></h3><button type="button" class="help-trigger" data-help-topic="archive_actions">?</button></div>
+        <div class="archive-actions"></div><p class="settings-note" data-i18n="archiveActionsNote"></p>
+      </section>
+    </template>
+    <template id="archive-layout-tools-template"><div id="archive-tools-heading" class="archive-tools-heading"><p class="eyebrow" data-i18n="archiveToolsEyebrow"></p><h3 data-i18n="archiveToolsTitle"></h3></div></template>
+    <template id="archive-layout-content-template"><div class="archive-content-layout"><div class="archive-content-main"></div><div class="archive-content-filters"></div></div></template>
+    <template id="archive-layout-actions-template"><div class="archive-actions"></div></template>
 
     <script src="version.js"></script>
     <script type="module" src="app.js"></script>

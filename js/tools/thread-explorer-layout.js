@@ -33,6 +33,62 @@ export function getThreadExplorerReplyClusterEdgeAnchor(center = {}, size = {}, 
 }
 
 /**
+ * Calculates a clamped zoom while keeping a viewport point over the same stage point.
+ * @param {object} state - Current zoom, panX and panY.
+ * @param {object} bounds - Viewport left and top coordinates.
+ * @param {number} factor - Multiplicative zoom factor.
+ * @param {number} clientX - Anchor client x coordinate.
+ * @param {number} clientY - Anchor client y coordinate.
+ * @returns {object|null} New viewport or null for invalid input.
+ */
+export function calculateThreadExplorerPointZoom(state, bounds, factor, clientX, clientY) {
+  if (!state || !bounds) {
+    return null;
+  }
+  const values = [state.zoom, state.panX, state.panY, bounds.left, bounds.top, factor, clientX, clientY];
+  if (!values.every(Number.isFinite) || state.zoom <= 0) {
+    return null;
+  }
+  const zoom = Math.min(2, Math.max(0.01, state.zoom * factor));
+  const localX = clientX - bounds.left;
+  const localY = clientY - bounds.top;
+  return {
+    zoom,
+    panX: localX - ((localX - state.panX) / state.zoom) * zoom,
+    panY: localY - ((localY - state.panY) / state.zoom) * zoom,
+  };
+}
+
+/**
+ * Calculates pan coordinates that reveal a measured card at a chosen viewport alignment.
+ * @param {object} state - Current zoom, panX and panY.
+ * @param {object} viewport - Viewport left/top and visible width/height.
+ * @param {object} target - Measured card left/top/width/height.
+ * @param {object} options - Optional block/inline alignment; center or default 24px inset.
+ * @returns {object|null} Synchronized viewport state or null for invalid measurements.
+ */
+export function calculateThreadExplorerNodePan(state, viewport, target, options = {}) {
+  if (!state || !viewport || !target) {
+    return null;
+  }
+  const values = [state.zoom, state.panX, state.panY, viewport.left, viewport.top, viewport.width, viewport.height,
+    target.left, target.top, target.width, target.height];
+  if (!values.every(Number.isFinite)) {
+    return null;
+  }
+  let desiredLeft = 24;
+  let desiredTop = 24;
+  if (options.inline === "center") {
+    desiredLeft = (viewport.width - target.width) / 2;
+  }
+  if (options.block === "center") {
+    desiredTop = (viewport.height - target.height) / 2;
+  }
+  return { zoom: state.zoom, panX: state.panX + (desiredLeft - (target.left - viewport.left)),
+    panY: state.panY + (desiredTop - (target.top - viewport.top)) };
+}
+
+/**
  * Returns the rectangle occupied by a positioned cluster card.
  * @param {object} renderNode - Positioned render node.
  * @param {{width:number, height:number}} itemSize - Measured card size.
@@ -479,4 +535,202 @@ export function mountThreadExplorerReplyClusterWorkspace(stage, layoutState) {
   stage.classList.add("is-reply-cluster-mode");
   stage.appendChild(layoutState.cluster);
   return true;
+}
+
+/** Checks finite rectangle coordinates for viewport calculations.
+ * @param {object|null} box - Stage or browser rectangle. @returns {boolean} True for finite dimensions.
+ */
+function hasFiniteThreadExplorerBox(box) {
+  return Boolean(box) && [box.left, box.top, box.width, box.height].every(Number.isFinite);
+}
+
+/** Converts a rendered rectangle back into untransformed stage coordinates.
+ * @param {object|null} rect - Rendered element rectangle.
+ * @param {object|null} viewport - Browser viewport rectangle.
+ * @param {object} state - Zoom, panX and panY values.
+ * @returns {object|null} Stage rectangle, or null for hidden/invalid measurements.
+ */
+export function getThreadExplorerStageBoxFromRects(rect, viewport, state = {}) {
+  if (!hasFiniteThreadExplorerBox(rect) || !hasFiniteThreadExplorerBox(viewport) || rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+  let zoom = Number(state?.zoom) || 1;
+  if (zoom <= 0) {
+    zoom = 1;
+  }
+  const panX = Number(state?.panX) || 0;
+  const panY = Number(state?.panY) || 0;
+  return { left: (rect.left - viewport.left - panX) / zoom, top: (rect.top - viewport.top - panY) / zoom,
+    width: rect.width / zoom, height: rect.height / zoom };
+}
+
+/** Merges measured stage bounds without mutating either input.
+ * @param {object|null} accumulatedBounds - Existing box.
+ * @param {object|null} nextBounds - Additional box.
+ * @returns {object|null} Combined finite rectangle, or null for absent/invalid boxes.
+ */
+export function mergeThreadExplorerStageBounds(accumulatedBounds, nextBounds) {
+  if (!nextBounds) {
+    return accumulatedBounds;
+  }
+  if (!hasFiniteThreadExplorerBox(nextBounds) || (accumulatedBounds && !hasFiniteThreadExplorerBox(accumulatedBounds))) {
+    return null;
+  }
+  if (!accumulatedBounds) {
+    return { left: nextBounds.left, top: nextBounds.top, width: nextBounds.width, height: nextBounds.height };
+  }
+  const left = Math.min(accumulatedBounds.left, nextBounds.left);
+  const top = Math.min(accumulatedBounds.top, nextBounds.top);
+  const right = Math.max(accumulatedBounds.left + accumulatedBounds.width, nextBounds.left + nextBounds.width);
+  const bottom = Math.max(accumulatedBounds.top + accumulatedBounds.height, nextBounds.top + nextBounds.height);
+  return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+}
+
+/** Collects the complete finite extent of measured cards, ignoring absent measurements.
+ * @param {Array<object|null>} boxes - Stage rectangles from the DOM adapter.
+ * @returns {object|null} Content bounds, or null for empty/invalid input.
+ */
+export function getThreadExplorerContentBounds(boxes) {
+  if (!Array.isArray(boxes)) {
+    return null;
+  }
+  let bounds = null;
+  for (const box of boxes) {
+    if (!box) {
+      continue;
+    }
+    if (!hasFiniteThreadExplorerBox(box)) {
+      return null;
+    }
+    bounds = mergeThreadExplorerStageBounds(bounds, box);
+  }
+  if (!bounds) {
+    return null;
+  }
+  return { ...bounds, width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) };
+}
+
+/** Calculates the existing padded, clamped fit without changing DOM or global state.
+ * @param {object|null} bounds - Stage content bounds with positive dimensions.
+ * @param {object|null} viewport - Client width and height in pixels.
+ * @param {object} options - Optional minZoom/maxZoom, defaulting to 0.08 and 1.85.
+ * @returns {{zoom: number, panX: number, panY: number}|null} Viewport transform, or null for invalid input.
+ */
+export function calculateThreadExplorerViewportFit(bounds, viewport, options = {}) {
+  if (!hasFiniteThreadExplorerBox(bounds) || bounds.width <= 0 || bounds.height <= 0
+    || !viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height)) {
+    return null;
+  }
+  const viewportWidth = Math.max(1, viewport.width);
+  const viewportHeight = Math.max(1, viewport.height);
+  const paddingX = Math.max(40, viewportWidth * 0.1);
+  const paddingY = Math.max(40, viewportHeight * 0.12);
+  const availableWidth = Math.max(1, viewportWidth - paddingX * 2);
+  const availableHeight = Math.max(1, viewportHeight - paddingY * 2);
+  let minimumZoom = Number(options?.minZoom);
+  if (!Number.isFinite(minimumZoom)) {
+    minimumZoom = 0.08;
+  }
+  let maximumZoom = Number(options?.maxZoom);
+  if (!Number.isFinite(maximumZoom)) {
+    maximumZoom = 1.85;
+  }
+  const fittedZoom = Math.min(availableWidth / bounds.width, availableHeight / bounds.height);
+  const zoom = Math.min(maximumZoom, Math.max(minimumZoom, fittedZoom));
+  return { zoom, panX: ((viewportWidth - bounds.width * zoom) / 2) - bounds.left * zoom,
+    panY: ((viewportHeight - bounds.height * zoom) / 2) - bounds.top * zoom };
+}
+
+/**
+ * Finds one rendered reply-cluster node inside the current cluster layout state.
+ * @param {string} uri - AT URI of the wanted reply-cluster node.
+ * @param {object|null} renderNode - Recursive reply-cluster render node.
+ * @returns {object|null} Matching reply-cluster render node or null.
+ */
+export function findThreadExplorerReplyClusterRenderNode(uri, renderNode) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri || !renderNode) {
+    return null;
+  }
+
+  if (String(renderNode?.node?.post?.uri || "").trim() === normalizedUri) {
+    return renderNode;
+  }
+
+  let children = [];
+  if (Array.isArray(renderNode.children)) {
+    children = renderNode.children;
+  }
+  for (const childNode of children) {
+    const matchingNode = findThreadExplorerReplyClusterRenderNode(normalizedUri, childNode);
+    if (matchingNode) {
+      return matchingNode;
+    }
+  }
+  return null;
+}
+
+/**
+ * Collects one stage-space bounds box for a rendered card and its direct replies in tree view.
+ * @param {HTMLElement|null} item - Rendered Thread Explorer node item.
+ * @param {object} options - Layout mode/root and card/box measurement adapters.
+ * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null.
+ */
+function getThreadExplorerTreeCardNeighborhoodBounds(item, options) {
+  if (!item) {
+    return null;
+  }
+
+  let combinedBounds = null;
+  const ownCard = options.getCard(item) || item;
+  combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, options.getBox(ownCard));
+
+  const childCards = item.querySelectorAll(":scope > .thread-explorer-children > .thread-explorer-node-item > .thread-explorer-node > .thread-explorer-post-card");
+  childCards.forEach((childCard) => {
+    combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, options.getBox(childCard));
+  });
+  return combinedBounds;
+}
+
+/**
+ * Collects one stage-space bounds box for a rendered card and its direct replies in reply-cluster view.
+ * @param {string} uri - AT URI of the clicked post card.
+ * @param {object} options - Layout mode/root and card/box measurement adapters.
+ * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null.
+ */
+function getThreadExplorerReplyClusterCardNeighborhoodBounds(uri, options) {
+  const rootRenderNode = options.rootRenderNode || null;
+  const targetNode = findThreadExplorerReplyClusterRenderNode(uri, rootRenderNode);
+  if (!targetNode) {
+    return null;
+  }
+
+  let combinedBounds = null;
+  combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, options.getBox(options.getCard(targetNode.item) || targetNode.item));
+  let children = [];
+  if (Array.isArray(targetNode.children)) {
+    children = targetNode.children;
+  }
+  children.forEach((childNode) => {
+    combinedBounds = mergeThreadExplorerStageBounds(combinedBounds, options.getBox(options.getCard(childNode.item) || childNode.item));
+  });
+  return combinedBounds;
+}
+
+/**
+ * Collects one stage-space bounds box for the clicked post card and its immediate reply neighborhood.
+ * @param {HTMLElement|null} item - Rendered Thread Explorer node item.
+ * @param {object} options - Layout mode/root and card/box measurement adapters.
+ * @returns {{left:number, top:number, width:number, height:number}|null} Combined bounds or null.
+ */
+export function getThreadExplorerCardNeighborhoodBounds(item, options) {
+  const uri = String(item?.dataset?.uri || "").trim();
+  if (!uri) {
+    return null;
+  }
+
+  if (options.clusterMode) {
+    return getThreadExplorerReplyClusterCardNeighborhoodBounds(uri, options);
+  }
+  return getThreadExplorerTreeCardNeighborhoodBounds(item, options);
 }
