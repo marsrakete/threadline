@@ -338,7 +338,7 @@ Nach der HTML-Archiv-Auslagerung geprueft: 369 Unit-/Vertragstests und vier gezi
 
 ### Composer
 
-- [ ] Bug (Nutzermeldung): Post-Einstellung `Zähler anhängen` persistiert nicht. Reproduktion: Post-Einstellungen oeffnen, `Zähler anhängen` abwaehlen, App schliessen und erneut starten. Beobachtet: Option ist wieder aktiviert. Erwartet: Die deaktivierte Einstellung bleibt nach Neustart erhalten. Speicher- und Wiederherstellungspfad pruefen und mit einem Neustart-/Reload-Regressionstest absichern.
+- [x] Bug (Nutzermeldung): Post-Einstellung `Zähler anhängen` persistiert nicht. Reproduktion: Post-Einstellungen oeffnen, `Zähler anhängen` abwaehlen, App schliessen und erneut starten. Beobachtet: Option ist wieder aktiviert. Erwartet: Die deaktivierte Einstellung bleibt nach Neustart erhalten. Behoben: `useCounters` wird im Settings-Snapshot, Worker-Speicher/-Rueckgabewert und Startup-Control erhalten. Fehlender Legacywert bleibt aktiviert; false/true sowie unverwandte Settingswrites sind abgesichert. Browserregression prueft echte IndexedDB und Seiten-/Worker-Neustart auf beiden Einstiegen.
 
 - [ ] Optionale Aktion `Unvollstaendigen Thread zuruecknehmen` nach einem Teilfehler anbieten; keine ungefragte automatische Loeschung. Bereits sichtbare Posts und Antworten bei der Entscheidung beruecksichtigen.
 - [ ] Jede erfolgreich erstellte Postreferenz sofort erfassen, auch wenn danach Threadgate-/Postgate-Einstellungen scheitern; Referenzen und verbleibenden Zustand im Teilfehler an die Oberflaeche liefern.

@@ -10675,6 +10675,7 @@ function getSettingsSnapshot() {
     desktopLayoutVersion: DESKTOP_LAYOUT_STATE_VERSION,
     sidebarWidthDesktop,
     composerWidthDesktop,
+    useCounters: counterToggle.checked,
     postLanguages: getNormalizedPostLanguagesOrDefault(),
     appendThreadIntro,
     appendThreadEmoji,
@@ -13264,7 +13265,7 @@ const applicationStorage = createApplicationStorage({
 const applicationHydration = createApplicationHydrationController({
   proxyEndpoint: linkCardEndpointInput, proxySecret: linkCardSecretInput, resize: imageAutoResizeSelect,
   expert: archiveExpertModeToggle, identifier: identifierField, source: sourceText, password: passwordField,
-  placement: hashtagPlacementSelect, intro: threadIntroToggle, emoji: threadEmojiToggle, spacing: markerSpacingToggle,
+  placement: hashtagPlacementSelect, counter: counterToggle, intro: threadIntroToggle, emoji: threadEmojiToggle, spacing: markerSpacingToggle,
 }, {
   detectLocale: detectBrowserLocale, load: applicationStorage.load, getAppearance: getStoredAppearancePreferences,
   preferences: { normalizeResize: normalizeImageAutoResizeMode, normalizeLayout: normalizeStoredDesktopLayout,

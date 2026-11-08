@@ -109,6 +109,7 @@ export function createApplicationHydrationController(elements, options) {
       elements.password.value = "";
       options.applyService(identity.authAccountService);
       elements.placement.value = document.hashtagPlacement;
+      elements.counter.checked = state.useCounters !== false;
       elements.intro.checked = state.appendThreadIntro === true;
       elements.emoji.checked = state.appendThreadEmoji === true;
       elements.spacing.checked = state.addMarkerSpacing === true;
