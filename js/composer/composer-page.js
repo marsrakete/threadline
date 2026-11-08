@@ -449,3 +449,56 @@ export function createComposerUiStateController(elements, options) {
 
   return { renderClear, renderLock, setLocked, renderPosted, setPosted, unlock, dismissPosted };
 }
+
+/** Owns tip selection and presentation with caller-owned persisted visibility.
+ * @param {object} state - Live index/visible accessors. @param {object} elements - text, panel and toggle nodes.
+ * @param {object} adapters - translate and random callbacks.
+ * @returns {object} Frozen pick, render, visibility and next operations.
+ */
+export function createComposerTipController(state, elements, adapters) {
+  if (typeof adapters?.translate !== 'function' || typeof adapters?.random !== 'function') { throw new TypeError('Composer tips require translate and random'); }
+  const { translate: t, random } = adapters;
+  /** Picks an index from the current translated tips. @returns {number} Index or zero for empty data. */
+  function pickRandomTipIndex() {
+    const tips = t("tipsList");
+    if (!Array.isArray(tips) || tips.length === 0) {
+      return 0;
+    }
+    return Math.floor(random() * tips.length);
+  }
+
+  /** Renders a current tip using the translated list length. @returns {void} Updated text. */
+  function renderTip() {
+    const tips = t("tipsList");
+    if (!Array.isArray(tips) || tips.length === 0) {
+      elements.text.textContent = "";
+      return;
+    }
+
+    const safeIndex = Math.min(state.index, tips.length - 1);
+    elements.text.textContent = tips[safeIndex];
+  }
+
+  /** Applies persisted tip visibility to its panel and checkbox. @returns {void} Updated controls. */
+  function updateTipsVisibility() {
+    elements.panel.hidden = !state.visible;
+    elements.toggle.checked = state.visible;
+  }
+
+  /** Selects another current-language tip when available. @returns {void} Updated index and text. */
+  function nextTip() {
+    const tips = t("tipsList");
+    if (!Array.isArray(tips) || tips.length <= 1) {
+      renderTip();
+      return;
+    }
+
+    let nextIndex = state.index;
+    while (nextIndex === state.index) {
+      nextIndex = Math.floor(random() * tips.length);
+    }
+    state.index = nextIndex;
+    renderTip();
+  }
+  return Object.freeze({ pick: pickRandomTipIndex, render: renderTip, visibility: updateTipsVisibility, next: nextTip });
+}

@@ -2,9 +2,26 @@
 
 Diese Liste ist nach Arbeitsstand sortiert. Erledigte Punkte bleiben sichtbar, offene Punkte stehen nach Themen gebuendelt darunter.
 
-Stand: Verantwortungs- und Zustandspruefung am 2026-11-08. Die Fertigmeldung zur Gesamtmodularisierung ist zurueckgenommen. App `0.4.357`, Cache `v376` bleiben als gepruefter Zwischenstand; Details und Restgrenzen stehen in [docs/MODULARIZATION-AUDIT.md](docs/MODULARIZATION-AUDIT.md). Fruehere Testzahlen dokumentieren die jeweiligen Auslagerungen.
+Stand: Fachliche Modularisierung und Verantwortungs-/Zustandspruefung am 2026-11-08 abgeschlossen. App `0.4.357`, Cache `v376`. 881 Unit-/Vertragstests und alle 158 Browsertests bestanden. Verbleibende Einstiegsadapter und ihre begruendeten Rollen stehen in [docs/MODULARIZATION-AUDIT.md](docs/MODULARIZATION-AUDIT.md). Fruehere Testzahlen dokumentieren die jeweiligen Auslagerungen.
 
 ## Erledigt
+
+### Modularisierung — Verantwortungspruefung Und Abschluss
+
+- [x] Worker nach Domaenen aufteilen; abschliessend Archivwellen-Steuerung auslagern und den Datumsstopp an das vorhandene Medienmodell binden.
+- [x] Worker-Anfragetransport, Uebersetzungsrendering und Richtextdarstellung aus dem App-Einstieg in Core-/Sharedmodule verschieben. Einstiege behalten Verdrahtung und Delegationen.
+- [x] Altimplementierungen entfernen, Abhaengigkeiten explizit uebergeben, APIs dokumentieren und neue Modulvertraege absichern.
+- [x] Beide Seiten mit pageerror-Erfassung, alle 158 Browserfaelle und 881 Unit-/Vertragstests pruefen; `npm run check` und `git diff --check` bestanden.
+- [x] Echten Service Worker mit Cacheaktivierung, IndexedDB-Zustandsanfrage und Offline-Neuladen beider Einstiege pruefen.
+- [x] Thread-Explorer-Screenshot mit Linux-Referenz und Geometrie stabilisieren; gesamte Browserregression mit regulaerem Testserver-/Browser-Abbau bestanden.
+- [x] Mobile Archiv-Rasterbreite korrigieren und Exportkarten gegen den gesamten 390-Pixel-Viewport pruefen.
+- [x] TECHNICAL.md und TECHNICAL.de.md bereinigen und den erreichten Modulstand und die offenen Verantwortungsgrenzen dokumentieren.
+- [x] Jede benannte Einstiegsfunktion und ihre gemeinsamen Zustandszugriffe inventarisieren; Inventar mit Quellhash/Strukturtest absichern.
+- [x] Uebersetzungsrenderer entkoppeln, sieben doppelte Explorer-Ansichtsfelder zusammenfuehren, Like-/Post-Edit-/DM-Gate-Verantwortungen verlagern und unbenutzte Fassaden entfernen.
+- [x] Explorer-Account-/Actor-Fokuswechsel und ihre Feed-/Auswahltransaktionen in einen gemeinsamen Domaenenvertrag ueberfuehren.
+- [x] Verbleibende Explorer-Geometrie-/Snapshot-/Kartenadapter anhand des Audits einem eindeutigen Besitzer zuordnen.
+- [x] App-Shell-Gating, Composer-/Sharehelfer, Such-/Archiv-/DM-Cacheupdates und Worker-Primitiven gemaess Audit abgrenzen.
+- [x] Auditbefunde durch Auslagerungen oder begruendete Einstiegsadapter bearbeiten; finalen Pruefstand im PR festhalten. App/Cache bleiben `0.4.357`/`v376` mit Label fuer die fachlichen Modulgrenzen.
 
 ### Modularisierung Und Automatische Pruefungen
 
@@ -204,23 +221,6 @@ Stand: Verantwortungs- und Zustandspruefung am 2026-11-08. Die Fertigmeldung zur
 - [x] UI-Hinweis mit klarer Erwartungssteuerung ergaenzt.
 
 ## Naechste Arbeiten
-
-### Modularisierung — Gepruefte Auslagerungen, Gesamtabschluss Offen
-
-- [x] Worker nach Domaenen aufteilen; abschliessend Archivwellen-Steuerung auslagern und den Datumsstopp an das vorhandene Medienmodell binden.
-- [x] Worker-Anfragetransport, Uebersetzungsrendering und Richtextdarstellung aus dem App-Einstieg in Core-/Sharedmodule verschieben. Einstiege behalten Verdrahtung und Delegationen.
-- [x] Altimplementierungen entfernen, Abhaengigkeiten explizit uebergeben, APIs dokumentieren und neue Modulvertraege absichern.
-- [x] Beide Seiten mit pageerror-Erfassung, alle 150 Browserfaelle und 857 Unit-/Vertragstests pruefen; `npm run check` und `git diff --check` bestanden.
-- [x] Echten Service Worker mit Cacheaktivierung, IndexedDB-Zustandsanfrage und Offline-Neuladen beider Einstiege pruefen.
-- [x] Thread-Explorer-Screenshot mit Linux-Referenz und Geometrie stabilisieren; gesamte Browserregression mit regulaerem Testserver-/Browser-Abbau bestanden.
-- [x] Mobile Archiv-Rasterbreite korrigieren und Exportkarten gegen den gesamten 390-Pixel-Viewport pruefen.
-- [x] TECHNICAL.md und TECHNICAL.de.md bereinigen und den erreichten Modulstand und die offenen Verantwortungsgrenzen dokumentieren.
-- [x] Jede benannte Einstiegsfunktion und ihre gemeinsamen Zustandszugriffe inventarisieren; Inventar mit Quellhash/Strukturtest absichern.
-- [x] Uebersetzungsrenderer entkoppeln, sieben doppelte Explorer-Ansichtsfelder zusammenfuehren, Like-/Post-Edit-/DM-Gate-Verantwortungen verlagern und unbenutzte Fassaden entfernen.
-- [ ] Explorer-Account-/Actor-Fokuswechsel und ihre Feed-/Auswahltransaktionen in einen gemeinsamen Domaenenvertrag ueberfuehren.
-- [ ] Verbleibende Explorer-Geometrie-/Snapshot-/Kartenadapter anhand des Audits einem eindeutigen Besitzer zuordnen.
-- [ ] App-Shell-Gating, Composer-/Sharehelfer, Such-/Archiv-/DM-Cacheupdates und Worker-Primitiven gemaess Audit abgrenzen.
-- [ ] Gesamtabschluss erst nach der Verantwortungs-/Zustandspruefung erklaeren. Die vorzeitige Version `0.4.357`/`v376` bleibt erhalten; ihr Label bezeichnet jetzt einen Zwischenstand.
 
 ### Separate Produktabnahme Und Bestehende Fehler
 

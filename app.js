@@ -1,3 +1,24 @@
+import { isThreadExplorerNativeInteractiveTarget as nativeInteractiveTargetFromModel } from "./js/tools/thread-explorer.js";
+import { expandReplyClusterTree } from "./js/tools/thread-explorer-layout.js";
+import { isThreadExplorerInteractiveTarget as isThreadExplorerInteractiveTargetFromModel } from "./js/tools/thread-explorer.js";
+import { findSearchResultByUri as findSearchResultByUriFromModels } from "./js/tools/search-results.js";
+import { refreshLivePostCards, createLivePostActionButton } from "./js/tools/thread-explorer-rendering.js";
+import { formatImageFileSize } from "./js/shared/shared-images.js";
+import { formatApplicationTimestamp } from "./js/shared/shared-post-rendering.js";
+import { buildExportApplicationLabel } from "./js/core/app-bootstrap.js";
+import { selectPostWebApplication } from "./js/shared/shared-post-rendering.js";
+import { collectPostQuoteUrls } from "./js/shared/shared-post-rendering.js";
+import { buildArchiveFileBaseName } from "./js/tools/archive.js";
+import { extractArchiveHashtagsFromText } from "./js/shared/shared-hashtags.js";
+import { renderApplicationNavigation } from "./js/core/app-shell.js";
+import { createDmPartnerCacheController } from "./js/tools/dm-archive.js";
+import { createPostLinkModels } from "./js/shared/shared-post-rendering.js";
+import { buildComposerPublishButtonLabel } from "./js/composer/composer-publishing.js";
+import { createApplicationShareController } from "./js/core/app-shell.js";
+import { createComposerTipController } from "./js/composer/composer-page.js";
+import { buildThreadExplorerEdgePath, getThreadExplorerMeasuredStageRect } from "./js/tools/thread-explorer-layout.js";
+import { encodeSnapshotImageElement, collectSnapshotStyleRules, shouldTileSnapshotCanvas, loadSnapshotCanvasImage } from "./js/tools/thread-explorer-snapshot.js";
+import { createThreadExplorerAccountContext } from "./js/tools/thread-explorer-controller.js";
 import { detectApplicationLocale, translateApplicationValue, applyApplicationTranslatedTitle } from "./js/core/app-i18n.js";
 import {
   createLivePostInteractionController,
@@ -1434,6 +1455,15 @@ let accountAvatarAssets = [];
 let serviceWorkerRegistration = null;
 let privacyPageNavigationInProgress = false;
 let currentTipIndex = 0;
+let composerTipController = null;
+/** Wires tip state and native controls to the Composer. @returns {object} Tip controller. */
+function getComposerTipController() {
+  if (!composerTipController) { composerTipController = createComposerTipController({
+    get index() { return currentTipIndex; }, set index(value) { currentTipIndex = value; },
+    get visible() { return tipsVisible; }, set visible(value) { tipsVisible = value; },
+  }, { text: tipText, panel: tipsPanel, toggle: tipsVisibleToggle }, { translate: t, random: () => Math.random() }); }
+  return composerTipController;
+}
 let tipsVisible = true;
 let altTextRequired = true;
 let imageAutoResizeMode = "off";
@@ -1477,7 +1507,14 @@ let composerPosted = false;
 let composerInputWarningPendingTruncation = false;
 let composerInputEventSuppressed = false;
 let composerInputWasTruncated = false;
-let shareStatusTimer = null;
+let applicationShareController = null;
+/** Wires native sharing once to the current shell. @returns {object} Share controller. */
+function getApplicationShareController() {
+  if (!applicationShareController) { applicationShareController = createApplicationShareController({ navigator, document, URL,
+    schedule: (...args) => window.setTimeout(...args), clearTimer: timer => window.clearTimeout(timer), translate: t,
+    title: APP_SHARE_TITLE, url: APP_SHARE_URL, status: shareStatus }); }
+  return applicationShareController;
+}
 let segmentImages = [];
 let segmentLinkCards = [];
 let segmentImageDragState = null;
@@ -2313,6 +2350,35 @@ let networkCommonMutualsHasMore = false;
 const threadExplorerController = createThreadExplorerController({ source: "follows", orientation: THREAD_EXPLORER_ORIENTATION_VERTICAL,
   viewMode: THREAD_EXPLORER_VIEW_MODE_TREE, zoom: 1, panX: 24, panY: 24 });
 const threadExplorerViewState = threadExplorerController.state;
+let threadExplorerAccountContext = null;
+/** Wires one account/focus transaction controller. @returns {object} Domain context. */
+function getThreadExplorerAccountContext() {
+  if (!threadExplorerAccountContext) {
+    threadExplorerAccountContext = createThreadExplorerAccountContext({
+      get savedAccounts() { return savedAccounts; },
+      get authAccountDid() { return authAccountDid; },
+      get authAccount() { return authAccount; },
+      get accountActor() { return threadExplorerAccountActor; }, set accountActor(value) { threadExplorerAccountActor = value; },
+      get actorFocusActor() { return threadExplorerActorFocusActor; }, set actorFocusActor(value) { threadExplorerActorFocusActor = value; },
+      get accountActorBeforeFocus() { return threadExplorerAccountActorBeforeFocus; }, set accountActorBeforeFocus(value) { threadExplorerAccountActorBeforeFocus = value; },
+      get accountModeBeforeFocus() { return threadExplorerAccountModeBeforeFocus; }, set accountModeBeforeFocus(value) { threadExplorerAccountModeBeforeFocus = value; },
+      get accountMode() { return threadExplorerAccountMode; }, set accountMode(value) { threadExplorerAccountMode = value; },
+      get accountError() { return threadExplorerAccountError; }, set accountError(value) { threadExplorerAccountError = value; },
+      get actorFocusMode() { return threadExplorerActorFocusMode; }, set actorFocusMode(value) { threadExplorerActorFocusMode = value; },
+      get actorFocusItems() { return threadExplorerActorFocusItems; }, set actorFocusItems(value) { threadExplorerActorFocusItems = value; },
+      get actorFocusCursor() { return threadExplorerActorFocusCursor; }, set actorFocusCursor(value) { threadExplorerActorFocusCursor = value; },
+      get actorFocusHasMore() { return threadExplorerActorFocusHasMore; }, set actorFocusHasMore(value) { threadExplorerActorFocusHasMore = value; },
+      get actorFocusError() { return threadExplorerActorFocusError; }, set actorFocusError(value) { threadExplorerActorFocusError = value; },
+      get actorFocusLoading() { return threadExplorerActorFocusLoading; }, set actorFocusLoading(value) { threadExplorerActorFocusLoading = value; },
+      get loadingFeed() { return threadExplorerLoadingFeed; }, set loadingFeed(value) { threadExplorerLoadingFeed = value; },
+      get loadingThread() { return threadExplorerLoadingThread; }, set loadingThread(value) { threadExplorerLoadingThread = value; },
+      get items() { return threadExplorerItems; }, set items(value) { threadExplorerItems = value; },
+    }, { account: threadExplorerAccountInput, mode: threadExplorerAccountModeSelect }, { getThreadExplorerOwnActorFromTools, isThreadExplorerForeignAccountModeFromTools, normalizeThreadExplorerActor, isThreadExplorerOwnActorFromTools, isThreadExplorerForeignActorFocusModeFromTools, createThreadExplorerActorStubFromTools, getThreadExplorerActorFocusId, normalizeThreadExplorerAccountMode, normalizeThreadExplorerActorFocusModeFromTools },
+    { render: renderThreadExplorerWorkspace, persist: persistSettings, loadActor: loadThreadExplorerActorFocusFeed,
+      loadFeed: loadThreadExplorerFeed, loadSources: loadThreadExplorerFeedSources });
+  }
+  return threadExplorerAccountContext;
+}
 let threadExplorerAccountActor = "";
 let threadExplorerAccountMode = "posts";
 let threadExplorerAccountError = "";
@@ -2361,8 +2427,6 @@ const threadExplorerPanController = createThreadExplorerPanController({
   stopVelocity: THREAD_EXPLORER_INERTIA_STOP_VELOCITY,
   friction: THREAD_EXPLORER_INERTIA_FRICTION,
 });
-
-
 
 
 let threadExplorerFullscreen = false;
@@ -2639,35 +2703,17 @@ function normalizeServiceUrl(value) {
 }
 
 
-function getPostTargetName(webApp = authAccountWebApp) {
-  try {
-    return new URL(normalizeServiceUrl(webApp)).hostname.toLowerCase() === "mu.social"
-      ? "Mu.social"
-      : "Bluesky";
-  } catch {
-    return "Bluesky";
-  }
+let postLinkModels = null;
+/** Wires provider configuration for post links. @returns {object} Post link models. */
+function getPostLinkModels() {
+  if (!postLinkModels) { postLinkModels = createPostLinkModels({ normalizeService: normalizeServiceUrl, frontends: POST_WEB_FRONTENDS, defaultWebApp: DEFAULT_POST_WEB_APP }); }
+  return postLinkModels;
 }
+function getPostTargetName(webApp = authAccountWebApp) { return getPostLinkModels().getPostTargetName(webApp); }
 
-function getPublishButtonLabel() {
-  if (composerReplyTarget?.mode === "thread") {
-    return t("publishButtonThreadContinuation");
-  }
-  if (composerReplyTarget?.mode === "post") {
-    return t("publishButtonReplyTarget");
-  }
-  return t("publishButtonTarget", { target: getPostTargetName() });
-}
+function getPublishButtonLabel() { return buildComposerPublishButtonLabel(composerReplyTarget, false, t, getPostTargetName()); }
 
-function getPublishBusyLabel() {
-  if (composerReplyTarget?.mode === "thread") {
-    return t("publishBusyThreadContinuation");
-  }
-  if (composerReplyTarget?.mode === "post") {
-    return t("publishBusyReplyTarget");
-  }
-  return t("publishBusyTarget", { target: getPostTargetName() });
-}
+function getPublishBusyLabel() { return buildComposerPublishButtonLabel(composerReplyTarget, true, t, getPostTargetName()); }
 
 /** Updates the login endpoint controls. @param {string} serviceUrl - Selected endpoint. @returns {void} */
 function applyLoginServiceSelection(serviceUrl = LOGIN_SERVICE_PRESETS["bsky.social"]) {
@@ -3015,51 +3061,18 @@ function syncAppearanceFromLocalStorage() {
  * @returns {void}
  */
 function updateAuthButtons() {
-  const isAuthenticated = Boolean(authAccount);
-  const currentPage = getCurrentThreadlinePage();
-  const isToolsPage = currentPage === THREADLINE_PAGE_TOOLS;
-  addAccountButton.textContent = t("addAccountButton");
-  publishButton.textContent = getPublishButtonLabel();
-  composerButton.disabled = false;
-  archiveButton.disabled = !isAuthenticated;
-  searchButton.disabled = false;
-  if (searchUseOwnAccountButton) {
-    searchUseOwnAccountButton.disabled = !isAuthenticated;
-  }
-  networkButton.disabled = !isAuthenticated;
-  threadExplorerButton.disabled = !isAuthenticated;
-  analysisButton.disabled = !isAuthenticated;
-  dmButton.disabled = !isAuthenticated || !isDmAccessAvailable();
-  [
-    [composerButton, currentWorkspace === "composer"],
-    [archiveButton, currentWorkspace === "archive"],
-    [searchButton, currentWorkspace === "search"],
-    [networkButton, currentWorkspace === "network"],
-    [threadExplorerButton, currentWorkspace === "threadExplorer"],
-    [analysisButton, currentWorkspace === "analysis"],
-    [dmButton, currentWorkspace === "dm"],
-  ].forEach(([button, isActive]) => {
-    let pressed = "false";
-    if (isActive) {
-      pressed = "true";
-    }
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-pressed", pressed);
-  });
-  composerLaunchNote.textContent = t("composerLaunchNote");
-  archiveLaunchNote.textContent = isAuthenticated ? t("archiveLaunchEnabledNote") : t("archiveLaunchDisabledNote");
-  searchLaunchNote.textContent = isAuthenticated ? t("searchLaunchEnabledNote") : t("searchLaunchDisabledNote");
-  networkLaunchNote.textContent = isAuthenticated ? t("networkLaunchEnabledNote") : t("networkLaunchDisabledNote");
-  if (isAuthenticated) {
-    threadExplorerLaunchNote.textContent = t("threadExplorerLaunchEnabledNote");
-  } else {
-    threadExplorerLaunchNote.textContent = t("threadExplorerLaunchDisabledNote");
-  }
-  analysisLaunchNote.textContent = isAuthenticated ? t("analysisLaunchEnabledNote") : t("analysisLaunchDisabledNote");
-  dmLaunchNote.textContent = isAuthenticated ? t("dmLaunchEnabledNote") : t("dmLaunchDisabledNote");
-  if (isToolsPage && !isAuthenticated) {
-    searchLaunchNote.textContent = t("searchLaunchDisabledNote");
-  }
+  renderApplicationNavigation({ authenticated: Boolean(authAccount), workspace: currentWorkspace, dmAvailable: isDmAccessAvailable() }, {
+    addAccount: addAccountButton, publish: publishButton, ownSearch: searchUseOwnAccountButton, publishLabel: getPublishButtonLabel,
+    workspaces: [
+      { name: "composer", button: composerButton, note: composerLaunchNote, requiresAuth: false },
+      { name: "archive", button: archiveButton, note: archiveLaunchNote, requiresAuth: true },
+      { name: "search", button: searchButton, note: searchLaunchNote, requiresAuth: false },
+      { name: "network", button: networkButton, note: networkLaunchNote, requiresAuth: true },
+      { name: "threadExplorer", button: threadExplorerButton, note: threadExplorerLaunchNote, requiresAuth: true },
+      { name: "analysis", button: analysisButton, note: analysisLaunchNote, requiresAuth: true },
+      { name: "dm", button: dmButton, note: dmLaunchNote, requiresAuth: true },
+    ],
+  }, t);
   renderAccountSwitcher();
   renderArchiveBackgroundNotice();
   updateAnalysisControls();
@@ -3071,6 +3084,7 @@ function updateAuthButtons() {
  * @returns {void}
  */
 function applyDisconnectedState(showStatus = true) {
+  getThreadExplorerAccountContext().invalidate();
   authAccount = null;
   authAccountDid = "";
   resetNetworkState();
@@ -3174,58 +3188,20 @@ function normalizeThreadExplorerSource(source) {
   });
 }
 
-/**
- * Returns the active account label for "Mein Account" actions in the Thread Explorer.
- * @returns {string} Handle, identifier, DID, or an empty string when unavailable.
- */
-function getThreadExplorerOwnActor() {
-  return getThreadExplorerOwnActorFromTools(savedAccounts, authAccountDid, authAccount);
-}
-
 
 /**
  * Checks whether the Thread Explorer should load posts from a foreign account.
  * @returns {boolean} True when the account field points to another account.
  */
-function isThreadExplorerForeignAccountMode() {
-  return isThreadExplorerForeignAccountModeFromTools(
-    threadExplorerAccountActor,
-    authAccount,
-    authAccountDid,
-    normalizeThreadExplorerActor,
-  );
-}
+function isThreadExplorerForeignAccountMode(...args) { return getThreadExplorerAccountContext().foreignAccount(...args); }
 
-/**
- * Checks whether one actor belongs to the signed-in account.
- * @param {object|null} actor - Normalized actor object from Thread Explorer data.
- * @returns {boolean} True when the actor is the signed-in account.
- */
-function isThreadExplorerOwnActor(actor = null) {
-  return isThreadExplorerOwnActorFromTools(actor, authAccount, authAccountDid, normalizeThreadExplorerActor);
-}
 
 /**
  * Checks whether the Thread Explorer currently shows a foreign-account actor focus.
  * @returns {boolean} True when the top source controls should be hidden.
  */
-function isThreadExplorerForeignActorFocusMode() {
-  return isThreadExplorerForeignActorFocusModeFromTools(
-    threadExplorerActorFocusActor,
-    authAccount,
-    authAccountDid,
-    normalizeThreadExplorerActor,
-  );
-}
+function isThreadExplorerForeignActorFocusMode(...args) { return getThreadExplorerAccountContext().foreignFocus(...args); }
 
-/**
- * Builds a minimal Thread Explorer actor object from the account field value.
- * @param {string} actorValue - Normalized handle or DID from the account field.
- * @returns {object} Actor stub with either handle or DID filled.
- */
-function createThreadExplorerActorStub(actorValue = "") {
-  return createThreadExplorerActorStubFromTools(actorValue, normalizeThreadExplorerActor);
-}
 
 /**
  * Returns the actor that should currently be loaded in the Thread Explorer account mode.
@@ -4215,19 +4191,7 @@ function getSavedSearchById(id) {
  * @param {object} post - Normalized Thread Explorer post.
  * @returns {string} Web app base URL.
  */
-function getThreadExplorerPostWebApp(post) {
-  const handle = String(post?.author?.handle || "").toLowerCase();
-  if (handle.endsWith(".eurosky.social") || handle.endsWith(".mu.social")) {
-    return LOGIN_SERVICE_PRESETS["mu.social"];
-  }
-
-  const favorite = threadExplorerFavorites.find((entry) => entry.rootUri === post?.uri || entry.selectedUri === post?.uri);
-  if (favorite?.webApp) {
-    return favorite.webApp;
-  }
-
-  return DEFAULT_POST_WEB_APP;
-}
+function getThreadExplorerPostWebApp(post) { return selectPostWebApplication(post, threadExplorerFavorites, LOGIN_SERVICE_PRESETS, DEFAULT_POST_WEB_APP); }
 
 /**
  * Builds a web URL for a Thread Explorer post.
@@ -4253,13 +4217,7 @@ function getThreadExplorerRootPost() {
  * Checks whether the current Thread Explorer root thread is locally saved.
  * @returns {boolean} True when the visible root thread is in favorites.
  */
-function isCurrentThreadExplorerThreadSaved() {
-  const rootPost = getThreadExplorerRootPost();
-  if (!rootPost?.uri) {
-    return false;
-  }
-  return threadExplorerFavorites.some((favorite) => favorite.rootUri === rootPost.uri);
-}
+function isCurrentThreadExplorerThreadSaved() { return threadExplorerFavoritesController.has(getThreadExplorerRootPost()?.uri); }
 
 /**
  * Creates a local favorite entry from the currently loaded Thread Explorer tree.
@@ -4314,22 +4272,7 @@ async function removeThreadExplorerFavorite(rootUri) {
  * @param {Function} options.onClick - Click handler for the button.
  * @returns {HTMLButtonElement} Ready-to-use action button.
  */
-function createThreadExplorerInteractionButton(translationKey, options = {}) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "ghost-button thread-explorer-inline-action";
-  button.textContent = t(translationKey);
-  if (options.active === true) {
-    button.classList.add("is-active");
-  }
-  if (options.disabled === true) {
-    button.disabled = true;
-  }
-  if (typeof options.onClick === "function") {
-    button.addEventListener("click", options.onClick);
-  }
-  return button;
-}
+function createThreadExplorerInteractionButton(translationKey, options = {}) { return createLivePostActionButton(translationKey, options, { document, translate: t }); }
 
 
 /**
@@ -4395,50 +4338,16 @@ function openComposerReplyForPost(post = {}) {
  * @param {HTMLElement|null} card - Rendered Thread Explorer or search-result post card.
  * @returns {void}
  */
-function refreshRenderedLivePostCard(card = null) {
-  if (!card) {
-    return;
-  }
 
-  const post = card._threadExplorerPost || null;
-  const counts = card.querySelector(".thread-explorer-post-counts");
-  const actions = card.querySelector(".thread-explorer-post-actions");
-  const headButtons = card.querySelector(".thread-explorer-post-head-buttons");
-  const viewLink = card.querySelector(".thread-explorer-view-link");
-  if (!post || !counts || !actions || !headButtons || !viewLink) {
-    return;
-  }
-
-  const inSearchResult = Boolean(card.closest(".search-result-item"));
-  if (inSearchResult) {
-    renderSearchResultCounts(post, counts);
-  } else {
-    renderThreadExplorerCounts(post, counts);
-  }
-  renderThreadExplorerInteractionActions(post, actions, headButtons, viewLink, {
-    renderInHeader: inSearchResult,
-  });
-}
 
 /**
  * Refreshes every rendered live post card for one specific URI.
  * @param {string} postUri - Post URI that should be refreshed in the DOM.
  * @returns {void}
  */
-function refreshRenderedLivePostCards(postUri = "") {
-  const normalizedUri = String(postUri || "").trim();
-  if (!normalizedUri) {
-    return;
-  }
-
-  let selectorValue = normalizedUri.replace(/["\\]/g, "\\$&");
-  if (window.CSS && typeof window.CSS.escape === "function") {
-    selectorValue = window.CSS.escape(normalizedUri);
-  }
-  document.querySelectorAll(`.thread-explorer-node-item[data-uri="${selectorValue}"] .thread-explorer-post-card`).forEach((card) => {
-    refreshRenderedLivePostCard(card);
-  });
-}
+function refreshRenderedLivePostCards(postUri = "") { refreshLivePostCards(postUri, { document,
+    escape: window.CSS?.escape, searchCounts: renderSearchResultCounts, counts: renderThreadExplorerCounts,
+    interactions: renderThreadExplorerInteractionActions }); }
 
 /** Toggles a live post through the shared interaction controller. @param {object} post - Post. @returns {Promise<void>} Request completion. */
 function toggleLikeForLivePost(post) { return getLivePostInteractions().toggle(post); }
@@ -4449,22 +4358,7 @@ function toggleLikeForLivePost(post) { return getLivePostInteractions().toggle(p
  * @param {object|null} quote - Normalized quoted post.
  * @returns {string[]} Visible quote URL variants.
  */
-function getThreadExplorerQuoteUrls(quote = null) {
-  const quoteUrls = new Set();
-  const quoteUrl = buildThreadExplorerPostWebUrl(quote);
-  if (quoteUrl) {
-    quoteUrls.add(quoteUrl);
-  }
-
-  const quoteHandle = String(quote?.author?.handle || "").trim();
-  const quoteRecordKey = getThreadExplorerPostRecordKey(quote?.uri);
-  if (quoteHandle && quoteRecordKey) {
-    quoteUrls.add(`${DEFAULT_POST_WEB_APP}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
-    quoteUrls.add(`${LOGIN_SERVICE_PRESETS["mu.social"]}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
-  }
-
-  return Array.from(quoteUrls);
-}
+function getThreadExplorerQuoteUrls(quote = null) { return collectPostQuoteUrls(quote, buildThreadExplorerPostWebUrl, getThreadExplorerPostRecordKey, DEFAULT_POST_WEB_APP, LOGIN_SERVICE_PRESETS["mu.social"]); }
 
 /**
  * Returns the prepared display model for one Thread Explorer external card.
@@ -4590,16 +4484,7 @@ function handleThreadExplorerEditButtonClick(event) {
  * @param {string} uri - AT URI of the post.
  * @returns {object|null} Matching search result item or null.
  */
-function findSearchResultByUri(uri) {
-  const normalizedUri = String(uri || "").trim();
-  if (!normalizedUri) {
-    return null;
-  }
-
-  return searchResults.find((item) => {
-    return item?.post?.uri === normalizedUri;
-  }) || null;
-}
+function findSearchResultByUri(uri) { return findSearchResultByUriFromModels(searchResults, uri); }
 
 /**
  * Renders the local Thread Explorer favorites dialog.
@@ -4886,32 +4771,7 @@ function setThreadExplorerGalleryPseudoFullscreen(enabled) {
  * @param {DOMRect} stageRect - Stage viewport rectangle.
  * @returns {object} Rectangle with position and center values.
  */
-function getThreadExplorerStageRect(element, stageRect) {
-  const elementRect = element.getBoundingClientRect();
-  let zoom = Number(threadExplorerViewState.zoom) || 1;
-  if (zoom <= 0) {
-    zoom = 1;
-  }
-
-  const left = (elementRect.left - stageRect.left) / zoom;
-  const top = (elementRect.top - stageRect.top) / zoom;
-  const width = elementRect.width / zoom;
-  const height = elementRect.height / zoom;
-  const right = left + width;
-  const bottom = top + height;
-  const centerX = left + (width / 2);
-  const centerY = top + (height / 2);
-  return {
-    left,
-    top,
-    width,
-    height,
-    right,
-    bottom,
-    centerX,
-    centerY,
-  };
-}
+function getThreadExplorerStageRect(element, stageRect) { return getThreadExplorerMeasuredStageRect(element.getBoundingClientRect(), stageRect, threadExplorerViewState.zoom); }
 
 /**
  * Builds a curved SVG path between two rendered Thread Explorer cards.
@@ -4919,25 +4779,7 @@ function getThreadExplorerStageRect(element, stageRect) {
  * @param {object} childRect - Child card rectangle in stage coordinates.
  * @returns {string} SVG path data.
  */
-function createThreadExplorerEdgePath(parentRect, childRect) {
-  if (threadExplorerViewState.orientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
-    const startX = parentRect.right;
-    const startY = parentRect.centerY;
-    const endX = childRect.left;
-    const endY = childRect.centerY;
-    const distance = Math.max(72, Math.abs(endX - startX));
-    const controlOffset = Math.max(48, distance * 0.42);
-    return `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
-  }
-
-  const startX = parentRect.centerX;
-  const startY = parentRect.bottom;
-  const endX = childRect.centerX;
-  const endY = childRect.top;
-  const distance = Math.max(60, Math.abs(endY - startY));
-  const controlOffset = Math.max(36, distance * 0.45);
-  return `M ${startX} ${startY} C ${startX} ${startY + controlOffset}, ${endX} ${endY - controlOffset}, ${endX} ${endY}`;
-}
+function createThreadExplorerEdgePath(parentRect, childRect) { return buildThreadExplorerEdgePath(parentRect, childRect, threadExplorerViewState.orientation); }
 
 /**
  * Schedules a redraw of Thread Explorer SVG edges after layout settles.
@@ -5039,6 +4881,7 @@ function renderThreadExplorerEdges() {
  * @returns {void}
  */
 function setThreadExplorerSource(source) {
+  getThreadExplorerAccountContext().invalidate();
   threadExplorerViewState.source = normalizeThreadExplorerSource(source);
   threadExplorerController.setSource(threadExplorerViewState.source);
   threadExplorerCursor = "";
@@ -5509,6 +5352,7 @@ function handleThreadExplorerSourceSelectChange(event) {
  */
 async function loadThreadExplorerActorFocusFeed(options = {}) {
   await loadThreadExplorerActorFocusWorkflow({
+    contextKey: () => getThreadExplorerAccountContext().contextKey(),
     authAccount,
     actor: threadExplorerActorFocusActor,
     actorId: getThreadExplorerActorFocusId(threadExplorerActorFocusActor),
@@ -5539,69 +5383,13 @@ async function loadThreadExplorerActorFocusFeed(options = {}) {
  * @param {object} actor - Normalized Thread Explorer actor.
  * @returns {void}
  */
-function openThreadExplorerActorFocus(actor = {}) {
-  const actorId = getThreadExplorerActorFocusId(actor);
-  if (!actorId) {
-    return;
-  }
-
-  const isOwnActor = isThreadExplorerOwnActor(actor);
-  if (!isOwnActor) {
-    if (!isThreadExplorerForeignActorFocusMode()) {
-      threadExplorerAccountActorBeforeFocus = normalizeThreadExplorerActor(threadExplorerAccountActor);
-      threadExplorerAccountModeBeforeFocus = normalizeThreadExplorerAccountMode(threadExplorerAccountMode);
-    }
-    threadExplorerAccountActor = normalizeThreadExplorerActor(actor.handle || actor.did || "");
-    if (threadExplorerAccountInput) {
-      threadExplorerAccountInput.value = threadExplorerAccountActor;
-    }
-    threadExplorerAccountError = "";
-    threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(threadExplorerAccountMode);
-  }
-  threadExplorerActorFocusActor = { ...actor };
-  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(threadExplorerActorFocusMode);
-  threadExplorerActorFocusItems = [];
-  threadExplorerActorFocusCursor = "";
-  threadExplorerActorFocusHasMore = false;
-  threadExplorerActorFocusError = "";
-  renderThreadExplorerWorkspace();
-  void persistSettings();
-  void loadThreadExplorerActorFocusFeed({ append: false });
-}
+function openThreadExplorerActorFocus(...args) { return getThreadExplorerAccountContext().open(...args); }
 
 /**
  * Clears the current Thread Explorer Actor-Fokus card.
  * @returns {void}
  */
-function closeThreadExplorerActorFocus() {
-  const shouldRestoreOwnContext = isThreadExplorerForeignActorFocusMode();
-  threadExplorerActorFocusActor = null;
-  threadExplorerActorFocusItems = [];
-  threadExplorerActorFocusCursor = "";
-  threadExplorerActorFocusHasMore = false;
-  threadExplorerActorFocusLoading = false;
-  threadExplorerActorFocusError = "";
-  if (shouldRestoreOwnContext) {
-    threadExplorerAccountActor = normalizeThreadExplorerActor(threadExplorerAccountActorBeforeFocus);
-    threadExplorerAccountMode = normalizeThreadExplorerAccountMode(threadExplorerAccountModeBeforeFocus);
-    threadExplorerAccountError = "";
-    if (threadExplorerAccountInput) {
-      threadExplorerAccountInput.value = threadExplorerAccountActor;
-    }
-    if (threadExplorerAccountModeSelect) {
-      threadExplorerAccountModeSelect.value = threadExplorerAccountMode;
-    }
-    threadExplorerAccountActorBeforeFocus = "";
-    threadExplorerAccountModeBeforeFocus = "posts";
-    void loadThreadExplorerFeedSources();
-  }
-  renderThreadExplorerWorkspace();
-  void persistSettings();
-  if (shouldRestoreOwnContext && authAccount && !threadExplorerLoadingFeed) {
-    void loadThreadExplorerFeed({ reset: true, clearSelection: true });
-    return;
-  }
-}
+function closeThreadExplorerActorFocus(...args) { return getThreadExplorerAccountContext().close(...args); }
 
 /**
  * Changes the current Actor-Fokus feed mode.
@@ -5870,17 +5658,7 @@ function ensureThreadExplorerReplyClusterRootExpanded() {
  * @param {object|null} node - Normalized Thread Explorer tree node.
  * @returns {void}
  */
-function expandAllThreadExplorerReplyClusterNodes(node) {
-  if (!node || !node.post?.uri) {
-    return;
-  }
-
-  threadExplorerViewState.expandedUris.add(String(node.post.uri).trim());
-  const replies = Array.isArray(node.replies) ? node.replies : [];
-  replies.forEach((reply) => {
-    expandAllThreadExplorerReplyClusterNodes(reply);
-  });
-}
+function expandAllThreadExplorerReplyClusterNodes(node) { expandReplyClusterTree(node, threadExplorerViewState.expandedUris); }
 
 /**
  * Returns whether one reply-cluster node is currently expanded.
@@ -6294,6 +6072,7 @@ function renderThreadExplorerQuoteCard(post, fragment) {
  */
 async function loadThreadExplorerFeed(options = {}) {
   await loadThreadExplorerFeedWorkflow({
+    contextKey: () => getThreadExplorerAccountContext().contextKey(),
     authAccount,
     state: {
       get cursor() { return threadExplorerCursor; },
@@ -6354,6 +6133,7 @@ async function loadThreadExplorerFeed(options = {}) {
  */
 async function selectThreadExplorerPost(uri) {
   await loadThreadExplorerThreadWorkflow(uri, {
+    contextKey: () => getThreadExplorerAccountContext().contextKey(),
     state: {
       get selectedUri() { return threadExplorerSelectedUri; },
       set selectedUri(value) { threadExplorerSelectedUri = value; },
@@ -6532,42 +6312,16 @@ function handleThreadExplorerCardPointerUp(event) {
  * @param {EventTarget|null} target - Event target from a card interaction.
  * @returns {boolean} True when the target is a button, link, or form control.
  */
-function isThreadExplorerNativeInteractiveTarget(target) {
-  if (!(target instanceof Element)) {
-    return false;
-  }
 
-  const nativeInteractiveTarget = target.closest("button, a, input, textarea, select, summary");
-  if (nativeInteractiveTarget) {
-    return true;
-  }
-
-  return false;
-}
 
 /**
  * Returns whether a pointer target should keep its native interaction.
  * @param {EventTarget|null} target - Event target from a pointer event.
  * @returns {boolean} True when dragging should not start.
  */
-function isThreadExplorerInteractiveTarget(target) {
-  if (isThreadExplorerNativeInteractiveTarget(target)) {
-    return true;
-  }
+function isThreadExplorerNativeInteractiveTarget(target) { return nativeInteractiveTargetFromModel(target, Element); }
 
-  if (!(target instanceof Element)) {
-    return false;
-  }
-
-  const selectableTextTarget = target.closest(
-    ".thread-explorer-post-text, .thread-explorer-quote-card-text, .thread-explorer-link-card-title, .thread-explorer-link-card-description, .thread-explorer-link-card-url, .thread-explorer-quote-link-card-title, .thread-explorer-quote-link-card-description, .thread-explorer-quote-link-card-url, .thread-explorer-image figcaption, .thread-explorer-post-author, .thread-explorer-post-handle, .thread-explorer-post-meta, .thread-explorer-feed-text, .thread-explorer-feed-author, .thread-explorer-feed-meta",
-  );
-  if (selectableTextTarget) {
-    return true;
-  }
-
-  return false;
-}
+function isThreadExplorerInteractiveTarget(target) { return isThreadExplorerInteractiveTargetFromModel(target, Element); }
 
 /**
  * Starts mouse or pointer panning for the Thread Explorer viewport.
@@ -6670,29 +6424,7 @@ function setAllThreadExplorerNodesCollapsed(shouldCollapse) {
  * @param {HTMLImageElement} image - Source image from the rendered Thread Explorer.
  * @returns {string} Data URL, original data URL, or an empty string when unavailable.
  */
-function encodeThreadExplorerImageElement(image) {
-  const source = String(image?.currentSrc || image?.src || "").trim();
-  if (!source) {
-    return "";
-  }
-  if (source.startsWith("data:")) {
-    return source;
-  }
-  if (!image.complete || !image.naturalWidth || !image.naturalHeight) {
-    return "";
-  }
-
-  try {
-    const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const context = canvas.getContext("2d");
-    context.drawImage(image, 0, 0);
-    return canvas.toDataURL("image/png");
-  } catch {
-    return "";
-  }
-}
+function encodeThreadExplorerImageElement(image) { return encodeSnapshotImageElement(image, document); }
 
 /**
  * Reads a Thread Explorer avatar data URI from the shared local avatar cache.
@@ -6717,46 +6449,14 @@ function getThreadExplorerSnapshotAvatarCacheKey(image = null) {
  * @param {string} dataUri - Cached avatar data URI.
  * @returns {Promise<HTMLImageElement|null>} Loaded image or null when loading fails.
  */
-function loadThreadExplorerSnapshotAvatarImage(dataUri) {
-  const source = String(dataUri || "").trim();
-  if (!source) {
-    return Promise.resolve(null);
-  }
-
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.addEventListener("load", () => {
-      resolve(image);
-    }, { once: true });
-    image.addEventListener("error", () => {
-      resolve(null);
-    }, { once: true });
-    image.src = source;
-  });
-}
+function loadThreadExplorerSnapshotAvatarImage(dataUri) { return loadSnapshotCanvasImage(dataUri, Image); }
 
 /**
  * Loads one rendered snapshot image source into a canvas-safe image object.
  * @param {string} source - Data URI, blob URL or same-origin image URL.
  * @returns {Promise<HTMLImageElement|null>} Loaded image or null when loading fails.
  */
-function loadThreadExplorerSnapshotCanvasImage(source) {
-  const normalizedSource = String(source || "").trim();
-  if (!normalizedSource) {
-    return Promise.resolve(null);
-  }
-
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.addEventListener("load", () => {
-      resolve(image);
-    }, { once: true });
-    image.addEventListener("error", () => {
-      resolve(null);
-    }, { once: true });
-    image.src = normalizedSource;
-  });
-}
+function loadThreadExplorerSnapshotCanvasImage(source) { return loadSnapshotCanvasImage(source, Image); }
 
 /**
  * Preloads all cached Thread Explorer avatars needed by the canvas snapshot renderers.
@@ -6963,19 +6663,7 @@ function inlineThreadExplorerSnapshotImages(source, clone) {
  * Collects accessible CSS text for the Thread Explorer snapshot SVG.
  * @returns {string} CSS text.
  */
-function collectThreadExplorerSnapshotCss() {
-  const parts = [];
-  for (const styleSheet of Array.from(document.styleSheets)) {
-    try {
-      for (const rule of Array.from(styleSheet.cssRules || [])) {
-        parts.push(rule.cssText);
-      }
-    } catch {
-      // Cross-origin stylesheets cannot be read; local app styles are enough for Threadline.
-    }
-  }
-  return parts.join("\n");
-}
+function collectThreadExplorerSnapshotCss() { return collectSnapshotStyleRules(document.styleSheets); }
 
 /**
  * Downloads a blob with the given filename.
@@ -7230,18 +6918,7 @@ async function renderThreadExplorerTiledPngSnapshotBlob(width, height, onProgres
  * @param {number} height - Snapshot height in pixels.
  * @returns {boolean} True when tiled PNG assembly is safer.
  */
-function shouldUseThreadExplorerTiledPngSnapshot(width, height) {
-  if (width > THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION) {
-    return true;
-  }
-  if (height > THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION) {
-    return true;
-  }
-  if ((width * height) > THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS) {
-    return true;
-  }
-  return false;
-}
+function shouldUseThreadExplorerTiledPngSnapshot(width, height) { return shouldTileSnapshotCanvas(width, height, THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION, THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS); }
 
 /**
  * Draws Thread Explorer SVG edge paths on a snapshot canvas.
@@ -7456,80 +7133,20 @@ function handleThreadExplorerRefreshClick() {
  * @param {boolean} options.loadFeed - True when the committed change should trigger a reload.
  * @returns {void}
  */
-function applyThreadExplorerAccountInput(options = {}) {
-  const previousForeignMode = isThreadExplorerForeignAccountMode();
-  threadExplorerAccountActor = normalizeThreadExplorerActor(threadExplorerAccountInput?.value || "");
-  threadExplorerAccountError = "";
-  const nextForeignMode = isThreadExplorerForeignAccountMode();
-  if (nextForeignMode) {
-    threadExplorerActorFocusActor = createThreadExplorerActorStub(threadExplorerAccountActor);
-    threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(threadExplorerAccountMode);
-    threadExplorerActorFocusItems = [];
-    threadExplorerActorFocusCursor = "";
-    threadExplorerActorFocusHasMore = false;
-    threadExplorerActorFocusLoading = false;
-    threadExplorerActorFocusError = "";
-  } else if (threadExplorerActorFocusActor && !isThreadExplorerOwnActor(threadExplorerActorFocusActor)) {
-    threadExplorerActorFocusActor = null;
-    threadExplorerActorFocusItems = [];
-    threadExplorerActorFocusCursor = "";
-    threadExplorerActorFocusHasMore = false;
-    threadExplorerActorFocusLoading = false;
-    threadExplorerActorFocusError = "";
-  }
-  if (!nextForeignMode) {
-    void loadThreadExplorerFeedSources();
-  }
-  renderThreadExplorerWorkspace();
-  void persistSettings();
-
-  if (options.loadFeed !== true) {
-    return;
-  }
-  if (!authAccount || threadExplorerLoadingFeed) {
-    return;
-  }
-  if (!threadExplorerAccountActor && nextForeignMode) {
-    return;
-  }
-  const modeChanged = previousForeignMode !== nextForeignMode;
-  if (nextForeignMode) {
-    void loadThreadExplorerActorFocusFeed({ append: false });
-    return;
-  }
-  if (modeChanged || !threadExplorerItems.length) {
-    void loadThreadExplorerFeed({ reset: true, clearSelection: true });
-  }
-}
+function applyThreadExplorerAccountInput(...args) { return getThreadExplorerAccountContext().apply(...args); }
 
 /**
  * Copies the signed-in account into the Thread Explorer account field and reloads the own feed mode.
  * @returns {void}
  */
-function handleThreadExplorerUseOwnAccountClick() {
-  const ownActor = getThreadExplorerOwnActor();
-  if (threadExplorerAccountInput) {
-    threadExplorerAccountInput.value = ownActor;
-  }
-  applyThreadExplorerAccountInput({ loadFeed: true });
-}
+function handleThreadExplorerUseOwnAccountClick(...args) { return getThreadExplorerAccountContext().useOwn(...args); }
 
 /**
  * Updates the Thread Explorer account-mode filter and reloads the current foreign-account feed.
  * @param {Event} event - Change event from the account-mode select.
  * @returns {void}
  */
-function handleThreadExplorerAccountModeChange(event) {
-  threadExplorerAccountMode = normalizeThreadExplorerAccountMode(event.currentTarget?.value || "");
-  threadExplorerAccountError = "";
-  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(threadExplorerAccountMode);
-  renderThreadExplorerWorkspace();
-  void persistSettings();
-  if (!authAccount || threadExplorerLoadingFeed || !isThreadExplorerForeignAccountMode()) {
-    return;
-  }
-  void loadThreadExplorerActorFocusFeed({ append: false });
-}
+function handleThreadExplorerAccountModeChange(...args) { return getThreadExplorerAccountContext().mode(...args); }
 
 /**
  * Opens the Thread Explorer URL prompt.
@@ -7884,18 +7501,7 @@ function restorePersistedAnalysisState(state = null) {
  * Builds the application label used in exported file metadata.
  * @returns {string} Threadline application and version label.
  */
-function getExportMetadataApplicationLabel() {
-  const appVersion = String(CURRENT_VERSION_INFO.appVersion || "").trim();
-  const cacheVersion = String(CURRENT_VERSION_INFO.cacheVersion || "").trim();
-  const parts = ["Threadline"];
-  if (appVersion) {
-    parts.push(appVersion);
-  }
-  if (cacheVersion) {
-    parts.push(`(${cacheVersion})`);
-  }
-  return parts.join(" ");
-}
+function getExportMetadataApplicationLabel() { return buildExportApplicationLabel(CURRENT_VERSION_INFO); }
 
 async function exportAnalysisPdfReport() {
   return analysisPdfRenderer.export();
@@ -8196,44 +7802,26 @@ function renderArchiveSourceState() { return archiveWorkspaceRenderer.source(); 
 /** Validates the active archive source through the source controller. @param {object} options - Optional quiet validation. @returns {Promise<object|null>} Resolved source profile. */
 async function validateArchiveSourceInput(options = {}) { return archiveSourceController.validate(options); }
 
-function applyDmPartnerCache(cache = null) {
-  if (!cache || (cache.accountDid && authAccountDid && cache.accountDid !== authAccountDid)) {
-    dmRecentContacts = [];
-    dmRecentConversations = [];
-    dmRecentContactAssets = [];
-    dmPartnerCacheAccountDid = "";
-    dmPartnerCacheUpdatedAt = "";
-    return;
-  }
-
-  dmRecentContacts = Array.isArray(cache.recentContacts) ? cache.recentContacts : [];
-  dmRecentConversations = Array.isArray(cache.conversations) ? cache.conversations : [];
-  dmRecentContactAssets = Array.isArray(cache.assets) ? cache.assets : [];
-  dmPartnerCacheAccountDid = String(cache.accountDid || authAccountDid || "");
-  dmPartnerCacheUpdatedAt = String(cache.updatedAt || "");
-  dmSelectedParticipantDids = retainDmSelectedParticipants(dmSelectedParticipantDids, dmRecentContacts);
+let dmPartnerCacheController = null;
+/** Wires account-isolated DM partner state. @returns {object} Partner controller. */
+function getDmPartnerCacheController() {
+  if (!dmPartnerCacheController) { dmPartnerCacheController = createDmPartnerCacheController({
+    get authAccountDid() { return authAccountDid; },
+    get recentContacts() { return dmRecentContacts; }, set recentContacts(value) { dmRecentContacts = value; },
+    get recentConversations() { return dmRecentConversations; }, set recentConversations(value) { dmRecentConversations = value; },
+    get recentContactAssets() { return dmRecentContactAssets; }, set recentContactAssets(value) { dmRecentContactAssets = value; },
+    get partnerCacheAccountDid() { return dmPartnerCacheAccountDid; }, set partnerCacheAccountDid(value) { dmPartnerCacheAccountDid = value; },
+    get partnerCacheUpdatedAt() { return dmPartnerCacheUpdatedAt; }, set partnerCacheUpdatedAt(value) { dmPartnerCacheUpdatedAt = value; },
+    get selectedParticipantDids() { return dmSelectedParticipantDids; }, set selectedParticipantDids(value) { dmSelectedParticipantDids = value; },
+  }, dmContactSearchInput, { setInput: setPickerInputValue, render: renderDmWorkspace, note: setDmContactSearchFieldNote,
+    translate: t, request: sendToServiceWorker, now: () => new Date().toISOString() }); }
+  return dmPartnerCacheController;
 }
+function applyDmPartnerCache(...args) { return getDmPartnerCacheController().apply(...args); }
 
-async function saveDmPartnerCache() {
-  if (!authAccountDid) {
-    return;
-  }
-  const cache = {
-    accountDid: authAccountDid,
-    updatedAt: new Date().toISOString(),
-    recentContacts: Array.isArray(dmRecentContacts) ? dmRecentContacts : [],
-    conversations: Array.isArray(dmRecentConversations) ? dmRecentConversations : [],
-    assets: Array.isArray(dmRecentContactAssets) ? dmRecentContactAssets : [],
-  };
-  dmPartnerCacheAccountDid = cache.accountDid;
-  dmPartnerCacheUpdatedAt = cache.updatedAt;
-  await sendToServiceWorker("SAVE_DM_PARTNER_CACHE", { cache }, { timeoutMs: 120000 });
-}
+function saveDmPartnerCache(...args) { return getDmPartnerCacheController().save(...args); }
 
-async function restoreDmPartnerCache() {
-  const cache = await sendToServiceWorker("GET_DM_PARTNER_CACHE", {}, { timeoutMs: 120000 }).catch(() => null);
-  applyDmPartnerCache(cache);
-}
+function restoreDmPartnerCache(...args) { return getDmPartnerCacheController().restore(...args); }
 
 
 /** Delegates clearArchiveSession to the archive domain. @returns {*} Domain result. */
@@ -8334,9 +7922,6 @@ function isStandaloneMode() {
 
 /** Refreshes PWA installation availability. @returns {void} */
 function updateInstallButtonVisibility() { applicationInstall.render(); }
-
-
-
 
 
 function t(key, values = {}) { return translateApplicationValue(key, values, currentLocale); }
@@ -8499,52 +8084,15 @@ function preserveScrollPosition(callback) {
   });
 }
 
-function formatImageSize(sizeBytes) {
-  const megabytes = Math.max(0, Number(sizeBytes) || 0) / 1_000_000;
-  return `${new Intl.NumberFormat(currentLocale, {
-    minimumFractionDigits: megabytes >= 10 ? 1 : 2,
-    maximumFractionDigits: megabytes >= 10 ? 1 : 2,
-  }).format(megabytes)} MB`;
-}
+function formatImageSize(sizeBytes) { return formatImageFileSize(sizeBytes, currentLocale); }
 
-function pickRandomTipIndex() {
-  const tips = t("tipsList");
-  if (!Array.isArray(tips) || tips.length === 0) {
-    return 0;
-  }
-  return Math.floor(Math.random() * tips.length);
-}
+function pickRandomTipIndex(...args) { return getComposerTipController().pick(...args); }
 
-function renderTip() {
-  const tips = t("tipsList");
-  if (!Array.isArray(tips) || tips.length === 0) {
-    tipText.textContent = "";
-    return;
-  }
+function renderTip(...args) { return getComposerTipController().render(...args); }
 
-  const safeIndex = Math.min(currentTipIndex, tips.length - 1);
-  tipText.textContent = tips[safeIndex];
-}
+function updateTipsVisibility(...args) { return getComposerTipController().visibility(...args); }
 
-function updateTipsVisibility() {
-  tipsPanel.hidden = !tipsVisible;
-  tipsVisibleToggle.checked = tipsVisible;
-}
-
-function nextTip() {
-  const tips = t("tipsList");
-  if (!Array.isArray(tips) || tips.length <= 1) {
-    renderTip();
-    return;
-  }
-
-  let nextIndex = currentTipIndex;
-  while (nextIndex === currentTipIndex) {
-    nextIndex = Math.floor(Math.random() * tips.length);
-  }
-  currentTipIndex = nextIndex;
-  renderTip();
-}
+function nextTip(...args) { return getComposerTipController().next(...args); }
 
 /** Filters selected ids against available tags. @param {*} entries - Selection. @param {object[]} availableHashtags - Records. @returns {string[]} Valid ids. */
 function normalizeSelectedHashtagEntries(entries, availableHashtags = hashtags) { return normalizeHashtagSelection(entries, availableHashtags); }
@@ -8583,65 +8131,9 @@ function closeSettingsBackupReminder(rememberDismissal) { settingsBackupReminder
  */
 async function handleBackupReminderSaveClick() { await settingsBackupReminder.save(); }
 
-function setShareStatus(message, tone = "neutral") {
-  if (!shareStatus) {
-    return;
-  }
-  window.clearTimeout(shareStatusTimer);
-  shareStatus.textContent = message;
-  shareStatus.hidden = !message;
-  if (message) {
-    shareStatus.dataset.tone = tone;
-  } else {
-    delete shareStatus.dataset.tone;
-  }
-  if (message) {
-    shareStatusTimer = window.setTimeout(() => {
-      shareStatus.hidden = true;
-      shareStatus.textContent = "";
-      delete shareStatus.dataset.tone;
-    }, 5000);
-  }
-}
+function setShareStatus(...args) { return getApplicationShareController().status(...args); }
 
-async function shareAppRecommendation() {
-  const payload = {
-    title: APP_SHARE_TITLE,
-    text: t("shareAppText"),
-    url: APP_SHARE_URL,
-  };
-
-  try {
-    if (navigator.share) {
-      await navigator.share(payload);
-      return;
-    }
-
-    const shareText = `${payload.text}\n${payload.url}`;
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(shareText);
-      setShareStatus(t("shareCopied"));
-      return;
-    }
-
-    const helper = document.createElement("textarea");
-    helper.value = shareText;
-    helper.setAttribute("readonly", "readonly");
-    helper.style.position = "fixed";
-    helper.style.opacity = "0";
-    helper.style.pointerEvents = "none";
-    document.body.append(helper);
-    helper.select();
-    document.execCommand("copy");
-    helper.remove();
-    setShareStatus(t("shareCopied"));
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      return;
-    }
-    setShareStatus(t("shareUnavailable"), "error");
-  }
-}
+function shareAppRecommendation(...args) { return getApplicationShareController().recommend(...args); }
 
 /**
  * Returns whether one image has explicit upload transforms after applying Threadline limits.
@@ -9166,29 +8658,7 @@ async function openConfirmDialog({ title, message, confirmLabel, cancelLabel, pr
  */
 async function gunzipBlob(blob) { return composerThreadFileCodec.gunzip(blob); }
 
-async function shareOrDownloadFile(file, fallbackName, options = {}) {
-  const preferDownload = options.preferDownload === true;
-  if (!preferDownload && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        title: fallbackName,
-        files: [file],
-      });
-      return;
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        return;
-      }
-    }
-  }
-
-  const url = URL.createObjectURL(file);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fallbackName;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+function shareOrDownloadFile(...args) { return getApplicationShareController().file(...args); }
 
 function utf8Bytes(value) {
   return new TextEncoder().encode(String(value));
@@ -9222,11 +8692,7 @@ async function loadArchiveCatalogFromFile(file) { return archiveCatalogFiles.loa
 /** Delegates applyLoadedArchiveCatalog to the archive domain. @param {*} catalog - Operation input. @param {*} sessionOverrides - Operation input. @returns {*} Domain result. */
 async function applyLoadedArchiveCatalog(catalog, sessionOverrides = {}) { return archiveRunController.apply(catalog, sessionOverrides); }
 
-function makeArchiveFileBaseName(catalog = archiveCatalog) {
-  const handle = String(catalog?.manifest?.account?.handle || authAccount || "account").replace(/[^\w.-]+/g, "-");
-  const datePart = formatArchiveDatePart(catalog?.manifest?.exportedAt);
-  return `threadline-archive-${handle}-${datePart}`;
-}
+function makeArchiveFileBaseName(catalog = archiveCatalog) { return buildArchiveFileBaseName(catalog, authAccount); }
 
 /**
  * Reads the archive-media form and returns the selected export options.
@@ -9323,27 +8789,7 @@ function renderArchiveZipHtmlScriptHelp() {
   }
 }
 
-async function copyTextToClipboard(text) {
-  const value = String(text || "");
-  if (!value) {
-    return;
-  }
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return;
-  }
-
-  const helper = document.createElement("textarea");
-  helper.value = value;
-  helper.setAttribute("readonly", "readonly");
-  helper.style.position = "fixed";
-  helper.style.opacity = "0";
-  helper.style.pointerEvents = "none";
-  document.body.append(helper);
-  helper.select();
-  document.execCommand("copy");
-  helper.remove();
-}
+function copyTextToClipboard(...args) { return getApplicationShareController().copy(...args); }
 
 /**
  * Resolves an account avatar through the shared cache lookup.
@@ -9379,26 +8825,6 @@ async function ensureDmAvatarAssets(catalog) { return catalogAvatarAssets.dm(cat
 
 
 /** Extracts hashtag data using the shared parser. @param {*} text - Post text. @returns {object[]} Normalized hashtag values. */
-function extractArchiveHashtagsFromText(text) {
-  const value = String(text || "");
-  const regex = /(?:^|\s)(#[^\d\s]\S*)(?=\s|$)/gu;
-  const matches = [];
-  let match;
-
-  while ((match = regex.exec(value))) {
-    const raw = String(match[1] || "").replace(/\p{P}+$/gu, "");
-    const parsed = parseHashtagValue(raw);
-    if (!parsed) {
-      continue;
-    }
-    matches.push({
-      normalized: parsed.normalized,
-      value: formatHashtag(parsed.value),
-    });
-  }
-
-  return matches;
-}
 
 
 /**
@@ -9560,26 +8986,9 @@ async function verifySession(options = {}) { return applicationSession.verify(op
 /** Restarts periodic session verification. @returns {void} */
 function startSessionChecks() { applicationSession.start(); }
 
-function resolvePostWebBase(serviceUrl = authAccountService) {
-  try {
-    const normalizedService = normalizeServiceUrl(serviceUrl);
-    const host = new URL(normalizedService).hostname.toLowerCase();
-    return POST_WEB_FRONTENDS[host] || DEFAULT_POST_WEB_APP;
-  } catch {
-    return DEFAULT_POST_WEB_APP;
-  }
-}
+function resolvePostWebBase(serviceUrl = authAccountService) { return getPostLinkModels().resolvePostWebBase(serviceUrl); }
 
-function buildBlueskyPostUrl(handle, uri, serviceUrl = authAccountService) {
-  const parts = String(uri || "").split("/");
-  const recordId = parts[parts.length - 1];
-
-  if (!handle || !recordId) {
-    return "";
-  }
-
-  return `${resolvePostWebBase(serviceUrl)}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordId)}`;
-}
+function buildBlueskyPostUrl(handle, uri, serviceUrl = authAccountService) { return getPostLinkModels().buildBlueskyPostUrl(handle, uri, serviceUrl); }
 
 /**
  * Resolves a shared post URL and opens the matching live thread in Thread Explorer.
@@ -9634,16 +9043,7 @@ function showPublishResult(result) {
   });
 }
 
-function formatHistoryTimestamp(value) {
-  try {
-    return new Intl.DateTimeFormat(currentLocale, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(value));
-  } catch {
-    return value;
-  }
-}
+function formatHistoryTimestamp(value) { return formatApplicationTimestamp(value, currentLocale); }
 
 
 /**
@@ -9745,39 +9145,7 @@ function applyArchiveSourcePickerSelection(actor, value) { archiveSourceControll
  * @param {string} value - Preferred field value, usually the handle.
  * @returns {void}
  */
-function applyDmContactPickerSelection(actor, value) {
-  const normalizedValue = String(value || actor?.handle || actor?.did || "").trim();
-  const normalizedHandle = String(actor?.handle || normalizedValue).trim().replace(/^@/, "").toLowerCase();
-  const normalizedDid = String(actor?.did || "").trim().toLowerCase();
-  setPickerInputValue(dmContactSearchInput, normalizedValue);
-
-  let matchedDid = "";
-  for (const contact of Array.isArray(dmRecentContacts) ? dmRecentContacts : []) {
-    const contactDid = String(contact?.did || "").trim();
-    const contactDidLower = contactDid.toLowerCase();
-    const contactHandle = String(contact?.handle || "").trim().replace(/^@/, "").toLowerCase();
-    if (normalizedDid && contactDidLower === normalizedDid) {
-      matchedDid = contactDid;
-      break;
-    }
-    if (normalizedHandle && contactHandle === normalizedHandle) {
-      matchedDid = contactDid;
-      break;
-    }
-  }
-
-  if (matchedDid) {
-    dmSelectedParticipantDids = [matchedDid];
-  } else {
-    dmSelectedParticipantDids = [];
-  }
-  renderDmWorkspace();
-  if (matchedDid) {
-    setDmContactSearchFieldNote("");
-  } else {
-    setDmContactSearchFieldNote(t("dmContactNotLoadedMatch"));
-  }
-}
+function applyDmContactPickerSelection(...args) { return getDmPartnerCacheController().select(...args); }
 
 
 /**
@@ -11186,7 +10554,7 @@ bindComposerContentDialogEvents({
   mentionSearchDialog,
 }, {
   linkCardCreate: () => {
-    void createLinkCardForPendingSegment();
+    void composerLinkCardSubmission.submit();
   },
   linkCardClose: closeLinkCardDialog,
   linkCardInput: () => {
@@ -11196,7 +10564,7 @@ bindComposerContentDialogEvents({
   linkCardKeydown: (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      void createLinkCardForPendingSegment();
+      void composerLinkCardSubmission.submit();
     }
   },
   mentionClose: closeMentionSearchDialog,
@@ -11444,10 +10812,12 @@ const applicationUpdates = createApplicationUpdateController({
 });
 /** Applies an authentication result to application state. @param {object} identity - Account, DID, service and web app. @returns {void} */
 function applyAuthenticationIdentity(identity) {
+  const changedAccount = authAccountDid !== identity.did;
   authAccount = identity.account;
   authAccountDid = identity.did;
   authAccountService = identity.service;
   authAccountWebApp = identity.webApp;
+  if (changedAccount) { getThreadExplorerAccountContext().invalidate(); }
 }
 const loginController = createLoginController({
   preset: serverPresetField, custom: customServerField, customWrap: customServerWrap,

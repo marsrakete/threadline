@@ -1,6 +1,6 @@
 # Verantwortungs- und Zustandspruefung
 
-Stand: 2026-11-08. Die vorige Gesamt-Fertigmeldung ist zurueckgenommen. Diese Pruefung unterscheidet nachgewiesene Auslagerungen von noch offenen Architekturgrenzen.
+Stand: 2026-11-08. Die vorige pauschale Fertigmeldung war voreilig. Diese Nachpruefung inventarisiert Verantwortlichkeiten und Zustand; ihre Befunde sind jetzt durch Auslagerungen und ausdrueckliche Entscheidungen zu den verbleibenden Einstiegsadaptern bearbeitet. Die fachliche Modularisierung ist nach den unten festgehaltenen Grenzen und der Definition in `AGENTS.md` abgenommen.
 
 ## Methode und vollstaendiges Inventar
 
@@ -20,21 +20,40 @@ Reproduktion nach einer Aenderung: `node scripts/audit-module-responsibilities.c
 | Reine Daten- und Darstellungshelfer | URLbereinigung, Engagement, Profilnamen, Dateinamen und Editvergleich im Einstieg | Direkte Importe aus vorhandenen Shared-/Domaenenmodulen; alte Koerper entfernt. Normal-, Grenz- und ungueltige Faelle sind abgesichert. |
 | Ueberfluessige Fassaden | Nicht mehr verwendete Funktionsnamen und reine importierte Weiterleitungen | 43 unerreichbare/unbenutzte Funktionen sowie 18 identische importierte Weiterleitungen entfernt; 37 unbenutzte Importbindungen bereinigt. Defaultargumente, Zustand oder asynchrones Verhalten veraendernde Adapter wurden nicht pauschal ersetzt. |
 
-## Zustandsverantwortung und verbleibende Grenzen
+## Entscheidungen Zu Den Verbleibenden Grenzen
 
-| Bereich | Bereits klarer Eigentuemer | Noch zu klaerende Grenze und Abnahmekriterium |
+| Bereich | Entscheidung und Eigentuemer | Nachweis |
 | --- | --- | --- |
-| Explorer | Gemeinsamer Ansichts-/Viewport-/Clusterzustand; eigene Controller fuer Laden, Fokus, Galerie, Zoom und Request-Deduplizierung | Account-/Actor-Fokuswechsel (`applyThreadExplorerAccountInput`, `openThreadExplorerActorFocus`, `closeThreadExplorerActorFocus`) koordinieren weiterhin mehrere globale Feed-/Auswahlfelder. Diese Transaktionen brauchen einen gemeinsamen Domain-Vertrag mit Kontowechsel und veralteten Antworten. |
-| Explorer-Darstellung/Snapshot | Geometrie, Renderer, Hydrierung, Exportcontroller und Dateiformate | `getThreadExplorerStageRect`, `createThreadExplorerEdgePath`, native Bild-/Canvas-Helfer und einzelne Karten-Refreshablaeufe enthalten noch Verarbeitung im Einstieg. Vor einem Gesamtabschluss muss jede dieser Grenzen entweder an den vorhandenen Eigentuemer gehen oder als notwendiger nativer Adapter begruendet sein. |
-| App-Shell | Authidentitaet, aktueller Arbeitsbereich, DOM-Verknuepfung und explizite Refreshreihenfolge im Einstieg | `updateAuthButtons`, `restorePreferredWorkspaceIfPossible`, `updateStatusForAuth` verbinden viele Domains. Ihre Zustaendigkeit ist Seitenkomposition; fachliche Zugriffs-/Laderegeln muessen getrennt von reiner Sichtbarkeitsverdrahtung geprueft werden. |
-| Composer/Shared | Dokument, Publikation, Editor, Medien, Provider, Sprachen, History und Hashtags haben vorhandene Module | Verbliebene Tips-/Share-/Clipboardablaeufe und providerabhaengige Link-/Labelhelfer sind noch auf fachliche statt historische Seitengrenzen zu pruefen. |
-| Suche/Archiv/DM | Form-/Run-/Exportcontroller mit expliziten Zustandsadaptern | Lokale Renderkomposition und DM-Partnercache-/Picker-Updates verwenden weiterhin globale Bindungen. Persistierter Cache, laufender Request und DOM-Snapshot brauchen jeweils einen eindeutigen Besitzer. |
-| Worker | Messagehandler und lazy Serviceverdrahtung; Fachablaeufe in Diensten | URI-/Sprach-/Hashtagnormalisierung, gemeinsame Asset-/Avatarcache-Helfer und generische Sammlungshilfen liegen noch in `sw.js`. Ihre Wiederverwendungsgrenzen und Unterschiede zu Frontend-Modellen sind noch zu entscheiden. |
+| Explorer-Account/Fokus | `createThreadExplorerAccountContext` besitzt Accountuebernahme, Fremd-/Eigenkontext, Fokuswechsel und Wiederherstellung. Persistierte Felder werden als ein Live-State-Port angebunden; authentifizierte Identitaet ist dabei nur lesbar. | Vertragsfaelle pruefen mehrere fremde Akteure, Rueckkehr zum urspruenglichen Kontext, Accountmodus und Mein-Account-Aktion. |
+| Explorer-Anfragen | Ein Kontextschluessel aus Generation und Authidentitaet verbindet Feed-, Actor- und Threadladen. Account-/Quellen-/Fokuswechsel entwerten alte Antworten und Fehler. | Kontrollierte spaete Erfolgs-/Fehlerantworten fuer alle drei Loader und beide Feedarten; die neue Ladeanzeige bleibt erhalten. Echte Seitenereignisse pruefen Alice → Bob mit spaeter Alice-Antwort. Bereits laufende Transportanfragen werden dabei nicht abgebrochen. |
+| Geometrie und Snapshot | Rechteckumrechnung und Kantenpfade gehoeren `thread-explorer-layout.js`; beide Rechteckvarianten teilen dieselbe Umrechnung. Bildladen/-kodierung, CSS-Sammlung und Canvaslimits gehoeren dem Snapshotmodul. | Unit-Grenzen fuer Zoom, Nullgroessen und Limits; Browser prueft echte Blob-/PNG-Bilder, Canvas-Roundtrip und ungueltige Bilder auf beiden Seiten. |
+| Karteninteraktionen | Karten-Refresh und Action-Button-Aufbau gehoeren dem Renderingmodul. Native-Control-/Textauswahlregeln und Cluster-/Favoriten-/Suchidentitaet gehoeren ihren vorhandenen Domaenenmodulen. | DOM-Vertraege pruefen passende Karten, Klickbindung und Drag-Prioritaet; Unit-Vertraege pruefen Baumexpansion, Favoriten und URI-Suche. |
+| App-Shell | `renderApplicationNavigation` besitzt Auth-/DM-Gating, aktive Buttons und Beschriftungen. Start, globale Authidentitaet, Arbeitsbereichswechsel und die Reihenfolge domainuebergreifender Aktualisierungen bleiben bewusste Seitenkomposition. | Gast-Suche bleibt erreichbar, Auth-/DM-Zustaende sind getrennt getestet; Seitenregression prueft Login, Navigation, Hydration und native Ereignisse. |
+| Composer und gemeinsame Darstellung | Tipplogik, Share-/Clipboard-/Dateihandoff, Publishlabels, Profil-/Provider-/Quote-URL-/Versions-/Groessen-/Zeitformatierung liegen in ihren bestehenden Modulen. | Normal-/Grenz-/Fehlervertraege; native Dateiexporte, Clipboardverdrahtung, Sprachen und beide Seiteneinstiege werden im Browser geprueft. |
+| Suche/Archiv/DM | Formular-/Run-/Exportcontroller bleiben Besitzer ihrer Ablaeufe. `createDmPartnerCacheController` besitzt Cacheprojektion, Speicherung, Wiederherstellung und Pickerauswahl. Ein alter Account-Restore darf den neuen Cache nicht leeren. | Kontoisolation, Selektion, Persistenz und spaeter Restore sind kontrolliert getestet; bestehende Such-/Archiv-/DM-Integration bleibt in der Gesamtregression. |
+| Worker-Records | `record-models.js` besitzt URI-, Sprach-, Hashtag-, Profil-, Interaktions-, Standard.site- und Assetmetadaten. Unterschiede zu Frontend-Modellen werden erhalten. | Klassischer Import, gefrorene API und Normal-/Grenz-/Fehlerfaelle; beide Worker-Einstiege werden ueber Browserharness und echten Offline-Start geprueft. |
+| Worker-Konten/Avatarcache | Authstatus liegt im Kontodienst; Normalisierung, TTL und Wiederverwendung/Ersetzung von Kontoavataren liegen in `account-avatar-cache.js` mit expliziter Download-, Typ- und Uhranbindung. | Oeffentliche Metadaten ohne Geheimnisse, fehlende Session, TTL-Grenze, Wiederverwendung, Ersetzung und Downloadfehler getestet. |
+| Worker-Sammlungen | Batching und begrenzte Parallelitaet liegen beim gemeinsamen Transportmodul. Nicht positive/ganzzahlige Batchgroessen werden abgewiesen, damit kein nicht fortschreitender Lauf entsteht. | Reihenfolge, Parallelitaetsgrenze, leere Listen, Requestfehler und ungueltige Batchgroessen getestet. |
 
-Diese Restgrenzen sind Architekturarbeit, keine Live-QA-Ausrede. Sie werden erst geschlossen, wenn der Zielbesitzer, seine Abhaengigkeiten, die entfernte Altimplementierung und passende Vertraege nachgewiesen sind. Die vollstaendige Funktionsliste ersetzt diese Entscheidungen nicht.
+### Bewusst Im Einstieg Beibehalten
+
+`AGENTS.md` erlaubt globalen Zustand und DOM-Verdrahtung im Einstieg. Die verbliebenen Adapter haben deshalb konkrete, begrenzte Rollen:
+
+- DOM-Knoten/Templateinhalte suchen und zusammen mit aktuellen Zustandsports an Module uebergeben; seitenuebergreifende Aktualisierungen in festgelegter Reihenfolge aufrufen.
+- Kanonische persistierte UI-Felder, Authidentitaet und Workspaceauswahl halten. Modulcontroller lesen/schreiben diese ueber explizite Ports; sie fuehren keine gespiegelte zweite Fassung derselben Felder.
+- Native APIs anbinden: DOM-Rechtecke messen, SVG-Knoten erzeugen, Scrollposition sichern, Observer/Timer/Canvas-/Downloadadapter bereitstellen. Berechnung, Auswahllogik und Datenformate werden an Module delegiert.
+- Im Worker Nachrichten dispatchen, Speicherkeys anbinden und native Fetch-/Blob-/FileReader-/Base64-/URL-Adapter an Dienste uebergeben. Sie enthalten keine Konto-, Archiv-, Such- oder Postingregeln.
+
+Diese Entscheidung ist keine Behauptung, dass die Einstiegsdateien klein seien. Viele Kompatibilitaetsfassaden bleiben wegen ihrer Defaultargumente oder ihres Zustandsanschlusses erhalten. Das Inventar dokumentiert sie, statt aus ihrer Anzahl einen Fertigstellungsgrad abzuleiten.
+
+### Aufrufer- Und Bindungspruefung
+
+Die ES-Modul-Einstiegsdatei darf nur lokal/importiert aufgeloeste Bezeichner oder die ausdruecklich erfassten nativen Browserglobals verwenden. Der Auditgenerator bricht bei einer unaufgeloesten Bindung ab. Quellhash und Funktionsliste sichern die Aktualitaet des Berichts.
+
+Dabei wurde auch eine alte Linkkartenverdrahtung korrigiert: Klick und Enter verwiesen auf den nicht mehr vorhandenen Helfer `createLinkCardForPendingSegment`. Beide erreichen nun direkt `composerLinkCardSubmission.submit()`. Ein Browservertrag loest die echten Ereignisse auf beiden Seiten aus und prueft den Validierungspfad ohne Seitenfehler.
 
 ## Definition fuer den Gesamtabschluss
 
-Es gilt `AGENTS.md`: alte Implementierung entfernt, keine doppelte Logik, explizite Abhaengigkeiten, dokumentierter Modulvertrag, betroffene Seiten ohne `pageerror`, gruene Unit-/Browser-/Syntax-/Dokumentationspruefungen. Zusaetzlich muss jede offene Grenze oben entschieden sein; Funktions- und Zeilenzahlen sind kein Fertigstellungsgrad.
+Es gilt `AGENTS.md`: alte Implementierung entfernt, keine doppelte Logik, explizite Abhaengigkeiten, dokumentierter Modulvertrag, betroffene Seiten ohne `pageerror`, gruene Unit-/Browser-/Syntax-/Dokumentationspruefungen. Die oben erfassten Grenzen sind durch Auslagerung oder begruendete native/seitenspezifische Komposition entschieden; Funktions- und Zeilenzahlen sind kein Fertigstellungsgrad.
 
-Der Ausgangsstand bestand 857 Unit-/Vertragstests und 150 Browsertests einschliesslich echtem Offline-Start. Die Ergebnisse dieser Nacharbeit stehen im PR. Live-Provider-/Kontenabnahme, Bestandsdaten-/Quota-Pruefung und bekannte PDF-Layoutfehler bleiben davon getrennte Produktaufgaben.
+Abschlusspruefung: `npm run check` erfolgreich, 881 Unit-/Vertragstests und alle 158 Chromium-Browsertests mit regulaerem Prozessabschluss. Beide Einstiege, echte Service-Worker-Installation/Cacheaktivierung und Offline-Start sind enthalten. `git diff --check`, Syntax-/Import-/Versions-/Encoding- und Inventarpruefung bestanden. App `0.4.357`, Cache `v376`. Live-Provider-/Kontenabnahme, Bestandsdaten-/Quota-Pruefung und bekannte PDF-Layoutfehler bleiben davon getrennte Produktaufgaben.

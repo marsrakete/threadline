@@ -1,6 +1,6 @@
 /** Creates stored-account lifecycle operations with explicit persistence/session adapters.
  * @param {object} options - Storage, session, account-model, archive, frontend, message and clock dependencies.
- * @returns {object} Frozen switch/import/remove/logout/verify API.
+ * @returns {object} Frozen status/switch/import/remove/logout/verify API.
  */
 globalThis.createThreadlineAccountService = function createThreadlineAccountService(options) {
   for (const name of ["readAuth", "writeAuth", "clearAuth", "ensure", "upsert", "response", "publicMeta", "webBase", "clearArchiveSession", "clearArchiveCatalog", "now"]) {
@@ -179,5 +179,14 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
     }
   }
 
-  return Object.freeze({ switch: switchAccount, import: importAccountMetadata, remove: removeAccount, logout, verify: verifySession });
+  /** Reads public authentication availability without exposing stored credentials. @returns {Promise<object>} Existing status response. */
+  async function authStatus() {
+    const state = await options.readAuth();
+    const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid);
+    if (!activeAccount?.session?.did) {
+      return { authenticated: false };
+    }
+    return buildAuthResponse(state, activeAccount);
+  }
+  return Object.freeze({ status: authStatus, switch: switchAccount, import: importAccountMetadata, remove: removeAccount, logout, verify: verifySession });
 };

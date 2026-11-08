@@ -829,3 +829,91 @@ export function createDmAccessGate(options) {
   return Object.freeze({ apply: applyDmAccessGateFromLocation, available: isDmAccessAvailable, assert: assertDmAccessUnlocked,
     secret: getDmSecretFromLocation, clear: clearDmSecretFromLocation });
 }
+
+/** Owns account-bound partner cache projection, persistence and picker selection.
+ * @param {object} state - Live partner/selection values and read-only authenticated DID.
+ * @param {Element} input - Partner picker input. @param {object} actions - setInput, render, note, translate, request and ISO now callbacks.
+ * @returns {object} Frozen apply/save/restore/select operations; stale account restores are ignored.
+ */
+export function createDmPartnerCacheController(state, input, actions) {
+  for (const key of ['setInput','render','note','translate','request','now']) { if (typeof actions?.[key] !== 'function') { throw new TypeError('DM partner cache requires ' + key); } }
+  /** Projects a compatible cache into live partner state. @param {object|null} cache - Stored cache. @returns {void} Updated state. */
+  function applyDmPartnerCache(cache = null) {
+    if (!cache || (cache.accountDid && state.authAccountDid && cache.accountDid !== state.authAccountDid)) {
+      state.recentContacts = [];
+      state.recentConversations = [];
+      state.recentContactAssets = [];
+      state.partnerCacheAccountDid = "";
+      state.partnerCacheUpdatedAt = "";
+      return;
+    }
+
+    state.recentContacts = Array.isArray(cache.recentContacts) ? cache.recentContacts : [];
+    state.recentConversations = Array.isArray(cache.conversations) ? cache.conversations : [];
+    state.recentContactAssets = Array.isArray(cache.assets) ? cache.assets : [];
+    state.partnerCacheAccountDid = String(cache.accountDid || state.authAccountDid || "");
+    state.partnerCacheUpdatedAt = String(cache.updatedAt || "");
+    state.selectedParticipantDids = retainDmSelectedParticipants(state.selectedParticipantDids, state.recentContacts);
+  }
+
+  /** Persists a snapshot bound to the current account. @returns {Promise<void>} Storage completion. */
+  async function saveDmPartnerCache() {
+    if (!state.authAccountDid) {
+      return;
+    }
+    const cache = {
+      accountDid: state.authAccountDid,
+      updatedAt: actions.now(),
+      recentContacts: Array.isArray(state.recentContacts) ? state.recentContacts : [],
+      conversations: Array.isArray(state.recentConversations) ? state.recentConversations : [],
+      assets: Array.isArray(state.recentContactAssets) ? state.recentContactAssets : [],
+    };
+    state.partnerCacheAccountDid = cache.accountDid;
+    state.partnerCacheUpdatedAt = cache.updatedAt;
+    await actions.request("SAVE_DM_PARTNER_CACHE", { cache }, { timeoutMs: 120000 });
+  }
+
+  /** Restores partners only if the account still matches the request context. @returns {Promise<void>} Applied or ignored restore. */
+  async function restoreDmPartnerCache() {
+    const accountDid = state.authAccountDid;
+    const cache = await actions.request("GET_DM_PARTNER_CACHE", {}, { timeoutMs: 120000 }).catch(() => null);
+    if (accountDid !== state.authAccountDid) { return; }
+    applyDmPartnerCache(cache);
+  }
+
+  /** Selects a loaded partner by DID or handle. @param {object|null} actor - Picker result. @param {string} value - Selected text. @returns {void} Updated selection and note. */
+  function applyDmContactPickerSelection(actor, value) {
+    const normalizedValue = String(value || actor?.handle || actor?.did || "").trim();
+    const normalizedHandle = String(actor?.handle || normalizedValue).trim().replace(/^@/, "").toLowerCase();
+    const normalizedDid = String(actor?.did || "").trim().toLowerCase();
+    actions.setInput(input, normalizedValue);
+
+    let matchedDid = "";
+    for (const contact of Array.isArray(state.recentContacts) ? state.recentContacts : []) {
+      const contactDid = String(contact?.did || "").trim();
+      const contactDidLower = contactDid.toLowerCase();
+      const contactHandle = String(contact?.handle || "").trim().replace(/^@/, "").toLowerCase();
+      if (normalizedDid && contactDidLower === normalizedDid) {
+        matchedDid = contactDid;
+        break;
+      }
+      if (normalizedHandle && contactHandle === normalizedHandle) {
+        matchedDid = contactDid;
+        break;
+      }
+    }
+
+    if (matchedDid) {
+      state.selectedParticipantDids = [matchedDid];
+    } else {
+      state.selectedParticipantDids = [];
+    }
+    actions.render();
+    if (matchedDid) {
+      actions.note("");
+    } else {
+      actions.note(actions.translate("dmContactNotLoadedMatch"));
+    }
+  }
+  return Object.freeze({ apply: applyDmPartnerCache, save: saveDmPartnerCache, restore: restoreDmPartnerCache, select: applyDmContactPickerSelection });
+}

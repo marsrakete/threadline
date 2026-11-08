@@ -184,3 +184,20 @@ export function createApplicationUpdateController(elements, options) {
   }
   return { status, renderVersion, check, reload, shouldAutoCheck, schedule };
 }
+
+/** Builds the application/version label for exported metadata.
+ * @param {object} versionInfo - App and cache versions.
+ * @returns {string} Threadline version label.
+ */
+export function buildExportApplicationLabel(versionInfo = {}) {
+  const appVersion = String(versionInfo.appVersion || "").trim();
+  const cacheVersion = String(versionInfo.cacheVersion || "").trim();
+  const parts = ["Threadline"];
+  if (appVersion) {
+    parts.push(appVersion);
+  }
+  if (cacheVersion) {
+    parts.push(`(${cacheVersion})`);
+  }
+  return parts.join(" ");
+}

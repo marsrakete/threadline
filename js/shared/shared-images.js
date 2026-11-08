@@ -178,3 +178,16 @@ export {
   normalizeSegmentImages,
   normalizeThreadImage,
 };
+
+/** Formats image bytes as locale-aware decimal megabytes.
+ * @param {number} sizeBytes - Raw byte count.
+ * @param {string} locale - Current language.
+ * @returns {string} Size label in MB.
+ */
+export function formatImageFileSize(sizeBytes, locale) {
+  const megabytes = Math.max(0, Number(sizeBytes) || 0) / 1_000_000;
+  return `${new Intl.NumberFormat(locale, {
+    minimumFractionDigits: megabytes >= 10 ? 1 : 2,
+    maximumFractionDigits: megabytes >= 10 ? 1 : 2,
+  }).format(megabytes)} MB`;
+}

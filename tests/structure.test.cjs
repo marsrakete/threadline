@@ -402,6 +402,7 @@ test("responsibility inventory covers every entry function and matches the revie
     assert.deepEqual(entry.functions.map(item => item.name).sort(), functions);
     assert.equal(entry.sourceSha256, crypto.createHash("sha256").update(source).digest("hex"));
     assert.equal(entry.functionCount, functions.length);
+    assert.deepEqual(entry.unresolvedBindings, []);
     assert.ok(entry.functions.every(item => item.domain && item.category && Array.isArray(item.stateReads) && Array.isArray(item.stateWrites)));
   }
 });

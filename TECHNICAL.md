@@ -6,11 +6,11 @@ This file collects the technical background information that would otherwise ove
 
 ## Responsibility Audit — 2026-11-08
 
-The earlier “modularization complete” declaration was premature. The validated extraction baseline was 857 unit/contract tests and 150 Chromium cases; it did not establish correct responsibility or state ownership throughout the entry points. App/cache stay at `0.4.357`/`v376`, with a corrected milestone label.
+Domain modularization is accepted against `AGENTS.md` and the responsibility decisions recorded in the audit. The entry points retain canonical page state, DOM/native adapters and composition; domain calculations, rendering policies, request lifecycles and normalization have explicit module owners. App/cache are `0.4.357`/`v376`. Final `npm run check` passed: 881 unit/contract tests and all 158 Chromium browser cases with regular teardown, including real Service Worker activation and offline loading.
 
 The follow-up removes 43 unused functions and 18 imported-function forwarders. Translation metadata belongs to HTML; the generic renderer accepts only document, translate and locale adapters. The post-edit dialog and optional DM gate belong to their domain controllers. Profile/URL/engagement/edit models belong to shared modules. Optimistic likes and their private pending set belong to the interaction controller. Explorer source/layout/viewport/expanded state now has one controller-owned object instead of seven mirrored globals.
 
-See [the responsibility and state audit](docs/MODULARIZATION-AUDIT.md) and its complete function inventory for evidence, remaining boundaries and acceptance requirements. Architecture status remains open until those boundaries are resolved; passing regression tests alone does not close it.
+See [the responsibility and state audit](docs/MODULARIZATION-AUDIT.md) and its complete function inventory for evidence, remaining boundaries and acceptance requirements. The follow-up resolves those findings through domain ownership or explicitly justified entry adapters. Account/focus generations now guard stale feed/thread responses; native snapshot processing, navigation gating, partner cache/picker logic, sharing/tips and remaining display models have documented owners. Worker record models, account-avatar cache and transport collections are separate contracts. The entry retains canonical page state, DOM/native adapters and composition; this decision is recorded rather than inferred from line counts. Final validation is recorded in the PR.
 
 ## Thread Publishing And Record Interactions
 

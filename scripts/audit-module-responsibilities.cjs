@@ -7,6 +7,9 @@ const crypto = require("node:crypto");
 const playwrightRoot = path.dirname(require.resolve("playwright/package.json"));
 const parser = require(path.join(playwrightRoot, "lib/transform/babelBundle.js"));
 
+// Explicit native boundary for the ES-module entry; classic-worker imports have their own contracts.
+const APP_NATIVE_GLOBALS = new Set(["AbortController", "Array", "Blob", "Boolean", "DOMParser", "Date", "Element", "Error", "File", "FileReader", "Image", "IntersectionObserver", "Intl", "JSON", "Map", "Math", "MessageChannel", "NodeFilter", "Number", "Object", "Path2D", "Promise", "Response", "Set", "String", "TextDecoder", "TextEncoder", "URL", "atob", "btoa", "cancelAnimationFrame", "console", "createImageBitmap", "crypto", "document", "fetch", "getComputedStyle", "globalThis", "navigator", "performance", "requestAnimationFrame", "setTimeout", "undefined", "window"]);
+
 /** Suggests a domain from existing entry-point naming; it does not establish ownership.
  * @param {string} name - Function name. @returns {string} Review grouping.
  */
@@ -30,6 +33,13 @@ function inspectEntry(filename) {
   const source = fs.readFileSync(filename, "utf8");
   const ast = parser.babelParse(source, filename, true);
   const functions = [];
+  const unresolvedBindings = new Set();
+  if (filename === "app.js") {
+    parser.traverse(ast, { ReferencedIdentifier(identifier) {
+      if (!identifier.scope.getBinding(identifier.node.name) && !APP_NATIVE_GLOBALS.has(identifier.node.name)) { unresolvedBindings.add(identifier.node.name); }
+    } });
+    if (unresolvedBindings.size) { throw new Error("Unresolved entry bindings: " + [...unresolvedBindings].join(", ")); }
+  }
   parser.traverse(ast, {
     FunctionDeclaration(functionPath) {
       if (functionPath.parent.type !== "Program") { return; }
@@ -80,7 +90,7 @@ function inspectEntry(filename) {
     counts[category] += 1;
     if (item.stateWrites.length) { counts.stateWriters += 1; }
   }
-  return { sourceSha256: crypto.createHash("sha256").update(source).digest("hex"), functionCount: functions.length, domains, functions };
+  return { sourceSha256: crypto.createHash("sha256").update(source).digest("hex"), functionCount: functions.length, unresolvedBindings: [...unresolvedBindings], domains, functions };
 }
 
 const report = {

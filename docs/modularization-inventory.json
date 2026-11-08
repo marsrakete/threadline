@@ -1,33 +1,34 @@
 {
   "schemaVersion": 1,
-  "baseline": "b4f2d0529dccecd7f2fa66a04da5e76783f3ecab",
+  "baseline": "756e440f4655cd9da242cbca4c4f1a51fcd645c7",
   "date": "2026-11-08",
   "method": "AST inventory of every top-level named function, not a function-length filter. Category is structural evidence, not a completion verdict. Shared-state reads/writes include nested callbacks; property mutation requires the manual review described in MODULARIZATION-AUDIT.md.",
   "files": {
     "app.js": {
-      "sourceSha256": "69131947518d452bbe4aca95b6eb1017e702724d87a8bf2d415ee84c54a7072a",
+      "sourceSha256": "b5aa750a4c5518d5f2b1d72e09027b4fcb2a9bdbe57454552a39a96b54858391",
       "functionCount": 661,
+      "unresolvedBindings": [],
       "domains": {
         "core": {
-          "total": 113,
-          "adapters": 83,
-          "composition": 1,
-          "behavior": 29,
+          "total": 115,
+          "adapters": 91,
+          "composition": 2,
+          "behavior": 22,
           "stateWriters": 12
         },
-        "explorer": {
-          "total": 249,
-          "adapters": 154,
-          "composition": 1,
-          "behavior": 94,
-          "stateWriters": 37
-        },
         "composer": {
-          "total": 92,
-          "adapters": 78,
-          "composition": 0,
-          "behavior": 14,
-          "stateWriters": 13
+          "total": 93,
+          "adapters": 86,
+          "composition": 1,
+          "behavior": 6,
+          "stateWriters": 11
+        },
+        "explorer": {
+          "total": 246,
+          "adapters": 171,
+          "composition": 1,
+          "behavior": 74,
+          "stateWriters": 33
         },
         "network": {
           "total": 44,
@@ -37,25 +38,25 @@
           "stateWriters": 1
         },
         "archive": {
-          "total": 66,
-          "adapters": 55,
+          "total": 65,
+          "adapters": 56,
           "composition": 1,
-          "behavior": 10,
+          "behavior": 8,
           "stateWriters": 8
         },
         "search": {
           "total": 64,
-          "adapters": 52,
+          "adapters": 53,
           "composition": 0,
-          "behavior": 12,
+          "behavior": 11,
           "stateWriters": 6
         },
         "dm": {
-          "total": 24,
-          "adapters": 17,
-          "composition": 1,
-          "behavior": 6,
-          "stateWriters": 6
+          "total": 25,
+          "adapters": 21,
+          "composition": 2,
+          "behavior": 2,
+          "stateWriters": 4
         },
         "analysis": {
           "total": 9,
@@ -81,6 +82,84 @@
             "MIN_SIDEBAR_WIDTH_DESKTOP"
           ],
           "stateWrites": []
+        },
+        {
+          "name": "getComposerTipController",
+          "domain": "composer",
+          "category": "composition",
+          "stateReads": [
+            "composerTipController",
+            "currentTipIndex",
+            "tipText",
+            "tipsPanel",
+            "tipsVisible",
+            "tipsVisibleToggle"
+          ],
+          "stateWrites": [
+            "composerTipController",
+            "currentTipIndex",
+            "tipsVisible"
+          ]
+        },
+        {
+          "name": "getApplicationShareController",
+          "domain": "core",
+          "category": "composition",
+          "stateReads": [
+            "APP_SHARE_TITLE",
+            "APP_SHARE_URL",
+            "applicationShareController",
+            "shareStatus"
+          ],
+          "stateWrites": [
+            "applicationShareController"
+          ]
+        },
+        {
+          "name": "getThreadExplorerAccountContext",
+          "domain": "explorer",
+          "category": "behavior",
+          "stateReads": [
+            "authAccount",
+            "authAccountDid",
+            "savedAccounts",
+            "threadExplorerAccountActor",
+            "threadExplorerAccountActorBeforeFocus",
+            "threadExplorerAccountContext",
+            "threadExplorerAccountError",
+            "threadExplorerAccountInput",
+            "threadExplorerAccountMode",
+            "threadExplorerAccountModeBeforeFocus",
+            "threadExplorerAccountModeSelect",
+            "threadExplorerActorFocusActor",
+            "threadExplorerActorFocusCursor",
+            "threadExplorerActorFocusError",
+            "threadExplorerActorFocusHasMore",
+            "threadExplorerActorFocusItems",
+            "threadExplorerActorFocusLoading",
+            "threadExplorerActorFocusMode",
+            "threadExplorerItems",
+            "threadExplorerLoadingFeed",
+            "threadExplorerLoadingThread"
+          ],
+          "stateWrites": [
+            "threadExplorerAccountActor",
+            "threadExplorerAccountActorBeforeFocus",
+            "threadExplorerAccountContext",
+            "threadExplorerAccountError",
+            "threadExplorerAccountMode",
+            "threadExplorerAccountModeBeforeFocus",
+            "threadExplorerActorFocusActor",
+            "threadExplorerActorFocusCursor",
+            "threadExplorerActorFocusError",
+            "threadExplorerActorFocusHasMore",
+            "threadExplorerActorFocusItems",
+            "threadExplorerActorFocusLoading",
+            "threadExplorerActorFocusMode",
+            "threadExplorerItems",
+            "threadExplorerLoadingFeed",
+            "threadExplorerLoadingThread"
+          ]
         },
         {
           "name": "getLivePostInteractions",
@@ -175,9 +254,22 @@
           "stateWrites": []
         },
         {
-          "name": "getPostTargetName",
+          "name": "getPostLinkModels",
           "domain": "core",
           "category": "behavior",
+          "stateReads": [
+            "DEFAULT_POST_WEB_APP",
+            "POST_WEB_FRONTENDS",
+            "postLinkModels"
+          ],
+          "stateWrites": [
+            "postLinkModels"
+          ]
+        },
+        {
+          "name": "getPostTargetName",
+          "domain": "core",
+          "category": "adapter",
           "stateReads": [
             "authAccountWebApp"
           ],
@@ -186,7 +278,7 @@
         {
           "name": "getPublishButtonLabel",
           "domain": "composer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "composerReplyTarget"
           ],
@@ -195,7 +287,7 @@
         {
           "name": "getPublishBusyLabel",
           "domain": "composer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "composerReplyTarget"
           ],
@@ -674,25 +766,7 @@
             "threadExplorerButton",
             "threadExplorerLaunchNote"
           ],
-          "stateWrites": [
-            "addAccountButton",
-            "analysisButton",
-            "analysisLaunchNote",
-            "archiveButton",
-            "archiveLaunchNote",
-            "composerButton",
-            "composerLaunchNote",
-            "dmButton",
-            "dmLaunchNote",
-            "networkButton",
-            "networkLaunchNote",
-            "publishButton",
-            "searchButton",
-            "searchLaunchNote",
-            "searchUseOwnAccountButton",
-            "threadExplorerButton",
-            "threadExplorerLaunchNote"
-          ]
+          "stateWrites": []
         },
         {
           "name": "applyDisconnectedState",
@@ -771,50 +845,14 @@
           "stateWrites": []
         },
         {
-          "name": "getThreadExplorerOwnActor",
-          "domain": "explorer",
-          "category": "adapter",
-          "stateReads": [
-            "authAccount",
-            "authAccountDid",
-            "savedAccounts"
-          ],
-          "stateWrites": []
-        },
-        {
           "name": "isThreadExplorerForeignAccountMode",
           "domain": "explorer",
           "category": "adapter",
-          "stateReads": [
-            "authAccount",
-            "authAccountDid",
-            "threadExplorerAccountActor"
-          ],
-          "stateWrites": []
-        },
-        {
-          "name": "isThreadExplorerOwnActor",
-          "domain": "explorer",
-          "category": "adapter",
-          "stateReads": [
-            "authAccount",
-            "authAccountDid"
-          ],
+          "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "isThreadExplorerForeignActorFocusMode",
-          "domain": "explorer",
-          "category": "adapter",
-          "stateReads": [
-            "authAccount",
-            "authAccountDid",
-            "threadExplorerActorFocusActor"
-          ],
-          "stateWrites": []
-        },
-        {
-          "name": "createThreadExplorerActorStub",
           "domain": "explorer",
           "category": "adapter",
           "stateReads": [],
@@ -1620,7 +1658,7 @@
         {
           "name": "getThreadExplorerPostWebApp",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "DEFAULT_POST_WEB_APP",
             "LOGIN_SERVICE_PRESETS",
@@ -1647,9 +1685,9 @@
         {
           "name": "isCurrentThreadExplorerThreadSaved",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
-            "threadExplorerFavorites"
+            "threadExplorerFavoritesController"
           ],
           "stateWrites": []
         },
@@ -1683,7 +1721,7 @@
         {
           "name": "createThreadExplorerInteractionButton",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -1720,20 +1758,13 @@
           ]
         },
         {
-          "name": "refreshRenderedLivePostCard",
+          "name": "refreshRenderedLivePostCards",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "renderThreadExplorerCounts",
             "renderThreadExplorerInteractionActions"
           ],
-          "stateWrites": []
-        },
-        {
-          "name": "refreshRenderedLivePostCards",
-          "domain": "explorer",
-          "category": "behavior",
-          "stateReads": [],
           "stateWrites": []
         },
         {
@@ -1746,7 +1777,7 @@
         {
           "name": "getThreadExplorerQuoteUrls",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "DEFAULT_POST_WEB_APP",
             "LOGIN_SERVICE_PRESETS"
@@ -1805,7 +1836,7 @@
         {
           "name": "findSearchResultByUri",
           "domain": "search",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "searchResults"
           ],
@@ -2033,7 +2064,7 @@
         {
           "name": "getThreadExplorerStageRect",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "threadExplorerViewState"
           ],
@@ -2042,9 +2073,8 @@
         {
           "name": "createThreadExplorerEdgePath",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
-            "THREAD_EXPLORER_ORIENTATION_HORIZONTAL",
             "threadExplorerViewState"
           ],
           "stateWrites": []
@@ -2516,56 +2546,16 @@
         {
           "name": "openThreadExplorerActorFocus",
           "domain": "explorer",
-          "category": "behavior",
-          "stateReads": [
-            "threadExplorerAccountActor",
-            "threadExplorerAccountInput",
-            "threadExplorerAccountMode",
-            "threadExplorerActorFocusMode"
-          ],
-          "stateWrites": [
-            "threadExplorerAccountActor",
-            "threadExplorerAccountActorBeforeFocus",
-            "threadExplorerAccountError",
-            "threadExplorerAccountInput",
-            "threadExplorerAccountModeBeforeFocus",
-            "threadExplorerActorFocusActor",
-            "threadExplorerActorFocusCursor",
-            "threadExplorerActorFocusError",
-            "threadExplorerActorFocusHasMore",
-            "threadExplorerActorFocusItems",
-            "threadExplorerActorFocusMode"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "closeThreadExplorerActorFocus",
           "domain": "explorer",
-          "category": "behavior",
-          "stateReads": [
-            "authAccount",
-            "threadExplorerAccountActor",
-            "threadExplorerAccountActorBeforeFocus",
-            "threadExplorerAccountInput",
-            "threadExplorerAccountMode",
-            "threadExplorerAccountModeBeforeFocus",
-            "threadExplorerAccountModeSelect",
-            "threadExplorerLoadingFeed"
-          ],
-          "stateWrites": [
-            "threadExplorerAccountActor",
-            "threadExplorerAccountActorBeforeFocus",
-            "threadExplorerAccountError",
-            "threadExplorerAccountInput",
-            "threadExplorerAccountMode",
-            "threadExplorerAccountModeBeforeFocus",
-            "threadExplorerAccountModeSelect",
-            "threadExplorerActorFocusActor",
-            "threadExplorerActorFocusCursor",
-            "threadExplorerActorFocusError",
-            "threadExplorerActorFocusHasMore",
-            "threadExplorerActorFocusItems",
-            "threadExplorerActorFocusLoading"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "handleThreadExplorerActorModeChange",
@@ -2724,7 +2714,7 @@
         {
           "name": "expandAllThreadExplorerReplyClusterNodes",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "threadExplorerViewState"
           ],
@@ -3080,14 +3070,14 @@
         {
           "name": "isThreadExplorerNativeInteractiveTarget",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "isThreadExplorerInteractiveTarget",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -3156,7 +3146,7 @@
         {
           "name": "encodeThreadExplorerImageElement",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -3180,14 +3170,14 @@
         {
           "name": "loadThreadExplorerSnapshotAvatarImage",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "loadThreadExplorerSnapshotCanvasImage",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -3313,7 +3303,7 @@
         {
           "name": "collectThreadExplorerSnapshotCss",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -3432,7 +3422,7 @@
         {
           "name": "shouldUseThreadExplorerTiledPngSnapshot",
           "domain": "explorer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_DIMENSION",
             "THREAD_EXPLORER_SNAPSHOT_MAX_CANVAS_PIXELS"
@@ -3557,53 +3547,23 @@
         {
           "name": "applyThreadExplorerAccountInput",
           "domain": "explorer",
-          "category": "behavior",
-          "stateReads": [
-            "authAccount",
-            "threadExplorerAccountActor",
-            "threadExplorerAccountInput",
-            "threadExplorerAccountMode",
-            "threadExplorerActorFocusActor",
-            "threadExplorerItems",
-            "threadExplorerLoadingFeed"
-          ],
-          "stateWrites": [
-            "threadExplorerAccountActor",
-            "threadExplorerAccountError",
-            "threadExplorerActorFocusActor",
-            "threadExplorerActorFocusCursor",
-            "threadExplorerActorFocusError",
-            "threadExplorerActorFocusHasMore",
-            "threadExplorerActorFocusItems",
-            "threadExplorerActorFocusLoading",
-            "threadExplorerActorFocusMode"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "handleThreadExplorerUseOwnAccountClick",
           "domain": "explorer",
-          "category": "behavior",
-          "stateReads": [
-            "threadExplorerAccountInput"
-          ],
-          "stateWrites": [
-            "threadExplorerAccountInput"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "handleThreadExplorerAccountModeChange",
           "domain": "explorer",
-          "category": "behavior",
-          "stateReads": [
-            "authAccount",
-            "threadExplorerAccountMode",
-            "threadExplorerLoadingFeed"
-          ],
-          "stateWrites": [
-            "threadExplorerAccountError",
-            "threadExplorerAccountMode",
-            "threadExplorerActorFocusMode"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "handleThreadExplorerUrlClick",
@@ -3886,7 +3846,7 @@
         {
           "name": "getExportMetadataApplicationLabel",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -4316,16 +4276,23 @@
           "stateWrites": []
         },
         {
-          "name": "applyDmPartnerCache",
+          "name": "getDmPartnerCacheController",
           "domain": "dm",
-          "category": "behavior",
+          "category": "composition",
           "stateReads": [
             "authAccountDid",
+            "dmContactSearchInput",
+            "dmPartnerCacheAccountDid",
+            "dmPartnerCacheController",
+            "dmPartnerCacheUpdatedAt",
+            "dmRecentContactAssets",
             "dmRecentContacts",
+            "dmRecentConversations",
             "dmSelectedParticipantDids"
           ],
           "stateWrites": [
             "dmPartnerCacheAccountDid",
+            "dmPartnerCacheController",
             "dmPartnerCacheUpdatedAt",
             "dmRecentContactAssets",
             "dmRecentContacts",
@@ -4334,24 +4301,23 @@
           ]
         },
         {
+          "name": "applyDmPartnerCache",
+          "domain": "dm",
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
+        },
+        {
           "name": "saveDmPartnerCache",
           "domain": "dm",
-          "category": "behavior",
-          "stateReads": [
-            "authAccountDid",
-            "dmRecentContactAssets",
-            "dmRecentContacts",
-            "dmRecentConversations"
-          ],
-          "stateWrites": [
-            "dmPartnerCacheAccountDid",
-            "dmPartnerCacheUpdatedAt"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "restoreDmPartnerCache",
           "domain": "dm",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -4784,7 +4750,7 @@
         {
           "name": "formatImageSize",
           "domain": "composer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "currentLocale"
           ],
@@ -4793,46 +4759,30 @@
         {
           "name": "pickRandomTipIndex",
           "domain": "composer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "renderTip",
           "domain": "composer",
-          "category": "behavior",
-          "stateReads": [
-            "currentTipIndex",
-            "tipText"
-          ],
-          "stateWrites": [
-            "tipText"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "updateTipsVisibility",
           "domain": "composer",
-          "category": "behavior",
-          "stateReads": [
-            "tipsPanel",
-            "tipsVisible",
-            "tipsVisibleToggle"
-          ],
-          "stateWrites": [
-            "tipsPanel",
-            "tipsVisibleToggle"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "nextTip",
           "domain": "composer",
-          "category": "behavior",
-          "stateReads": [
-            "currentTipIndex"
-          ],
-          "stateWrites": [
-            "currentTipIndex"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "normalizeSelectedHashtagEntries",
@@ -4900,24 +4850,15 @@
         {
           "name": "setShareStatus",
           "domain": "core",
-          "category": "behavior",
-          "stateReads": [
-            "shareStatus",
-            "shareStatusTimer"
-          ],
-          "stateWrites": [
-            "shareStatus",
-            "shareStatusTimer"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "shareAppRecommendation",
           "domain": "core",
-          "category": "behavior",
-          "stateReads": [
-            "APP_SHARE_TITLE",
-            "APP_SHARE_URL"
-          ],
+          "category": "adapter",
+          "stateReads": [],
           "stateWrites": []
         },
         {
@@ -5507,7 +5448,7 @@
         {
           "name": "shareOrDownloadFile",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -5555,7 +5496,7 @@
         {
           "name": "makeArchiveFileBaseName",
           "domain": "archive",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "archiveCatalog",
             "authAccount"
@@ -5660,7 +5601,7 @@
         {
           "name": "copyTextToClipboard",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -5706,13 +5647,6 @@
           "stateReads": [
             "catalogAvatarAssets"
           ],
-          "stateWrites": []
-        },
-        {
-          "name": "extractArchiveHashtagsFromText",
-          "domain": "archive",
-          "category": "behavior",
-          "stateReads": [],
           "stateWrites": []
         },
         {
@@ -5957,10 +5891,8 @@
         {
           "name": "resolvePostWebBase",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
-            "DEFAULT_POST_WEB_APP",
-            "POST_WEB_FRONTENDS",
             "authAccountService"
           ],
           "stateWrites": []
@@ -5968,7 +5900,7 @@
         {
           "name": "buildBlueskyPostUrl",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "authAccountService"
           ],
@@ -6009,7 +5941,7 @@
         {
           "name": "formatHistoryTimestamp",
           "domain": "composer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "currentLocale"
           ],
@@ -6094,14 +6026,9 @@
         {
           "name": "applyDmContactPickerSelection",
           "domain": "dm",
-          "category": "behavior",
-          "stateReads": [
-            "dmContactSearchInput",
-            "dmRecentContacts"
-          ],
-          "stateWrites": [
-            "dmSelectedParticipantDids"
-          ]
+          "category": "adapter",
+          "stateReads": [],
+          "stateWrites": []
         },
         {
           "name": "enableAutoAccountPicker",
@@ -6405,7 +6332,9 @@
           "name": "applyAuthenticationIdentity",
           "domain": "core",
           "category": "behavior",
-          "stateReads": [],
+          "stateReads": [
+            "authAccountDid"
+          ],
           "stateWrites": [
             "authAccount",
             "authAccountDid",
@@ -6482,28 +6411,29 @@
       ]
     },
     "sw.js": {
-      "sourceSha256": "791f200b6e3d7180f2105005c435c9309d0526f96b54ba4854d8a3c69ce97ae9",
+      "sourceSha256": "befede86e8581e28dd56da2fc7ae9703d6a52cfe065d53d7bcaacdf25da40a9d",
       "functionCount": 111,
+      "unresolvedBindings": [],
       "domains": {
         "core": {
           "total": 67,
-          "adapters": 30,
-          "composition": 10,
-          "behavior": 27,
-          "stateWriters": 10
+          "adapters": 42,
+          "composition": 11,
+          "behavior": 14,
+          "stateWriters": 11
         },
         "composer": {
           "total": 11,
-          "adapters": 6,
+          "adapters": 9,
           "composition": 2,
-          "behavior": 3,
+          "behavior": 0,
           "stateWriters": 2
         },
         "network": {
           "total": 10,
-          "adapters": 7,
+          "adapters": 8,
           "composition": 2,
-          "behavior": 1,
+          "behavior": 0,
           "stateWriters": 2
         },
         "explorer": {
@@ -6515,9 +6445,9 @@
         },
         "archive": {
           "total": 11,
-          "adapters": 4,
+          "adapters": 6,
           "composition": 1,
-          "behavior": 6,
+          "behavior": 4,
           "stateWriters": 1
         },
         "dm": {
@@ -6532,63 +6462,63 @@
         {
           "name": "normalizePostLanguageTags",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "normalizePostInteractionSettings",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "extractRecordKeyFromAtUri",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "parseAtUriParts",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "buildThreadGateAllowRules",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "parseHashtagValue",
           "domain": "composer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "normalizeHashtagEntries",
           "domain": "composer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "normalizeSelectedHashtagEntries",
           "domain": "composer",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "normalizeStandardSiteMetadata",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -6794,7 +6724,7 @@
         {
           "name": "normalizeNetworkProfile",
           "domain": "network",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -7029,10 +6959,8 @@
         {
           "name": "authStatus",
           "domain": "core",
-          "category": "behavior",
-          "stateReads": [
-            "buildAuthResponse"
-          ],
+          "category": "adapter",
+          "stateReads": [],
           "stateWrites": []
         },
         {
@@ -7203,6 +7131,18 @@
           "stateWrites": []
         },
         {
+          "name": "getWorkerAccountAvatarCacheService",
+          "domain": "core",
+          "category": "composition",
+          "stateReads": [
+            "ACCOUNT_AVATAR_CACHE_TTL_MS",
+            "workerAccountAvatarCacheService"
+          ],
+          "stateWrites": [
+            "workerAccountAvatarCacheService"
+          ]
+        },
+        {
           "name": "normalizeAccountAvatarAssets",
           "domain": "core",
           "category": "adapter",
@@ -7212,16 +7152,14 @@
         {
           "name": "pruneAccountAvatarCache",
           "domain": "core",
-          "category": "behavior",
-          "stateReads": [
-            "ACCOUNT_AVATAR_CACHE_TTL_MS"
-          ],
+          "category": "adapter",
+          "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "cacheStoredAccountAvatar",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -7278,7 +7216,7 @@
         {
           "name": "getAssetExtensionFromMimeType",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -7290,16 +7228,9 @@
           "stateWrites": []
         },
         {
-          "name": "isSvgMimeType",
-          "domain": "core",
-          "category": "behavior",
-          "stateReads": [],
-          "stateWrites": []
-        },
-        {
           "name": "normalizeArchiveImageBlob",
           "domain": "archive",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [
             "ARCHIVE_SAFE_IMAGE_PLACEHOLDER_BASE64",
             "ARCHIVE_SAFE_IMAGE_PLACEHOLDER_MIME_TYPE"
@@ -7362,14 +7293,14 @@
         {
           "name": "mapWithConcurrency",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
         {
           "name": "chunkEntries",
           "domain": "core",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },
@@ -7383,7 +7314,7 @@
         {
           "name": "parseArchiveThreadSource",
           "domain": "archive",
-          "category": "behavior",
+          "category": "adapter",
           "stateReads": [],
           "stateWrites": []
         },

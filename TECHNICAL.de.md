@@ -6,11 +6,11 @@ Diese Datei bündelt die technischeren Hintergrundinformationen, die nicht im sc
 
 ## Verantwortungspruefung — 2026-11-08
 
-Die fruehere Fertigmeldung war voreilig. Der getestete Auslagerungsstand mit 857 Unit-/Vertragstests und 150 Chromium-Faellen belegte keine durchgaengig korrekte Verantwortungs- und Zustandsverteilung. App/Cache bleiben `0.4.357`/`v376`; das Zwischenstandslabel ist korrigiert.
+Die fachliche Modularisierung ist anhand von `AGENTS.md` und den im Audit dokumentierten Verantwortungsentscheidungen abgenommen. Im Einstieg bleiben kanonischer Seitenzustand, DOM-/native Adapter und Komposition; Berechnungen, Darstellungsregeln, Requestablaeufe und Normalisierung haben explizite Modulbesitzer. App/Cache sind `0.4.357`/`v376`. Der abschliessende Lauf `npm run check` bestand mit 881 Unit-/Vertragstests und allen 158 Chromium-Browserfaellen bei regulaerem Prozessabschluss, einschliesslich echtem Service Worker und Offline-Laden.
 
 Die Nacharbeit entfernt 43 unbenutzte Funktionen und 18 Fassaden fuer importierte Funktionen. Uebersetzungsmetadaten gehoeren ins HTML; der generische Renderer bekommt nur Dokument, Uebersetzung und Sprache. Post-Edit-Dialog und optionale DM-Freischaltung gehoeren ihren Domaenencontrollern. Profil-/URL-/Engagement-/Editmodelle liegen in Sharedmodulen. Optimistische Likes und ihre private Menge laufender Anfragen gehoeren dem Interaktionscontroller. Explorer-Quelle/Layout/Viewport/aufgeklappte Knoten haben einen gemeinsamen Controller-Zustand statt sieben gespiegelter Globals.
 
-Die [Verantwortungs- und Zustandspruefung](docs/MODULARIZATION-AUDIT.md) mit vollstaendigem Funktionsinventar dokumentiert Nachweise, verbleibende Grenzen und Abnahmekriterien. Der Architekturabschluss bleibt bis zur Klaerung dieser Grenzen offen; gruene Regressionstests allein schliessen ihn nicht ab.
+Die [Verantwortungs- und Zustandspruefung](docs/MODULARIZATION-AUDIT.md) mit vollstaendigem Funktionsinventar dokumentiert Nachweise, verbleibende Grenzen und Abnahmekriterien. Die Nacharbeit bearbeitet diese Befunde durch Domaenenzustaendigkeit oder ausdruecklich begruendete Einstiegsadapter. Account-/Fokusgenerationen sichern alte Feed-/Threadantworten ab. Snapshotverarbeitung, Navigation, Partnercache/Picker, Teilen/Tipps und die verbliebenen Darstellungsmodelle haben dokumentierte Besitzer. Worker-Recordmodelle, Kontoavatarcache und Transportsammlungen sind eigene Vertraege. Im Einstieg bleiben kanonischer Seitenzustand, DOM-/native Adapter und Komposition; dies ist eine bewusste Entscheidung statt einer Folgerung aus Zeilenzahlen. Abschlusspruefung siehe PR.
 
 ## Threadpublishing Und Record-Interaktionen
 

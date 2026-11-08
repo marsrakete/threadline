@@ -260,3 +260,14 @@ export function createPostEditCheckController(elements, adapters) {
   return Object.freeze({ renderCurrent: renderPostEditCurrentText, render: renderPostEditCheckResult, reset: resetPostEditCheckResult,
     open: openPostEditCheckDialog, close: closePostEditCheckDialog, check: checkPostEditMetadata });
 }
+
+/** Builds an archive filename from account and export date.
+ * @param {object} catalog - Archive manifest.
+ * @param {string} account - Fallback account handle.
+ * @returns {string} Safe archive base name.
+ */
+export function buildArchiveFileBaseName(catalog, account) {
+  const handle = String(catalog?.manifest?.account?.handle || account || "account").replace(/[^\w.-]+/g, "-");
+  const datePart = formatArchiveDatePart(catalog?.manifest?.exportedAt);
+  return `threadline-archive-${handle}-${datePart}`;
+}

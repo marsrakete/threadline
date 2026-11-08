@@ -1945,3 +1945,73 @@ for (const pathname of ["/", "/tools.html"]) {
     expect(result.calls).toEqual(Array(3).fill(["CHECK_POST_EDIT","https://example.test/post",120000]));expect(errors).toEqual([]);
   });
 }
+
+for(const pathname of ["/","/tools.html"]){
+  test(`account context ignores late actor results after a newer account selection on ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);await page.goto(pathname);
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    await page.evaluate(async()=>{
+      const registration=await navigator.serviceWorker.ready,original=registration.active.postMessage;
+      window.__actorRequests=[];
+      registration.active.postMessage=(message,ports)=>{
+        if(message.type==="LOAD_THREAD_EXPLORER_ACTOR_FEED"){window.__actorRequests.push({message,port:ports[0]});return;}
+        original(message,ports);
+      };
+      const input=document.querySelector("#thread-explorer-account-input");input.value="alice.test";input.dispatchEvent(new Event("change"));
+    });
+    await expect.poll(()=>page.evaluate(()=>window.__actorRequests.length)).toBe(1);
+    await page.evaluate(()=>{const input=document.querySelector("#thread-explorer-account-input");input.value="bob.test";input.dispatchEvent(new Event("change"));});
+    await expect.poll(()=>page.evaluate(()=>window.__actorRequests.length)).toBe(2);
+    await page.evaluate(()=>window.__actorRequests[1].port.postMessage({ok:true,result:{items:[window.__searchItem("bob")],cursor:""}}));
+    await expect(page.locator("#thread-explorer-actor-feed-list")).toContainText("word bob");
+    await page.evaluate(()=>window.__actorRequests[0].port.postMessage({ok:true,result:{items:[window.__searchItem("alice")],cursor:""}}));
+    await expect(page.locator("#thread-explorer-actor-feed-list")).toContainText("word bob");
+    await page.evaluate(()=>new Promise(requestAnimationFrame));
+    await expect(page.locator("#thread-explorer-actor-feed-list")).not.toContainText("word alice");
+    await page.evaluate(()=>document.querySelector("#thread-explorer-use-own-account-button").dispatchEvent(new Event("click")));
+    await expect(page.locator("#thread-explorer-account-input")).toHaveValue("search.test");expect(errors).toEqual([]);
+  });
+}
+
+for(const pathname of ["/","/tools.html"]){
+  test(`snapshot native adapters decode, encode and reject unusable images on ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);await page.goto(pathname);
+    await expect(page.locator("html")).toHaveAttribute("lang","en");
+    const result=await page.evaluate(async()=>{
+      const snapshot=await import("/js/tools/thread-explorer-snapshot.js");
+      const rendering=await import("/js/tools/thread-explorer-rendering.js"),models=await import("/js/tools/thread-explorer.js");
+      const host=document.createElement("div"),item=document.querySelector("#thread-explorer-node-template").content.firstElementChild.cloneNode(true);
+      item.dataset.uri="at://card-fixture";const card=item.querySelector(".thread-explorer-post-card");card._threadExplorerPost={uri:"at://card-fixture"};host.append(item);document.body.append(host);
+      let countRenders=0,interactionRenders=0,clicks=0;
+      rendering.refreshLivePostCards("at://card-fixture",{document,counts:()=>countRenders++,searchCounts:()=>countRenders++,interactions:()=>interactionRenders++});
+      rendering.refreshLivePostCard(null,{});rendering.refreshLivePostCards("",{document});
+      const button=rendering.createLivePostActionButton("reply",{onClick:()=>clicks++},{document,translate:key=>key});host.append(button);button.click();
+      const selectedText=document.createElement("span");selectedText.className="thread-explorer-post-text";
+      const ui={countRenders,interactionRenders,clicks,label:button.textContent,native:models.isThreadExplorerInteractiveTarget(button,Element),selectable:models.isThreadExplorerInteractiveTarget(selectedText,Element),background:models.isThreadExplorerInteractiveTarget(host,Element),absent:models.isThreadExplorerInteractiveTarget(null,Element)};host.remove();
+      const canvas=document.createElement("canvas");canvas.width=2;canvas.height=2;canvas.getContext("2d").fillRect(0,0,2,2);
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve)),url=URL.createObjectURL(blob);
+      const loaded=await snapshot.loadSnapshotCanvasImage(url,Image),encoded=snapshot.encodeSnapshotImageElement(loaded,document);
+      const decoded=await snapshot.loadSnapshotCanvasImage(encoded,Image);URL.revokeObjectURL(url);
+      return {ui,size:[loaded.naturalWidth,decoded.naturalHeight],encoded:encoded.startsWith("data:image/png"),
+        passthrough:snapshot.encodeSnapshotImageElement(decoded,document)===encoded,empty:snapshot.encodeSnapshotImageElement(null,document),
+        unloaded:snapshot.encodeSnapshotImageElement({src:"/pending.png",complete:false},document),
+        absent:await snapshot.loadSnapshotCanvasImage("",Image),invalid:await snapshot.loadSnapshotCanvasImage("data:image/png;base64,AAAA",Image)};
+    });
+    expect(result).toEqual({ui:{countRenders:1,interactionRenders:1,clicks:1,label:"reply",native:true,selectable:true,background:false,absent:false},size:[2,2],encoded:true,passthrough:true,empty:"",unloaded:"",absent:null,invalid:null});expect(errors).toEqual([]);
+  });
+}
+
+for(const pathname of ["/","/tools.html"]){
+  test(`link card create and Enter handlers reach the module submission controller on ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);await page.goto(pathname);
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    await page.evaluate(()=>{const input=document.querySelector("#source-text");input.value="Draft text";input.dispatchEvent(new Event("input",{bubbles:true}));});
+    await page.locator(".segment-link-card-manual-button").first().dispatchEvent("click");
+    await expect(page.locator("#link-card-dialog")).toBeVisible();
+    await page.locator("#link-card-url-input").fill("");await page.locator("#link-card-create-button").click();
+    await expect(page.locator("#link-card-status")).toHaveAttribute("data-tone","error");
+    await page.evaluate(()=>{const status=document.querySelector("#link-card-status");status.textContent="";delete status.dataset.tone;});
+    await page.locator("#link-card-url-input").press("Enter");
+    await expect(page.locator("#link-card-status")).toHaveAttribute("data-tone","error");expect(errors).toEqual([]);
+  });
+}

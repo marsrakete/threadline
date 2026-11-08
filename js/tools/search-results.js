@@ -134,3 +134,15 @@ export function createSearchResultCardRenderer(dependencies = {}) {
 
   return createSearchResultElement;
 }
+
+/** Looks up a normalized result by projected post URI. @param {Array} results - Current results. @param {string} uri - Target URI. @returns {object|null} Result or null. */
+export function findSearchResultByUri(results, uri) {
+  const normalizedUri = String(uri || "").trim();
+  if (!normalizedUri) {
+    return null;
+  }
+
+  return results.find((item) => {
+    return item?.post?.uri === normalizedUri;
+  }) || null;
+}

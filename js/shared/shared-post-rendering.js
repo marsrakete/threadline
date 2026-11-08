@@ -1138,3 +1138,107 @@ export function applyLikeStateToThreadTree(node = null, postUri = "", likeUri = 
     applyLikeStateToThreadTree(reply, postUri, likeUri, delta);
   });
 }
+
+/** Creates provider-aware web links and target labels from explicit service configuration.
+ * @param {object} options - normalizeService callback, frontends mapping and defaultWebApp string.
+ * @returns {object} Frozen target/base/post-URL operations.
+ */
+export function createPostLinkModels(options) {
+  if (typeof options?.normalizeService !== 'function') { throw new TypeError('Post link models require normalizeService'); }
+  const { normalizeService: normalizeServiceUrl, frontends: POST_WEB_FRONTENDS, defaultWebApp: DEFAULT_POST_WEB_APP } = options;
+  function getPostTargetName(webApp) {
+    try {
+      return new URL(normalizeServiceUrl(webApp)).hostname.toLowerCase() === "mu.social"
+        ? "Mu.social"
+        : "Bluesky";
+    } catch {
+      return "Bluesky";
+    }
+  }
+
+  function resolvePostWebBase(serviceUrl) {
+    try {
+      const normalizedService = normalizeServiceUrl(serviceUrl);
+      const host = new URL(normalizedService).hostname.toLowerCase();
+      return POST_WEB_FRONTENDS[host] || DEFAULT_POST_WEB_APP;
+    } catch {
+      return DEFAULT_POST_WEB_APP;
+    }
+  }
+
+  function buildBlueskyPostUrl(handle, uri, serviceUrl) {
+    const parts = String(uri || "").split("/");
+    const recordId = parts[parts.length - 1];
+
+    if (!handle || !recordId) {
+      return "";
+    }
+
+    return `${resolvePostWebBase(serviceUrl)}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordId)}`;
+  }
+
+
+  return Object.freeze({ getPostTargetName, resolvePostWebBase, buildBlueskyPostUrl });
+}
+
+/** Formats history/export dates while preserving invalid input fallback.
+ * @param {*} value - Date-compatible timestamp.
+ * @param {string} locale - Current language.
+ * @returns {string} Localized timestamp or original value.
+ */
+export function formatApplicationTimestamp(value, locale) {
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+/** Selects a post frontend from author domain or saved favorite metadata.
+ * @param {object} post - Post author and URI.
+ * @param {Array} favorites - Saved posts.
+ * @param {object} presets - Configured service URLs.
+ * @param {string} defaultWebApp - Fallback frontend.
+ * @returns {string} Selected web application.
+ */
+export function selectPostWebApplication(post, favorites, presets, defaultWebApp) {
+  const handle = String(post?.author?.handle || "").toLowerCase();
+  if (handle.endsWith(".eurosky.social") || handle.endsWith(".mu.social")) {
+    return presets["mu.social"];
+  }
+
+  const favorite = favorites.find((entry) => entry.rootUri === post?.uri || entry.selectedUri === post?.uri);
+  if (favorite?.webApp) {
+    return favorite.webApp;
+  }
+
+  return defaultWebApp;
+}
+
+/** Collects visible quote URL variants without duplicates.
+ * @param {object} quote - Quoted post.
+ * @param {Function} postUrl - Builds its primary URL.
+ * @param {Function} recordKey - Reads its URI key.
+ * @param {string} defaultWebApp - Default frontend.
+ * @param {string} alternateWebApp - Alternate frontend.
+ * @returns {string[]} URLs to remove from duplicate display text.
+ */
+export function collectPostQuoteUrls(quote, postUrl, recordKey, defaultWebApp, alternateWebApp) {
+  const quoteUrls = new Set();
+  const quoteUrl = postUrl(quote);
+  if (quoteUrl) {
+    quoteUrls.add(quoteUrl);
+  }
+
+  const quoteHandle = String(quote?.author?.handle || "").trim();
+  const quoteRecordKey = recordKey(quote?.uri);
+  if (quoteHandle && quoteRecordKey) {
+    quoteUrls.add(`${defaultWebApp}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
+    quoteUrls.add(`${alternateWebApp}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
+  }
+
+  return Array.from(quoteUrls);
+}
