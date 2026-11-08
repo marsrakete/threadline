@@ -2439,3 +2439,37 @@ test("search UI binds dialog and saved-search controls", async () => {
   savedSearchUrlInput.dispatchEvent(new Event("keydown"));
   assert.equal(calls, 3);
 });
+
+test("optional DM gate owns secret cleanup, session reuse and denied/hash/error transitions", async () => {
+  const { createDmAccessGate } = await importProjectModule("js/tools/dm-archive.js");
+  assert.throws(() => createDmAccessGate(), /href/);
+  for (const mode of ["disabled","valid","invalid","stored","error"]) {
+    const values = new Map(), calls = [], state = { checked:false, unlocked:false };
+    if(mode === "stored") values.set("access","1");
+    let href = "https://example.test/tools.html?keep=1&secret=hello#other=2&key=hidden";
+    const options = { state, enabled: mode !== "disabled", queryKey:"secret",hashKey:"key",sessionKey:"access", secretHash:"ab",
+      href: () => href, replaceUrl: value => {calls.push(["url",value]);href=new URL(value,href).href;}, storage:{getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)},
+      crypto:{subtle:{digest:async()=>{if(mode==="error")throw Error("crypto");return new Uint8Array([mode === "valid" ? 171 : 0]).buffer;}}},
+      setVisible: value=>calls.push(["visible",value]),workspace:()=>"dm",showComposer:()=>calls.push(["composer"]),render:()=>calls.push(["render"]),updateAuth:()=>calls.push(["auth"]),restoreWorkspace:()=>calls.push(["restore"]),report:()=>calls.push(["report"]),lockedMessage:()=>"locked" };
+    const gate = createDmAccessGate(options); assert.equal(gate.secret(),"hello"); await gate.apply();
+    const allowed = ["disabled","valid","stored"].includes(mode);
+    assert.equal(gate.available(),allowed); assert.equal(state.checked,allowed); assert.equal(state.unlocked,allowed);
+    assert.equal(new URL(href).searchParams.get("keep"),"1"); assert.equal(new URL(href).searchParams.has("secret"),false);
+    assert.equal(new URL(href).hash,"#other=2"); assert.equal(gate.secret(),"");
+    if (allowed) gate.assert(); else assert.throws(()=>gate.assert(),/locked/);
+    assert.equal(values.has("access"),allowed && mode!=="disabled");
+    assert.equal(calls.some(call=>call[0]==="composer"),!allowed); assert.equal(calls.some(call=>call[0]==="report"),mode==="error");
+    assert.deepEqual(calls.slice(-3),[["render"],["auth"],["restore"]]);
+  }
+});
+
+test("tree collapse discovery and compact archive dates preserve boundary behavior", async () => {
+  const {collectCollapsibleThreadExplorerUris}=await importProjectModule("js/tools/thread-explorer-layout.js");
+  const found=new Set();
+  collectCollapsibleThreadExplorerUris({post:{uri:"root"},replies:[{post:{uri:"branch"},replies:[{post:{uri:"leaf"},replies:[]}]}]},found);
+  assert.deepEqual([...found],["root","branch"]);
+  collectCollapsibleThreadExplorerUris(null,found);collectCollapsibleThreadExplorerUris({replies:"bad"},found);assert.equal(found.size,2);
+  const {formatCompactArchiveTimestamp}=await importProjectModule("js/tools/archive-workspace-models.js");
+  assert.equal(formatCompactArchiveTimestamp("2026-11-08T12:34:00"),"08.11.2026 12.34");
+  assert.equal(formatCompactArchiveTimestamp("invalid"),"invalid");assert.equal(formatCompactArchiveTimestamp(undefined),"");
+});

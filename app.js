@@ -1,473 +1,36 @@
-import { createRichTextPresentation } from "./js/shared/shared-post-rendering.js";
-import { createSearchModels, createSavedSearchModels } from "./js/tools/search-models.js";
-import { createSearchFormController } from "./js/tools/search-form.js";
-import { createSearchRunController, createSavedSearchController } from "./js/tools/search-controller.js";
-import { createDmExportModels } from "./js/tools/dm-export-models.js";
-import { createDmPdfRenderer } from "./js/tools/dm-pdf-rendering.js";
-import { createDmHtmlRenderer } from "./js/tools/dm-html-rendering.js";
-import { createArchiveSourceController } from "./js/tools/archive-source.js";
-import { createArchiveWorkspaceModels } from "./js/tools/archive-workspace-models.js";
-import { createArchiveWorkspaceRenderer, createArchiveWorkspaceLayout } from "./js/tools/archive-workspace-rendering.js";
-import { createArchiveRunController } from "./js/tools/archive-run-controller.js";
-import { createAssetService, getAssetExtensionFromMimeType } from "./js/shared/shared-assets.js";
-import { createArchiveAvatarAssets } from "./js/tools/archive-assets.js";
-import { createArchiveCatalogService } from "./js/tools/archive-catalog.js";
-import { createArchiveMediaModels, MEDIA_EXPORT_BATCH_SIZE } from "./js/tools/archive-media-models.js";
-import { createArchiveMediaExportController } from "./js/tools/archive-media-export.js";
-import { createArchivePdfLayout } from "./js/tools/archive-pdf-layout.js";
-import { createArchivePdfRenderer } from "./js/tools/archive-pdf-rendering.js";
-import { createArchivePdfExportController } from "./js/tools/archive-pdf-export.js";
-﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./js/shared/shared-languages.js";
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations, createApplicationTranslationRenderer } from "./js/core/app-i18n.js";
-import { createStoredZipCodec } from "./js/shared/shared-zip.js";
-import { buildArchiveThreadGroups, buildArchiveThreadDepthMap, shortenArchiveUrlForDisplay, shouldAutoFallbackArchiveHtmlToCompact, isArchiveStringLengthError, createArchiveHtmlModels } from "./js/tools/archive-html-models.js";
-import { createArchiveHtmlRenderer } from "./js/tools/archive-html-rendering.js";
-import { createArchiveHtmlTemplateLoader, createArchiveHtmlExportController } from "./js/tools/archive-html-export.js";
-
-import { createPdfFileBuilder } from "./js/shared/shared-pdf.js";
-import { createPdfTextLayout } from "./js/shared/shared-pdf-text.js";
-import { fillRoundedRect, strokeRoundedRect, drawRoundedImageContain, drawCircularImageCover } from "./js/shared/shared-canvas.js";
-
-import { createSettingsBackupCodec, createSettingsBackupController, createSettingsBackupReminder } from "./js/core/app-backup.js";
-import { createComposerLinkCardPreviewRenderer } from "./js/composer/composer-link-cards.js";
-import { createComposerMentionSourceCorrectionController } from "./js/composer/composer-mentions.js";
-import { getComposerPostingTexts, buildComposerPostingPayloads } from "./js/composer/composer-publishing.js";
-import { normalizeStandardSiteMetadata as normalizeSharedStandardSiteMetadata,
-  getPublicationCardFooterLabel as getSharedPublicationCardFooterLabel } from "./js/shared/shared-link-cards.js";
-import { hasEmojiLikeGraphemes, hasCjkGraphemes,
-  formatComposerCharacterCount as formatComposerCharacterCountFromModule } from "./js/composer/composer-validation.js";
-import { syncComposerSegmentLinkCards } from "./js/composer/composer-link-cards.js";
-import { autoSizeComposerTextarea as autoSizeTextarea, resizeComposerTextareas } from "./js/composer/composer-segment-rendering.js";
-import { createComposerMentionDialogController } from "./js/composer/composer-mentions.js";
-import { createApplicationStorage, createWorkerRequestClient } from "./js/core/app-storage.js";
-import { createApplicationHydrationController } from "./js/core/app-state.js";
-import { createApplicationBootstrap } from "./js/core/app-bootstrap.js";
-import { createHelpController } from "./js/core/app-help.js";
-import { createHelpMarkdownRenderer } from "./js/core/app-help-markdown.js";
-import { HELP_TOPICS } from "./js/core/app-help-topics.js";
-import { createApplicationUpdateController } from "./js/core/app-bootstrap.js";
-import { createApplicationSessionController, createLoginController, createSavedAccountActions, normalizeLoginServiceUrl } from "./js/core/app-session.js";
-import { createApplicationInstallController, isIosDevice as isIosDeviceFromShell } from "./js/core/app-shell.js";
-import { createApplicationLifecycleHandlers } from "./js/core/app-initialization.js";
-import { createAppearanceController } from "./js/core/app-shell.js";
-import { createPendingNavigationController } from "./js/core/app-navigation.js";
-import { createComposerLinkCardRequestController } from "./js/composer/composer-link-card-providers.js";
-import { normalizePublishRateLimit, createComposerRateLimitPresentation,
-  buildComposerPublishErrorMessage, createComposerPublishController } from "./js/composer/composer-publishing.js";
-import { createHashtagController, parseHashtag as parseHashtagValue,
-  normalizeHashtags as normalizeHashtagEntries, normalizeHashtagSelection,
-  mergeHashtags as mergeHashtagEntries, getHashtagDisplayValue, formatHashtag,
-  normalizeHashtagPlacement } from "./js/shared/shared-hashtags.js";
+import { detectApplicationLocale, translateApplicationValue, applyApplicationTranslatedTitle } from "./js/core/app-i18n.js";
 import {
-  bindApplicationEvents,
-  bindOptionalApplicationEvent,
-  bindThreadExplorerApplicationEvents,
-  bindGlobalApplicationEvents,
-  bindApplicationNavigationEvents,
-  bindAuthenticationEvents,
-  bindPreferenceEvents,
-  bindSettingsDataEvents,
-  bindEditorDialogEvents,
-  bindApplicationUpdateEvents,
-  bindConfirmationDialogEvents,
-  bindLinkCardSettingsEvents,
-  bindWorkspaceUtilityEvents,
-  bindHelpAndSettingsEvents,
-} from "./js/core/app-initialization.js";
-import { CURRENT_VERSION_INFO, fetchVersionInfo } from "./js/core/app-bootstrap.js";
-import { createAsyncTaskQueue } from "./js/core/app-state.js";
+  createLivePostInteractionController,
+  createThreadExplorerViewPreference,
+  createThreadExplorerSelectionPreferences,
+  createThreadExplorerFavoritesController,
+  createThreadExplorerFeedSourcesController,
+  createThreadExplorerGalleryFullscreenController,
+  createThreadExplorerFocusController,
+  createThreadExplorerRenderScheduler,
+  createThreadExplorerZoomController,
+  createThreadExplorerZoomResetController,
+  createThreadExplorerCardFocusController,
+  createThreadExplorerController,
+  loadThreadExplorerActorFocusWorkflow,
+  loadThreadExplorerFeedWorkflow,
+  loadThreadExplorerThreadWorkflow,
+  renderThreadExplorerWorkspace as renderThreadExplorerWorkspaceFromController,
+  bindThreadExplorerWorkspaceEvents,
+  bindThreadExplorerGlobalEvents,
+  bindThreadExplorerDialogEvents,
+  bindThreadExplorerSnapshotEvents
+} from "./js/tools/thread-explorer-controller.js";
 import {
-  readBrowserStorageValue,
-  removeBrowserStorageValue,
-  writeBrowserStorageValue,
-} from "./js/core/app-storage.js";
-import {
-  THREADLINE_PAGE_COMPOSER,
-  THREADLINE_PAGE_TOOLS,
-  navigateToThreadlinePage,
-  normalizeThreadlinePage,
-} from "./js/core/app-navigation.js";
-import {
-  getCurrentThreadlinePage,
-  getDefaultWorkspaceForCurrentPage,
-  isWorkspaceAllowedOnCurrentPage,
-  normalizeWorkspaceForCurrentPage,
-} from "./js/core/app-shell.js";
-import {
-  closeModalDialog,
-  createQueuedConfirmDialogController,
-  showErrorModal,
-  showProgressModal,
-} from "./js/core/app-dialogs.js";
-import { getToolsWorkspaceEntries, bindToolsWorkspaceNavigationEvents } from "./js/tools/tools-layout.js";
-import {
-  openToolsWorkspace,
-  persistToolsWorkspacePreference,
-  readToolsWorkspacePreference,
-} from "./js/tools/tools-page.js";
-import {
-  escapeSearchHighlightRegex,
-  parseSearchQueryTerms,
-  createSearchPreferencesNormalizer,
-  parseSearchTags,
-  quoteSearchSummaryValue,
-  splitSharedSearchQuery,
-  normalizePersistedSearchResultItems as normalizePersistedSearchResultItemsFromSearch,
-  areSearchPreferencesEqual as areSearchPreferencesEqualFromSearch,
-  buildPersistableSearchResultState,
-  doesSearchResultStateMatch,
-  getSavedSearchStringParam as getSavedSearchStringParamFromSearch,
-  normalizeSavedSearchSort as normalizeSavedSearchSortFromSearch,
-  parseExcludedSearchTerms as parseExcludedSearchTermsFromSearch,
-  buildSharedSearchQuery as buildSharedSearchQueryFromSearch,
-  bindSearchWorkspaceEvents,
-  bindSearchDialogEvents,
-} from "./js/tools/search.js";
-import { createSearchResultCardRenderer } from "./js/tools/search-results.js";
-import {
-  buildThreadExplorerFeedSource,
-  createThreadExplorerGalleryController,
-  appendThreadExplorerFeedItems,
-  sortThreadExplorerFeedItemsByDate,
-  normalizeThreadExplorerFavorites,
-  resolveThreadExplorerSelection,
-  buildThreadExplorerFavoriteModel,
-  findThreadExplorerTreeNode,
-  findThreadExplorerParentNode,
-  buildThreadExplorerPostWebUrl as buildThreadExplorerPostWebUrlFromData,
-  createThreadExplorerCardInteractionController,
-  createThreadExplorerCardPresentationController,
-  getThreadExplorerActorFocusId,
-  getThreadExplorerFaviconUrl,
-  getThreadExplorerGalleryFallbackDecision,
-  normalizeThreadExplorerHydratedMedia,
-  getThreadExplorerImageSources,
-  getThreadExplorerPostImages,
-  getThreadExplorerPostRecordKey,
-  isThreadExplorerFeedUri,
-  normalizeThreadExplorerAccountMode,
-  normalizeThreadExplorerActorFocusMode as normalizeThreadExplorerActorFocusModeFromTools,
-  createThreadExplorerActorStub as createThreadExplorerActorStubFromTools,
-  isThreadExplorerOwnActor as isThreadExplorerOwnActorFromTools,
-  getThreadExplorerOwnActor as getThreadExplorerOwnActorFromTools,
-  isThreadExplorerOwnAccountTarget as isThreadExplorerOwnAccountTargetFromTools,
-  isThreadExplorerForeignAccountMode as isThreadExplorerForeignAccountModeFromTools,
-  isThreadExplorerForeignActorFocusMode as isThreadExplorerForeignActorFocusModeFromTools,
-  getThreadExplorerRequestedActor as getThreadExplorerRequestedActorFromTools,
-  renderThreadExplorerFeedPanel,
-  renderThreadExplorerActorFocusPanel,
-  renderThreadExplorerTreeEdges as renderThreadExplorerTreeEdgesFromTools,
-  createThreadExplorerFeedItemFragment as createThreadExplorerFeedItemFragmentFromTools,
-  getThreadExplorerReplySortTimestamp as getThreadExplorerReplySortTimestampFromTools,
-  getChronologicalThreadExplorerReplies as getChronologicalThreadExplorerRepliesFromTools,
-  prepareThreadExplorerRenderedNode,
-  renderThreadExplorerTreePanel,
-  configureThreadExplorerNodeToggle,
-  createThreadExplorerRenderedItem as createThreadExplorerRenderedItemFromTools,
-  createThreadExplorerReplyClusterRenderNode as createThreadExplorerReplyClusterRenderNodeFromTools,
-  appendThreadExplorerReplyClusterNodes,
-  createThreadExplorerReplyClusterWorkspace,
-  renderThreadExplorerPostGallery,
-  applyThreadExplorerPostImagePreviewShape as applyThreadExplorerPostImagePreviewShapeFromTools,
-  syncThreadExplorerPostCardImageShape as syncThreadExplorerPostCardImageShapeFromTools,
-  createThreadExplorerPostImageFigure,
-  renderThreadExplorerQuoteGallery,
-  createThreadExplorerQuotePreviewImage,
-  renderThreadExplorerQuotePostCard,
-  renderThreadExplorerExternalLinkCard,
-  hideThreadExplorerExternalCardImage,
-  getThreadExplorerFeedUriFromSource as getThreadExplorerFeedUriFromSourceModule,
-  getThreadExplorerSearchIdFromSource as getThreadExplorerSearchIdFromSourceModule,
-  normalizeThreadExplorerActor,
-} from "./js/tools/thread-explorer.js";
-import {
-  getNetworkNodeScore,
-  getNetworkRelationType,
-  getNetworkScoreBreakdown,
-  createNetworkFocusController,
-  createNetworkDataController,
-  rankNetworkNodes,
-  selectNetworkNodes,
-  sortNetworkProfiles,
-  calculateNetworkViewport,
-  calculateNetworkContentBounds,
-} from "./js/tools/network.js";
-import { createNetworkLayoutController } from "./js/tools/network-layout.js";
-import { createNetworkWorkspaceRenderer } from "./js/tools/network-rendering.js";
-import { buildNetworkFocusCardModel, createNetworkFocusCardRenderer } from "./js/tools/network-focus-rendering.js";
-import { createNetworkStageRenderer } from "./js/tools/network-stage-rendering.js";
-import { createNetworkWorkspaceController, readNetworkShapePreference, writeNetworkShapePreference } from "./js/tools/network-controller.js";
-import { normalizeAnalysisActor, bindAnalysisWorkspaceEvents, createAnalysisWorkspaceController } from "./js/tools/analysis.js";
-import { ANALYSIS_METRIC_DEFINITIONS, ANALYSIS_FUNCTION_WORDS, ANALYSIS_NUMBER_WORDS, ANALYSIS_TEMPORAL_GAP_BUCKETS, ANALYSIS_WEEKDAY_ANCHORS, ANALYSIS_WEEKDAY_FALLBACKS } from "./js/tools/analysis-config.js";
-import { createAnalysisAccountNormalizer, getPersistableAnalysisAccount, analysisAccountNeedsNetworkRefresh } from "./js/tools/analysis-accounts.js";
-import { createAnalysisAccountComparator } from "./js/tools/analysis-comparison.js";
-import { createAnalysisRenderer, buildAnalysisMetricTableModel } from "./js/tools/analysis-rendering.js";
-import { createAnalysisReportModels } from "./js/tools/analysis-report-models.js";
-import { createAnalysisReportLayout } from "./js/tools/analysis-report-layout.js";
-import { createAnalysisPdfRenderer } from "./js/tools/analysis-pdf-rendering.js";
-import { createArchivePreferencesController } from "./js/tools/archive-preferences.js";
-import { ANALYSIS_NETWORK_PATTERNS, ANALYSIS_CORPUS_PATTERNS, ANALYSIS_DELTA_REPORT_LABEL } from "./js/tools/analysis-config.js";
-import { createAnalysisTableModels } from "./js/tools/analysis-table-models.js";
-import { createAnalysisController } from "./js/tools/analysis-controller.js";
-import { createAnalysisCorpusAnalyzer } from "./js/tools/analysis-corpus.js";
-import { cosineSimilarityFromMaps, jaccardSimilarityFromSets, overlapSummaryFromSets, frequencyMapFromEntries, cosineSimilarityFromArrays, shareArray } from "./js/tools/analysis-similarity.js";
-import { createAnalysisTemporalAnalyzer } from "./js/tools/analysis-temporal.js";
-import { createAnalysisStylometryAnalyzer } from "./js/tools/analysis-stylometry.js";
-import {
-  buildArchiveMediaFileBaseName as buildArchiveMediaFileBaseNameFromData,
-  buildArchiveMediaPartFileName,
-  formatArchiveDatePart,
-  bindArchivePreferenceEvents,
-  bindArchiveActionEvents,
-  bindArchiveResultExportEvents,
-  bindPostEditCheckDialogEvents,
-} from "./js/tools/archive.js";
-import { createAccountPickerController, bindAccountSwitcherItemEvents } from "./js/tools/account-picker.js";
-import { createNetworkStageController, renderNetworkLoadControls, bindNetworkViewportControls, bindNetworkWorkspaceEvents, bindNetworkStageModeEvents, bindNetworkInsightEvents, bindNetworkStageInteractionEvents, bindNetworkLifecycleEvents } from "./js/tools/network-ui.js";
-import {
-  normalizeThreadExplorerOrientation as normalizeThreadExplorerOrientationFromTools,
-  normalizeThreadExplorerSource as normalizeThreadExplorerSourceFromTools,
-  normalizeThreadExplorerViewMode as normalizeThreadExplorerViewModeFromTools,
-  handleThreadExplorerFeedSelectChange as handleThreadExplorerFeedSelectChangeFromTools,
-  handleThreadExplorerSourceSelectChange as handleThreadExplorerSourceSelectChangeFromTools,
-  handleThreadExplorerFeedScroll as handleThreadExplorerFeedScrollFromTools,
-  handleThreadExplorerActorFocusScroll as handleThreadExplorerActorFocusScrollFromTools,
-  handleThreadExplorerActorModeChange as handleThreadExplorerActorModeChangeFromTools,
-  handleThreadExplorerZoomOutClick as handleThreadExplorerZoomOutClickFromTools,
-  handleThreadExplorerZoomInClick as handleThreadExplorerZoomInClickFromTools,
-  handleThreadExplorerOrientationClick as handleThreadExplorerOrientationClickFromTools,
-  handleThreadExplorerCountClick as handleThreadExplorerCountClickFromTools,
-  handleThreadExplorerRepliesCountClick as handleThreadExplorerRepliesCountClickFromTools,
-  toggleThreadExplorerReplyClusterNode as toggleThreadExplorerReplyClusterNodeFromTools,
-  handleThreadExplorerWheel as handleThreadExplorerWheelFromTools,
-  handleThreadExplorerPointerDown as handleThreadExplorerPointerDownFromTools,
-  handleThreadExplorerPointerMove as handleThreadExplorerPointerMoveFromTools,
-  handleThreadExplorerPointerUp as handleThreadExplorerPointerUpFromTools,
-  updateThreadExplorerPanVelocity as updateThreadExplorerPanVelocityFromTools,
-  applyThreadExplorerPanDelta as applyThreadExplorerPanDeltaFromTools,
-  setThreadExplorerPanningMode as setThreadExplorerPanningModeFromTools,
-  createThreadExplorerPanController,
-} from "./js/tools/thread-explorer.js";
-import { normalizeStoredDesktopLayout as normalizeStoredDesktopLayoutFromState,
-  clampDesktopWidth, createDesktopLayoutController } from "./js/core/app-layout-state.js";
-import { createThreadExplorerViewPreference, createThreadExplorerSelectionPreferences, createThreadExplorerFavoritesController, createThreadExplorerFeedSourcesController, createThreadExplorerGalleryFullscreenController, createThreadExplorerFocusController, createThreadExplorerRenderScheduler, createThreadExplorerZoomController, createThreadExplorerZoomResetController, createThreadExplorerCardFocusController, createThreadExplorerController, loadThreadExplorerActorFocusWorkflow, loadThreadExplorerFeedWorkflow, loadThreadExplorerThreadWorkflow, renderThreadExplorerWorkspace as renderThreadExplorerWorkspaceFromController, bindThreadExplorerWorkspaceEvents, bindThreadExplorerGlobalEvents, bindThreadExplorerDialogEvents, bindThreadExplorerSnapshotEvents } from "./js/tools/thread-explorer-controller.js";
-import {
-  hydrateThreadExplorerCard,
-  createThreadExplorerLazyHydrationController,
-  hydrateThreadExplorerAvatars,
-  renderThreadExplorerCardAvatar,
-  renderThreadExplorerCardMedia,
-  renderThreadExplorerCardEmbeds,
-  getThreadExplorerActorAvatarUri as getThreadExplorerActorAvatarUriFromHydration,
-  markThreadExplorerAvatarImage as markThreadExplorerAvatarImageFromHydration,
-  applyThreadExplorerAvatarHydration as applyThreadExplorerAvatarHydrationToTree,
-  applyThreadExplorerAvatarCacheToTree as applyThreadExplorerAvatarCacheToTreeFromHydration,
-} from "./js/tools/thread-explorer-hydration.js";
-import { hydrateThreadExplorerSnapshotMedia as hydrateThreadExplorerSnapshotMediaFromTools } from "./js/tools/thread-explorer-media-hydration.js";
-import {
-  renderThreadExplorerControls,
-  renderThreadExplorerFeedSources,
-  renderThreadExplorerFavorites,
-  renderThreadExplorerReplies,
-  renderSavedSearches,
-  configureSavedSearchesDialog,
-  countThreadExplorerPosts as countThreadExplorerPostsFromRendering,
-  formatThreadExplorerDate as formatThreadExplorerDateFromRendering,
-  getThreadExplorerActorLabel as getThreadExplorerActorLabelFromRendering,
-  getThreadExplorerPreviewText as getThreadExplorerPreviewTextFromRendering,
-  loadThreadExplorerReactionsDialog as loadThreadExplorerReactionsDialogFromRendering,
-  renderThreadExplorerReactionActors as renderThreadExplorerReactionActorsFromRendering,
-} from "./js/tools/thread-explorer-rendering.js";
-import {
-  buildThreadExplorerSnapshotFileName as buildThreadExplorerSnapshotFileNameFromData,
-  createThreadExplorerSnapshotExportController,
-  countThreadExplorerSnapshotMediaAssets as countThreadExplorerSnapshotMediaAssetsFromData,
-  createThreadExplorerSnapshotAbortError,
-  getThreadExplorerSnapshotScale as getThreadExplorerSnapshotScaleFromData,
-  throwIfThreadExplorerSnapshotAborted,
-  getThreadExplorerSnapshotAvatarCacheKey as getSnapshotAvatarCacheKeyFromData,
-  getThreadExplorerSnapshotCachedAvatarUri as getSnapshotCachedAvatarUriFromData,
-  isThreadExplorerSnapshotMediaImage as isSnapshotMediaImageFromData,
-  getThreadExplorerSnapshotMediaImageKeys as getSnapshotMediaImageKeysFromData,
-  getThreadExplorerSnapshotMediaImageKey as getSnapshotMediaImageKeyFromData,
-  getThreadExplorerSnapshotDrawableMediaImage as getSnapshotDrawableMediaImageFromData,
-  getThreadExplorerSnapshotMediaDataUri as getSnapshotMediaDataUriFromData,
-  setThreadExplorerSnapshotCachedImageSource as setSnapshotCachedImageSourceFromData,
-  preloadThreadExplorerSnapshotAvatarImages as preloadSnapshotAvatarImagesFromData,
-  preloadThreadExplorerSnapshotMediaImages as preloadSnapshotMediaImagesFromData,
-  applyThreadExplorerSnapshotMediaCache as applySnapshotMediaCacheFromData,
-  storeThreadExplorerSnapshotMediaDataUri as storeSnapshotMediaDataUriFromData,
-  cacheThreadExplorerSnapshotMediaImage as cacheSnapshotMediaImageFromData,
-  cacheLoadedThreadExplorerSnapshotMediaImages as cacheLoadedSnapshotMediaImagesFromData,
-  inlineThreadExplorerSnapshotImages as inlineSnapshotImagesFromData,
-  applyThreadExplorerSnapshotMediaDataUris as applySnapshotMediaDataUrisFromData,
-  writeThreadExplorerPngUint32 as writePngUint32FromSnapshot,
-  createThreadExplorerPngCrcTable as createPngCrcTableFromSnapshot,
-  calculateThreadExplorerPngCrc as calculatePngCrcFromSnapshot,
-  createThreadExplorerPngChunk as createPngChunkFromSnapshot,
-  createThreadExplorerPngTextChunk as createPngTextChunkFromSnapshot,
-  escapeThreadExplorerPngXmpText as escapePngXmpTextFromSnapshot,
-  createThreadExplorerPngXmpPacket as createPngXmpPacketFromSnapshot,
-  createThreadExplorerPngXmpChunk as createPngXmpChunkFromSnapshot,
-  createThreadExplorerPngMetadataChunks as createPngMetadataChunksFromSnapshot,
-  addThreadExplorerPngMetadata as addPngMetadataFromSnapshot,
-  createThreadExplorerPngHeaderData as createPngHeaderDataFromSnapshot,
-  drawThreadExplorerSnapshotRoundRect as drawSnapshotRoundRectFromModule,
-  strokeThreadExplorerSnapshotRoundRect as strokeSnapshotRoundRectFromModule,
-  wrapThreadExplorerSnapshotText as wrapSnapshotTextFromModule,
-  drawThreadExplorerSnapshotTextBlock as drawSnapshotTextBlockFromModule,
-  getThreadExplorerSnapshotCountsText as getSnapshotCountsTextFromModule,
-  drawThreadExplorerSnapshotEdges as drawSnapshotEdgesFromModule,
-  drawThreadExplorerSnapshotCard as drawSnapshotCardFromModule,
-  renderThreadExplorerSnapshot as renderSnapshotFromModule,
-  renderThreadExplorerTiledPngSnapshot as renderTiledPngFromModule,
-  renderThreadExplorerForeignObjectSnapshot as renderForeignObjectFromModule,
-  renderThreadExplorerCanvasSnapshot as renderCanvasSnapshotFromModule,
-  renderThreadExplorerSnapshotTile as renderSnapshotTileFromModule,
-  drawThreadExplorerSnapshotFallbackAvatar as drawSnapshotFallbackAvatarFromModule,
-  canDrawThreadExplorerSnapshotImage as canDrawSnapshotImageFromModule,
-  drawThreadExplorerSnapshotAvatarImage as drawSnapshotAvatarFromModule,
-  drawThreadExplorerSnapshotCoverImage as drawSnapshotCoverImageFromModule,
-  drawThreadExplorerSnapshotImageAltText as drawSnapshotAltTextFromModule,
-  drawThreadExplorerSnapshotMediaImages as drawSnapshotMediaImagesFromModule,
-  drawThreadExplorerSnapshotMediaPlaceholder as drawSnapshotMediaPlaceholderFromModule,
-  createThreadExplorerSnapshotCanvas as createSnapshotCanvasFromModule,
-  encodeThreadExplorerSnapshotCanvas as encodeSnapshotCanvasFromModule,
-  getThreadExplorerSnapshotBackgroundColor as getSnapshotBackgroundColorFromModule,
-} from "./js/tools/thread-explorer-snapshot.js";
-import {
-  setThreadExplorerReplyClusterItemPosition as setReplyClusterItemPositionFromLayout,
-  getThreadExplorerReplyClusterItemSize as getReplyClusterItemSizeFromLayout,
-  setThreadExplorerReplyClusterNodePosition as setReplyClusterNodePositionFromLayout,
-  renderThreadExplorerReplyClusterEdges as renderReplyClusterEdgesFromLayout,
-  applyThreadExplorerReplyClusterBounds as applyReplyClusterBoundsFromLayout,
-  layoutThreadExplorerReplyCluster as layoutReplyClusterFromLayout,
-  ensureThreadExplorerReplyClusterRootExpanded as ensureReplyClusterRootExpandedFromLayout,
-  configureThreadExplorerReplyClusterItem,
-  mountThreadExplorerReplyClusterWorkspace,
-  getThreadExplorerStageBoxFromRects,
-  getThreadExplorerContentBounds,
-  calculateThreadExplorerPointZoom,
-  calculateThreadExplorerNodePan,
-  getThreadExplorerCardNeighborhoodBounds as getThreadExplorerCardNeighborhoodBoundsFromLayout,
-  calculateThreadExplorerViewportFit,
-} from "./js/tools/thread-explorer-layout.js";
-import {
-  createDmArchiveController,
-  createDmArchiveExportController,
-  createDmArchiveWorkspaceRenderer,
-  bindDmArchiveEvents,
-  retainDmSelectedParticipants,
-} from "./js/tools/dm-archive.js";
-import { clamp, setAttr, setSafeHtml, setSafeText } from "./js/core/app-utils.js";
-import { cloneTemplate, cloneTemplateContent } from "./js/shared/shared-templates.js";
-import { DEFAULT_AVATAR_URI, setAvatarImage, createSavedAccountRenderer, resolveStoredAccountAvatar } from "./js/shared/shared-accounts.js";
-import {
-  requestPostLike,
-  requestPostUnlike,
-  requestReplyTarget,
-  requestThreadPublish,
-} from "./js/atproto/atproto-posting.js";
-import {
-  requestAccountLogout,
-  requestAccountRemoval,
-  requestAccountSwitch,
-} from "./js/atproto/atproto-actors.js";
-import { requestThreadExplorerMediaHydration } from "./js/atproto/atproto-media.js";
-import { requestSearchResults } from "./js/atproto/atproto-search.js";
-import {
-  clampComposerTextLength,
-  countComposerGraphemes as countGraphemes,
-  countComposerUtf8Bytes as countUtf8Bytes,
-  createComposerPostTextLimit as createPostTextLimit,
-  doesComposerTextFitLimit as fitsPostTextLimit,
-  getComposerPostTextMetrics as getPostTextMetrics,
-  splitComposerGraphemes as splitIntoGraphemes,
-} from "./js/composer/composer-main.js";
-import {
-  formatComposerSegmentLengthLabel,
-  getComposerSegmentLengthDiagnostics,
-  validateComposerPublishInput,
-  createComposerPublishAvailabilityController,
-} from "./js/composer/composer-validation.js";
-import {
-  normalizeComposerSegmentOverrides as normalizeComposerSegmentOverridesFromModule,
-  syncComposerSegmentImages as syncComposerSegmentImagesFromModule,
-} from "./js/composer/composer-segments.js";
-import {
-  createComposerImageGeometry,
-} from "./js/composer/composer-image-geometry.js";
-import { prepareComposerPublishSegments, buildComposerPublishPayload, buildComposerPublishResultModel, renderComposerPublishResult, openComposerPublishedPost, createComposerPublishResultHandlers } from "./js/composer/composer-publishing.js";
-import { renderComposerImageToCanvas, bindComposerImageEditorEvents, drawComposerImageEditor, createComposerImageEditorDragController, createComposerImageEditorMetricsController } from "./js/composer/composer-image-renderer.js";
-import { createComposerImageEditorController } from "./js/composer/composer-image-editor.js";
-import { createComposerImageProcessing } from "./js/composer/composer-image-processing.js";
-import { createComposerDocumentController, createComposerThreadFileCodec } from "./js/composer/composer-document.js";
-import { createComposerTextService } from "./js/composer/composer-splitter.js";
-import { createComposerImageValidationController } from "./js/composer/composer-images.js";
-import {
-  normalizeComposerLinkCardProvider,
-  createComposerProxySettingsController,
-  createComposerProviderAvailabilityController,
-  createComposerProviderUsageController,
-  createComposerProviderPresentationController,
-  fetchComposerLinkCardImage,
-  requestComposerLinkCard,
-  signComposerLinkCardRequest,
-  composerLinkCardImageToDataUrl,
-  getComposerLinkCardProxyErrorMessage,
-  getComposerMicrolinkErrorMessage,
-} from "./js/composer/composer-link-card-providers.js";
-import {
-  tokenizeComposerText as tokenizeText,
-  trimComposerSegment as trimSegment,
-} from "./js/composer/composer-splitter.js";
-import { renderComposerSegmentImages, createComposerImageCollectionController, composerEventHasTransferFiles, getComposerDroppedImageFiles, getComposerImageDropPosition, clearComposerImageDropMarkers, clearComposerImageDragVisuals, updateComposerImageAltDisplay } from "./js/composer/composer-images.js";
-import { normalizeComposerLinkCard, normalizeComposerSegmentLinkCards, findOtherComposerLinkCardIndex, getComposerLinkCardTargetEntries, renderComposerLinkCardTargets, applyComposerLinkCardTargetAction, createComposerLinkCardDialogController, createComposerLinkCardSubmissionController } from "./js/composer/composer-link-cards.js";
-import { normalizeComposerReplyTarget, bindComposerContentDialogEvents, getComposerReplyTargetDisplayName, renderComposerReplyTargetCard, createComposerReplyTargetDialogController, createComposerReplyTargetController, buildComposerReplyTargetFromPost, createComposerAltTextDialogController } from "./js/composer/composer-dialogs.js";
-import { createComposerSegmentRenderer, createComposerLengthPresentationController, createComposerRenderScheduler } from "./js/composer/composer-segment-rendering.js";
-import { openComposerWorkspace, bindComposerCoreEvents, bindComposerHashtagEvents, createComposerInputController, createComposerInputEventHandlers, createComposerInputWarningController, createComposerReplyHandoff, openComposerReplyTarget, createComposerUiStateController } from "./js/composer/composer-page.js";
-import { bindComposerDialogEvents } from "./js/composer/composer-dialogs.js";
-import {
-  formatComposerHistoryMeta,
-  renderComposerHistoryList,
-  createComposerHistoryItemActions,
-  buildComposerHistoryEntry,
-  recordComposerHistoryEntry,
-  getComposerHistoryPreviewText,
-  mergeComposerPostingHistory,
-  normalizeComposerPostingHistory,
-} from "./js/composer/composer-history.js";
-import {
-  buildComposerMentionProfileUrl as buildComposerMentionProfileUrlFromData,
-  createComposerMentionResolver,
-  createComposerMentionDisplayController,
-  renderComposerMentionSearchResults,
-  runComposerMentionSearch,
-  getKnownComposerMentionHandles,
-  createComposerMentionSourceSyncController,
-  createComposerMentionSearchActions,
-  findComposerMentionSuggestion as findComposerMentionSuggestionFromData,
-  replaceComposerMentionHandle as replaceComposerMentionHandleFromData,
-  textContainsComposerMentionHandle as textContainsComposerMentionHandleFromData,
-} from "./js/composer/composer-mentions.js";
-import {
-  createComposerPostSettingsController,
-  DEFAULT_COMPOSER_POST_INTERACTION_SETTINGS,
-} from "./js/composer/composer-post-settings.js";
-import {
-  createDefaultImageEdit,
-  dataUrlToFile,
-  hasExplicitImageUploadTransform as hasExplicitSharedImageUploadTransform,
-  isImageAutoResizeEnabled as isSharedImageAutoResizeEnabled,
-  isImageUsingDefaultEdit,
-  normalizeImageAutoResizeMode,
-  normalizeImageEdit,
-  normalizeSegmentImages as normalizeSharedSegmentImages,
-  normalizeThreadImage as normalizeSharedThreadImage,
-} from "./js/shared/shared-images.js";
-import { getFirstHttpUrl, normalizeLinkCardTargetUrl, validateLinkCardTargetUrl, buildBasicLinkCard } from "./js/shared/shared-link-cards.js";
-import {
-  applyLikeStateToPost,
+  applyLikeStateToItemCollection,
+  applyLikeStateToThreadTree,
+  shortenThreadExplorerUrlForDisplay,
+  removeThreadExplorerCardUrlFromText,
+  getThreadExplorerEngagementScore,
+  getThreadExplorerEngagementTier,
+  getArchiveExternalCard,
+  getCurrentPostEditTokenStates,
+  createRichTextPresentation,
   buildLivePostInteractionModel,
   buildExternalCardDisplayModel,
   buildPostCardDisplayModel,
@@ -485,11 +48,724 @@ import {
   getPostAuthorFields,
   getPostActorLabel,
   getPostPreviewText,
-  getPostMetricCounts,
   getViewerLikeUri,
-  isPostLikedByViewer,
+  isPostLikedByViewer
 } from "./js/shared/shared-post-rendering.js";
-
+import {
+  createDmAccessGate,
+  createDmArchiveController,
+  createDmArchiveExportController,
+  createDmArchiveWorkspaceRenderer,
+  bindDmArchiveEvents,
+  retainDmSelectedParticipants
+} from "./js/tools/dm-archive.js";
+import {
+  createPostEditCheckController,
+  buildArchiveMediaFileBaseName as buildArchiveMediaFileBaseNameFromData,
+  buildArchiveMediaPartFileName,
+  formatArchiveDatePart,
+  bindArchivePreferenceEvents,
+  bindArchiveActionEvents,
+  bindArchiveResultExportEvents,
+  bindPostEditCheckDialogEvents
+} from "./js/tools/archive.js";
+import {
+  setAttrs,
+  clamp,
+  setSafeText
+} from "./js/core/app-utils.js";
+import {
+  getProfileInitials,
+  getProfileLabel,
+  DEFAULT_AVATAR_URI,
+  setAvatarImage,
+  createSavedAccountRenderer,
+  resolveStoredAccountAvatar
+} from "./js/shared/shared-accounts.js";
+import {
+  getRenderedThreadExplorerChildItems,
+  getRenderedThreadExplorerCard,
+  collectCollapsibleThreadExplorerUris,
+  setThreadExplorerReplyClusterItemPosition as setReplyClusterItemPositionFromLayout,
+  getThreadExplorerReplyClusterItemSize as getReplyClusterItemSizeFromLayout,
+  setThreadExplorerReplyClusterNodePosition as setReplyClusterNodePositionFromLayout,
+  renderThreadExplorerReplyClusterEdges as renderReplyClusterEdgesFromLayout,
+  applyThreadExplorerReplyClusterBounds as applyReplyClusterBoundsFromLayout,
+  layoutThreadExplorerReplyCluster as layoutReplyClusterFromLayout,
+  ensureThreadExplorerReplyClusterRootExpanded as ensureReplyClusterRootExpandedFromLayout,
+  configureThreadExplorerReplyClusterItem,
+  mountThreadExplorerReplyClusterWorkspace,
+  getThreadExplorerStageBoxFromRects,
+  getThreadExplorerContentBounds,
+  calculateThreadExplorerPointZoom,
+  calculateThreadExplorerNodePan,
+  getThreadExplorerCardNeighborhoodBounds as getThreadExplorerCardNeighborhoodBoundsFromLayout,
+  calculateThreadExplorerViewportFit
+} from "./js/tools/thread-explorer-layout.js";
+import {
+  sanitizeThreadExplorerFileNamePart,
+  buildThreadExplorerSnapshotFileName as buildThreadExplorerSnapshotFileNameFromData,
+  createThreadExplorerSnapshotExportController,
+  countThreadExplorerSnapshotMediaAssets as countThreadExplorerSnapshotMediaAssetsFromData,
+  createThreadExplorerSnapshotAbortError,
+  throwIfThreadExplorerSnapshotAborted,
+  getThreadExplorerSnapshotAvatarCacheKey as getSnapshotAvatarCacheKeyFromData,
+  getThreadExplorerSnapshotCachedAvatarUri as getSnapshotCachedAvatarUriFromData,
+  isThreadExplorerSnapshotMediaImage as isSnapshotMediaImageFromData,
+  getThreadExplorerSnapshotMediaImageKeys as getSnapshotMediaImageKeysFromData,
+  getThreadExplorerSnapshotDrawableMediaImage as getSnapshotDrawableMediaImageFromData,
+  getThreadExplorerSnapshotMediaDataUri as getSnapshotMediaDataUriFromData,
+  setThreadExplorerSnapshotCachedImageSource as setSnapshotCachedImageSourceFromData,
+  preloadThreadExplorerSnapshotAvatarImages as preloadSnapshotAvatarImagesFromData,
+  preloadThreadExplorerSnapshotMediaImages as preloadSnapshotMediaImagesFromData,
+  storeThreadExplorerSnapshotMediaDataUri as storeSnapshotMediaDataUriFromData,
+  cacheThreadExplorerSnapshotMediaImage as cacheSnapshotMediaImageFromData,
+  cacheLoadedThreadExplorerSnapshotMediaImages as cacheLoadedSnapshotMediaImagesFromData,
+  inlineThreadExplorerSnapshotImages as inlineSnapshotImagesFromData,
+  applyThreadExplorerSnapshotMediaDataUris as applySnapshotMediaDataUrisFromData,
+  createThreadExplorerPngCrcTable as createPngCrcTableFromSnapshot,
+  createThreadExplorerPngChunk as createPngChunkFromSnapshot,
+  createThreadExplorerPngMetadataChunks as createPngMetadataChunksFromSnapshot,
+  addThreadExplorerPngMetadata as addPngMetadataFromSnapshot,
+  createThreadExplorerPngHeaderData as createPngHeaderDataFromSnapshot,
+  drawThreadExplorerSnapshotRoundRect as drawSnapshotRoundRectFromModule,
+  strokeThreadExplorerSnapshotRoundRect as strokeSnapshotRoundRectFromModule,
+  drawThreadExplorerSnapshotEdges as drawSnapshotEdgesFromModule,
+  drawThreadExplorerSnapshotCard as drawSnapshotCardFromModule,
+  renderThreadExplorerSnapshot as renderSnapshotFromModule,
+  renderThreadExplorerTiledPngSnapshot as renderTiledPngFromModule,
+  renderThreadExplorerForeignObjectSnapshot as renderForeignObjectFromModule,
+  renderThreadExplorerCanvasSnapshot as renderCanvasSnapshotFromModule,
+  renderThreadExplorerSnapshotTile as renderSnapshotTileFromModule,
+  drawThreadExplorerSnapshotFallbackAvatar as drawSnapshotFallbackAvatarFromModule,
+  canDrawThreadExplorerSnapshotImage as canDrawSnapshotImageFromModule,
+  drawThreadExplorerSnapshotAvatarImage as drawSnapshotAvatarFromModule,
+  drawThreadExplorerSnapshotCoverImage as drawSnapshotCoverImageFromModule,
+  drawThreadExplorerSnapshotImageAltText as drawSnapshotAltTextFromModule,
+  drawThreadExplorerSnapshotMediaImages as drawSnapshotMediaImagesFromModule,
+  drawThreadExplorerSnapshotMediaPlaceholder as drawSnapshotMediaPlaceholderFromModule,
+  createThreadExplorerSnapshotCanvas as createSnapshotCanvasFromModule,
+  encodeThreadExplorerSnapshotCanvas as encodeSnapshotCanvasFromModule,
+  getThreadExplorerSnapshotBackgroundColor as getSnapshotBackgroundColorFromModule
+} from "./js/tools/thread-explorer-snapshot.js";
+import {
+  formatCompactArchiveTimestamp,
+  createArchiveWorkspaceModels
+} from "./js/tools/archive-workspace-models.js";
+import {
+  createSearchModels,
+  createSavedSearchModels
+} from "./js/tools/search-models.js";
+import {
+  createSearchFormController
+} from "./js/tools/search-form.js";
+import {
+  createSearchRunController,
+  createSavedSearchController
+} from "./js/tools/search-controller.js";
+import {
+  createDmExportModels
+} from "./js/tools/dm-export-models.js";
+import {
+  createDmPdfRenderer
+} from "./js/tools/dm-pdf-rendering.js";
+import {
+  createDmHtmlRenderer
+} from "./js/tools/dm-html-rendering.js";
+import {
+  createArchiveSourceController
+} from "./js/tools/archive-source.js";
+import {
+  createArchiveWorkspaceRenderer,
+  createArchiveWorkspaceLayout
+} from "./js/tools/archive-workspace-rendering.js";
+import {
+  createArchiveRunController
+} from "./js/tools/archive-run-controller.js";
+import {
+  createAssetService,
+  getAssetExtensionFromMimeType
+} from "./js/shared/shared-assets.js";
+import {
+  createArchiveAvatarAssets
+} from "./js/tools/archive-assets.js";
+import {
+  createArchiveCatalogService
+} from "./js/tools/archive-catalog.js";
+import {
+  createArchiveMediaModels,
+  MEDIA_EXPORT_BATCH_SIZE
+} from "./js/tools/archive-media-models.js";
+import {
+  createArchiveMediaExportController
+} from "./js/tools/archive-media-export.js";
+import {
+  createArchivePdfLayout
+} from "./js/tools/archive-pdf-layout.js";
+import {
+  createArchivePdfRenderer
+} from "./js/tools/archive-pdf-rendering.js";
+import {
+  createArchivePdfExportController
+} from "./js/tools/archive-pdf-export.js";
+import {
+  inferDefaultPostLanguages,
+  getPostLanguageDisplayName,
+  getPostLanguageOptions,
+  normalizePostLanguageTags
+} from "./js/shared/shared-languages.js";
+import {
+  DEFAULT_LOCALE,
+  SUPPORTED_LOCALES,
+  translations,
+  createApplicationTranslationRenderer
+} from "./js/core/app-i18n.js";
+import {
+  createStoredZipCodec
+} from "./js/shared/shared-zip.js";
+import {
+  buildArchiveThreadGroups,
+  buildArchiveThreadDepthMap,
+  shortenArchiveUrlForDisplay,
+  shouldAutoFallbackArchiveHtmlToCompact,
+  isArchiveStringLengthError,
+  createArchiveHtmlModels
+} from "./js/tools/archive-html-models.js";
+import {
+  createArchiveHtmlRenderer
+} from "./js/tools/archive-html-rendering.js";
+import {
+  createArchiveHtmlTemplateLoader,
+  createArchiveHtmlExportController
+} from "./js/tools/archive-html-export.js";
+import {
+  createPdfFileBuilder
+} from "./js/shared/shared-pdf.js";
+import {
+  createPdfTextLayout
+} from "./js/shared/shared-pdf-text.js";
+import {
+  fillRoundedRect,
+  strokeRoundedRect,
+  drawRoundedImageContain,
+  drawCircularImageCover
+} from "./js/shared/shared-canvas.js";
+import {
+  createSettingsBackupCodec,
+  createSettingsBackupController,
+  createSettingsBackupReminder
+} from "./js/core/app-backup.js";
+import {
+  createComposerLinkCardPreviewRenderer,
+  syncComposerSegmentLinkCards,
+  normalizeComposerLinkCard,
+  normalizeComposerSegmentLinkCards,
+  getComposerLinkCardTargetEntries,
+  renderComposerLinkCardTargets,
+  applyComposerLinkCardTargetAction,
+  createComposerLinkCardDialogController,
+  createComposerLinkCardSubmissionController
+} from "./js/composer/composer-link-cards.js";
+import {
+  createComposerMentionSourceCorrectionController,
+  createComposerMentionDialogController,
+  buildComposerMentionProfileUrl as buildComposerMentionProfileUrlFromData,
+  createComposerMentionResolver,
+  createComposerMentionDisplayController,
+  renderComposerMentionSearchResults,
+  runComposerMentionSearch,
+  getKnownComposerMentionHandles,
+  createComposerMentionSourceSyncController,
+  createComposerMentionSearchActions,
+  findComposerMentionSuggestion as findComposerMentionSuggestionFromData,
+  replaceComposerMentionHandle as replaceComposerMentionHandleFromData,
+  textContainsComposerMentionHandle as textContainsComposerMentionHandleFromData
+} from "./js/composer/composer-mentions.js";
+import {
+  buildComposerPostingPayloads,
+  normalizePublishRateLimit,
+  createComposerRateLimitPresentation,
+  buildComposerPublishErrorMessage,
+  createComposerPublishController,
+  prepareComposerPublishSegments,
+  buildComposerPublishPayload,
+  buildComposerPublishResultModel,
+  renderComposerPublishResult,
+  openComposerPublishedPost,
+  createComposerPublishResultHandlers
+} from "./js/composer/composer-publishing.js";
+import {
+  normalizeStandardSiteMetadata as normalizeSharedStandardSiteMetadata,
+  getPublicationCardFooterLabel as getSharedPublicationCardFooterLabel,
+  getFirstHttpUrl,
+  normalizeLinkCardTargetUrl,
+  validateLinkCardTargetUrl,
+  buildBasicLinkCard
+} from "./js/shared/shared-link-cards.js";
+import {
+  hasEmojiLikeGraphemes,
+  hasCjkGraphemes,
+  formatComposerCharacterCount as formatComposerCharacterCountFromModule,
+  formatComposerSegmentLengthLabel,
+  getComposerSegmentLengthDiagnostics,
+  validateComposerPublishInput,
+  createComposerPublishAvailabilityController
+} from "./js/composer/composer-validation.js";
+import {
+  autoSizeComposerTextarea as autoSizeTextarea,
+  resizeComposerTextareas,
+  createComposerSegmentRenderer,
+  createComposerLengthPresentationController,
+  createComposerRenderScheduler
+} from "./js/composer/composer-segment-rendering.js";
+import {
+  createApplicationStorage,
+  createWorkerRequestClient,
+  readBrowserStorageValue,
+  removeBrowserStorageValue,
+  writeBrowserStorageValue
+} from "./js/core/app-storage.js";
+import {
+  createApplicationHydrationController,
+  createAsyncTaskQueue
+} from "./js/core/app-state.js";
+import {
+  createApplicationBootstrap,
+  createApplicationUpdateController,
+  CURRENT_VERSION_INFO,
+  fetchVersionInfo
+} from "./js/core/app-bootstrap.js";
+import {
+  createHelpController
+} from "./js/core/app-help.js";
+import {
+  createHelpMarkdownRenderer
+} from "./js/core/app-help-markdown.js";
+import {
+  HELP_TOPICS
+} from "./js/core/app-help-topics.js";
+import {
+  createApplicationSessionController,
+  createLoginController,
+  createSavedAccountActions,
+  normalizeLoginServiceUrl
+} from "./js/core/app-session.js";
+import {
+  createApplicationInstallController,
+  isIosDevice as isIosDeviceFromShell,
+  createAppearanceController,
+  getCurrentThreadlinePage,
+  getDefaultWorkspaceForCurrentPage,
+  normalizeWorkspaceForCurrentPage
+} from "./js/core/app-shell.js";
+import {
+  createApplicationLifecycleHandlers,
+  bindApplicationEvents,
+  bindOptionalApplicationEvent,
+  bindThreadExplorerApplicationEvents,
+  bindGlobalApplicationEvents,
+  bindApplicationNavigationEvents,
+  bindAuthenticationEvents,
+  bindPreferenceEvents,
+  bindSettingsDataEvents,
+  bindEditorDialogEvents,
+  bindApplicationUpdateEvents,
+  bindConfirmationDialogEvents,
+  bindLinkCardSettingsEvents,
+  bindWorkspaceUtilityEvents,
+  bindHelpAndSettingsEvents
+} from "./js/core/app-initialization.js";
+import {
+  createPendingNavigationController,
+  THREADLINE_PAGE_COMPOSER,
+  THREADLINE_PAGE_TOOLS,
+  navigateToThreadlinePage
+} from "./js/core/app-navigation.js";
+import {
+  createComposerLinkCardRequestController,
+  normalizeComposerLinkCardProvider,
+  createComposerProxySettingsController,
+  createComposerProviderAvailabilityController,
+  createComposerProviderUsageController,
+  createComposerProviderPresentationController,
+  fetchComposerLinkCardImage,
+  requestComposerLinkCard,
+  signComposerLinkCardRequest,
+  composerLinkCardImageToDataUrl,
+  getComposerLinkCardProxyErrorMessage,
+  getComposerMicrolinkErrorMessage
+} from "./js/composer/composer-link-card-providers.js";
+import {
+  createHashtagController,
+  parseHashtag as parseHashtagValue,
+  normalizeHashtags as normalizeHashtagEntries,
+  normalizeHashtagSelection,
+  mergeHashtags as mergeHashtagEntries,
+  getHashtagDisplayValue,
+  formatHashtag,
+  normalizeHashtagPlacement
+} from "./js/shared/shared-hashtags.js";
+import {
+  closeModalDialog,
+  createQueuedConfirmDialogController,
+  showErrorModal,
+  showProgressModal
+} from "./js/core/app-dialogs.js";
+import {
+  getToolsWorkspaceEntries,
+  bindToolsWorkspaceNavigationEvents
+} from "./js/tools/tools-layout.js";
+import {
+  openToolsWorkspace,
+  persistToolsWorkspacePreference,
+  readToolsWorkspacePreference
+} from "./js/tools/tools-page.js";
+import {
+  escapeSearchHighlightRegex,
+  parseSearchQueryTerms,
+  createSearchPreferencesNormalizer,
+  quoteSearchSummaryValue,
+  splitSharedSearchQuery,
+  normalizePersistedSearchResultItems as normalizePersistedSearchResultItemsFromSearch,
+  areSearchPreferencesEqual as areSearchPreferencesEqualFromSearch,
+  buildPersistableSearchResultState,
+  doesSearchResultStateMatch,
+  getSavedSearchStringParam as getSavedSearchStringParamFromSearch,
+  normalizeSavedSearchSort as normalizeSavedSearchSortFromSearch,
+  buildSharedSearchQuery as buildSharedSearchQueryFromSearch,
+  bindSearchWorkspaceEvents,
+  bindSearchDialogEvents
+} from "./js/tools/search.js";
+import {
+  createSearchResultCardRenderer
+} from "./js/tools/search-results.js";
+import {
+  buildThreadExplorerFeedSource,
+  createThreadExplorerGalleryController,
+  appendThreadExplorerFeedItems,
+  sortThreadExplorerFeedItemsByDate,
+  normalizeThreadExplorerFavorites,
+  resolveThreadExplorerSelection,
+  buildThreadExplorerFavoriteModel,
+  findThreadExplorerTreeNode,
+  buildThreadExplorerPostWebUrl as buildThreadExplorerPostWebUrlFromData,
+  createThreadExplorerCardInteractionController,
+  createThreadExplorerCardPresentationController,
+  getThreadExplorerActorFocusId,
+  getThreadExplorerFaviconUrl,
+  getThreadExplorerGalleryFallbackDecision,
+  normalizeThreadExplorerHydratedMedia,
+  getThreadExplorerImageSources,
+  getThreadExplorerPostImages,
+  getThreadExplorerPostRecordKey,
+  isThreadExplorerFeedUri,
+  normalizeThreadExplorerAccountMode,
+  normalizeThreadExplorerActorFocusMode as normalizeThreadExplorerActorFocusModeFromTools,
+  createThreadExplorerActorStub as createThreadExplorerActorStubFromTools,
+  isThreadExplorerOwnActor as isThreadExplorerOwnActorFromTools,
+  getThreadExplorerOwnActor as getThreadExplorerOwnActorFromTools,
+  isThreadExplorerForeignAccountMode as isThreadExplorerForeignAccountModeFromTools,
+  isThreadExplorerForeignActorFocusMode as isThreadExplorerForeignActorFocusModeFromTools,
+  getThreadExplorerRequestedActor as getThreadExplorerRequestedActorFromTools,
+  renderThreadExplorerFeedPanel,
+  renderThreadExplorerActorFocusPanel,
+  renderThreadExplorerTreeEdges as renderThreadExplorerTreeEdgesFromTools,
+  createThreadExplorerFeedItemFragment as createThreadExplorerFeedItemFragmentFromTools,
+  prepareThreadExplorerRenderedNode,
+  renderThreadExplorerTreePanel,
+  createThreadExplorerRenderedItem as createThreadExplorerRenderedItemFromTools,
+  createThreadExplorerReplyClusterRenderNode as createThreadExplorerReplyClusterRenderNodeFromTools,
+  appendThreadExplorerReplyClusterNodes,
+  createThreadExplorerReplyClusterWorkspace,
+  renderThreadExplorerPostGallery,
+  applyThreadExplorerPostImagePreviewShape as applyThreadExplorerPostImagePreviewShapeFromTools,
+  syncThreadExplorerPostCardImageShape as syncThreadExplorerPostCardImageShapeFromTools,
+  createThreadExplorerPostImageFigure,
+  renderThreadExplorerQuoteGallery,
+  createThreadExplorerQuotePreviewImage,
+  renderThreadExplorerQuotePostCard,
+  renderThreadExplorerExternalLinkCard,
+  hideThreadExplorerExternalCardImage,
+  getThreadExplorerFeedUriFromSource as getThreadExplorerFeedUriFromSourceModule,
+  getThreadExplorerSearchIdFromSource as getThreadExplorerSearchIdFromSourceModule,
+  normalizeThreadExplorerActor,
+  normalizeThreadExplorerOrientation as normalizeThreadExplorerOrientationFromTools,
+  normalizeThreadExplorerSource as normalizeThreadExplorerSourceFromTools,
+  normalizeThreadExplorerViewMode as normalizeThreadExplorerViewModeFromTools,
+  handleThreadExplorerFeedSelectChange as handleThreadExplorerFeedSelectChangeFromTools,
+  handleThreadExplorerSourceSelectChange as handleThreadExplorerSourceSelectChangeFromTools,
+  handleThreadExplorerFeedScroll as handleThreadExplorerFeedScrollFromTools,
+  handleThreadExplorerActorFocusScroll as handleThreadExplorerActorFocusScrollFromTools,
+  handleThreadExplorerActorModeChange as handleThreadExplorerActorModeChangeFromTools,
+  handleThreadExplorerZoomOutClick as handleThreadExplorerZoomOutClickFromTools,
+  handleThreadExplorerZoomInClick as handleThreadExplorerZoomInClickFromTools,
+  handleThreadExplorerOrientationClick as handleThreadExplorerOrientationClickFromTools,
+  handleThreadExplorerCountClick as handleThreadExplorerCountClickFromTools,
+  handleThreadExplorerRepliesCountClick as handleThreadExplorerRepliesCountClickFromTools,
+  handleThreadExplorerWheel as handleThreadExplorerWheelFromTools,
+  handleThreadExplorerPointerDown as handleThreadExplorerPointerDownFromTools,
+  handleThreadExplorerPointerMove as handleThreadExplorerPointerMoveFromTools,
+  handleThreadExplorerPointerUp as handleThreadExplorerPointerUpFromTools,
+  updateThreadExplorerPanVelocity as updateThreadExplorerPanVelocityFromTools,
+  applyThreadExplorerPanDelta as applyThreadExplorerPanDeltaFromTools,
+  setThreadExplorerPanningMode as setThreadExplorerPanningModeFromTools,
+  createThreadExplorerPanController
+} from "./js/tools/thread-explorer.js";
+import {
+  getNetworkNodeScore,
+  getNetworkRelationType,
+  getNetworkScoreBreakdown,
+  createNetworkFocusController,
+  createNetworkDataController,
+  rankNetworkNodes,
+  selectNetworkNodes,
+  sortNetworkProfiles,
+  calculateNetworkViewport,
+  calculateNetworkContentBounds
+} from "./js/tools/network.js";
+import {
+  createNetworkLayoutController
+} from "./js/tools/network-layout.js";
+import {
+  createNetworkWorkspaceRenderer
+} from "./js/tools/network-rendering.js";
+import {
+  buildNetworkFocusCardModel,
+  createNetworkFocusCardRenderer
+} from "./js/tools/network-focus-rendering.js";
+import {
+  createNetworkStageRenderer
+} from "./js/tools/network-stage-rendering.js";
+import {
+  createNetworkWorkspaceController,
+  readNetworkShapePreference,
+  writeNetworkShapePreference
+} from "./js/tools/network-controller.js";
+import {
+  normalizeAnalysisActor,
+  bindAnalysisWorkspaceEvents,
+  createAnalysisWorkspaceController
+} from "./js/tools/analysis.js";
+import {
+  ANALYSIS_METRIC_DEFINITIONS,
+  ANALYSIS_FUNCTION_WORDS,
+  ANALYSIS_NUMBER_WORDS,
+  ANALYSIS_TEMPORAL_GAP_BUCKETS,
+  ANALYSIS_WEEKDAY_ANCHORS,
+  ANALYSIS_WEEKDAY_FALLBACKS,
+  ANALYSIS_NETWORK_PATTERNS,
+  ANALYSIS_CORPUS_PATTERNS,
+  ANALYSIS_DELTA_REPORT_LABEL
+} from "./js/tools/analysis-config.js";
+import {
+  createAnalysisAccountNormalizer,
+  getPersistableAnalysisAccount,
+  analysisAccountNeedsNetworkRefresh
+} from "./js/tools/analysis-accounts.js";
+import {
+  createAnalysisAccountComparator
+} from "./js/tools/analysis-comparison.js";
+import {
+  createAnalysisRenderer,
+  buildAnalysisMetricTableModel
+} from "./js/tools/analysis-rendering.js";
+import {
+  createAnalysisReportModels
+} from "./js/tools/analysis-report-models.js";
+import {
+  createAnalysisReportLayout
+} from "./js/tools/analysis-report-layout.js";
+import {
+  createAnalysisPdfRenderer
+} from "./js/tools/analysis-pdf-rendering.js";
+import {
+  createArchivePreferencesController
+} from "./js/tools/archive-preferences.js";
+import {
+  createAnalysisTableModels
+} from "./js/tools/analysis-table-models.js";
+import {
+  createAnalysisController
+} from "./js/tools/analysis-controller.js";
+import {
+  createAnalysisCorpusAnalyzer
+} from "./js/tools/analysis-corpus.js";
+import {
+  cosineSimilarityFromMaps,
+  jaccardSimilarityFromSets,
+  overlapSummaryFromSets,
+  frequencyMapFromEntries,
+  cosineSimilarityFromArrays,
+  shareArray
+} from "./js/tools/analysis-similarity.js";
+import {
+  createAnalysisTemporalAnalyzer
+} from "./js/tools/analysis-temporal.js";
+import {
+  createAnalysisStylometryAnalyzer
+} from "./js/tools/analysis-stylometry.js";
+import {
+  createAccountPickerController,
+  bindAccountSwitcherItemEvents
+} from "./js/tools/account-picker.js";
+import {
+  createNetworkStageController,
+  renderNetworkLoadControls,
+  bindNetworkViewportControls,
+  bindNetworkWorkspaceEvents,
+  bindNetworkStageModeEvents,
+  bindNetworkInsightEvents,
+  bindNetworkStageInteractionEvents,
+  bindNetworkLifecycleEvents
+} from "./js/tools/network-ui.js";
+import {
+  normalizeStoredDesktopLayout as normalizeStoredDesktopLayoutFromState,
+  clampDesktopWidth,
+  createDesktopLayoutController
+} from "./js/core/app-layout-state.js";
+import {
+  hydrateThreadExplorerCard,
+  createThreadExplorerLazyHydrationController,
+  hydrateThreadExplorerAvatars,
+  renderThreadExplorerCardAvatar,
+  renderThreadExplorerCardMedia,
+  renderThreadExplorerCardEmbeds,
+  getThreadExplorerActorAvatarUri as getThreadExplorerActorAvatarUriFromHydration,
+  markThreadExplorerAvatarImage as markThreadExplorerAvatarImageFromHydration,
+  applyThreadExplorerAvatarHydration as applyThreadExplorerAvatarHydrationToTree,
+  applyThreadExplorerAvatarCacheToTree as applyThreadExplorerAvatarCacheToTreeFromHydration
+} from "./js/tools/thread-explorer-hydration.js";
+import {
+  hydrateThreadExplorerSnapshotMedia as hydrateThreadExplorerSnapshotMediaFromTools
+} from "./js/tools/thread-explorer-media-hydration.js";
+import {
+  renderThreadExplorerControls,
+  renderThreadExplorerFeedSources,
+  renderThreadExplorerFavorites,
+  renderThreadExplorerReplies,
+  renderSavedSearches,
+  configureSavedSearchesDialog,
+  countThreadExplorerPosts as countThreadExplorerPostsFromRendering,
+  formatThreadExplorerDate as formatThreadExplorerDateFromRendering,
+  getThreadExplorerActorLabel as getThreadExplorerActorLabelFromRendering,
+  getThreadExplorerPreviewText as getThreadExplorerPreviewTextFromRendering,
+  loadThreadExplorerReactionsDialog as loadThreadExplorerReactionsDialogFromRendering
+} from "./js/tools/thread-explorer-rendering.js";
+import {
+  cloneTemplateContent
+} from "./js/shared/shared-templates.js";
+import {
+  requestPostLike,
+  requestPostUnlike,
+  requestReplyTarget,
+  requestThreadPublish
+} from "./js/atproto/atproto-posting.js";
+import {
+  requestAccountLogout,
+  requestAccountRemoval,
+  requestAccountSwitch
+} from "./js/atproto/atproto-actors.js";
+import {
+  requestThreadExplorerMediaHydration
+} from "./js/atproto/atproto-media.js";
+import {
+  requestSearchResults
+} from "./js/atproto/atproto-search.js";
+import {
+  clampComposerTextLength,
+  countComposerGraphemes as countGraphemes,
+  createComposerPostTextLimit as createPostTextLimit,
+  doesComposerTextFitLimit as fitsPostTextLimit,
+  getComposerPostTextMetrics as getPostTextMetrics,
+  splitComposerGraphemes as splitIntoGraphemes
+} from "./js/composer/composer-main.js";
+import {
+  normalizeComposerSegmentOverrides as normalizeComposerSegmentOverridesFromModule,
+  syncComposerSegmentImages as syncComposerSegmentImagesFromModule
+} from "./js/composer/composer-segments.js";
+import {
+  createComposerImageGeometry
+} from "./js/composer/composer-image-geometry.js";
+import {
+  renderComposerImageToCanvas,
+  bindComposerImageEditorEvents,
+  drawComposerImageEditor,
+  createComposerImageEditorDragController,
+  createComposerImageEditorMetricsController
+} from "./js/composer/composer-image-renderer.js";
+import {
+  createComposerImageEditorController
+} from "./js/composer/composer-image-editor.js";
+import {
+  createComposerImageProcessing
+} from "./js/composer/composer-image-processing.js";
+import {
+  createComposerDocumentController,
+  createComposerThreadFileCodec
+} from "./js/composer/composer-document.js";
+import {
+  createComposerTextService,
+  tokenizeComposerText as tokenizeText,
+  trimComposerSegment as trimSegment
+} from "./js/composer/composer-splitter.js";
+import {
+  createComposerImageValidationController,
+  renderComposerSegmentImages,
+  createComposerImageCollectionController,
+  composerEventHasTransferFiles,
+  getComposerDroppedImageFiles,
+  getComposerImageDropPosition,
+  clearComposerImageDropMarkers,
+  clearComposerImageDragVisuals,
+  updateComposerImageAltDisplay
+} from "./js/composer/composer-images.js";
+import {
+  normalizeComposerReplyTarget,
+  bindComposerContentDialogEvents,
+  getComposerReplyTargetDisplayName,
+  renderComposerReplyTargetCard,
+  createComposerReplyTargetDialogController,
+  createComposerReplyTargetController,
+  buildComposerReplyTargetFromPost,
+  createComposerAltTextDialogController,
+  bindComposerDialogEvents
+} from "./js/composer/composer-dialogs.js";
+import {
+  openComposerWorkspace,
+  bindComposerCoreEvents,
+  bindComposerHashtagEvents,
+  createComposerInputController,
+  createComposerInputEventHandlers,
+  createComposerInputWarningController,
+  createComposerReplyHandoff,
+  openComposerReplyTarget,
+  createComposerUiStateController
+} from "./js/composer/composer-page.js";
+import {
+  formatComposerHistoryMeta,
+  renderComposerHistoryList,
+  createComposerHistoryItemActions,
+  buildComposerHistoryEntry,
+  recordComposerHistoryEntry,
+  getComposerHistoryPreviewText,
+  mergeComposerPostingHistory,
+  normalizeComposerPostingHistory
+} from "./js/composer/composer-history.js";
+import {
+  createComposerPostSettingsController,
+  DEFAULT_COMPOSER_POST_INTERACTION_SETTINGS
+} from "./js/composer/composer-post-settings.js";
+import {
+  createDefaultImageEdit,
+  dataUrlToFile,
+  hasExplicitImageUploadTransform as hasExplicitSharedImageUploadTransform,
+  isImageAutoResizeEnabled as isSharedImageAutoResizeEnabled,
+  isImageUsingDefaultEdit,
+  normalizeImageAutoResizeMode,
+  normalizeImageEdit,
+  normalizeSegmentImages as normalizeSharedSegmentImages,
+  normalizeThreadImage as normalizeSharedThreadImage
+} from "./js/shared/shared-images.js";
 const assetService = createAssetService({
   encodeBase64: (value) => btoa(value), decodeBase64: (value) => atob(value),
   blob: (parts, options) => new Blob(parts, options), reader: () => new FileReader(),
@@ -581,73 +857,6 @@ const MICROLINK_DAILY_LIMIT = 25;
 const DM_ACCESS_SECRET_HASH = "12ba477603258163567c8192f456efeeea933b95307fb7033903dc637f54121a";
 const DESKTOP_SIDEBAR_COLLAPSED_WIDTH = 96;
 
-/**
- * Sets multiple attributes on an element.
- * @param {HTMLElement} element - The target element.
- * @param {Object} attrs - Object with attribute name-value pairs.
- * @returns {void}
- */
-function setAttrs(element, attrs) {
-  if (!element) return;
-  for (const [name, value] of Object.entries(attrs)) {
-    if (value !== undefined && value !== null) {
-      element.setAttribute(name, String(value));
-    }
-  }
-}
-
-/**
- * Adds CSS classes to an element.
- * @param {HTMLElement} element - The target element.
- * @param {...string} classes - Class names to add.
- * @returns {void}
- */
-function addClasses(element, ...classes) {
-  if (element) {
-    element.classList.add(...classes.filter(Boolean));
-  }
-}
-
-/**
- * Sets or toggles CSS classes based on a condition.
- * @param {HTMLElement} element - The target element.
- * @param {string} className - The class name.
- * @param {boolean} condition - Whether to add or remove the class.
- * @returns {void}
- */
-function toggleClass(element, className, condition) {
-  if (element) {
-    element.classList.toggle(className, condition);
-  }
-}
-
-/**
- * Creates an icon SVG element from a path definition.
- * @param {string} pathD - The SVG path d attribute.
- * @param {string} [viewBox="0 0 24 24"] - The SVG viewBox.
- * @returns {SVGElement} The created SVG element.
- */
-function createIconSvgElement(pathD, viewBox = "0 0 24 24") {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", viewBox);
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", pathD);
-  svg.appendChild(path);
-  return svg;
-}
-
-/**
- * Appends multiple children to a parent element.
- * @param {HTMLElement} parent - The parent element.
- * @param {...HTMLElement} children - The child elements to append.
- * @returns {void}
- */
-function appendChildren(parent, ...children) {
-  if (parent) {
-    children.filter(Boolean).forEach((child) => parent.appendChild(child));
-  }
-}
 
 function normalizeStoredDesktopLayout(rawSidebarWidth, rawComposerWidth, rawLayoutVersion) {
   return normalizeStoredDesktopLayoutFromState(rawSidebarWidth, rawComposerWidth, rawLayoutVersion, {
@@ -1821,7 +2030,7 @@ const composerMentionSearchActions = createComposerMentionSearchActions({
   getSegments: () => activeSegments,
   setSegments(segments) {
     activeSegments = segments;
-    segmentOverrides = normalizeSegmentOverrides(segments);
+    segmentOverrides = normalizeComposerSegmentOverridesFromModule(segments);
   },
   sourceSync: composerMentionSourceSync,
   resolver: composerMentionResolver,
@@ -1847,10 +2056,10 @@ const composerSegmentRenderer = createComposerSegmentRenderer({
   },
   clearMentionSync: () => composerMentionSourceSync.clear(),
   getDragState: () => segmentImageDragState,
-  buildComposedText, getSelectedHashtagText, splitIntoSegments, normalizeSegmentOverrides,
+  buildComposedText, getSelectedHashtagText, splitIntoSegments, normalizeSegmentOverrides: normalizeComposerSegmentOverridesFromModule,
   syncSegmentImages, syncSegmentLinkCards, formatComposerCharacterCount, t,
   updateComposerLengthWarning, normalizeLinkCard, getFirstHttpUrl, MAX_IMAGES_PER_SEGMENT,
-  eventHasTransferFiles, getDroppedImageFiles, handleSegmentImageSelection,
+  eventHasTransferFiles: composerEventHasTransferFiles, getDroppedImageFiles: getComposerDroppedImageFiles, handleSegmentImageSelection,
   updateSegmentLengthPresentation, scheduleSegmentMentionDisplayUpdate, setComposerLocked,
   setComposerPosted, updatePublishAvailability, queueDraftSave, autoSizeTextarea,
   openInlineHelpTopic, openLinkCardDialog, canCreateLinkCardsWithCurrentProvider,
@@ -1890,7 +2099,7 @@ const composerDocument = createComposerDocumentController({
   getLinkCardSettings, getLanguages: getNormalizedPostLanguagesOrDefault,
   normalizeImages: normalizeSegmentImages, normalizeLinkCard, normalizeLinkCards: normalizeSegmentLinkCards,
   normalizeHashtags: normalizeHashtagEntries, normalizeSelectedHashtags: normalizeSelectedHashtagEntries,
-  normalizePlacement: normalizeHashtagPlacement, normalizeOverrides: normalizeSegmentOverrides,
+  normalizePlacement: normalizeHashtagPlacement, normalizeOverrides: normalizeComposerSegmentOverridesFromModule,
   normalizeLanguages: normalizePostLanguageTags, supportedLocales: SUPPORTED_LOCALES, detectLocale: detectBrowserLocale,
   applyInteraction: applyPostInteractionSettings, confirm: openConfirmDialog,
   translate: t, setStatus, setLocked: setComposerLocked, setPosted: setComposerPosted,
@@ -2101,7 +2310,9 @@ let networkCommonMutualsTargetDid = "";
 let networkCommonMutualsDids = new Set();
 let networkCommonMutualsLoadingDid = "";
 let networkCommonMutualsHasMore = false;
-let threadExplorerSource = "follows";
+const threadExplorerController = createThreadExplorerController({ source: "follows", orientation: THREAD_EXPLORER_ORIENTATION_VERTICAL,
+  viewMode: THREAD_EXPLORER_VIEW_MODE_TREE, zoom: 1, panX: 24, panY: 24 });
+const threadExplorerViewState = threadExplorerController.state;
 let threadExplorerAccountActor = "";
 let threadExplorerAccountMode = "posts";
 let threadExplorerAccountError = "";
@@ -2128,7 +2339,7 @@ let threadExplorerLoadingThread = false;
 let threadExplorerCollapsedUris = new Set();
 let threadExplorerFeedError = "";
 let threadExplorerThreadError = "";
-let threadExplorerZoom = 1;
+
 let threadExplorerDragState = null;
 const threadExplorerDragStateHolder = {
   get value() {
@@ -2150,10 +2361,10 @@ const threadExplorerPanController = createThreadExplorerPanController({
   stopVelocity: THREAD_EXPLORER_INERTIA_STOP_VELOCITY,
   friction: THREAD_EXPLORER_INERTIA_FRICTION,
 });
-let threadExplorerPanX = 24;
-let threadExplorerPanY = 24;
-let threadExplorerOrientation = THREAD_EXPLORER_ORIENTATION_VERTICAL;
-let threadExplorerViewMode = THREAD_EXPLORER_VIEW_MODE_TREE;
+
+
+
+
 let threadExplorerFullscreen = false;
 let threadExplorerFavorites = [];
 const threadExplorerFavoritesController = createThreadExplorerFavoritesController({
@@ -2179,12 +2390,8 @@ const threadExplorerGalleryController = createThreadExplorerGalleryController({
 let threadExplorerSnapshotMediaDataUris = new Map();
 let threadExplorerRenderedMediaCache = new Map();
 let threadExplorerReplyClusterLayoutState = null;
-let threadExplorerReplyClusterExpandedUris = new Set();
-const threadExplorerController = createThreadExplorerController({
-  source: threadExplorerSource,
-  orientation: threadExplorerOrientation,
-  viewMode: threadExplorerViewMode,
-});
+
+
 const threadExplorerRenderScheduler = createThreadExplorerRenderScheduler({
   isClusterMode: isThreadExplorerReplyClusterModeActive,
   isDragging: () => threadExplorerDragState?.started === true,
@@ -2235,13 +2442,13 @@ const threadExplorerFocusController = createThreadExplorerFocusController({
   getViewportElement: () => threadExplorerThreadTree,
   getStage: () => threadExplorerThreadStage,
   getCard: getRenderedThreadExplorerCard,
-  getViewport: () => ({ zoom: threadExplorerZoom, panX: threadExplorerPanX, panY: threadExplorerPanY }),
+  getViewport: () => ({ zoom: threadExplorerViewState.zoom, panX: threadExplorerViewState.panX, panY: threadExplorerViewState.panY }),
   calculatePan: calculateThreadExplorerNodePan, setViewport: setThreadExplorerViewport,
   render: applyThreadExplorerStageTransform, renderEdges: scheduleThreadExplorerEdgeRender,
 });
 const threadExplorerSelectionPreferences = createThreadExplorerSelectionPreferences({
   getStorage: () => window.localStorage, key: THREAD_EXPLORER_SELECTION_STORAGE_KEY,
-  getAccount: () => authAccountDid, getSource: () => threadExplorerSource,
+  getAccount: () => authAccountDid, getSource: () => threadExplorerViewState.source,
   normalizeSource: normalizeThreadExplorerSource, now: () => new Date().toISOString(),
 });
 const threadExplorerOrientationPreference = createThreadExplorerViewPreference({
@@ -2261,12 +2468,22 @@ const threadExplorerLazyHydrationController = createThreadExplorerLazyHydrationC
   getSelectedUri: () => threadExplorerSelectedUri,
   hydrate: hydrateThreadExplorerCardContent,
 });
-let threadExplorerLikePendingUris = new Set();
+let livePostInteractions = null;
+/** Wires cross-workspace post interactions without exposing pending state. @returns {object} Interaction controller. */
+function getLivePostInteractions() {
+  if (!livePostInteractions) {
+    livePostInteractions = createLivePostInteractionController({ liked: isPostLikedByViewer, likeUri: getViewerLikeUri,
+      like: payload => requestPostLike(sendToServiceWorker, payload), unlike: uri => requestPostUnlike(sendToServiceWorker, uri),
+      apply: applyLikeStateToKnownPosts, refresh: refreshRenderedLivePostCards,
+      error: error => showErrorDialog(error?.message || t('threadExplorerThreadFailed')) });
+  }
+  return livePostInteractions;
+}
 const { renderInteractionActions: renderThreadExplorerInteractionActions } = createThreadExplorerCardInteractionController({
   buildInteractionModel: buildLivePostInteractionModel,
   createButton: createThreadExplorerInteractionButton,
   isLikePending(uri) {
-    return threadExplorerLikePendingUris.has(uri);
+    return getLivePostInteractions().pending(uri);
   },
   isLiked(post) {
     return isPostLikedByViewer(post);
@@ -2308,7 +2525,7 @@ let threadExplorerCardZoomState = null;
 const threadExplorerCardFocusController = createThreadExplorerCardFocusController({
   getFocus: () => threadExplorerCardZoomState,
   setFocus: value => { threadExplorerCardZoomState = value; },
-  getViewport: () => ({ zoom: threadExplorerZoom, panX: threadExplorerPanX, panY: threadExplorerPanY }),
+  getViewport: () => ({ zoom: threadExplorerViewState.zoom, panX: threadExplorerViewState.panX, panY: threadExplorerViewState.panY }),
   /** Restores page and controller viewport state and schedules edges.
    * @param {object} viewport - Saved zoom and pan.
    * @returns {void}
@@ -2328,14 +2545,14 @@ const threadExplorerCardFocusController = createThreadExplorerCardFocusControlle
   clearTimeout: timer => window.clearTimeout(timer),
 });
 const threadExplorerZoomResetController = createThreadExplorerZoomResetController({
-  getZoom: () => threadExplorerZoom,
+  getZoom: () => threadExplorerViewState.zoom,
   setCenteredZoom: setThreadExplorerZoomAtViewportCenter,
   fit: fitThreadExplorerStageToTree,
   setTimeout: (callback, delay) => window.setTimeout(callback, delay),
   clearTimeout: timer => window.clearTimeout(timer),
 });
 const threadExplorerZoomController = createThreadExplorerZoomController({
-  getViewport: () => ({ zoom: threadExplorerZoom, panX: threadExplorerPanX, panY: threadExplorerPanY }),
+  getViewport: () => ({ zoom: threadExplorerViewState.zoom, panX: threadExplorerViewState.panX, panY: threadExplorerViewState.panY }),
   setViewport: setThreadExplorerViewport,
   getBounds: () => threadExplorerThreadTree.getBoundingClientRect(),
   calculatePointZoom: calculateThreadExplorerPointZoom,
@@ -2407,8 +2624,7 @@ function updateComposerInputWarning(wasTruncated = false) {
   composerInputWarnings.update(wasTruncated);
 }
 
-/** Renders current server limits. @param {object|null} value - Worker limit metadata. @returns {void} */
-function renderPublishRateLimitNote(value) { composerRateLimitPresentation.render(value); }
+
 /** Builds a server-limit message. @param {object|null} value - Worker metadata. @param {boolean} includeUnavailable - Include fallback. @returns {string} Localized message. */
 function buildPublishRateLimitMessage(value, includeUnavailable = false) { return composerRateLimitPresentation.message(value, includeUnavailable); }
 
@@ -2465,28 +2681,6 @@ function openLoginDialog(options = {}) {
 }
 
 
-function getAccountInitials(account) {
-  const source = String(account?.handle || account?.identifier || "?").replace(/^@/, "");
-  return source.slice(0, 2).toUpperCase();
-}
-
-function getProfileInitials(profile) {
-  const source = String(profile?.displayName || profile?.handle || profile?.identifier || "?").replace(/^@/, "").trim();
-  return source.slice(0, 2).toUpperCase();
-}
-
-function getProfileLabel(profile) {
-  const name = String(profile?.displayName || profile?.handle || profile?.did || "").trim();
-  const handle = String(profile?.handle || "").trim();
-  if (name && handle && name.toLowerCase() !== handle.toLowerCase()) {
-    return `${name} @${handle}`;
-  }
-  if (handle) {
-    return `@${handle}`;
-  }
-  return name || String(profile?.did || "").trim();
-}
-
 /** Finds a known network profile. @param {string} did - Profile DID. @returns {object|null} Profile. */
 function getKnownNetworkProfile(did) {
   return networkFocusController.known(did);
@@ -2518,10 +2712,6 @@ function isViewingOwnNetwork() {
   return networkWorkspaceController.own();
 }
 
-/** Reads the viewed profile. @returns {object|null} Profile. */
-function getNetworkCenterProfile() {
-  return networkWorkspaceController.center();
-}
 
 /** Resolves the viewed account label. @returns {string} Label. */
 function getNetworkCenterLabel() {
@@ -2581,10 +2771,6 @@ function computeNetworkStageContentBounds(layout, visibleNodes, selectedDid) {
   return calculateNetworkContentBounds(layout, visibleNodes, selectedDid, focusItems);
 }
 
-/** Zooms the stage without an anchor. @param {number} factor - Zoom multiplier. @returns {void} */
-function zoomNetworkStage(factor) {
-  networkStageController.zoom(factor);
-}
 
 /** Zooms around a client-space anchor. @param {number} factor - Zoom multiplier. @param {number} clientX - Anchor X. @param {number} clientY - Anchor Y. @returns {void} */
 function zoomNetworkStageAtPoint(factor, clientX, clientY) {
@@ -2774,13 +2960,6 @@ function persistPendingPageSwitchUrl(url) {
   pendingNavigation.persist(url);
 }
 
-/**
- * Returns the stored pending page-switch target without removing it.
- * @returns {string} Pending absolute target URL, or an empty string.
- */
-function getPendingPageSwitchUrl() {
-  return pendingNavigation.read();
-}
 
 /**
  * Reads and removes the stored pending page-switch target.
@@ -3003,18 +3182,6 @@ function getThreadExplorerOwnActor() {
   return getThreadExplorerOwnActorFromTools(savedAccounts, authAccountDid, authAccount);
 }
 
-/**
- * Checks whether the Thread Explorer account field currently targets the signed-in account.
- * @returns {boolean} True when no foreign-account mode should be used.
- */
-function isThreadExplorerOwnAccountTarget() {
-  return isThreadExplorerOwnAccountTargetFromTools(
-    threadExplorerAccountActor,
-    authAccount,
-    authAccountDid,
-    normalizeThreadExplorerActor,
-  );
-}
 
 /**
  * Checks whether the Thread Explorer should load posts from a foreign account.
@@ -3137,14 +3304,6 @@ function restorePersistedThreadExplorerState(state = {}) {
   applyThreadExplorerFullscreenState();
 }
 
-/**
- * Returns a normalized Actor-Fokus mode for the Thread Explorer.
- * @param {string} mode - Raw mode name.
- * @returns {string} One of posts, replies, or all.
- */
-function normalizeThreadExplorerActorFocusMode(mode) {
-  return normalizeThreadExplorerActorFocusModeFromTools(mode);
-}
 
 /**
  * Extracts a feed generator URI from a Thread Explorer source value.
@@ -3199,7 +3358,7 @@ function restoreThreadExplorerSelectionPreference() {
     return "";
   }
 
-  threadExplorerSource = storedSelection.source;
+  threadExplorerViewState.source = storedSelection.source;
   threadExplorerSelectedUri = storedSelection.selectedUri;
   return storedSelection.selectedUri;
 }
@@ -3235,8 +3394,8 @@ function getStoredThreadExplorerOrientationPreference() {
  * @returns {string} Restored orientation.
  */
 function restoreThreadExplorerOrientationPreference() {
-  threadExplorerOrientation = getStoredThreadExplorerOrientationPreference();
-  return threadExplorerOrientation;
+  threadExplorerViewState.orientation = getStoredThreadExplorerOrientationPreference();
+  return threadExplorerViewState.orientation;
 }
 
 /**
@@ -3270,19 +3429,10 @@ function getStoredThreadExplorerViewModePreference() {
  * @returns {string} Restored mode.
  */
 function restoreThreadExplorerViewModePreference() {
-  threadExplorerViewMode = getStoredThreadExplorerViewModePreference();
-  return threadExplorerViewMode;
+  threadExplorerViewState.viewMode = getStoredThreadExplorerViewModePreference();
+  return threadExplorerViewState.viewMode;
 }
 
-/** Enters native or app-internal network stage mode. @returns {Promise<void>} Completion. */
-async function enterNetworkStageMode() {
-  await networkStageController.enter();
-}
-
-/** Exits network stage mode. @returns {Promise<void>} Completion. */
-async function exitNetworkStageMode() {
-  await networkStageController.exit();
-}
 
 /** Persists the stage shape. @param {string} shape - Shape. @returns {void} */
 function persistNetworkStageShapePreference(shape) {
@@ -3336,105 +3486,37 @@ function restorePreferredWorkspaceIfPossible() {
   showDefaultWorkspaceForCurrentPage();
 }
 
-function getDmSecretFromLocation() {
-  const url = new URL(window.location.href);
-  const querySecret = url.searchParams.get(DM_ACCESS_QUERY_PARAM);
-  if (querySecret) {
-    return querySecret.trim();
+let dmAccessGate = null;
+/** Wires the optional DM feature gate to the current page. @returns {object} Gate controller. */
+function getDmAccessGate() {
+  if (!dmAccessGate) {
+    dmAccessGate = createDmAccessGate({ enabled: DM_ACCESS_GATE_ENABLED, queryKey: DM_ACCESS_QUERY_PARAM, hashKey: DM_ACCESS_HASH_PARAM,
+      sessionKey: DM_ACCESS_SESSION_KEY, secretHash: DM_ACCESS_SECRET_HASH,
+      state: { get checked() { return dmAccessChecked; }, set checked(value) { dmAccessChecked = value; },
+        get unlocked() { return dmAccessUnlocked; }, set unlocked(value) { dmAccessUnlocked = value; } },
+      href: () => window.location.href, replaceUrl: url => window.history.replaceState({}, document.title, url),
+      storage: window.sessionStorage, crypto, setVisible: visible => setElementVisibility(dmLaunchPanel, visible),
+      workspace: () => currentWorkspace, showComposer: () => showComposerWorkspace({ persist: false }),
+      render: renderDmWorkspace, updateAuth: updateAuthButtons, restoreWorkspace: restorePreferredWorkspaceIfPossible,
+      report: error => console.error(error), lockedMessage: () => t('dmAccessLocked') });
   }
-
-  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
-  const hashParams = new URLSearchParams(hash);
-  return String(hashParams.get(DM_ACCESS_HASH_PARAM) || "").trim();
+  return dmAccessGate;
 }
 
-function clearDmSecretFromLocation() {
-  const url = new URL(window.location.href);
-  url.searchParams.delete(DM_ACCESS_QUERY_PARAM);
-  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
-  const hashParams = new URLSearchParams(hash);
-  hashParams.delete(DM_ACCESS_HASH_PARAM);
-  const nextHash = hashParams.toString();
-  const nextUrl = `${url.pathname}${url.search}${nextHash ? `#${nextHash}` : ""}`;
-  window.history.replaceState({}, document.title, nextUrl);
-}
 
-function isDmAccessAvailable() {
-  return !DM_ACCESS_GATE_ENABLED || dmAccessUnlocked;
-}
+/** Delegates to the optional DM gate. @returns {*} Gate result. */
+function isDmAccessAvailable(...args) { return getDmAccessGate().available(...args); }
 
-async function sha256Hex(value) {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (item) => item.toString(16).padStart(2, "0")).join("");
-}
 
-async function applyDmAccessGateFromLocation() {
-  if (!DM_ACCESS_GATE_ENABLED) {
-    dmAccessUnlocked = true;
-    dmAccessChecked = true;
-    window.sessionStorage.removeItem(DM_ACCESS_SESSION_KEY);
-    setElementVisibility(dmLaunchPanel, true);
-    const secret = getDmSecretFromLocation();
-    if (secret) {
-      clearDmSecretFromLocation();
-    }
-    renderDmWorkspace();
-    updateAuthButtons();
-    restorePreferredWorkspaceIfPossible();
-    return;
-  }
+/** Delegates to the optional DM gate. @returns {*} Gate result. */
+function applyDmAccessGateFromLocation(...args) { return getDmAccessGate().apply(...args); }
 
-  const unlockedInSession = window.sessionStorage.getItem(DM_ACCESS_SESSION_KEY) === "1";
-  const secret = getDmSecretFromLocation();
-  let unlocked = unlockedInSession;
-
-  if (!unlocked && secret) {
-    try {
-      unlocked = await sha256Hex(secret) === DM_ACCESS_SECRET_HASH;
-    } catch (error) {
-      console.error(error);
-      unlocked = false;
-    }
-  }
-
-  dmAccessUnlocked = unlocked;
-  if (dmAccessUnlocked) {
-    window.sessionStorage.setItem(DM_ACCESS_SESSION_KEY, "1");
-    dmAccessChecked = true;
-  } else {
-    window.sessionStorage.removeItem(DM_ACCESS_SESSION_KEY);
-    dmAccessChecked = false;
-  }
-
-  setElementVisibility(dmLaunchPanel, isDmAccessAvailable());
-  if (!isDmAccessAvailable() && currentWorkspace === "dm") {
-    showComposerWorkspace({ persist: false });
-  }
-
-  if (secret) {
-    clearDmSecretFromLocation();
-  }
-
-  renderDmWorkspace();
-  updateAuthButtons();
-  restorePreferredWorkspaceIfPossible();
-}
-
-function assertDmAccessUnlocked() {
-  if (!isDmAccessAvailable()) {
-    throw new Error("Der DM-Bereich ist gesperrt.");
-  }
-}
+/** Delegates to the optional DM gate. @returns {*} Gate result. */
+function assertDmAccessUnlocked(...args) { return getDmAccessGate().assert(...args); }
 
 /** Relocates the shared hashtag pane to the active workspace. @returns {void} */
 function applyHashtagPaneContext() { hashtagController.applyContext(); }
 
-/**
- * Builds the compact hashtag summary for the search workspace.
- * @returns {string} Localized one-line summary for the selected search hashtags.
- */
-function buildSearchHashtagSummary() { return hashtagController.getSearchSummary(); }
 
 /**
  * Renders the compact hashtag summary and button state in the search workspace.
@@ -3445,13 +3527,6 @@ function renderSearchHashtagSummary() { hashtagController.renderSearchSummary();
 /** Arranges archive cards through the template layout controller. @returns {void} */
 function ensureArchiveWorkspaceLayout() { archiveWorkspaceLayout.ensure(); }
 
-/**
- * Returns the normalized active search mode from the workspace controls.
- * @returns {string} One of `network`, `posts`, `reposts`, or `hashtags`.
- */
-function getSearchMode() {
-  return searchForm.mode();
-}
 
 /**
  * Updates labels, field visibility, and helper text for the active search mode.
@@ -3494,14 +3569,6 @@ function scheduleSearchPreferencesPersist() {
   return searchForm.schedulePersist();
 }
 
-/**
- * Applies a shared Bluesky search URL to the search workspace controls.
- * @param {string} sourceUrl - Shared `bsky.app/search` URL.
- * @returns {boolean} True when the URL was parsed successfully.
- */
-function applySearchUrlToForm(sourceUrl) {
-  return searchForm.applyUrl(sourceUrl);
-}
 
 /**
  * Attempts to import a shared search URL from the dedicated input field.
@@ -3533,24 +3600,6 @@ function scheduleSearchUrlImport() {
  * @returns {void}
  */
 
-
-/**
- * Builds the readable topic fragment for the live search summary.
- * @param {object} payload - Normalized search request payload.
- * @returns {string} Localized topic fragment, or an empty string.
- */
-function buildSearchTopicText(payload = {}) {
-  return searchModels.topic(payload);
-}
-
-/**
- * Builds localized detail clauses for non-text search filters.
- * @param {object} payload - Normalized search request payload.
- * @returns {string[]} Localized filter clauses.
- */
-function buildSearchDetailTexts(payload = {}) {
-  return searchModels.details(payload);
-}
 
 /**
  * Builds a natural-language sentence that describes the active search.
@@ -4104,14 +4153,6 @@ function formatThreadExplorerDate(value) {
   return formatThreadExplorerDateFromRendering(value, currentLocale, formatPostDateTime);
 }
 
-/**
- * Counts all posts in a normalized Thread Explorer tree.
- * @param {object|null} node - Root node from the Service Worker.
- * @returns {number} Number of posts contained in the tree.
- */
-function countThreadExplorerPosts(node) {
-  return countThreadExplorerPostsFromRendering(node);
-}
 
 /**
  * Parses a shared Bluesky search URL into searchPosts parameters.
@@ -4132,14 +4173,6 @@ function buildSharedSearchQuery(query = "", excludeText = "") {
   return buildSharedSearchQueryFromSearch(query, excludeText);
 }
 
-/**
- * Splits excluded search terms from free text, commas, semicolons, or quoted phrases.
- * @param {string} value - Raw excluded-term input.
- * @returns {string[]} Clean excluded terms.
- */
-function parseExcludedSearchTerms(value = "") {
-  return parseExcludedSearchTermsFromSearch(value);
-}
 
 /**
  * Builds a stable label for a saved search.
@@ -4298,50 +4331,6 @@ function createThreadExplorerInteractionButton(translationKey, options = {}) {
   return button;
 }
 
-/**
- * Applies one local like-state update to all feed-like item collections.
- * @param {object[]} items - Feed or search result items with nested posts.
- * @param {string} postUri - Post URI that should be updated.
- * @param {string} likeUri - Next like record URI, or an empty string after unlike.
- * @param {number} delta - Count delta that should be applied.
- * @returns {void}
- */
-function applyLikeStateToItemCollection(items = [], postUri = "", likeUri = "", delta = 0) {
-  if (!Array.isArray(items) || !postUri) {
-    return;
-  }
-
-  items.forEach((item) => {
-    const post = item?.post || null;
-    if (!post || post.uri !== postUri) {
-      return;
-    }
-    applyLikeStateToPost(post, likeUri, delta);
-  });
-}
-
-/**
- * Applies one local like-state update to a Thread Explorer tree.
- * @param {object|null} node - Normalized Thread Explorer tree node.
- * @param {string} postUri - Post URI that should be updated.
- * @param {string} likeUri - Next like record URI, or an empty string after unlike.
- * @param {number} delta - Count delta that should be applied.
- * @returns {void}
- */
-function applyLikeStateToThreadTree(node = null, postUri = "", likeUri = "", delta = 0) {
-  if (!node || !postUri) {
-    return;
-  }
-
-  if (node.post?.uri === postUri) {
-    applyLikeStateToPost(node.post, likeUri, delta);
-  }
-
-  const replies = Array.isArray(node.replies) ? node.replies : [];
-  replies.forEach((reply) => {
-    applyLikeStateToThreadTree(reply, postUri, likeUri, delta);
-  });
-}
 
 /**
  * Applies one local like-state update to every known live-post cache.
@@ -4451,151 +4440,9 @@ function refreshRenderedLivePostCards(postUri = "") {
   });
 }
 
-/**
- * Toggles the like state for one live post and updates all known render targets.
- * @param {object} post - Normalized live post from search or Thread Explorer.
- * @returns {Promise<void>} Resolves after the server action completed.
- */
-async function toggleLikeForLivePost(post = {}) {
-  const postUri = String(post?.uri || "").trim();
-  const postCid = String(post?.cid || "").trim();
-  if (!postUri || !postCid) {
-    return;
-  }
-  if (threadExplorerLikePendingUris.has(postUri)) {
-    return;
-  }
+/** Toggles a live post through the shared interaction controller. @param {object} post - Post. @returns {Promise<void>} Request completion. */
+function toggleLikeForLivePost(post) { return getLivePostInteractions().toggle(post); }
 
-  const wasLiked = isPostLikedByViewer(post);
-  const previousLikeUri = getViewerLikeUri(post);
-  let nextLikeUri = "";
-  let delta = 0;
-
-  if (wasLiked) {
-    delta = -1;
-  } else {
-    delta = 1;
-    nextLikeUri = `pending:${postUri}`;
-  }
-
-  threadExplorerLikePendingUris.add(postUri);
-  applyLikeStateToKnownPosts(postUri, nextLikeUri, delta);
-  refreshRenderedLivePostCards(postUri);
-
-  try {
-    if (wasLiked) {
-      await requestPostUnlike(sendToServiceWorker, previousLikeUri);
-      applyLikeStateToKnownPosts(postUri, "", 0);
-    } else {
-      const result = await requestPostLike(sendToServiceWorker, {
-        uri: postUri,
-        cid: postCid,
-      });
-      applyLikeStateToKnownPosts(postUri, String(result?.uri || "").trim(), 0);
-    }
-  } catch (error) {
-    applyLikeStateToKnownPosts(postUri, previousLikeUri, delta * -1);
-    showErrorDialog(error?.message || t("threadExplorerThreadFailed"));
-  } finally {
-    threadExplorerLikePendingUris.delete(postUri);
-    refreshRenderedLivePostCards(postUri);
-  }
-}
-
-/**
- * Escapes a string for safe use inside a regular expression.
- * @param {string} value - Raw string to escape.
- * @returns {string} Escaped regular expression literal.
- */
-function escapeThreadExplorerRegExp(value) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Returns a compact display URL for Thread Explorer cards.
- * @param {string} url - Full target URL.
- * @returns {string} Short host/path label without tracking query parameters.
- */
-function shortenThreadExplorerUrlForDisplay(url) {
-  const value = String(url || "").trim();
-  if (!value) {
-    return "";
-  }
-
-  try {
-    const parsed = new URL(value);
-    let compact = parsed.hostname;
-    if (parsed.pathname && parsed.pathname !== "/") {
-      compact += parsed.pathname;
-    }
-    if (parsed.hash) {
-      compact += parsed.hash;
-    }
-    if (compact.length > 72) {
-      return `${compact.slice(0, 69)}...`;
-    }
-    return compact;
-  } catch (error) {
-    if (value.length > 72) {
-      return `${value.slice(0, 69)}...`;
-    }
-    return value;
-  }
-}
-
-/**
- * Removes URL variants for a rendered card from Thread Explorer post text.
- * @param {string} text - Current display text.
- * @param {string} url - Card target URL.
- * @returns {string} Text without duplicate URL fragments.
- */
-function removeThreadExplorerCardUrlFromText(text, url) {
-  let nextText = String(text || "");
-  const value = String(url || "").trim();
-  if (!nextText || !value) {
-    return nextText;
-  }
-
-  const variants = new Set([value]);
-  try {
-    const parsed = new URL(value);
-    let hostPath = parsed.hostname;
-    if (parsed.pathname && parsed.pathname !== "/") {
-      hostPath += parsed.pathname;
-    }
-    variants.add(hostPath);
-    if (hostPath.startsWith("www.")) {
-      variants.add(hostPath.slice(4));
-    } else {
-      variants.add(`www.${hostPath}`);
-    }
-  } catch (error) {
-    // Keep exact variant only.
-  }
-
-  variants.forEach((variant) => {
-    if (!variant) {
-      return;
-    }
-    const escaped = escapeThreadExplorerRegExp(variant);
-    const exactPattern = new RegExp(`(^|\\s)(?:https?:\\/\\/)?${escaped}(?:[?#][^\\s]*)?(?:\\.\\.\\.|…)?(?=\\s|$)`, "g");
-    nextText = nextText.replace(exactPattern, "$1");
-  });
-
-  try {
-    const parsed = new URL(value);
-    let hostPattern = escapeThreadExplorerRegExp(parsed.hostname);
-    if (parsed.hostname.startsWith("www.")) {
-      hostPattern = `(?:www\\.)?${escapeThreadExplorerRegExp(parsed.hostname.slice(4))}`;
-    }
-    const linePattern = new RegExp(`(^|\\n)[ \\t]*(?:https?:\\/\\/)?${hostPattern}(?:\\/[^\\n\\s]*)?(?:\\.\\.\\.|…)?[ \\t]*(?=\\n|$)`, "g");
-    nextText = nextText.replace(linePattern, "$1");
-  } catch (error) {
-    // Invalid URLs do not get hostname line cleanup.
-  }
-
-  return nextText;
-}
 
 /**
  * Returns the visible quote-post URLs that should be removed from rendered text.
@@ -4855,22 +4702,6 @@ async function loadSavedSearchInSearchWorkspace(id) {
   return savedSearchController.load(id, "search");
 }
 
-/**
- * Renders actors or quote authors into the Thread Explorer reactions dialog.
- * @param {Array<object>} actors - Actor entries from the Service Worker.
- * @returns {void}
- */
-function renderThreadExplorerReactionActors(actors) {
-  renderThreadExplorerReactionActorsFromRendering(actors, {
-    list: threadExplorerReactionsList,
-    status: threadExplorerReactionsStatus,
-    template: threadExplorerActorItemTemplate,
-    translate: t,
-    formatCount,
-    cloneTemplate: cloneTemplateContent,
-    setAvatar: setAvatarImage,
-  });
-}
 
 /**
  * Opens and loads the reactions dialog for a Thread Explorer post count.
@@ -4942,13 +4773,6 @@ function openThreadExplorerRepliesDialog(uri) {
   threadExplorerRepliesDialog.showModal();
 }
 
-/**
- * Updates the visible image and selected thumbnail in the Thread Explorer gallery.
- * @returns {void}
- */
-function renderThreadExplorerGalleryImage() {
-  threadExplorerGalleryController.render();
-}
 
 /**
  * Hides a failed Thread Explorer post image and redraws tree edges.
@@ -5055,59 +4879,6 @@ function setThreadExplorerGalleryPseudoFullscreen(enabled) {
   threadExplorerGalleryFullscreenController.setFallback(enabled);
 }
 
-/**
- * Computes an engagement score for one Thread Explorer post.
- * @param {object} post - Normalized Thread Explorer post.
- * @returns {number} Weighted score from likes, replies, reposts, and quotes.
- */
-function getThreadExplorerEngagementScore(post) {
-  const likes = Number(post?.likeCount) || 0;
-  const replies = Number(post?.replyCount) || 0;
-  const reposts = Number(post?.repostCount) || 0;
-  const quotes = Number(post?.quoteCount) || 0;
-  return likes + (replies * 3) + (reposts * 4) + (quotes * 4);
-}
-
-/**
- * Converts an engagement score into a visual intensity tier.
- * @param {number} score - Weighted post engagement score.
- * @returns {string} Engagement tier name for CSS classes.
- */
-function getThreadExplorerEngagementTier(score) {
-  const numericScore = Number(score) || 0;
-  if (numericScore >= 1000) {
-    return "viral";
-  }
-  if (numericScore >= 180) {
-    return "hot";
-  }
-  if (numericScore >= 40) {
-    return "warm";
-  }
-  return "quiet";
-}
-
-/**
- * Returns direct rendered child node items for a Thread Explorer item.
- * @param {HTMLElement} item - Rendered Thread Explorer node item.
- * @returns {HTMLElement[]} Direct child node items.
- */
-function getRenderedThreadExplorerChildItems(item) {
-  const childrenList = item.querySelector(":scope > .thread-explorer-children");
-  if (!childrenList) {
-    return [];
-  }
-  return Array.from(childrenList.children).filter((child) => child.classList.contains("thread-explorer-node-item"));
-}
-
-/**
- * Returns the visible post card for a rendered Thread Explorer item.
- * @param {HTMLElement} item - Rendered Thread Explorer node item.
- * @returns {HTMLElement|null} Direct post card element, or null.
- */
-function getRenderedThreadExplorerCard(item) {
-  return item.querySelector(":scope > .thread-explorer-node > .thread-explorer-post-card");
-}
 
 /**
  * Returns an element rectangle in unzoomed Thread Explorer stage coordinates.
@@ -5117,7 +4888,7 @@ function getRenderedThreadExplorerCard(item) {
  */
 function getThreadExplorerStageRect(element, stageRect) {
   const elementRect = element.getBoundingClientRect();
-  let zoom = Number(threadExplorerZoom) || 1;
+  let zoom = Number(threadExplorerViewState.zoom) || 1;
   if (zoom <= 0) {
     zoom = 1;
   }
@@ -5149,7 +4920,7 @@ function getThreadExplorerStageRect(element, stageRect) {
  * @returns {string} SVG path data.
  */
 function createThreadExplorerEdgePath(parentRect, childRect) {
-  if (threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
+  if (threadExplorerViewState.orientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
     const startX = parentRect.right;
     const startY = parentRect.centerY;
     const endX = childRect.left;
@@ -5217,10 +4988,10 @@ function applyThreadExplorerScrollDelta(deltaX, deltaY) {
   if (!threadExplorerThreadTree) {
     return;
   }
-  const panState = applyThreadExplorerPanDeltaFromTools({ panX: threadExplorerPanX, panY: threadExplorerPanY }, deltaX, deltaY);
-  threadExplorerPanX = panState.panX;
-  threadExplorerPanY = panState.panY;
-  threadExplorerController.setViewport(threadExplorerZoom, threadExplorerPanX, threadExplorerPanY);
+  const panState = applyThreadExplorerPanDeltaFromTools({ panX: threadExplorerViewState.panX, panY: threadExplorerViewState.panY }, deltaX, deltaY);
+  threadExplorerViewState.panX = panState.panX;
+  threadExplorerViewState.panY = panState.panY;
+  threadExplorerController.setViewport(threadExplorerViewState.zoom, threadExplorerViewState.panX, threadExplorerViewState.panY);
   applyThreadExplorerStageTransform();
 }
 
@@ -5268,8 +5039,8 @@ function renderThreadExplorerEdges() {
  * @returns {void}
  */
 function setThreadExplorerSource(source) {
-  threadExplorerSource = normalizeThreadExplorerSource(source);
-  threadExplorerController.setSource(threadExplorerSource);
+  threadExplorerViewState.source = normalizeThreadExplorerSource(source);
+  threadExplorerController.setSource(threadExplorerViewState.source);
   threadExplorerCursor = "";
   threadExplorerHasMore = true;
   threadExplorerItems = [];
@@ -5289,8 +5060,8 @@ function setThreadExplorerSource(source) {
  */
 function renderThreadExplorerFeedSourceSelect() {
   let activeSource = "";
-  if (getThreadExplorerFeedUriFromSource(threadExplorerSource)) {
-    activeSource = normalizeThreadExplorerSource(threadExplorerSource);
+  if (getThreadExplorerFeedUriFromSource(threadExplorerViewState.source)) {
+    activeSource = normalizeThreadExplorerSource(threadExplorerViewState.source);
   }
   renderThreadExplorerFeedSources({
     select: threadExplorerFeedSelect, template: threadExplorerFeedOptionTemplate, cloneTemplate: cloneTemplateContent,
@@ -5482,9 +5253,9 @@ function updateThreadExplorerControls() {
     foreignAccount: isThreadExplorerForeignAccountMode(), actorFocus: isThreadExplorerForeignActorFocusMode(),
     clusterMode: isThreadExplorerReplyClusterModeActive(), saved: isCurrentThreadExplorerThreadSaved(),
     accountActor: normalizeThreadExplorerActor(threadExplorerAccountActor), accountMode: normalizeThreadExplorerAccountMode(threadExplorerAccountMode),
-    horizontal: threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL,
+    horizontal: threadExplorerViewState.orientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL,
     hasTree: Boolean(threadExplorerTree), selectedUri: threadExplorerSelectedUri, fullscreen: threadExplorerFullscreen,
-    zoom: threadExplorerZoom, source: threadExplorerSource,
+    zoom: threadExplorerViewState.zoom, source: threadExplorerViewState.source,
   }, { translate: t, renderAccountNote: renderThreadExplorerAccountNote, renderFeedSources: renderThreadExplorerFeedSourceSelect });
 }
 
@@ -5515,7 +5286,7 @@ async function loadThreadExplorerFeedSources() {
  * @returns {void}
  */
 function applyThreadExplorerOrientation() {
-  const isHorizontal = threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL;
+  const isHorizontal = threadExplorerViewState.orientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL;
   threadExplorerThreadTree.classList.toggle("is-horizontal", isHorizontal);
   threadExplorerThreadTree.classList.toggle("is-vertical", !isHorizontal);
   threadExplorerThreadStage.classList.toggle("is-horizontal", isHorizontal);
@@ -5530,9 +5301,9 @@ function applyThreadExplorerOrientation() {
  * @returns {void}
  */
 function setThreadExplorerViewport(viewport) {
-  threadExplorerZoom = viewport.zoom;
-  threadExplorerPanX = viewport.panX;
-  threadExplorerPanY = viewport.panY;
+  threadExplorerViewState.zoom = viewport.zoom;
+  threadExplorerViewState.panX = viewport.panX;
+  threadExplorerViewState.panY = viewport.panY;
   threadExplorerController.setViewport(viewport.zoom, viewport.panX, viewport.panY);
 }
 
@@ -5541,10 +5312,10 @@ function setThreadExplorerViewport(viewport) {
  * @returns {void}
  */
 function applyThreadExplorerStageTransform() {
-  threadExplorerThreadStage.style.setProperty("--thread-explorer-zoom", String(threadExplorerZoom));
-  threadExplorerThreadStage.style.setProperty("--thread-explorer-pan-x", `${threadExplorerPanX}px`);
-  threadExplorerThreadStage.style.setProperty("--thread-explorer-pan-y", `${threadExplorerPanY}px`);
-  threadExplorerZoomResetButton.textContent = `${Math.round(threadExplorerZoom * 100)}%`;
+  threadExplorerThreadStage.style.setProperty("--thread-explorer-zoom", String(threadExplorerViewState.zoom));
+  threadExplorerThreadStage.style.setProperty("--thread-explorer-pan-x", `${threadExplorerViewState.panX}px`);
+  threadExplorerThreadStage.style.setProperty("--thread-explorer-pan-y", `${threadExplorerViewState.panY}px`);
+  threadExplorerZoomResetButton.textContent = `${Math.round(threadExplorerViewState.zoom * 100)}%`;
 }
 
 /**
@@ -5564,12 +5335,12 @@ function toggleThreadExplorerOrientation() {
   if (isThreadExplorerReplyClusterModeActive()) {
     return;
   }
-  if (threadExplorerOrientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
-    threadExplorerOrientation = THREAD_EXPLORER_ORIENTATION_VERTICAL;
+  if (threadExplorerViewState.orientation === THREAD_EXPLORER_ORIENTATION_HORIZONTAL) {
+    threadExplorerViewState.orientation = THREAD_EXPLORER_ORIENTATION_VERTICAL;
   } else {
-    threadExplorerOrientation = THREAD_EXPLORER_ORIENTATION_HORIZONTAL;
+    threadExplorerViewState.orientation = THREAD_EXPLORER_ORIENTATION_HORIZONTAL;
   }
-  persistThreadExplorerOrientationPreference(threadExplorerOrientation);
+  persistThreadExplorerOrientationPreference(threadExplorerViewState.orientation);
   renderThreadExplorerWorkspace();
   if (threadExplorerTree) {
     scheduleThreadExplorerSelectedFocus();
@@ -5621,7 +5392,7 @@ function createThreadExplorerFeedItemFragment(item) {
  * @returns {void}
  */
 function renderThreadExplorerActorFocus() {
-  threadExplorerController.setOrientation(threadExplorerOrientation);
+  threadExplorerController.setOrientation(threadExplorerViewState.orientation);
   renderThreadExplorerActorFocusPanel({
     panel: threadExplorerActorFocus,
     list: threadExplorerActorFeedList,
@@ -5657,7 +5428,7 @@ function renderThreadExplorerFeed() {
     loading: threadExplorerLoadingFeed,
     error: threadExplorerFeedError,
     foreignAccountMode: isThreadExplorerForeignAccountMode(),
-    searchMode: Boolean(getThreadExplorerSearchIdFromSource(threadExplorerSource)),
+    searchMode: Boolean(getThreadExplorerSearchIdFromSource(threadExplorerViewState.source)),
     translate: t,
     formatCount,
     renderActorFocus: renderThreadExplorerActorFocus,
@@ -5785,10 +5556,10 @@ function openThreadExplorerActorFocus(actor = {}) {
       threadExplorerAccountInput.value = threadExplorerAccountActor;
     }
     threadExplorerAccountError = "";
-    threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(threadExplorerAccountMode);
+    threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(threadExplorerAccountMode);
   }
   threadExplorerActorFocusActor = { ...actor };
-  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(threadExplorerActorFocusMode);
+  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(threadExplorerActorFocusMode);
   threadExplorerActorFocusItems = [];
   threadExplorerActorFocusCursor = "";
   threadExplorerActorFocusHasMore = false;
@@ -5839,7 +5610,7 @@ function closeThreadExplorerActorFocus() {
  */
 function handleThreadExplorerActorModeChange(event) {
   handleThreadExplorerActorModeChangeFromTools(event, {
-    normalizeMode: normalizeThreadExplorerActorFocusMode,
+    normalizeMode: normalizeThreadExplorerActorFocusModeFromTools,
     setMode: (mode) => {
       threadExplorerActorFocusMode = mode;
     },
@@ -5847,13 +5618,6 @@ function handleThreadExplorerActorModeChange(event) {
   });
 }
 
-/**
- * Loads the next Actor-Fokus page.
- * @returns {void}
- */
-function handleThreadExplorerActorMoreClick() {
-  void loadThreadExplorerActorFocusFeed({ append: true });
-}
 
 /**
  * Opens a reaction account popup from a Thread Explorer count button.
@@ -5888,15 +5652,15 @@ function renderThreadExplorerTree() {
     tree: threadExplorerTree,
     loading: threadExplorerLoadingThread,
     error: threadExplorerThreadError,
-    clusterMode: threadExplorerViewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER,
+    clusterMode: threadExplorerViewState.viewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER,
     translate: t,
     formatCount,
-    countPosts: countThreadExplorerPosts,
+    countPosts: countThreadExplorerPostsFromRendering,
     createRootNode: createThreadExplorerNode,
     renderCluster: renderThreadExplorerReplyCluster,
     afterRender: () => {
       hydrateVisibleThreadExplorerCards();
-      if (threadExplorerViewMode !== THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
+      if (threadExplorerViewState.viewMode !== THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
         scheduleThreadExplorerEdgeRender();
       }
     },
@@ -6027,23 +5791,6 @@ function hydrateVisibleThreadExplorerCards() {
   threadExplorerLazyHydrationController.hydrateVisible();
 }
 
-/**
- * Returns the timestamp used to sort one Thread Explorer reply.
- * @param {object|null} node - Normalized Thread Explorer reply node.
- * @returns {number} Epoch milliseconds or a large fallback value.
- */
-function getThreadExplorerReplySortTimestamp(node = null) {
-  return getThreadExplorerReplySortTimestampFromTools(node);
-}
-
-/**
- * Returns Thread Explorer replies sorted chronologically without mutating the source array.
- * @param {Array<object>} replies - Raw reply nodes for one parent post.
- * @returns {Array<object>} Replies sorted oldest first within the sibling group.
- */
-function getChronologicalThreadExplorerReplies(replies) {
-  return getChronologicalThreadExplorerRepliesFromTools(replies);
-}
 
 /**
  * Creates a rendered Thread Explorer post item from the shared node template.
@@ -6107,7 +5854,7 @@ function createThreadExplorerNode(node) {
  * @returns {boolean} True when the reply-cluster mode is active.
  */
 function isThreadExplorerReplyClusterModeActive() {
-  return threadExplorerViewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER;
+  return threadExplorerViewState.viewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER;
 }
 
 /**
@@ -6115,7 +5862,7 @@ function isThreadExplorerReplyClusterModeActive() {
  * @returns {void}
  */
 function ensureThreadExplorerReplyClusterRootExpanded() {
-  ensureReplyClusterRootExpandedFromLayout(threadExplorerTree?.post?.uri || "", threadExplorerReplyClusterExpandedUris);
+  ensureReplyClusterRootExpandedFromLayout(threadExplorerTree?.post?.uri || "", threadExplorerViewState.expandedUris);
 }
 
 /**
@@ -6128,7 +5875,7 @@ function expandAllThreadExplorerReplyClusterNodes(node) {
     return;
   }
 
-  threadExplorerReplyClusterExpandedUris.add(String(node.post.uri).trim());
+  threadExplorerViewState.expandedUris.add(String(node.post.uri).trim());
   const replies = Array.isArray(node.replies) ? node.replies : [];
   replies.forEach((reply) => {
     expandAllThreadExplorerReplyClusterNodes(reply);
@@ -6147,7 +5894,7 @@ function isThreadExplorerReplyClusterExpanded(uri) {
   }
 
   ensureThreadExplorerReplyClusterRootExpanded();
-  return threadExplorerReplyClusterExpandedUris.has(normalizedUri);
+  return threadExplorerViewState.expandedUris.has(normalizedUri);
 }
 
 /**
@@ -6157,7 +5904,6 @@ function isThreadExplorerReplyClusterExpanded(uri) {
  */
 function toggleThreadExplorerReplyClusterNode(uri) {
   threadExplorerController.toggleExpanded(uri);
-  threadExplorerReplyClusterExpandedUris = threadExplorerController.state.expandedUris;
   renderThreadExplorerTree();
 }
 
@@ -6564,8 +6310,8 @@ async function loadThreadExplorerFeed(options = {}) {
     clearSelection: options.clearSelection,
     isForeignAccount: isThreadExplorerForeignAccountMode,
     accountMode: normalizeThreadExplorerAccountMode(threadExplorerAccountMode),
-    source: threadExplorerSource,
-    savedSearch: getSavedSearchById(getThreadExplorerSearchIdFromSource(threadExplorerSource))?.params || null,
+    source: threadExplorerViewState.source,
+    savedSearch: getSavedSearchById(getThreadExplorerSearchIdFromSource(threadExplorerViewState.source))?.params || null,
     getRequestedActor: getThreadExplorerRequestedActor,
     request: sendToServiceWorker,
     clearSelectionState: () => {
@@ -6582,7 +6328,7 @@ async function loadThreadExplorerFeed(options = {}) {
     },
     render: renderThreadExplorerWorkspace,
     appendItems: (currentItems, nextItems, foreignAccount) => sortThreadExplorerFeedItemsByDate(appendThreadExplorerFeedItems(currentItems, nextItems, {
-      groupByRoot: !foreignAccount && Boolean(getThreadExplorerSearchIdFromSource(threadExplorerSource)),
+      groupByRoot: !foreignAccount && Boolean(getThreadExplorerSearchIdFromSource(threadExplorerViewState.source)),
     })),
     sortItems: sortThreadExplorerFeedItemsByDate,
     restoreSelection: async (allowStoredOutsideFeed) => {
@@ -6624,7 +6370,7 @@ async function selectThreadExplorerPost(uri) {
     clearMediaCache: clearThreadExplorerRenderedMediaCache,
     request: sendToServiceWorker,
     isClusterMode: isThreadExplorerReplyClusterModeActive,
-    resetClusterState: () => threadExplorerReplyClusterExpandedUris.clear(),
+    resetClusterState: () => threadExplorerViewState.expandedUris.clear(),
     expandClusterTree: expandAllThreadExplorerReplyClusterNodes,
     render: renderThreadExplorerWorkspace,
     scheduleFocus: scheduleThreadExplorerSelectedFocus,
@@ -6666,26 +6412,6 @@ function scrollThreadExplorerToRoot() {
   threadExplorerFocusController.root();
 }
 
-/**
- * Scrolls one rendered Thread Explorer node into the viewport.
- * @param {HTMLElement} item - Rendered node item to reveal.
- * @param {object} options - Scroll placement options.
- * @param {string} options.block - Vertical placement: "start" or "center".
- * @param {string} options.inline - Horizontal placement: "start" or "center".
- * @returns {void}
- */
-function scrollThreadExplorerNodeIntoView(item, options = {}) {
-  threadExplorerFocusController.reveal(item, options);
-}
-
-/**
- * Finds a rendered Thread Explorer node item by exact post URI.
- * @param {string} uri - AT URI to locate in the rendered tree.
- * @returns {HTMLElement|null} Matching rendered node item, or null.
- */
-function findRenderedThreadExplorerNode(uri) {
-  return threadExplorerFocusController.find(uri);
-}
 
 /**
  * Measures one rendered Thread Explorer element in untransformed stage coordinates.
@@ -6699,7 +6425,7 @@ function getThreadExplorerStageBox(element = null) {
   return getThreadExplorerStageBoxFromRects(
     element.getBoundingClientRect(),
     threadExplorerThreadTree.getBoundingClientRect(),
-    { zoom: threadExplorerZoom, panX: threadExplorerPanX, panY: threadExplorerPanY },
+    { zoom: threadExplorerViewState.zoom, panX: threadExplorerViewState.panX, panY: threadExplorerViewState.panY },
   );
 }
 
@@ -6729,10 +6455,10 @@ function fitThreadExplorerStageToBounds(bounds, options = {}) {
   if (!viewport) {
     return;
   }
-  threadExplorerZoom = viewport.zoom;
-  threadExplorerPanX = viewport.panX;
-  threadExplorerPanY = viewport.panY;
-  threadExplorerController.setViewport(threadExplorerZoom, threadExplorerPanX, threadExplorerPanY);
+  threadExplorerViewState.zoom = viewport.zoom;
+  threadExplorerViewState.panX = viewport.panX;
+  threadExplorerViewState.panY = viewport.panY;
+  threadExplorerController.setViewport(threadExplorerViewState.zoom, threadExplorerViewState.panX, threadExplorerViewState.panY);
   applyThreadExplorerStageTransform();
   scheduleThreadExplorerEdgeRender();
 }
@@ -6773,13 +6499,6 @@ function getThreadExplorerCardNeighborhoodBounds(item) {
   });
 }
 
-/**
- * Cancels one pending single-click card selection.
- * @returns {void}
- */
-function cancelPendingThreadExplorerCardClick() {
-  threadExplorerCardFocusController.cancel();
-}
 
 /**
  * Handles a single click on one Thread Explorer post card.
@@ -6860,8 +6579,8 @@ function handleThreadExplorerPointerDown(event) {
     isInteractiveTarget: isThreadExplorerInteractiveTarget,
     cancelInertia: cancelThreadExplorerPanInertia,
     setPanArmed: (active) => threadExplorerThreadTree.classList.toggle("is-pan-armed", active),
-    getPanX: () => threadExplorerPanX,
-    getPanY: () => threadExplorerPanY,
+    getPanX: () => threadExplorerViewState.panX,
+    getPanY: () => threadExplorerViewState.panY,
     capturePointer: (pointerId) => threadExplorerThreadTree.setPointerCapture(pointerId),
   });
 }
@@ -6877,8 +6596,8 @@ function handleThreadExplorerPointerMove(event) {
     updateVelocity: updateThreadExplorerPanVelocity,
     setPanning: setThreadExplorerPanningMode,
     setPan: (panX, panY) => {
-      threadExplorerPanX = panX;
-      threadExplorerPanY = panY;
+      threadExplorerViewState.panX = panX;
+      threadExplorerViewState.panY = panY;
     },
     applyTransform: applyThreadExplorerStageTransform,
   });
@@ -6931,23 +6650,6 @@ function handleThreadExplorerResize() {
   scheduleThreadExplorerEdgeRender();
 }
 
-/**
- * Adds all collapsible Thread Explorer node URIs to a target set.
- * @param {object|null} node - Tree node to inspect.
- * @param {Set<string>} targetSet - Set that receives post URIs for nodes with replies.
- * @returns {void}
- */
-function collectCollapsibleThreadExplorerUris(node, targetSet) {
-  if (!node || !Array.isArray(node.replies) || node.replies.length === 0) {
-    return;
-  }
-  if (node.post?.uri) {
-    targetSet.add(node.post.uri);
-  }
-  node.replies.forEach((reply) => {
-    collectCollapsibleThreadExplorerUris(reply, targetSet);
-  });
-}
 
 /**
  * Expands or collapses all current Thread Explorer tree nodes.
@@ -6962,19 +6664,6 @@ function setAllThreadExplorerNodesCollapsed(shouldCollapse) {
   renderThreadExplorerTree();
 }
 
-/**
- * Creates a safe filename part for Thread Explorer exports.
- * @param {string} value - Raw filename part.
- * @returns {string} Filesystem-friendly filename part.
- */
-function sanitizeThreadExplorerFileNamePart(value) {
-  const normalized = String(value || "").trim().replace(/^@+/, "");
-  const safe = normalized.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-  if (safe) {
-    return safe.slice(0, 80);
-  }
-  return "thread";
-}
 
 /**
  * Encodes an already loaded image element as a data URL when the browser allows it.
@@ -7101,14 +6790,6 @@ function getThreadExplorerSnapshotMediaImageKeys(image = null) {
   return getSnapshotMediaImageKeysFromData(image);
 }
 
-/**
- * Builds the preferred key for one rendered media image in a snapshot card.
- * @param {HTMLImageElement|null} image - Rendered media image.
- * @returns {string} Stable media image key or an empty string.
- */
-function getThreadExplorerSnapshotMediaImageKey(image = null) {
-  return getSnapshotMediaImageKeyFromData(image);
-}
 
 /**
  * Finds a preloaded media image using all known keys for the rendered image element.
@@ -7149,25 +6830,6 @@ function setThreadExplorerCachedImageSource(image = null, primarySource = "", se
   setSnapshotCachedImageSourceFromData(image, primarySource, secondarySource, getThreadExplorerRenderedMediaCacheDataUri);
 }
 
-/**
- * Replaces rendered Thread Explorer media URLs with cache data URIs when available.
- * @returns {number} Number of image elements switched to cached sources.
- */
-function applyThreadExplorerRenderedMediaCacheToDom() {
-  if (!threadExplorerThreadStage) {
-    return 0;
-  }
-  const images = Array.from(threadExplorerThreadStage.querySelectorAll("img"));
-  const appliedCount = applySnapshotMediaCacheFromData(images, {
-    isMediaImage: isThreadExplorerSnapshotMediaImage,
-    getImageKeys: getThreadExplorerSnapshotMediaImageKeys,
-    getCachedDataUri: getThreadExplorerRenderedMediaCacheDataUri,
-  });
-  if (appliedCount > 0) {
-    scheduleThreadExplorerEdgeRender();
-  }
-  return appliedCount;
-}
 
 /**
  * Stores one Thread Explorer media data URI under every known cache key.
@@ -7362,30 +7024,6 @@ function strokeThreadExplorerSnapshotRoundRect(context, x, y, width, height, rad
   strokeSnapshotRoundRectFromModule(context, x, y, width, height, radius, color, lineWidth);
 }
 
-/**
- * Wraps plain text for canvas snapshot rendering.
- * @param {CanvasRenderingContext2D} context - Measuring canvas context.
- * @param {string} text - Text to wrap.
- * @param {number} maxWidth - Maximum line width.
- * @param {number} maxLines - Maximum lines to return.
- * @returns {string[]} Wrapped lines.
- */
-function wrapThreadExplorerSnapshotText(context, text, maxWidth, maxLines = 8) {
-  return wrapSnapshotTextFromModule(context, text, maxWidth, maxLines);
-}
-
-/**
- * Draws one text block for snapshot canvas rendering.
- * @param {CanvasRenderingContext2D} context - Target canvas context.
- * @param {string[]} lines - Lines to draw.
- * @param {number} x - Left coordinate.
- * @param {number} y - First baseline coordinate.
- * @param {number} lineHeight - Distance between baselines.
- * @returns {number} Next baseline coordinate after the block.
- */
-function drawThreadExplorerSnapshotTextBlock(context, lines, x, y, lineHeight) {
-  return drawSnapshotTextBlockFromModule(context, lines, x, y, lineHeight);
-}
 
 /**
  * Creates a canvas sized for the complete Thread Explorer snapshot.
@@ -7415,85 +7053,6 @@ async function encodeThreadExplorerSnapshotCanvas(canvas, mimeType) {
   });
 }
 
-/**
- * Writes an unsigned 32-bit integer in big-endian order.
- * @param {Uint8Array} target - Target byte buffer.
- * @param {number} offset - Write offset.
- * @param {number} value - Unsigned integer value.
- * @returns {void}
- */
-function writeThreadExplorerPngUint32(target, offset, value) {
-  writePngUint32FromSnapshot(target, offset, value);
-}
-
-/**
- * Builds the CRC table used by PNG chunks.
- * @returns {Uint32Array} CRC lookup table.
- */
-function createThreadExplorerPngCrcTable() {
-  return createPngCrcTableFromSnapshot();
-}
-
-/**
- * Calculates a PNG CRC over chunk type and payload.
- * @param {string} type - Four-character PNG chunk type.
- * @param {Uint8Array} data - Chunk payload bytes.
- * @param {Uint32Array} table - CRC lookup table.
- * @returns {number} Unsigned CRC value.
- */
-function calculateThreadExplorerPngCrc(type, data, table) {
-  return calculatePngCrcFromSnapshot(type, data, table);
-}
-
-/**
- * Creates one complete PNG chunk.
- * @param {string} type - Four-character PNG chunk type.
- * @param {Uint8Array} data - Chunk payload bytes.
- * @param {Uint32Array} crcTable - CRC lookup table.
- * @returns {Uint8Array} Encoded PNG chunk.
- */
-function createThreadExplorerPngChunk(type, data, crcTable) {
-  return createPngChunkFromSnapshot(type, data, crcTable);
-}
-
-/**
- * Creates one PNG text metadata chunk.
- * @param {string} keyword - PNG text keyword.
- * @param {string} value - Text value.
- * @param {Uint32Array} crcTable - CRC lookup table.
- * @returns {Uint8Array} Encoded PNG tEXt chunk.
- */
-function createThreadExplorerPngTextChunk(keyword, value, crcTable) {
-  return createPngTextChunkFromSnapshot(keyword, value, crcTable);
-}
-
-/**
- * Escapes a text value for use inside PNG XMP metadata.
- * @param {string} value - Raw text value.
- * @returns {string} XML-safe text value.
- */
-function escapeThreadExplorerPngXmpText(value) {
-  return escapePngXmpTextFromSnapshot(value);
-}
-
-/**
- * Builds an XMP packet for PNG export metadata.
- * @param {string} applicationLabel - Threadline application and version label.
- * @returns {string} XMP metadata packet.
- */
-function createThreadExplorerPngXmpPacket(applicationLabel) {
-  return createPngXmpPacketFromSnapshot(applicationLabel);
-}
-
-/**
- * Creates one PNG international text chunk for XMP metadata.
- * @param {string} value - XMP payload.
- * @param {Uint32Array} crcTable - CRC lookup table.
- * @returns {Uint8Array} Encoded PNG iTXt chunk.
- */
-function createThreadExplorerPngXmpChunk(value, crcTable) {
-  return createPngXmpChunkFromSnapshot(value, crcTable);
-}
 
 /**
  * Builds PNG metadata chunks for Threadline exports.
@@ -7505,24 +7064,6 @@ function createThreadExplorerPngMetadataChunks(crcTable) {
   return createPngMetadataChunksFromSnapshot(crcTable, applicationLabel);
 }
 
-/**
- * Adds Threadline metadata chunks to an encoded PNG blob.
- * @param {Blob} blob - PNG blob from browser canvas encoding.
- * @returns {Promise<Blob>} PNG blob with metadata chunks when possible.
- */
-async function addThreadExplorerPngMetadata(blob) {
-  return addPngMetadataFromSnapshot(blob, { applicationLabel: getExportMetadataApplicationLabel() });
-}
-
-/**
- * Creates PNG IHDR data for an RGBA image.
- * @param {number} width - Image width in pixels.
- * @param {number} height - Image height in pixels.
- * @returns {Uint8Array} IHDR payload.
- */
-function createThreadExplorerPngHeaderData(width, height) {
-  return createPngHeaderDataFromSnapshot(width, height);
-}
 
 /**
  * Returns the Thread Explorer snapshot background color.
@@ -7620,14 +7161,6 @@ function drawThreadExplorerSnapshotMediaImages(context, card, stageRect, mediaIm
   });
 }
 
-/**
- * Builds a readable counts line from rendered Thread Explorer count elements.
- * @param {HTMLElement} card - Rendered post card.
- * @returns {string} Snapshot-ready count summary with explicit spacing.
- */
-function getThreadExplorerSnapshotCountsText(card) {
-  return getSnapshotCountsTextFromModule(card);
-}
 
 /**
  * Waits until the browser has had time to paint progress updates.
@@ -7683,9 +7216,9 @@ async function renderThreadExplorerTiledPngSnapshotBlob(width, height, onProgres
       drawEdges: drawThreadExplorerSnapshotEdges,
       drawCard: drawThreadExplorerSnapshotCard,
     }),
-    crcTableFactory: createThreadExplorerPngCrcTable,
-    chunkFactory: createThreadExplorerPngChunk,
-    headerFactory: createThreadExplorerPngHeaderData,
+    crcTableFactory: createPngCrcTableFromSnapshot,
+    chunkFactory: createPngChunkFromSnapshot,
+    headerFactory: createPngHeaderDataFromSnapshot,
     metadataFactory: createThreadExplorerPngMetadataChunks,
     requestFrame: (callback) => window.requestAnimationFrame(callback),
   });
@@ -7930,7 +7463,7 @@ function applyThreadExplorerAccountInput(options = {}) {
   const nextForeignMode = isThreadExplorerForeignAccountMode();
   if (nextForeignMode) {
     threadExplorerActorFocusActor = createThreadExplorerActorStub(threadExplorerAccountActor);
-    threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(threadExplorerAccountMode);
+    threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(threadExplorerAccountMode);
     threadExplorerActorFocusItems = [];
     threadExplorerActorFocusCursor = "";
     threadExplorerActorFocusHasMore = false;
@@ -7989,7 +7522,7 @@ function handleThreadExplorerUseOwnAccountClick() {
 function handleThreadExplorerAccountModeChange(event) {
   threadExplorerAccountMode = normalizeThreadExplorerAccountMode(event.currentTarget?.value || "");
   threadExplorerAccountError = "";
-  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusMode(threadExplorerAccountMode);
+  threadExplorerActorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(threadExplorerAccountMode);
   renderThreadExplorerWorkspace();
   void persistSettings();
   if (!authAccount || threadExplorerLoadingFeed || !isThreadExplorerForeignAccountMode()) {
@@ -8019,8 +7552,8 @@ async function handleThreadExplorerRootClick() {
 
   if (isThreadExplorerReplyClusterModeActive()) {
     threadExplorerSelectedUri = rootUri;
-    threadExplorerReplyClusterExpandedUris.clear();
-    threadExplorerReplyClusterExpandedUris.add(rootUri);
+    threadExplorerViewState.expandedUris.clear();
+    threadExplorerViewState.expandedUris.add(rootUri);
     persistThreadExplorerSelectionPreference(rootUri);
     renderThreadExplorerWorkspace();
     window.requestAnimationFrame(scrollThreadExplorerToRoot);
@@ -8179,7 +7712,7 @@ function cancelPendingThreadExplorerZoomResetClick() {
 function handleThreadExplorerZoomOutClick() {
   handleThreadExplorerZoomOutClickFromTools({
     cancelPendingZoomReset: cancelPendingThreadExplorerZoomResetClick,
-    getZoom: () => threadExplorerZoom,
+    getZoom: () => threadExplorerViewState.zoom,
     setZoom: setThreadExplorerZoom,
   });
 }
@@ -8209,7 +7742,7 @@ function handleThreadExplorerZoomResetDoubleClick(event) {
 function handleThreadExplorerZoomInClick() {
   handleThreadExplorerZoomInClickFromTools({
     cancelPendingZoomReset: cancelPendingThreadExplorerZoomResetClick,
-    getZoom: () => threadExplorerZoom,
+    getZoom: () => threadExplorerViewState.zoom,
     setZoom: setThreadExplorerZoom,
   });
 }
@@ -8227,15 +7760,15 @@ function handleThreadExplorerOrientationClick() {
  * @returns {void}
  */
 function toggleThreadExplorerViewMode() {
-  if (threadExplorerViewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
-    threadExplorerViewMode = THREAD_EXPLORER_VIEW_MODE_TREE;
+  if (threadExplorerViewState.viewMode === THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER) {
+    threadExplorerViewState.viewMode = THREAD_EXPLORER_VIEW_MODE_TREE;
   } else {
-    threadExplorerViewMode = THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER;
-    threadExplorerReplyClusterExpandedUris.clear();
+    threadExplorerViewState.viewMode = THREAD_EXPLORER_VIEW_MODE_REPLY_CLUSTER;
+    threadExplorerViewState.expandedUris.clear();
     expandAllThreadExplorerReplyClusterNodes(threadExplorerTree);
   }
-  threadExplorerController.setViewMode(threadExplorerViewMode);
-  persistThreadExplorerViewModePreference(threadExplorerViewMode);
+  threadExplorerController.setViewMode(threadExplorerViewState.viewMode);
+  persistThreadExplorerViewModePreference(threadExplorerViewState.viewMode);
   renderThreadExplorerWorkspace();
   if (threadExplorerTree) {
     scheduleThreadExplorerSelectedFocus();
@@ -8501,13 +8034,6 @@ function setDmProgress({ title, step, percent = 0, detail = "" } = {}) {
   }
 }
 
-/**
- * Renders the Direct Message archive summary through the extracted renderer.
- * @returns {void}
- */
-function renderDmSummary() {
-  dmArchiveWorkspaceRenderer.renderSummary();
-}
 
 /**
  * Renders the filterable Direct Message contact list through the extracted renderer.
@@ -8517,13 +8043,6 @@ function renderDmContacts() {
   dmArchiveWorkspaceRenderer.renderContacts();
 }
 
-/**
- * Renders the compact Direct Message conversation preview through the extracted renderer.
- * @returns {void}
- */
-function renderDmResults() {
-  dmArchiveWorkspaceRenderer.renderResults();
-}
 
 /**
  * Renders all visible Direct Message workspace sections through the extracted renderer.
@@ -8716,11 +8235,6 @@ async function restoreDmPartnerCache() {
   applyDmPartnerCache(cache);
 }
 
-/** Delegates saveArchiveSession to the archive domain. @param {*} nextSession - Operation input. @returns {*} Domain result. */
-async function saveArchiveSession(nextSession) { return archiveRunController.saveSession(nextSession); }
-
-/** Delegates saveArchiveCatalogState to the archive domain. @param {*} nextCatalog - Operation input. @returns {*} Domain result. */
-async function saveArchiveCatalogState(nextCatalog = archiveCatalog) { return archiveRunController.saveCatalog(nextCatalog); }
 
 /** Delegates clearArchiveSession to the archive domain. @returns {*} Domain result. */
 async function clearArchiveSession() { return archiveRunController.clear(); }
@@ -8782,8 +8296,6 @@ async function setArchiveRunControl(action) { return archiveRunController.contro
 /** Delegates updateArchiveSummary to the archive domain. @param {*} catalog - Operation input. @returns {*} Domain result. */
 function updateArchiveSummary(catalog = archiveCatalog) { return archiveWorkspaceRenderer.summary(catalog); }
 
-/** Delegates renderArchiveSpec to the archive domain. @returns {*} Domain result. */
-function renderArchiveSpec() { return archiveWorkspaceRenderer.spec(); }
 
 /** Delegates renderArchiveResults to the archive domain. @param {*} catalog - Operation input. @returns {*} Domain result. */
 function renderArchiveResults(catalog = archiveCatalog) { return archiveWorkspaceRenderer.results(catalog); }
@@ -8797,8 +8309,6 @@ function invalidateArchiveCatalog() { return archiveRunController.invalidate(); 
 /** Refreshes the editing-time publish state and warnings. @returns {void} */
 function updatePublishAvailability() { composerPublishAvailability.render(); }
 
-/** Refreshes clear-button availability. @returns {void} */
-function updateClearButtonState() { composerUiState.renderClear(); }
 
 /** Applies the current lock state to Composer controls. @returns {void} */
 function updateComposerLockState() { composerUiState.renderLock(); }
@@ -8813,13 +8323,7 @@ function setComposerLocked(locked) { composerUiState.setLocked(locked); }
  */
 function setComposerPosted(posted) { composerUiState.setPosted(posted); }
 
-function detectBrowserLocale() {
-  const candidates = [navigator.language, ...(navigator.languages || [])]
-    .filter(Boolean)
-    .map((value) => value.toLowerCase().split("-")[0]);
-
-  return candidates.find((value) => SUPPORTED_LOCALES.includes(value)) || DEFAULT_LOCALE;
-}
+function detectBrowserLocale() { return detectApplicationLocale(navigator); }
 
 /** Detects iOS including desktop-identifying iPads. @returns {boolean} iOS device status. */
 function isIosDevice() { return isIosDeviceFromShell(window.navigator); }
@@ -8831,20 +8335,11 @@ function isStandaloneMode() {
 /** Refreshes PWA installation availability. @returns {void} */
 function updateInstallButtonVisibility() { applicationInstall.render(); }
 
-function formatTemplate(template, values = {}) {
-  return template.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "");
-}
 
-function getLocaleStrings(locale = currentLocale) {
-  return translations[locale] || translations[DEFAULT_LOCALE];
-}
 
-function t(key, values = {}) {
-  const localeStrings = getLocaleStrings();
-  const fallbackStrings = getLocaleStrings(DEFAULT_LOCALE);
-  const template = localeStrings[key] ?? fallbackStrings[key] ?? key;
-  return typeof template === "string" ? formatTemplate(template, values) : template;
-}
+
+
+function t(key, values = {}) { return translateApplicationValue(key, values, currentLocale); }
 
 /**
  * Applies the selected theme mode and refreshes the settings controls.
@@ -8903,13 +8398,6 @@ function renderSearchLanguageSummary() {
   return searchForm.renderLanguage();
 }
 
-/**
- * Returns true when more than one search language is active.
- * @returns {boolean} True for multi-language search mode.
- */
-function isSearchMultiLanguageActive() {
-  return searchForm.multiLanguage();
-}
 
 /**
  * Forces the search sort back to `latest` when multi-language search is active.
@@ -8940,40 +8428,8 @@ function renderPostLanguageDialog() { composerPostSettings.renderDialog(); }
  * @param {string} key - Translation key to read.
  * @returns {void}
  */
-function applyTranslatedTitle(element, key) {
-  if (!element || !key) {
-    return;
-  }
+function applyTranslatedTitle(element, key) { applyApplicationTranslatedTitle(element, key, t); }
 
-  const label = t(key);
-  element.setAttribute("title", label);
-  element.setAttribute("aria-label", label);
-}
-
-/**
- * Returns the matching language anchor for the multilingual privacy page.
- * @returns {string} One of `de`, `en`, or `fr`.
- */
-function getPrivacyPageLanguageAnchor() {
-  if (currentLocale === "de") {
-    return "de";
-  }
-  if (currentLocale === "fr") {
-    return "fr";
-  }
-  return DEFAULT_LOCALE;
-}
-
-/**
- * Updates privacy-page links to open the currently active language section.
- * @returns {void} Does not return a value.
- */
-function updatePrivacyPageLanguageLinks() {
-  const languageAnchor = getPrivacyPageLanguageAnchor();
-  document.querySelectorAll("[data-privacy-language-link]").forEach((link) => {
-    link.setAttribute("href", `./datenschutz.html#${languageAnchor}`);
-  });
-}
 
 /**
  * Applies translated text and locale-dependent interface settings.
@@ -8982,41 +8438,56 @@ function updatePrivacyPageLanguageLinks() {
 let richTextPresentation = null;
 let applicationTranslationRenderer = null;
 /** Refreshes application language through the shared renderer. @returns {void} Updates controls and views. */
+/** Applies locale markup, then asks the domain controllers to refresh their own views.
+ * @returns {void} Updated document and live controls.
+ */
 function applyTranslations() {
+  syncArchiveTransientNoticeFromCatalog();
+  ensureArchiveWorkspaceLayout();
   if (!applicationTranslationRenderer) {
-    applicationTranslationRenderer = createApplicationTranslationRenderer({ bindings: () => ({
-      document, currentLocale, updatePrivacyPageLanguageLinks, syncArchiveTransientNoticeFromCatalog, ensureArchiveWorkspaceLayout,
-      t, restoreSearchStatusFromResultState, applyTranslatedTitle, identifierField, passwordField,
-      customServerField, linkCardEndpointInput, linkCardUrlInput, sourceText, hashtagInput,
-      networkSearchInput, renderSearchHashtagSummary, networkAccountInput, archiveThreadUrlInput, postEditCheckUrlInput,
-      renderSearchLanguageSummary, replyTargetUrlInput, threadExplorerUrlInput, savedSearchUrlInput, archiveMediaActorInput,
-      analysisWorkspaceController, loginButton, loginDialogCancelButton, loginDialogCloseTop, addAccountButton,
-      publishButton, getPublishButtonLabel, clearButton, settingsButton, loadThreadButton,
-      helpButton, installButton, saveThreadButton, resetColumnWidthsButton, updateAppearanceModeControls,
-      archiveButton, networkButton, dmButton, networkLoadButton, networkLoading,
-      networkResetButton, archiveNextWaveButton, archiveLoadThreadUrlButton, archiveCheckPostEditButton, archiveSavedSearchesButton,
-      renderArchiveSavedSearchNote, postEditCheckSubmitButton, archiveExportZipButton, archiveExportMediaZipButton, archiveExportHtmlButton,
-      archiveExportHtmlCompactButton, archiveExportPdfButton, archiveActionsExportHtmlButton, archiveActionsExportHtmlCompactButton, archiveProgressExportHtmlCompactButton,
-      renderArchiveZipHtmlScriptHelp, updateArchiveHtmlExportButtons, archiveActionsExportPdfButton, archiveImportButton, updateAuthButtons,
-      renderAccountSwitcher, archiveResetButton, dmLoadButton, dmExportJsonButton, dmExportHtmlButton,
-      dmExportPdfButton, dmCheckButton, dmLoadPartnersButton, dmContactSearchInput, archivePauseButton,
-      archiveResumeButton, archiveCancelButton, renderArchiveProgressHeartbeat, renderArchiveBackgroundNotice, renderVersionLabel,
-      checkUpdatesButton, reloadAppButton, exportSettingsButton, importSettingsButton, shareAppButton,
-      shareQrImage, shareUrl, APP_SHARE_URL, clearHistoryButton, hashtagEditSaveButton,
-      hashtagEditCancelButton, hashtagEditCancelTop, altTextSaveButton, altTextCancelButton, altTextCloseTop,
-      imageEditorSaveButton, imageEditorCancelButton, imageEditorCloseTop, imageFlipHorizontalButton, imageFlipVerticalButton,
-      imageRotateLeftButton, imageResetButton, imageFitDimensionsButton, confirmDialogConfirmButton, confirmDialogCancelButton,
-      publishResultLink, historyButton, composerUnlockButton, composerPostedDismissButton, applySidebarState,
-      altTextPreviewCanvas, hashtagAddButton, nextTipButton, hideTipsButton, postSettingsButton,
-      replyTargetButton, postLanguagesSearch, hashtagPlacementSelect, archiveScopeSelect, archiveContentModeSelect,
-      archiveImageSizeSelect, renderTip, renderHashtagCloud, renderHistoryList, updateTipsVisibility,
-      altTextRequiredToggle, altTextRequired, publishWarning, updateComposerLockState, renderNetworkWorkspace,
-      renderDmWorkspace, languageSelect, localePreference, renderPostLanguageSummary, renderPostInteractionControls,
-      renderPostLanguageDialog, renderReplyTargetCard, renderSegments, renderAnalysisWorkspace, updateStatusForAuth,
-      renderArchiveWorkspace, applyTheme, applyCompactMode,
-    }) });
+    applicationTranslationRenderer = createApplicationTranslationRenderer({ document, translate: t, locale: () => currentLocale });
   }
   applicationTranslationRenderer.render();
+  // Domain refresh order is page composition, not a dependency of the generic translator.
+  restoreSearchStatusFromResultState();
+  renderSearchHashtagSummary();
+  renderSearchLanguageSummary();
+  analysisWorkspaceController.translate();
+  publishButton.textContent = getPublishButtonLabel();
+  updateAppearanceModeControls();
+  updateNetworkControls();
+  renderArchiveSavedSearchNote();
+  renderArchiveZipHtmlScriptHelp();
+  updateArchiveHtmlExportButtons();
+  updateAuthButtons();
+  renderAccountSwitcher();
+  renderArchiveProgressHeartbeat();
+  renderArchiveBackgroundNotice();
+  renderVersionLabel();
+  if (shareUrl) { shareUrl.textContent = APP_SHARE_URL; }
+  applySidebarState();
+  renderTip();
+  renderHashtagCloud();
+  renderHistoryList();
+  updateTipsVisibility();
+  altTextRequiredToggle.checked = altTextRequired;
+  updateComposerLockState();
+  renderNetworkWorkspace();
+  renderDmWorkspace();
+  const languageNames = t("languageNames");
+  Array.from(languageSelect.options).forEach(option => { option.textContent = languageNames[option.value] || option.value; });
+  languageSelect.value = localePreference;
+  renderPostLanguageSummary();
+  renderPostInteractionControls();
+  renderPostLanguageDialog();
+  applySidebarState();
+  renderReplyTargetCard();
+  renderSegments();
+  renderAnalysisWorkspace();
+  updateStatusForAuth();
+  renderArchiveWorkspace();
+  applyTheme();
+  applyCompactMode();
 }
 
 function preserveScrollPosition(callback) {
@@ -9206,9 +8677,6 @@ function normalizeSegmentImages(segments) {
   });
 }
 
-function normalizeSegmentOverrides(segments) {
-  return normalizeComposerSegmentOverridesFromModule(segments);
-}
 
 function normalizePostingHistory(entries) {
   return normalizeComposerPostingHistory(entries, MAX_POSTING_HISTORY);
@@ -9243,14 +8711,6 @@ function syncSegmentImages(segmentCount) {
  */
 function renderSegmentLinkCard(container, segmentIndex) { composerLinkCardPreview.render(container, segmentIndex); }
 
-/**
- * Returns the first other segment that currently carries a link card.
- * @param {number} targetSegmentIndex - Segment that is currently being inspected.
- * @returns {number} Source segment index, or `-1` when none was found.
- */
-function findOtherLinkCardSegmentIndex(targetSegmentIndex) {
-  return findOtherComposerLinkCardIndex(segmentLinkCards, targetSegmentIndex, normalizeLinkCard);
-}
 
 /**
  * Returns every available target entry for one link-card move or swap operation.
@@ -9416,13 +8876,6 @@ function normalizeLinkCardSettingsInputs() {
   composerProxySettings.normalizeInputs();
 }
 
-/**
- * Validates current proxy settings without mutating their fields.
- * @returns {object} Proxy validation result.
- */
-function validateLinkCardProxySettings() {
-  return composerProxySettings.validate();
-}
 
 /**
  * Updates the provider radio buttons and provider note according to the current
@@ -9519,12 +8972,9 @@ async function requestLinkCard(url) {
   });
 }
 
-function getHistoryPreviewText(text) {
-  return getComposerHistoryPreviewText(text);
-}
 
 function normalizeReplyTarget(target = null) {
-  return normalizeComposerReplyTarget(target, getHistoryPreviewText);
+  return normalizeComposerReplyTarget(target, getComposerHistoryPreviewText);
 }
 
 
@@ -9548,10 +8998,6 @@ function renderReplyTargetCard() {
   }, { withCounters: counterToggle.checked, translate: t, setAvatar: setAvatarImage });
 }
 
-/** Returns trimmed posting texts. @returns {string[]} Ordered section texts. */
-function getSegmentTextPayloads() {
-  return getComposerPostingTexts(activeSegments, currentComposedText);
-}
 
 /** Builds current text/media payloads. @returns {object[]} Ordered posting payloads. */
 function getSegmentPayloads() {
@@ -9669,33 +9115,6 @@ function clearSegmentImageDragState() {
   clearComposerImageDragVisuals(document);
 }
 
-/**
- * Gets the insertion side for an image drop.
- * @param {DragEvent} event - Drag event.
- * @param {DOMRect} rect - Target card bounds.
- * @returns {string} Before or after.
- */
-function getSegmentImageDropPosition(event, rect) {
-  return getComposerImageDropPosition(event, rect);
-}
-
-/**
- * Detects external file transfers.
- * @param {DragEvent} event - Drag event.
- * @returns {boolean} Whether files are transferred.
- */
-function eventHasTransferFiles(event) {
-  return composerEventHasTransferFiles(event);
-}
-
-/**
- * Gets image files from an external drop.
- * @param {DragEvent} event - Drop event.
- * @returns {Array<File>} Image files.
- */
-function getDroppedImageFiles(event) {
-  return getComposerDroppedImageFiles(event);
-}
 
 /**
  * Moves an image to a segment insertion position.
@@ -9959,11 +9378,6 @@ async function ensureArchiveAvatarAssets(catalog) { return catalogAvatarAssets.a
 async function ensureDmAvatarAssets(catalog) { return catalogAvatarAssets.dm(catalog); }
 
 
-
-
-
-
-
 /** Extracts hashtag data using the shared parser. @param {*} text - Post text. @returns {object[]} Normalized hashtag values. */
 function extractArchiveHashtagsFromText(text) {
   const value = String(text || "");
@@ -9986,17 +9400,6 @@ function extractArchiveHashtagsFromText(text) {
   return matches;
 }
 
-/**
- * Reads the external card stored on an archive post.
- * @param {object} post - Archive post object.
- * @returns {object|null} External card data, or null when no card exists.
- */
-function getArchiveExternalCard(post = {}) {
-  if (post?.externalCard?.url) {
-    return post.externalCard;
-  }
-  return null;
-}
 
 /**
  * Delegates standalone HTML export for the supplied or active archive.
@@ -10020,127 +9423,35 @@ async function exportArchivePdfBandsFromCatalog(catalog = archiveCatalog) {
 /** Delegates ensureArchiveCatalogLoaded to the archive domain. @param {*} forceRefresh - Operation input. @returns {*} Domain result. */
 async function ensureArchiveCatalogLoaded(forceRefresh = false) { return archiveRunController.ensure(forceRefresh); }
 
-function tokenizePostEditText(text) {
-  return String(text || "").match(/\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]+/gu) || [];
-}
 
-function getCurrentPostEditTokenStates(originalText, currentText) {
-  const originalTokens = tokenizePostEditText(originalText);
-  const currentTokens = tokenizePostEditText(currentText);
-  const rows = originalTokens.length + 1;
-  const columns = currentTokens.length + 1;
-  const matrix = Array.from({ length: rows }, () => new Uint16Array(columns));
-
-  for (let originalIndex = originalTokens.length - 1; originalIndex >= 0; originalIndex -= 1) {
-    for (let currentIndex = currentTokens.length - 1; currentIndex >= 0; currentIndex -= 1) {
-      matrix[originalIndex][currentIndex] = originalTokens[originalIndex] === currentTokens[currentIndex]
-        ? matrix[originalIndex + 1][currentIndex + 1] + 1
-        : Math.max(matrix[originalIndex + 1][currentIndex], matrix[originalIndex][currentIndex + 1]);
-    }
+let postEditCheckController = null;
+/** Wires the post edit dialog once its DOM is available. @returns {object} Domain controller. */
+function getPostEditCheckController() {
+  if (!postEditCheckController) {
+    postEditCheckController = createPostEditCheckController({ current: postEditCheckCurrent, status: postEditCheckStatus,
+      created: postEditCheckCreated, updated: postEditCheckUpdated, original: postEditCheckOriginal,
+      result: postEditCheckResult, url: postEditCheckUrlInput, dialog: postEditCheckDialog },
+    { document, translate: t, timestamp: formatHistoryTimestamp, compare: getCurrentPostEditTokenStates,
+      request: sendToServiceWorker, schedule: (...args) => window.setTimeout(...args), source: () => archiveThreadUrlInput?.value });
   }
-
-  const unchangedCurrentIndexes = new Set();
-  let originalIndex = 0;
-  let currentIndex = 0;
-  while (originalIndex < originalTokens.length && currentIndex < currentTokens.length) {
-    if (originalTokens[originalIndex] === currentTokens[currentIndex]) {
-      unchangedCurrentIndexes.add(currentIndex);
-      originalIndex += 1;
-      currentIndex += 1;
-    } else if (matrix[originalIndex + 1][currentIndex] >= matrix[originalIndex][currentIndex + 1]) {
-      originalIndex += 1;
-    } else {
-      currentIndex += 1;
-    }
-  }
-
-  return currentTokens.map((token, index) => ({
-    token,
-    changed: !unchangedCurrentIndexes.has(index),
-  }));
+  return postEditCheckController;
 }
 
-function renderPostEditCurrentText(originalText, currentText) {
-  postEditCheckCurrent.replaceChildren();
-  const tokenStates = getCurrentPostEditTokenStates(originalText, currentText);
-  let changedRun = null;
-
-  tokenStates.forEach(({ token, changed }) => {
-    if (!changed) {
-      changedRun = null;
-      postEditCheckCurrent.append(document.createTextNode(token));
-      return;
-    }
-    if (!changedRun) {
-      changedRun = document.createElement("mark");
-      changedRun.className = "post-edit-difference";
-      postEditCheckCurrent.appendChild(changedRun);
-    }
-    changedRun.append(document.createTextNode(token));
-  });
-}
 
 /**
  * Fills the post edit dialog with a detected edit result.
  * @param {object} result - Mu-compatible edit metadata result.
  * @returns {void}
  */
-function renderPostEditCheckResult(result) {
-  postEditCheckStatus.textContent = t("postEditCheckDetected");
-  postEditCheckStatus.classList.add("is-edited");
-  postEditCheckCreated.textContent = formatHistoryTimestamp(result.createdAt);
-  postEditCheckUpdated.textContent = formatHistoryTimestamp(result.updatedAt);
-  postEditCheckOriginal.textContent = result.originalText;
-  renderPostEditCurrentText(result.originalText, result.text);
-  postEditCheckResult.hidden = false;
-}
+function renderPostEditCheckResult(...args) { return getPostEditCheckController().render(...args); }
 
-function resetPostEditCheckResult() {
-  postEditCheckStatus.textContent = "";
-  postEditCheckStatus.className = "post-edit-check-status settings-note";
-  postEditCheckResult.hidden = true;
-  postEditCheckCreated.textContent = "";
-  postEditCheckUpdated.textContent = "";
-  postEditCheckOriginal.textContent = "";
-  postEditCheckCurrent.replaceChildren();
-}
+function resetPostEditCheckResult(...args) { return getPostEditCheckController().reset(...args); }
 
-function openPostEditCheckDialog() {
-  resetPostEditCheckResult();
-  postEditCheckUrlInput.value = String(archiveThreadUrlInput?.value || "").trim();
-  postEditCheckDialog.showModal();
-  window.setTimeout(() => {
-    postEditCheckUrlInput.focus();
-    if (postEditCheckUrlInput.value) {
-      postEditCheckUrlInput.select();
-    }
-  }, 0);
-}
+function openPostEditCheckDialog(...args) { return getPostEditCheckController().open(...args); }
 
-function closePostEditCheckDialog() {
-  if (postEditCheckDialog.open) {
-    postEditCheckDialog.close();
-  }
-}
+function closePostEditCheckDialog(...args) { return getPostEditCheckController().close(...args); }
 
-async function checkPostEditMetadata() {
-  const url = String(postEditCheckUrlInput.value || "").trim();
-  if (!url) {
-    throw new Error(t("postEditCheckInvalidUrl"));
-  }
-
-  resetPostEditCheckResult();
-  postEditCheckStatus.textContent = t("postEditCheckLoading");
-  const result = await sendToServiceWorker("CHECK_POST_EDIT", { url }, { timeoutMs: 120000 });
-
-  if (!result?.isEdited) {
-    postEditCheckStatus.textContent = t("postEditCheckNotDetected");
-    postEditCheckStatus.classList.add("is-unedited");
-    return;
-  }
-
-  renderPostEditCheckResult(result);
-}
+function checkPostEditMetadata(...args) { return getPostEditCheckController().check(...args); }
 
 /** Delegates importArchiveThreadFromUrl to the archive domain. @returns {*} Domain result. */
 async function importArchiveThreadFromUrl() { return archiveRunController.importThread(); }
@@ -10334,17 +9645,6 @@ function formatHistoryTimestamp(value) {
   }
 }
 
-function formatCompactArchiveTimestamp(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value || "");
-  }
-  return [
-    String(date.getDate()).padStart(2, "0"),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getFullYear()),
-  ].join(".") + ` ${String(date.getHours()).padStart(2, "0")}.${String(date.getMinutes()).padStart(2, "0")}`;
-}
 
 /**
  * Renders the saved publications with the Composer history templates.
@@ -10385,7 +9685,7 @@ function renderHistoryList() {
 async function recordPublishedThread(result, preparedSegments) {
   const entry = buildComposerHistoryEntry(result, preparedSegments, {
     account: authAccount, service: authAccountService, webApp: authAccountWebApp,
-    buildPostUrl: buildBlueskyPostUrl, preview: getHistoryPreviewText,
+    buildPostUrl: buildBlueskyPostUrl, preview: getComposerHistoryPreviewText,
     createId: () => crypto.randomUUID(), now: () => new Date().toISOString(),
   });
   await recordComposerHistoryEntry(entry, {
@@ -10426,18 +9726,6 @@ function setPickerInputValue(input, value) {
   accountPickerController.setInputValue(input, value);
 }
 
-/**
- * Opens the shared account picker dialog for a regular account field.
- * @param {object} options - Picker configuration for the target field.
- * @param {string} options.label - Visible field label used in the dialog title.
- * @param {string} options.initialQuery - Pre-filled search value.
- * @param {(actor: object, value: string) => void} options.onSelect - Callback after a result was chosen.
- * @param {string} [options.noteKey] - Optional translation key for the dialog note.
- * @returns {void}
- */
-function openAccountPickerDialog(options = {}) {
-  accountPickerController.open(options);
-}
 
 /**
  * Applies the selected account to the current non-mention picker target.
@@ -10491,18 +9779,6 @@ function applyDmContactPickerSelection(actor, value) {
   }
 }
 
-/**
- * Opens the shared account picker for a plain input field and writes the chosen value back.
- * @param {HTMLInputElement|null} input - Target field that should receive the chosen account.
- * @param {string} label - Visible field label used in the dialog title.
- * @param {object} [options] - Optional picker settings.
- * @param {string} [options.noteKey] - Optional translation key for the dialog note.
- * @param {(actor: object, value: string) => void} [options.onSelect] - Optional custom selection handler.
- * @returns {void}
- */
-function openInputAccountPicker(input, label, options = {}) {
-  accountPickerController.openInput(input, label, options);
-}
 
 /**
  * Enables automatic account-picker opening for one input field after a short query.
@@ -10721,10 +9997,10 @@ function renderSegmentImages(container, segmentIndex) {
     actions: {
       getDragState: () => segmentImageDragState,
       setDragState: (state) => { segmentImageDragState = state; },
-      hasFiles: eventHasTransferFiles, getFiles: getDroppedImageFiles,
+      hasFiles: composerEventHasTransferFiles, getFiles: getComposerDroppedImageFiles,
       selectFiles: handleSegmentImageSelection,
       clearMarkers: clearSegmentImageDropMarkers, clearDragState: clearSegmentImageDragState,
-      moveTo: moveSegmentImageToPosition, getDropPosition: getSegmentImageDropPosition,
+      moveTo: moveSegmentImageToPosition, getDropPosition: getComposerImageDropPosition,
       editImage: openImageEditorDialog, editAlt: openAltTextDialog,
       move: moveSegmentImage, remove: deleteSegmentImage,
     },
@@ -12700,9 +11976,9 @@ const savedSearchController = createSavedSearchController({
   status: (text) => { if (searchStatus) { searchStatus.textContent = text; } },
   dialogStatus: (text) => { savedSearchesStatus.textContent = text; }, clearInput: () => { savedSearchUrlInput.value = ""; },
   renderDialog: renderSavedSearchesDialog, closeDialog: () => { if (savedSearchesDialog.open) { savedSearchesDialog.close(); } },
-  explorerSearchId: () => getThreadExplorerSearchIdFromSource(threadExplorerSource),
+  explorerSearchId: () => getThreadExplorerSearchIdFromSource(threadExplorerViewState.source),
   resetExplorer: () => {
-    threadExplorerSource = "follows";
+    threadExplorerViewState.source = "follows";
     threadExplorerCursor = "";
     threadExplorerHasMore = true;
     threadExplorerItems = [];
@@ -12760,7 +12036,7 @@ const applicationHydration = createApplicationHydrationController({
     layoutVersion: DESKTOP_LAYOUT_STATE_VERSION },
   normalize: { hashtags: normalizeHashtagEntries, selection: normalizeSelectedHashtagEntries,
     search: normalizeSearchPreferencesForStorage, placement: normalizeHashtagPlacement,
-    images: normalizeSegmentImages, cards: normalizeSegmentLinkCards, overrides: normalizeSegmentOverrides,
+    images: normalizeSegmentImages, cards: normalizeSegmentLinkCards, overrides: normalizeComposerSegmentOverridesFromModule,
     reply: normalizeReplyTarget, languages: normalizePostLanguageTags, provider: normalizeLinkCardProvider,
     usage: normalizeMicrolinkUsage, history: normalizePostingHistory, favorites: normalizeThreadExplorerFavorites,
     searches: normalizeSavedSearches },
@@ -12820,8 +12096,6 @@ updateInstallButtonVisibility();
 setStatus(t("statusPreparing"));
 registerServiceWorker();
 renderSegments();
-
-
 
 
 /** Returns shared post-text presentation helpers. @returns {object} Presentation API. */

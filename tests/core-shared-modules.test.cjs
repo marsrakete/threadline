@@ -1216,3 +1216,60 @@ test("rich-text presentation preserves Unicode facet boundaries and rejects unus
   assert.deepEqual(renderer.runs("plain", [{ index: { byteStart: 7, byteEnd: 2 } }]), [{ text: "plain" }]);
   assert.equal(renderer.runs(null, null), null);
 });
+
+test("shared profile, URL, engagement and edit models preserve domain semantics at their new owners", async () => {
+  const profiles = await importProjectModule("js/shared/shared-accounts.js");
+  assert.equal(profiles.getProfileInitials({ displayName: " Berta " }), "BE");
+  assert.equal(profiles.getProfileInitials(null), "?");
+  assert.equal(profiles.getProfileLabel({ displayName: "Berta", handle: "berta.test" }), "Berta @berta.test");
+  assert.equal(profiles.getProfileLabel({ handle: "berta.test" }), "@berta.test"); assert.equal(profiles.getProfileLabel(null), "");
+  const posts = await importProjectModule("js/shared/shared-post-rendering.js");
+  assert.equal(posts.shortenThreadExplorerUrlForDisplay("https://example.test/path?q=secret#part"), "example.test/path#part");
+  assert.equal(posts.shortenThreadExplorerUrlForDisplay(null), ""); assert.equal(posts.shortenThreadExplorerUrlForDisplay("invalid"), "invalid");
+  assert.equal(posts.shortenThreadExplorerUrlForDisplay("x".repeat(100)).length, 72);
+  assert.equal(posts.removeThreadExplorerCardUrlFromText("Text https://example.test/path?q=1", "https://example.test/path"), "Text ");
+  assert.equal(posts.removeThreadExplorerCardUrlFromText(null, null), "");
+  assert.equal(posts.removeThreadExplorerCardUrlFromText("literal [x]", "[x]"), "literal ");
+  assert.equal(posts.getThreadExplorerEngagementScore({ likeCount: 1, replyCount: 2, repostCount: 3, quoteCount: 4 }), 35);
+  assert.equal(posts.getThreadExplorerEngagementScore({}), 0);
+  for (const [score, tier] of [[0,"quiet"],[39,"quiet"],[40,"warm"],[180,"hot"],[1000,"viral"],["bad","quiet"]]) assert.equal(posts.getThreadExplorerEngagementTier(score), tier);
+  assert.equal(posts.getArchiveExternalCard({ externalCard: { url: "https://example.test" } }).url, "https://example.test"); assert.equal(posts.getArchiveExternalCard(null), null);
+  assert.deepEqual(posts.tokenizePostEditText("ä😀 z"), ["ä", "😀", " ", "z"]); assert.deepEqual(posts.tokenizePostEditText(null), []);
+  assert.deepEqual(posts.getCurrentPostEditTokenStates("one two", "one new two"), [{token:"one",changed:false},{token:" ",changed:false},{token:"new",changed:true},{token:" ",changed:true},{token:"two",changed:false}]);
+  assert.deepEqual(posts.getCurrentPostEditTokenStates("deleted", null), []);
+  assert.deepEqual(posts.getCurrentPostEditTokenStates(null, "new"), [{token:"new",changed:true}]);
+  const snapshot = await importProjectModule("js/tools/thread-explorer-snapshot.js");
+  assert.equal(snapshot.sanitizeThreadExplorerFileNamePart(" @a/b : c "), "a-b-c"); assert.equal(snapshot.sanitizeThreadExplorerFileNamePart(null), "thread");
+  assert.equal(snapshot.sanitizeThreadExplorerFileNamePart("a".repeat(100)).length, 80);
+});
+
+test("like controller deduplicates concurrent requests and rolls back rejected optimistic updates", async () => {
+  const { createLivePostInteractionController } = await importProjectModule("js/tools/thread-explorer-controller.js");
+  assert.throws(() => createLivePostInteractionController(), /liked/);
+  for (const wasLiked of [false, true]) {
+    const calls = []; let settle; let failure = false;
+    const request = value => { calls.push(["request", value]); return new Promise((resolve,reject) => { settle = () => failure ? reject(Error("failed")) : resolve({uri:"at://like"}); }); };
+    const options = { liked: () => wasLiked, likeUri: () => "old", like: request, unlike: request,
+      apply: (...args) => calls.push(["apply", ...args]), refresh: uri => calls.push(["refresh",uri]), error: error => calls.push(["error",error.message]) };
+    const controller = createLivePostInteractionController(options), post = {uri:"at://post",cid:"cid"};
+    await controller.toggle(null); assert.equal(calls.length, 0);
+    const pending = controller.toggle(post); assert.equal(controller.pending(post.uri), true); await controller.toggle(post);
+    assert.equal(calls.filter(call => call[0] === "request").length, 1); settle(); await pending;
+    assert.equal(controller.pending(post.uri), false);
+    failure = true; const rejected = controller.toggle(post); settle(); await rejected;
+    assert.deepEqual(calls.filter(call => call[0] === "apply").at(-1), ["apply",post.uri,"old",wasLiked ? 1 : -1]);
+    assert.deepEqual(calls.at(-2), ["error","failed"]); assert.equal(controller.pending(post.uri), false);
+    for (const key of Object.keys(options)) assert.throws(() => createLivePostInteractionController({...options,[key]:null}), TypeError);
+  }
+});
+
+test("shared like projection updates matching nested posts and tolerates absent collections", async () => {
+  const { applyLikeStateToItemCollection, applyLikeStateToThreadTree } = await importProjectModule("js/shared/shared-post-rendering.js");
+  const first={uri:"at://one",likeCount:2},second={uri:"at://two",likeCount:7};
+  applyLikeStateToItemCollection([{post:first},{post:second},null],first.uri,"like",1);
+  assert.equal(first.likeCount,3);assert.equal(first.viewer.like,"like");assert.equal(second.likeCount,7);
+  applyLikeStateToItemCollection(null,first.uri,"",-1);applyLikeStateToThreadTree(null,first.uri,"",-1);
+  const nested={post:{uri:first.uri,likeCount:3},replies:[]};
+  applyLikeStateToThreadTree({post:second,replies:[nested]},first.uri,"",-1);
+  assert.equal(nested.post.likeCount,2);assert.equal(Object.hasOwn(nested.post.viewer,"like"),false);assert.equal(second.likeCount,7);
+});

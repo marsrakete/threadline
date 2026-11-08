@@ -1071,3 +1071,62 @@ export function createThreadExplorerFocusController(options) {
   return Object.freeze({ find: findRenderedThreadExplorerNode, reveal: scrollThreadExplorerNodeIntoView,
     root: scrollThreadExplorerToRoot, focus: focusSelectedThreadExplorerNode });
 }
+
+/** Owns optimistic like/unlike mutations and in-flight request deduplication.
+ * @param {object} options - liked, likeUri, like, unlike, apply, refresh and error callbacks.
+ * @returns {object} Frozen toggle and pending-query API; the pending set stays private.
+ */
+export function createLivePostInteractionController(options) {
+  for (const key of ['liked','likeUri','like','unlike','apply','refresh','error']) {
+    if (typeof options?.[key] !== 'function') { throw new TypeError('Live post interactions require ' + key); }
+  }
+  const pending = new Set();
+  const { liked: isPostLikedByViewer, likeUri: getViewerLikeUri } = options;
+  /** Toggles one valid post, rolling back optimistic state on failure. @param {object} post - Normalized post. @returns {Promise<void>} Settled request. */
+  async function toggleLikeForLivePost(post = {}) {
+    const postUri = String(post?.uri || "").trim();
+    const postCid = String(post?.cid || "").trim();
+    if (!postUri || !postCid) {
+      return;
+    }
+    if (pending.has(postUri)) {
+      return;
+    }
+
+    const wasLiked = isPostLikedByViewer(post);
+    const previousLikeUri = getViewerLikeUri(post);
+    let nextLikeUri = "";
+    let delta = 0;
+
+    if (wasLiked) {
+      delta = -1;
+    } else {
+      delta = 1;
+      nextLikeUri = `pending:${postUri}`;
+    }
+
+    pending.add(postUri);
+    options.apply(postUri, nextLikeUri, delta);
+    options.refresh(postUri);
+
+    try {
+      if (wasLiked) {
+        await options.unlike(previousLikeUri);
+        options.apply(postUri, "", 0);
+      } else {
+        const result = await options.like({
+          uri: postUri,
+          cid: postCid,
+        });
+        options.apply(postUri, String(result?.uri || "").trim(), 0);
+      }
+    } catch (error) {
+      options.apply(postUri, previousLikeUri, delta * -1);
+      options.error(error);
+    } finally {
+      pending.delete(postUri);
+      options.refresh(postUri);
+    }
+  }
+  return Object.freeze({ toggle: toggleLikeForLivePost, pending: uri => pending.has(uri) });
+}

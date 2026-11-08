@@ -1896,3 +1896,52 @@ test("archive export cards fit the entire mobile viewport", async ({ page }) => 
   }
   expect(errors).toEqual([]);
 });
+
+for (const pathname of ["/", "/tools.html"]) {
+  test(`translation markup and post edit controllers have independent DOM contracts on ${pathname}`, async ({page}) => {
+    const errors=[]; page.on("pageerror", error=>errors.push(error.message));
+    await prepareSearch(page); await page.goto(pathname); await expect(page.locator("html")).toHaveAttribute("lang","en");
+    const result=await page.evaluate(async()=>{
+      const {createApplicationTranslationRenderer}=await import("/js/core/app-i18n.js");
+      const {createPostEditCheckController}=await import("/js/tools/archive.js");
+      const {getCurrentPostEditTokenStates}=await import("/js/shared/shared-post-rendering.js");
+      const layout=await import("/js/tools/thread-explorer-layout.js");
+      const {setAttrs}=await import("/js/core/app-utils.js");
+      const item=document.querySelector("#thread-explorer-node-template").content.firstElementChild.cloneNode(true);
+      const emptyNode=document.createElement("div"),children=item.querySelector(":scope > .thread-explorer-children");
+      const child=document.createElement("li");child.className="thread-explorer-node-item";children.append(child,document.createElement("li"));
+      setAttrs(emptyNode,{title:"literal <b>","aria-hidden":false,"data-ignore":null});setAttrs(null,{});
+      const helpers={children:layout.getRenderedThreadExplorerChildItems(item).length,card:Boolean(layout.getRenderedThreadExplorerCard(item)),
+        emptyChildren:layout.getRenderedThreadExplorerChildItems(emptyNode).length,emptyCard:layout.getRenderedThreadExplorerCard(emptyNode),
+        title:emptyNode.title,aria:emptyNode.getAttribute("aria-hidden"),ignored:emptyNode.hasAttribute("data-ignore")};
+      const root=document.createElement("section"); document.body.append(root);
+      const label=document.createElement("span"); label.dataset.i18n="label"; root.append(label);
+      const input=document.createElement("input"); input.dataset.i18nPlaceholder="input"; input.dataset.i18nTitle="title";root.append(input);
+      const image=document.createElement("img");image.dataset.i18nAlt="image";root.append(image);
+      let language="en";
+      const translator=createApplicationTranslationRenderer({document:{documentElement:root,querySelectorAll:selector=>root.querySelectorAll(selector)},translate:key=>language+":"+key,locale:()=>language});
+      translator.render(); const first=label.textContent; language="fr";
+      const extra=document.createElement("span");extra.dataset.i18n="late";root.append(extra);translator.render();
+      const translated={first,second:label.textContent,placeholder:input.placeholder,title:input.title,aria:input.getAttribute("aria-label"),alt:image.alt,late:extra.textContent,language:root.lang};
+      const elements={};for(const key of ["current","status","created","updated","original","result"])elements[key]=document.createElement("div");
+      elements.url=document.createElement("input");elements.dialog=document.createElement("dialog");root.append(elements.dialog);for(const element of Object.values(elements))if(element!==elements.dialog)elements.dialog.append(element);
+      const calls=[];let response={isEdited:true,originalText:"old text",text:"new text",createdAt:"created",updatedAt:"updated"},source="https://example.test/post";
+      const adapters={document,translate:key=>key,timestamp:value=>"date:"+value,compare:getCurrentPostEditTokenStates,
+        request:async(...args)=>{calls.push(args);if(response instanceof Error)throw response;return response;},schedule:callback=>callback(),source:()=>source};
+      let invalid=false;try{createPostEditCheckController(elements,{...adapters,request:null});}catch(error){invalid=error instanceof TypeError;}
+      const controller=createPostEditCheckController(elements,adapters);controller.open();await controller.check();
+      const edited={text:elements.current.textContent,mark:elements.current.querySelector("mark").textContent,created:elements.created.textContent,visible:!elements.result.hidden};
+      controller.reset();const reset=elements.current.childNodes.length===0&&elements.result.hidden;
+      response={isEdited:false};await controller.check();const unchanged=elements.status.classList.contains("is-unedited");
+      response=Error("offline");let failed=false;try{await controller.check();}catch(error){failed=error.message==="offline";}
+      elements.url.value=" ";let empty=false;try{await controller.check();}catch(error){empty=error.message==="postEditCheckInvalidUrl";}
+      source="new source";controller.open();const liveSource=elements.url.value;controller.close();controller.close();
+      const closed=!elements.dialog.open;root.remove();return {translated,edited,invalid,reset,unchanged,failed,empty,liveSource,closed,helpers,calls:calls.map(call=>[call[0],call[1].url,call[2].timeoutMs])};
+    });
+    expect(result.translated).toEqual({first:"en:label",second:"fr:label",placeholder:"fr:input",title:"fr:title",aria:"fr:title",alt:"fr:image",late:"fr:late",language:"fr"});
+    expect(result.edited).toEqual({text:"new text",mark:"new",created:"date:created",visible:true});
+    expect(result.helpers).toEqual({children:1,card:true,emptyChildren:0,emptyCard:null,title:"literal <b>",aria:"false",ignored:false});
+    expect(result).toMatchObject({invalid:true,reset:true,unchanged:true,failed:true,empty:true,liveSource:"new source",closed:true});
+    expect(result.calls).toEqual(Array(3).fill(["CHECK_POST_EDIT","https://example.test/post",120000]));expect(errors).toEqual([]);
+  });
+}

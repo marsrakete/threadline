@@ -4,15 +4,13 @@
 
 Diese Datei bündelt die technischeren Hintergrundinformationen, die nicht im schnellen Einstieg des Haupt-README stehen sollen.
 
-## Modularisierung Abgeschlossen — 2026-11-08
+## Verantwortungspruefung — 2026-11-08
 
-App-Version `0.4.357`, Shell-Cache `v376`. Die Einstiege behalten DOM-/Zustandsverdrahtung und Nachrichtendispatch. Fachverhalten liegt in den unten beschriebenen Composer-, Tools-, Core-, Shared-, AT-Protocol- und Workermodulen. Delegationen erhalten bestehende Aufrufer; ausgelagerte Altimplementierungen sind entfernt.
+Die fruehere Fertigmeldung war voreilig. Der getestete Auslagerungsstand mit 857 Unit-/Vertragstests und 150 Chromium-Faellen belegte keine durchgaengig korrekte Verantwortungs- und Zustandsverteilung. App/Cache bleiben `0.4.357`/`v376`; das Zwischenstandslabel ist korrigiert.
 
-Die letzten Grenzen sind `archive-wave-controller.js` fuer fortsetzbare Archivwellen, `createWorkerRequestClient` in `app-storage.js` fuer Anfragen/Fortschritt/Timeout/Abbruch, `createApplicationTranslationRenderer` in `app-i18n.js` fuer die aktuelle uebersetzte Oberflaeche und `createRichTextPresentation` in `shared-post-rendering.js` fuer Unicode-Facets und Suchmarkierungen. Abhaengigkeiten werden explizit uebergeben. Der Archiv-Datumsstopp ruft das bestehende Medienmodell statt eines entfernten globalen Helfers auf.
+Die Nacharbeit entfernt 43 unbenutzte Funktionen und 18 Fassaden fuer importierte Funktionen. Uebersetzungsmetadaten gehoeren ins HTML; der generische Renderer bekommt nur Dokument, Uebersetzung und Sprache. Post-Edit-Dialog und optionale DM-Freischaltung gehoeren ihren Domaenencontrollern. Profil-/URL-/Engagement-/Editmodelle liegen in Sharedmodulen. Optimistische Likes und ihre private Menge laufender Anfragen gehoeren dem Interaktionscontroller. Explorer-Quelle/Layout/Viewport/aufgeklappte Knoten haben einen gemeinsamen Controller-Zustand statt sieben gespiegelter Globals.
 
-Abschlusspruefung: `npm run check` bestanden, einschliesslich Encoding/Syntax, 857 Unit-/Vertragstests und aller 150 Chromium-Browsertests mit regulaerem Prozessabschluss. Beide Einstiege, echte Service-Worker-Installation/Cacheaktivierung und Offline-Laden sind abgedeckt. Das mobile Archiv begrenzt Rasterspalten und Exportkarten auf den Viewport. Fuer den Explorer-Screenshot liegt eine Linux-Referenz neben Geometriepruefungen vor. Mit `THREADLINE_BROWSER_EXECUTABLE` kann ein lokaler Chromium gewaehlt werden; Standard bleibt Edge.
-
-Damit ist das Refactoring abgeschlossen. Live-Provider-/Kontenabnahme und separat erfasste PDF-Layoutfehler bleiben Produkt-QA; authentifizierte Testantworten sind kontrolliert, Live-Posts werden nicht erzeugt. Die optionale nutzerinitiierte Ruecknahme bleibt ein eigener TODO-Funktionspunkt.
+Die [Verantwortungs- und Zustandspruefung](docs/MODULARIZATION-AUDIT.md) mit vollstaendigem Funktionsinventar dokumentiert Nachweise, verbleibende Grenzen und Abnahmekriterien. Der Architekturabschluss bleibt bis zur Klaerung dieser Grenzen offen; gruene Regressionstests allein schliessen ihn nicht ab.
 
 ## Threadpublishing Und Record-Interaktionen
 

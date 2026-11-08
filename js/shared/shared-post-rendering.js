@@ -920,3 +920,221 @@ export function createRichTextPresentation(options) {
   }
   return { utf16: utf8IndexToUtf16Index, runs: extractFacetRichTextRuns, highlight: highlightSearchQueryInElement, clear: clearSearchHighlights };
 }
+
+/** Escapes text for literal use in a regular expression.
+ * @param {string} value - Literal text.
+ * @returns {string} Escaped pattern.
+ */
+export function escapeThreadExplorerRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Returns a compact display URL for Thread Explorer cards.
+ * @param {string} url - Full target URL.
+ * @returns {string} Short host/path label without tracking query parameters.
+ */
+export function shortenThreadExplorerUrlForDisplay(url) {
+  const value = String(url || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(value);
+    let compact = parsed.hostname;
+    if (parsed.pathname && parsed.pathname !== "/") {
+      compact += parsed.pathname;
+    }
+    if (parsed.hash) {
+      compact += parsed.hash;
+    }
+    if (compact.length > 72) {
+      return `${compact.slice(0, 69)}...`;
+    }
+    return compact;
+  } catch (error) {
+    if (value.length > 72) {
+      return `${value.slice(0, 69)}...`;
+    }
+    return value;
+  }
+}
+
+/**
+ * Removes URL variants for a rendered card from Thread Explorer post text.
+ * @param {string} text - Current display text.
+ * @param {string} url - Card target URL.
+ * @returns {string} Text without duplicate URL fragments.
+ */
+export function removeThreadExplorerCardUrlFromText(text, url) {
+  let nextText = String(text || "");
+  const value = String(url || "").trim();
+  if (!nextText || !value) {
+    return nextText;
+  }
+
+  const variants = new Set([value]);
+  try {
+    const parsed = new URL(value);
+    let hostPath = parsed.hostname;
+    if (parsed.pathname && parsed.pathname !== "/") {
+      hostPath += parsed.pathname;
+    }
+    variants.add(hostPath);
+    if (hostPath.startsWith("www.")) {
+      variants.add(hostPath.slice(4));
+    } else {
+      variants.add(`www.${hostPath}`);
+    }
+  } catch (error) {
+    // Keep exact variant only.
+  }
+
+  variants.forEach((variant) => {
+    if (!variant) {
+      return;
+    }
+    const escaped = escapeThreadExplorerRegExp(variant);
+    const exactPattern = new RegExp(`(^|\\s)(?:https?:\\/\\/)?${escaped}(?:[?#][^\\s]*)?(?:\\.\\.\\.|…)?(?=\\s|$)`, "g");
+    nextText = nextText.replace(exactPattern, "$1");
+  });
+
+  try {
+    const parsed = new URL(value);
+    let hostPattern = escapeThreadExplorerRegExp(parsed.hostname);
+    if (parsed.hostname.startsWith("www.")) {
+      hostPattern = `(?:www\\.)?${escapeThreadExplorerRegExp(parsed.hostname.slice(4))}`;
+    }
+    const linePattern = new RegExp(`(^|\\n)[ \\t]*(?:https?:\\/\\/)?${hostPattern}(?:\\/[^\\n\\s]*)?(?:\\.\\.\\.|…)?[ \\t]*(?=\\n|$)`, "g");
+    nextText = nextText.replace(linePattern, "$1");
+  } catch (error) {
+    // Invalid URLs do not get hostname line cleanup.
+  }
+
+  return nextText;
+}
+
+/**
+ * Computes an engagement score for one Thread Explorer post.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @returns {number} Weighted score from likes, replies, reposts, and quotes.
+ */
+export function getThreadExplorerEngagementScore(post) {
+  const likes = Number(post?.likeCount) || 0;
+  const replies = Number(post?.replyCount) || 0;
+  const reposts = Number(post?.repostCount) || 0;
+  const quotes = Number(post?.quoteCount) || 0;
+  return likes + (replies * 3) + (reposts * 4) + (quotes * 4);
+}
+
+/**
+ * Converts an engagement score into a visual intensity tier.
+ * @param {number} score - Weighted post engagement score.
+ * @returns {string} Engagement tier name for CSS classes.
+ */
+export function getThreadExplorerEngagementTier(score) {
+  const numericScore = Number(score) || 0;
+  if (numericScore >= 1000) {
+    return "viral";
+  }
+  if (numericScore >= 180) {
+    return "hot";
+  }
+  if (numericScore >= 40) {
+    return "warm";
+  }
+  return "quiet";
+}
+
+/** Reads a stored external card only when it has a target URL.
+ * @param {object|null} post - Archived post.
+ * @returns {object|null} Original card or null.
+ */
+export function getArchiveExternalCard(post = {}) {
+  if (post?.externalCard?.url) {
+    return post.externalCard;
+  }
+  return null;
+}
+
+/** Splits edit text into whitespace, word and punctuation runs.
+ * @param {string} text - Original or current post text.
+ * @returns {string[]} Tokens retaining all source characters.
+ */
+export function tokenizePostEditText(text) {
+  return String(text || "").match(/\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]+/gu) || [];
+}
+
+/** Marks inserted current-text tokens using a longest common subsequence.
+ * @param {string} originalText - Previous post text.
+ * @param {string} currentText - Updated post text.
+ * @returns {{token:string,changed:boolean}[]} Current tokens with change flags.
+ */
+export function getCurrentPostEditTokenStates(originalText, currentText) {
+  const originalTokens = tokenizePostEditText(originalText);
+  const currentTokens = tokenizePostEditText(currentText);
+  const rows = originalTokens.length + 1;
+  const columns = currentTokens.length + 1;
+  const matrix = Array.from({ length: rows }, () => new Uint16Array(columns));
+
+  for (let originalIndex = originalTokens.length - 1; originalIndex >= 0; originalIndex -= 1) {
+    for (let currentIndex = currentTokens.length - 1; currentIndex >= 0; currentIndex -= 1) {
+      matrix[originalIndex][currentIndex] = originalTokens[originalIndex] === currentTokens[currentIndex]
+        ? matrix[originalIndex + 1][currentIndex + 1] + 1
+        : Math.max(matrix[originalIndex + 1][currentIndex], matrix[originalIndex][currentIndex + 1]);
+    }
+  }
+
+  const unchangedCurrentIndexes = new Set();
+  let originalIndex = 0;
+  let currentIndex = 0;
+  while (originalIndex < originalTokens.length && currentIndex < currentTokens.length) {
+    if (originalTokens[originalIndex] === currentTokens[currentIndex]) {
+      unchangedCurrentIndexes.add(currentIndex);
+      originalIndex += 1;
+      currentIndex += 1;
+    } else if (matrix[originalIndex + 1][currentIndex] >= matrix[originalIndex][currentIndex + 1]) {
+      originalIndex += 1;
+    } else {
+      currentIndex += 1;
+    }
+  }
+
+  return currentTokens.map((token, index) => ({
+    token,
+    changed: !unchangedCurrentIndexes.has(index),
+  }));
+}
+
+
+/** Applies a like update to cached posts. @param {...*} args - Collection/tree, post URI, like URI and count delta. @returns {void} Mutates matching posts. */
+export function applyLikeStateToItemCollection(items = [], postUri = "", likeUri = "", delta = 0) {
+  if (!Array.isArray(items) || !postUri) {
+    return;
+  }
+
+  items.forEach((item) => {
+    const post = item?.post || null;
+    if (!post || post.uri !== postUri) {
+      return;
+    }
+    applyLikeStateToPost(post, likeUri, delta);
+  });
+}
+
+/** Applies a like update to cached posts. @param {...*} args - Collection/tree, post URI, like URI and count delta. @returns {void} Mutates matching posts. */
+export function applyLikeStateToThreadTree(node = null, postUri = "", likeUri = "", delta = 0) {
+  if (!node || !postUri) {
+    return;
+  }
+
+  if (node.post?.uri === postUri) {
+    applyLikeStateToPost(node.post, likeUri, delta);
+  }
+
+  const replies = Array.isArray(node.replies) ? node.replies : [];
+  replies.forEach((reply) => {
+    applyLikeStateToThreadTree(reply, postUri, likeUri, delta);
+  });
+}

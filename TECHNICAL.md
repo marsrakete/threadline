@@ -4,15 +4,13 @@
 
 This file collects the technical background information that would otherwise overload the quick-start README.
 
-## Modularization Complete — 2026-11-08
+## Responsibility Audit — 2026-11-08
 
-Application version `0.4.357`, shell cache `v376`. The entry points retain DOM/state wiring and message dispatch; domain behavior belongs to the Composer, tools, core, shared, AT Protocol and worker modules described below. Delegating entry functions preserve existing callers; extracted implementations were removed rather than duplicated.
+The earlier “modularization complete” declaration was premature. The validated extraction baseline was 857 unit/contract tests and 150 Chromium cases; it did not establish correct responsibility or state ownership throughout the entry points. App/cache stay at `0.4.357`/`v376`, with a corrected milestone label.
 
-The final boundaries are `archive-wave-controller.js` for resumable archive orchestration, `createWorkerRequestClient` in `app-storage.js` for request/progress/timeout/cancellation, `createApplicationTranslationRenderer` in `app-i18n.js` for live translated UI refresh, and `createRichTextPresentation` in `shared-post-rendering.js` for Unicode facets and search highlights. Dependencies are explicit. Archive date stopping now calls the existing media model instead of a removed global helper.
+The follow-up removes 43 unused functions and 18 imported-function forwarders. Translation metadata belongs to HTML; the generic renderer accepts only document, translate and locale adapters. The post-edit dialog and optional DM gate belong to their domain controllers. Profile/URL/engagement/edit models belong to shared modules. Optimistic likes and their private pending set belong to the interaction controller. Explorer source/layout/viewport/expanded state now has one controller-owned object instead of seven mirrored globals.
 
-Completion validation: `npm run check` passed, including encoding/syntax, 857 unit/contract tests and all 150 Chromium browser tests with regular teardown. Both entry pages, the real Service Worker installation/cache activation and offline loading are covered. The mobile archive grid now constrains its tracks and export cards to the viewport. The Explorer screenshot has a committed Linux baseline plus geometry assertions. Use `THREADLINE_BROWSER_EXECUTABLE` to select a locally installed Chromium; the default remains Edge.
-
-This closes the refactor. Live provider/account acceptance and the separately recorded PDF layout defects remain product QA tasks; the tests use controlled authenticated responses and do not publish live records. Optional user-triggered rollback remains a separate feature in TODO.md.
+See [the responsibility and state audit](docs/MODULARIZATION-AUDIT.md) and its complete function inventory for evidence, remaining boundaries and acceptance requirements. Architecture status remains open until those boundaries are resolved; passing regression tests alone does not close it.
 
 ## Thread Publishing And Record Interactions
 

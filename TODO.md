@@ -2,7 +2,7 @@
 
 Diese Liste ist nach Arbeitsstand sortiert. Erledigte Punkte bleiben sichtbar, offene Punkte stehen nach Themen gebuendelt darunter.
 
-Stand: Modularisierung abgeschlossen am 2026-11-08. App `0.4.357`, Cache `v376`. `app.js` und `sw.js` behalten Einstieg, Zustand und Verdrahtung; Fachlogik liegt in Domaenenmodulen. Abschluss: 857 Unit-/Vertragstests und 150 Browsertests erfolgreich. Fruehere Testzahlen in den erledigten Eintraegen dokumentieren die jeweiligen Auslagerungen.
+Stand: Verantwortungs- und Zustandspruefung am 2026-11-08. Die Fertigmeldung zur Gesamtmodularisierung ist zurueckgenommen. App `0.4.357`, Cache `v376` bleiben als gepruefter Zwischenstand; Details und Restgrenzen stehen in [docs/MODULARIZATION-AUDIT.md](docs/MODULARIZATION-AUDIT.md). Fruehere Testzahlen dokumentieren die jeweiligen Auslagerungen.
 
 ## Erledigt
 
@@ -205,7 +205,7 @@ Stand: Modularisierung abgeschlossen am 2026-11-08. App `0.4.357`, Cache `v376`.
 
 ## Naechste Arbeiten
 
-### Modularisierung — Abgeschlossen Am 2026-11-08
+### Modularisierung — Gepruefte Auslagerungen, Gesamtabschluss Offen
 
 - [x] Worker nach Domaenen aufteilen; abschliessend Archivwellen-Steuerung auslagern und den Datumsstopp an das vorhandene Medienmodell binden.
 - [x] Worker-Anfragetransport, Uebersetzungsrendering und Richtextdarstellung aus dem App-Einstieg in Core-/Sharedmodule verschieben. Einstiege behalten Verdrahtung und Delegationen.
@@ -214,8 +214,13 @@ Stand: Modularisierung abgeschlossen am 2026-11-08. App `0.4.357`, Cache `v376`.
 - [x] Echten Service Worker mit Cacheaktivierung, IndexedDB-Zustandsanfrage und Offline-Neuladen beider Einstiege pruefen.
 - [x] Thread-Explorer-Screenshot mit Linux-Referenz und Geometrie stabilisieren; gesamte Browserregression mit regulaerem Testserver-/Browser-Abbau bestanden.
 - [x] Mobile Archiv-Rasterbreite korrigieren und Exportkarten gegen den gesamten 390-Pixel-Viewport pruefen.
-- [x] TECHNICAL.md und TECHNICAL.de.md bereinigen und den abgeschlossenen Architekturstand dokumentieren.
-- [x] Zum Abschluss App-/Cache-Version und Label auf `0.4.357`/`v376` anheben.
+- [x] TECHNICAL.md und TECHNICAL.de.md bereinigen und den erreichten Modulstand und die offenen Verantwortungsgrenzen dokumentieren.
+- [x] Jede benannte Einstiegsfunktion und ihre gemeinsamen Zustandszugriffe inventarisieren; Inventar mit Quellhash/Strukturtest absichern.
+- [x] Uebersetzungsrenderer entkoppeln, sieben doppelte Explorer-Ansichtsfelder zusammenfuehren, Like-/Post-Edit-/DM-Gate-Verantwortungen verlagern und unbenutzte Fassaden entfernen.
+- [ ] Explorer-Account-/Actor-Fokuswechsel und ihre Feed-/Auswahltransaktionen in einen gemeinsamen Domaenenvertrag ueberfuehren.
+- [ ] Verbleibende Explorer-Geometrie-/Snapshot-/Kartenadapter anhand des Audits einem eindeutigen Besitzer zuordnen.
+- [ ] App-Shell-Gating, Composer-/Sharehelfer, Such-/Archiv-/DM-Cacheupdates und Worker-Primitiven gemaess Audit abgrenzen.
+- [ ] Gesamtabschluss erst nach der Verantwortungs-/Zustandspruefung erklaeren. Die vorzeitige Version `0.4.357`/`v376` bleibt erhalten; ihr Label bezeichnet jetzt einen Zwischenstand.
 
 ### Separate Produktabnahme Und Bestehende Fehler
 

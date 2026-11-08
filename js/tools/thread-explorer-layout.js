@@ -734,3 +734,43 @@ export function getThreadExplorerCardNeighborhoodBounds(item, options) {
   }
   return getThreadExplorerTreeCardNeighborhoodBounds(item, options);
 }
+
+/**
+ * Returns direct rendered child node items for a Thread Explorer item.
+ * @param {HTMLElement} item - Rendered Thread Explorer node item.
+ * @returns {HTMLElement[]} Direct child node items.
+ */
+export function getRenderedThreadExplorerChildItems(item) {
+  const childrenList = item.querySelector(":scope > .thread-explorer-children");
+  if (!childrenList) {
+    return [];
+  }
+  return Array.from(childrenList.children).filter((child) => child.classList.contains("thread-explorer-node-item"));
+}
+
+/**
+ * Returns the visible post card for a rendered Thread Explorer item.
+ * @param {HTMLElement} item - Rendered Thread Explorer node item.
+ * @returns {HTMLElement|null} Direct post card element, or null.
+ */
+export function getRenderedThreadExplorerCard(item) {
+  return item.querySelector(":scope > .thread-explorer-node > .thread-explorer-post-card");
+}
+
+/**
+ * Adds all collapsible Thread Explorer node URIs to a target set.
+ * @param {object|null} node - Tree node to inspect.
+ * @param {Set<string>} targetSet - Set that receives post URIs for nodes with replies.
+ * @returns {void}
+ */
+export function collectCollapsibleThreadExplorerUris(node, targetSet) {
+  if (!node || !Array.isArray(node.replies) || node.replies.length === 0) {
+    return;
+  }
+  if (node.post?.uri) {
+    targetSet.add(node.post.uri);
+  }
+  node.replies.forEach((reply) => {
+    collectCollapsibleThreadExplorerUris(reply, targetSet);
+  });
+}

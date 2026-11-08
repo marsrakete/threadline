@@ -1752,3 +1752,17 @@ export function createThreadExplorerSnapshotExportController(elements, options) 
   }
   return { download, cancel };
 }
+
+/**
+ * Creates a safe filename part for Thread Explorer exports.
+ * @param {string} value - Raw filename part.
+ * @returns {string} Filesystem-friendly filename part.
+ */
+export function sanitizeThreadExplorerFileNamePart(value) {
+  const normalized = String(value || "").trim().replace(/^@+/, "");
+  const safe = normalized.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  if (safe) {
+    return safe.slice(0, 80);
+  }
+  return "thread";
+}
