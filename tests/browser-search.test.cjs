@@ -3,6 +3,301 @@ const { test, expect } = require("@playwright/test");
 test.use({ serviceWorkers: "block" });
 
 for (const pathname of ["/", "/tools.html"]) {
+  test(`classic publishing and interactions preserve uploads, gates and partial errors from ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);
+    await page.route("**/publishing-harness.js",route=>route.fulfill({contentType:"text/javascript",body:`
+      importScripts("/sw.js");
+      self.onmessage=async()=>{try{
+        const did="did:plc:fixture",calls=[],progress=[];let postCount=0,failSecond=false;
+        fetch=async(url,settings={})=>{const parsed=new URL(url);
+          if(parsed.pathname.endsWith("uploadBlob")){calls.push({endpoint:"upload",size:settings.body.size});return new Response(JSON.stringify({blob:{ref:{$link:"blobcid"},mimeType:"image/png",size:settings.body.size}}));}
+          const body=JSON.parse(settings.body||"{}");calls.push({endpoint:parsed.pathname,body,authorization:settings.headers?.authorization});
+          if(parsed.pathname.endsWith("createRecord")){if(body.collection==="app.bsky.feed.post"){postCount++;if(failSecond&&postCount===2)return new Response(JSON.stringify({message:"fixture failure"}),{status:503});}return new Response(JSON.stringify({uri:"at://"+did+"/"+body.collection+"/"+(postCount||1),cid:"cid"+(postCount||1)}));}
+          if(parsed.pathname.endsWith("deleteRecord"))return new Response("{}");
+          throw Error("Unexpected "+url);
+        };
+        await writeStoredAuth({activeDid:did,accounts:[{did,identifier:"own.test",handle:"own.test",service:"https://bsky.social",session:{did,handle:"own.test",accessJwt:"fixture"}}]});
+        const image={blob:new Blob(["image"],{type:"image/png"}),alt:"alt",width:2,height:2};
+        const published=await publishThread({segments:[{text:"#tag https://example.test",images:[image]},{text:"gallery",images:Array(5).fill(image)}],langs:["de-DE"],postInteraction:{replyMode:"nobody",quotePostsAllowed:false}},value=>progress.push(value));
+        const liked=await likePost({uri:published.posts[0].uri,cid:published.posts[0].cid}),unliked=await unlikePost({likeUri:liked.uri});
+        const completedCalls=calls.slice();postCount=0;failSecond=true;let partial;
+        try{await publishThread({segments:["one","two"]});}catch(error){partial={message:error.message,details:error.details};}
+        self.postMessage({published,liked,unliked,completedCalls,partial,progress,frozen:Object.isFrozen(getWorkerPublishService())&&Object.isFrozen(getWorkerInteractionService()),cached:["publish-service","interaction-service"].every(name=>APP_SHELL.includes("./js/worker/"+name+".js"))});
+      }catch(error){self.postMessage({error:error.message,stack:error.stack});}};
+    `}));
+    await page.goto(pathname,{waitUntil:"domcontentloaded"});await expect(page.locator("#language-select")).toHaveValue("en");
+    const result=await page.evaluate(()=>new Promise((resolve,reject)=>{const worker=new Worker("/publishing-harness.js");worker.onerror=error=>{worker.terminate();reject(Error(error.message));};worker.onmessage=event=>{worker.terminate();resolve(event.data);};worker.postMessage({});}));
+    expect(result.error).toBeUndefined();expect(result.frozen).toBe(true);expect(result.cached).toBe(true);expect(result.published.posts).toHaveLength(2);
+    const writes=result.completedCalls.filter(call=>call.body?.collection==="app.bsky.feed.post");expect(writes[0].body.record.embed.$type).toBe("app.bsky.embed.images");expect(writes[1].body.record.embed.$type).toBe("app.bsky.embed.gallery");expect(writes[1].body.record.reply.root).toEqual(result.published.posts[0]);expect(writes[0].body.record.facets).toHaveLength(2);expect(writes[0].body.record.langs).toEqual(["de"]);
+    expect(result.completedCalls.filter(call=>call.endpoint==="upload")).toHaveLength(6);expect(result.completedCalls.filter(call=>call.body?.collection==="app.bsky.feed.threadgate")).toHaveLength(2);expect(result.completedCalls.filter(call=>call.body?.collection==="app.bsky.feed.postgate")).toHaveLength(2);expect(result.unliked.uri).toBe(result.liked.uri);expect(result.partial.details).toMatchObject({code:"PARTIAL_PUBLISH",postedCount:1,totalCount:2,status:503});expect(errors).toEqual([]);
+  });
+  test(`classic reply and edit checks preserve target selection and threadgate behavior from ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);
+    await page.route("**/post-check-harness.js",route=>route.fulfill({contentType:"text/javascript",body:`
+      importScripts("/sw.js");
+      self.onmessage=async()=>{try{
+        const did="did:plc:fixture",other="did:plc:other",prefix="at://"+other+"/app.bsky.feed.post/",url=prefix+"entry",calls=[];let gate="open";
+        const post=(key,author,date)=>({uri:key==="entry"?url:"at://"+author+"/app.bsky.feed.post/"+key,cid:key+"cid",author:{did:author,handle:"own.test"},record:{text:key,createdAt:date}});
+        const entry=post("entry",other,"2026-01-01"),own=()=>{const value=post("latest",did,"2026-11-08");if(gate!=="open")value.threadgate={record:{allow:gate==="blocked"?[]:[{$type:"app.bsky.feed.threadgate#listRule"}]}};return value;};
+        fetch=async(url,settings={})=>{const parsed=new URL(url);calls.push({endpoint:parsed.pathname,authorization:settings.headers?.authorization});
+          if(parsed.hostname==="plc.directory")return new Response(JSON.stringify({service:[{type:"AtprotoPersonalDataServer",serviceEndpoint:"https://actor.pds.test"}]}));
+          if(parsed.pathname.endsWith("getPosts"))return new Response(JSON.stringify({posts:[entry]}));
+          if(parsed.pathname.endsWith("getPostThread"))return new Response(JSON.stringify({thread:{post:entry,replies:[{post:own()}]}}));
+          if(parsed.pathname.endsWith("getRecord"))return new Response(JSON.stringify({cid:"editcid",value:{$type:"app.bsky.feed.post",text:"new",originalText:"old",updatedAt:"2026-11-08",createdAt:"2026-01-01"}}));
+          throw Error("Unexpected "+url);
+        };
+        await writeStoredAuth({activeDid:did,accounts:[{did,identifier:"own.test",service:"https://bsky.social",session:{did,accessJwt:"fixture"}}]});
+        const reply=await checkReplyTarget({url,mode:"thread"});gate="list";const warning=await checkReplyTarget({url,mode:"thread"});gate="blocked";let blocked="";try{await checkReplyTarget({url,mode:"thread"});}catch(error){blocked=error.message;}
+        const edit=await checkPostEditMetadata({url});let invalidCode="";try{await checkPostEditMetadata({url:"bad"});}catch(error){invalidCode=error.details.code;}
+        self.postMessage({reply,warning,blocked,edit,invalidCode,calls,frozen:Object.isFrozen(getWorkerPostCheckService())&&Object.isFrozen(workerReplyModels),cached:["reply-models","post-check-service"].every(name=>APP_SHELL.includes("./js/worker/"+name+".js"))});
+      }catch(error){self.postMessage({error:error.message,stack:error.stack});}};
+    `}));
+    await page.goto(pathname,{waitUntil:"domcontentloaded"});await expect(page.locator("#language-select")).toHaveValue("en");
+    const result=await page.evaluate(()=>new Promise((resolve,reject)=>{const worker=new Worker("/post-check-harness.js");worker.onerror=error=>{worker.terminate();reject(Error(error.message));};worker.onmessage=event=>{worker.terminate();resolve(event.data);};worker.postMessage({});}));
+    expect(result.error).toBeUndefined();expect(result.frozen).toBe(true);expect(result.cached).toBe(true);expect(result.reply.threadLength).toBe(2);expect(result.reply.replyParent.uri).toContain("/latest");expect(result.reply.targetPost.uri).toContain("/entry");expect(result.warning.replyHint).toContain("Listen");expect(result.blocked).toContain("keine Antworten");expect(result.edit).toMatchObject({actorDid:"did:plc:other",originalText:"old",text:"new",isEdited:true});expect(result.invalidCode).toBe("POST_EDIT_URL_INVALID");expect(result.calls.find(call=>call.endpoint.endsWith("getRecord")).authorization).toBeUndefined();expect(errors).toEqual([]);
+  });
+  test(`classic settings and drafts retain patch rules and restore after reload from ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);
+    await page.route("**/settings-harness.js",route=>route.fulfill({contentType:"text/javascript",body:`
+      importScripts("/sw.js");
+      self.onmessage=async event=>{try{
+        if(event.data.action==="save"){
+          await writeStoredValue(DRAFT_KEY,"legacy text");await writeStoredValue(LOCALE_KEY,"de");
+          const legacy=await getAppState({browserLocale:"en"});
+          await saveDraft({draft:"saved text",segmentImages:[],segmentOverrides:[" keep "],replyTarget:{mode:"thread",sourceUrl:"https://example.test/post"}});
+          await saveSettings({localePreference:"fr",themeMode:"dark",compactMode:true,tipsVisible:false,altTextRequired:false,desktopLayoutVersion:4,hashtags:["#One","#Two"],selectedHashtags:["one"],savedSearches:[{id:"saved",q:"query"}],threadExplorerState:{actor:"@@own.test",accountMode:"replies"},customField:"retained",segmentLinkCards:[{url:"https://example.test",title:"card"}]});
+          await saveSettings({themeMode:"invalid",compactMode:false,desktopLayoutVersion:null});
+          self.postMessage({legacy,state:await getAppState({browserLocale:"en"}),stored:await readStoredValue(SETTINGS_KEY),frozen:Object.isFrozen(getWorkerSettingsService())&&Object.isFrozen(workerSettingsModels),cached:["settings-models","settings-service"].every(name=>APP_SHELL.includes("./js/worker/"+name+".js"))});
+        }else self.postMessage({state:await getAppState({browserLocale:"en"}),stored:await readStoredValue(SETTINGS_KEY)});
+      }catch(error){self.postMessage({error:error.message,stack:error.stack});}};
+    `}));
+    await page.goto(pathname,{waitUntil:"domcontentloaded"});await expect(page.locator("#language-select")).toHaveValue("en");
+    const run=action=>page.evaluate(action=>new Promise((resolve,reject)=>{const worker=new Worker("/settings-harness.js");worker.onerror=error=>{worker.terminate();reject(Error(error.message));};worker.onmessage=event=>{worker.terminate();resolve(event.data);};worker.postMessage({action});}),action);
+    const saved=await run("save");expect(saved.error).toBeUndefined();expect(saved.frozen).toBe(true);expect(saved.cached).toBe(true);expect(saved.legacy.draft).toBe("legacy text");expect(saved.legacy.locale).toBe("de");
+    expect(saved.state).toMatchObject({draft:"saved text",locale:"fr",themeMode:"dark",compactMode:true,tipsVisible:false,altTextRequired:true,desktopLayoutVersion:0,selectedHashtags:["one"],segmentOverrides:[" keep "],threadExplorerState:{actor:"own.test",accountMode:"replies"}});expect(saved.state.replyTarget.mode).toBe("thread");expect(saved.stored.customField).toBe("retained");
+    await page.reload({waitUntil:"domcontentloaded"});const restored=await run("load");expect(restored.error).toBeUndefined();expect(restored.state).toEqual(saved.state);expect(restored.stored.savedSearches).toEqual([{id:"saved",q:"query"}]);expect(errors).toEqual([]);
+  });
+  test(`classic rich-text and mention callers preserve Unicode facets and account search from ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);
+    await page.route("**/richtext-harness.js",route=>route.fulfill({contentType:"text/javascript",body:`
+      importScripts("/sw.js");
+      self.onmessage=async()=>{try{
+        const did="did:plc:fixture",calls=[];
+        fetch=async(url,settings={})=>{const parsed=new URL(url);calls.push({url:String(url),authorization:settings.headers?.authorization});
+          if(parsed.pathname.endsWith("resolveHandle")){const handle=parsed.searchParams.get("handle");if(handle==="missing.test")return new Response("missing",{status:404});return new Response(JSON.stringify({did:"did:plc:own"}));}
+          if(parsed.pathname.endsWith("searchActorsTypeahead")){const q=parsed.searchParams.get("q");if(q.includes("bsky.social"))return new Response("temporary",{status:503});return new Response(JSON.stringify({actors:[{did:"did:plc:other",handle:"other.test"},{did:"did:plc:own",handle:"own.test"},{did:"did:plc:own",handle:"duplicate.test"}]}));}
+          throw Error("Unexpected "+url);
+        };
+        await writeStoredAuth({activeDid:did,accounts:[{did,identifier:"own.test",service:"https://bsky.social",session:{did,accessJwt:"fixture"}}]});
+        const auth=await ensureSession(),rich=await buildRichTextFacets("😀 @own.test #Grüße https://example.test",auth,new Map());
+        const missing=await buildRichTextFacets("@missing.test @missing.test",auth,new Map()),search=await searchMentionActors({query:"own"});
+        await clearStoredAuth();const preview=await resolveComposerMentions({handles:["@Own.Test","own.test","missing.test"]});
+        self.postMessage({rich,missing,search,preview,calls,tags:parseHashtagFacets("#Grüße"),frozen:Object.isFrozen(getWorkerRichTextService())&&Object.isFrozen(workerRichTextModels),cached:["richtext-models","richtext-service"].every(name=>APP_SHELL.includes("./js/worker/"+name+".js"))});
+      }catch(error){self.postMessage({error:error.message,stack:error.stack});}};
+    `}));
+    await page.goto(pathname,{waitUntil:"domcontentloaded"});await expect(page.locator("#language-select")).toHaveValue("en");
+    const result=await page.evaluate(()=>new Promise((resolve,reject)=>{const worker=new Worker("/richtext-harness.js");worker.onerror=error=>{worker.terminate();reject(Error(error.message));};worker.onmessage=event=>{worker.terminate();resolve(event.data);};worker.postMessage({});}));
+    expect(result.error).toBeUndefined();expect(result.frozen).toBe(true);expect(result.cached).toBe(true);
+    expect(result.rich.facets.map(facet=>facet.features[0].$type)).toEqual(["app.bsky.richtext.facet#mention","app.bsky.richtext.facet#tag","app.bsky.richtext.facet#link"]);expect(result.rich.facets[0].index.byteStart).toBe(5);
+    expect(result.missing.unresolvedHandles).toEqual(["missing.test"]);expect(result.search.actors.map(actor=>actor.handle)).toEqual(["own.test","other.test"]);
+    expect(result.preview.mentions).toEqual([{handle:"own.test",did:"did:plc:own"},{handle:"missing.test",did:null}]);expect(result.tags[0].features[0].tag).toBe("Grüße");expect(errors).toEqual([]);
+  });
+  test(`classic reaction loading and media scan use extracted units from ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);
+    await page.route("**/reactions-media-harness.js",route=>route.fulfill({contentType:"text/javascript",body:`
+      importScripts("/sw.js");
+      self.onmessage=async()=>{try{
+        const did="did:plc:fixture",uri="at://"+did+"/app.bsky.feed.post/key",calls=[],progress=[];
+        const actors=[{did:"did:actor",handle:"first.test"},{did:"did:actor",handle:"duplicate.test"},{handle:"handle.test"},{}];
+        fetch=async(url,settings={})=>{const parsed=new URL(url);calls.push({endpoint:parsed.pathname,authorization:settings.headers?.authorization,cid:parsed.searchParams.get("cid")});
+          if(parsed.pathname.endsWith("getLikes"))return new Response(JSON.stringify({likes:actors.map(actor=>({actor})),cursor:" next "}));
+          if(parsed.pathname.endsWith("getRepostedBy"))return new Response(JSON.stringify({repostedBy:actors}));
+          if(parsed.pathname.endsWith("getQuotes"))return new Response(JSON.stringify({posts:actors.map(author=>({author}))}));
+          if(parsed.pathname.endsWith("getAuthorFeed"))return new Response(JSON.stringify({feed:[{post:{uri,cid:"postcid",author:{did,handle:"own.test"},record:{text:"media",createdAt:"2026-11-07T01:02:03Z",embed:{images:[{image:{ref:{$link:"imagecid"},mimeType:"image/png"},alt:"image"}],video:{ref:{$link:"videocid"},mimeType:"video/mp4"},external:{uri:"https://example.test",thumb:"https://example.test/thumb",title:"card"}}}}}]}));
+          throw Error("Unexpected "+url);
+        };
+        await writeStoredAuth({activeDid:did,accounts:[{did,identifier:"own.test",handle:"own.test",service:"https://bsky.social",session:{did,accessJwt:"fixture"}}]});
+        const likes=await loadThreadExplorerReactions({type:"likes",uri,cid:"postcid"}),reposts=await loadThreadExplorerReactions({type:"reposts",uri}),quotes=await loadThreadExplorerReactions({type:"quotes",uri});
+        const scan=await scanAccountMediaExport({},value=>progress.push(value)),filtered=await scanAccountMediaExport({includeImages:false,includeVideos:false});
+        self.postMessage({likes,reposts,quotes,scan,filtered,calls,progress,frozen:Object.isFrozen(getWorkerExplorerReactionService())&&Object.isFrozen(getWorkerMediaExportModels()),cached:["explorer-reaction-service","media-export-models"].every(name=>APP_SHELL.includes("./js/worker/"+name+".js"))});
+      }catch(error){self.postMessage({error:error.message,stack:error.stack});}};
+    `}));
+    await page.goto(pathname,{waitUntil:"domcontentloaded"});await expect(page.locator("#language-select")).toHaveValue("en");
+    const result=await page.evaluate(()=>new Promise((resolve,reject)=>{const worker=new Worker("/reactions-media-harness.js");worker.onerror=error=>{worker.terminate();reject(Error(error.message));};worker.onmessage=event=>{worker.terminate();resolve(event.data);};worker.postMessage({});}));
+    expect(result.error).toBeUndefined();expect(result.frozen).toBe(true);expect(result.cached).toBe(true);
+    for(const key of ["likes","reposts","quotes"])expect(result[key].actors.map(actor=>actor.handle)).toEqual(["first.test","handle.test"]);
+    expect(result.likes.cursor).toBe("next");expect(result.calls[0].cid).toBe("postcid");expect(result.calls.every(call=>call.authorization==="Bearer fixture")).toBe(true);
+    expect(result.scan.manifest).toMatchObject({postCount:1,mediaCount:3});expect(result.scan.media.map(entry=>entry.kind)).toEqual(["image","video","other"]);
+    expect(result.scan.media[0].pathStem).toBe("posts/2026/2026-11/2026-11-07T01-02-03Z__post-key/img-01");expect(result.filtered.media.map(entry=>entry.kind)).toEqual(["other"]);expect(result.progress.at(-1).percent).toBe(100);expect(errors).toEqual([]);
+  });
+  test(`classic Explorer hydration uses real media and avatar caches and tolerates failed assets from ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);
+    await page.route("**/explorer-hydration-harness.js",route=>route.fulfill({contentType:"text/javascript",body:`
+      importScripts("/sw.js");
+      self.onmessage=async event=>{try{
+        const did="did:plc:fixture",base="https://images.fixture.test/",calls=[],progress=[];
+        const bytes=Uint8Array.from(atob(event.data.url.split(",")[1]),char=>char.charCodeAt(0));
+        fetch=async url=>{calls.push(String(url));if(String(url).endsWith("failed"))return new Response("missing",{status:404});if(String(url).endsWith("svg"))return new Response("<svg></svg>",{headers:{"content-type":"image/svg+xml"}});return new Response(bytes,{headers:{"content-type":"image/png"}});};
+        await writeStoredAuth({activeDid:did,accounts:[{did,identifier:"own.test",service:"https://bsky.social",session:{did,accessJwt:"fixture"}}]});
+        await writeStoredValue(ACCOUNT_AVATAR_CACHE_KEY,{assets:[]});
+        await caches.delete(REMOTE_MEDIA_CACHE_NAME);const cache=await caches.open(REMOTE_MEDIA_CACHE_NAME);
+        await cache.put(base+"cached",new Response(bytes,{headers:{"content-type":"image/png"}}));
+        const root={post:{author:{did,handle:"own.test",avatar:base+"avatar"},images:[{fullsize:base+"cached",thumb:base+"new"}],externalCard:{thumb:base+"svg"},quoteCard:{author:{did:"did:quote",avatar:base+"failed"},images:[{thumb:base+"failed"}]}}};
+        const avatars=await hydrateThreadExplorerAvatars({root},value=>progress.push(value)),stored=await readStoredValue(ACCOUNT_AVATAR_CACHE_KEY),beforeAvatarReuse=calls.length;
+        const reusedAvatars=await hydrateThreadExplorerAvatars({root:{post:{author:root.post.author}}}),avatarReused=calls.length===beforeAvatarReuse;
+        const media=await hydrateThreadExplorerMedia({root},value=>progress.push(value));
+        for(let attempt=0;attempt<50;attempt++){if(await cache.match(base+"new"))break;await new Promise(resolve=>setTimeout(resolve,10));}
+        const beforeReuse=calls.length,reusedMedia=await hydrateThreadExplorerMedia({mediaEntries:[{url:base+"cached"},{url:base+"new"}]},value=>progress.push(value));
+        self.postMessage({avatars,reusedAvatars,avatarReused,media,reusedMedia,mediaReused:calls.length===beforeReuse,avatarData:bytesToDataUrl(stored.assets[0].bytes,stored.assets[0].type),progress,calls,frozen:Object.isFrozen(getWorkerExplorerHydrationService()),cached:APP_SHELL.includes("./js/worker/explorer-hydration-service.js")});
+      }catch(error){self.postMessage({error:error.message,stack:error.stack});}};
+    `}));
+    await page.goto(pathname,{waitUntil:"domcontentloaded"});await expect(page.locator("#language-select")).toHaveValue("en");
+    const result=await page.evaluate(()=>new Promise((resolve,reject)=>{const canvas=document.createElement("canvas");canvas.width=2;canvas.height=2;canvas.getContext("2d").fillRect(0,0,2,2);const worker=new Worker("/explorer-hydration-harness.js");worker.onerror=error=>{worker.terminate();reject(Error(error.message));};worker.onmessage=event=>{worker.terminate();resolve(event.data);};worker.postMessage({url:canvas.toDataURL("image/png")});}));
+    expect(result.error).toBeUndefined();expect(result.frozen).toBe(true);expect(result.cached).toBe(true);expect(result.avatars.avatarCount).toBe(1);expect(result.avatarReused).toBe(true);expect(result.reusedAvatars.avatarCount).toBe(1);
+    expect(result.media.mediaCount).toBe(3);expect(result.reusedMedia.mediaCount).toBe(2);expect(result.mediaReused).toBe(true);
+    const final=result.progress.filter(value=>value.phase==="thread_explorer_media").at(-1);expect(final.cacheHits).toBe(2);expect(final.downloaded).toBe(0);
+    const dimensions=await page.evaluate(urls=>Promise.all(urls.map(url=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve([image.naturalWidth,image.naturalHeight]);image.onerror=()=>reject(Error("decode"));image.src=url;}))),[result.avatarData,result.media.media["https://images.fixture.test/new"],result.media.media["https://images.fixture.test/svg"]]);
+    expect(dimensions[0]).toEqual([2,2]);expect(dimensions[1]).toEqual([2,2]);expect(dimensions[2][0]).toBeGreaterThan(0);expect(errors).toEqual([]);
+  });
+  test(`classic Thread Explorer models preserve selected paths, missing anchors and embeds from ${pathname}`, async ({ page }) => {
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);
+    await page.route("**/explorer-models-harness.js",route=>route.fulfill({contentType:"text/javascript",body:`
+      importScripts("/sw.js");
+      self.onmessage=async()=>{try{
+        const did="did:plc:fixture",prefix="at://"+did+"/app.bsky.feed.post/",calls=[];
+        const post=key=>({uri:prefix+key,author:{did,handle:"own.test"},record:{text:key}});
+        fetch=async url=>{
+          const parsed=new URL(url),uri=parsed.searchParams.get("uri");calls.push({uri,parentHeight:parsed.searchParams.get("parentHeight")});
+          if(parsed.pathname.endsWith("getPreferences"))return new Response(JSON.stringify({preferences:[{items:[{uri:"at://"+did+"/app.bsky.feed.generator/pinned",pinned:true}]}]}));
+          if(parsed.pathname.endsWith("getFeedGenerator"))return new Response(JSON.stringify({view:{displayName:"Pinned fixture"}}));
+          if(parsed.pathname.endsWith("getPosts"))return new Response(JSON.stringify({posts:parsed.searchParams.getAll("uris").map(uri=>({uri}))}));
+          if(parsed.pathname.endsWith("getFollows"))return new Response(JSON.stringify({follows:[{did,handle:"own.test",viewer:{followedBy:true}}]}));
+          if(parsed.pathname.endsWith("getFollowers"))return new Response(JSON.stringify({followers:[{did,handle:"own.test",viewer:{following:true}}]}));
+          if(parsed.pathname.endsWith("getAuthorFeed"))return new Response(JSON.stringify({feed:[{post:post("author")},{post:{...post("reply"),record:{text:"reply",reply:{root:{uri:prefix+"root"}}}}}]}));
+          if(parsed.pathname.endsWith("searchPosts"))return new Response(JSON.stringify({posts:[{...post("search-one"),record:{reply:{root:{uri:prefix+"root"}}}},{...post("search-two"),record:{reply:{root:{uri:prefix+"root"}}}}]}));
+          if(parsed.pathname.endsWith("getFeed")||parsed.pathname.endsWith("getTimeline"))return new Response(JSON.stringify({feed:[{post:post("timeline")}]}));
+          if(!parsed.pathname.endsWith("getPostThread"))throw Error("Unexpected "+url);
+          let thread;
+          if(uri===prefix+"selected")thread={post:post("selected"),parent:{post:post("root")}};
+          else if(uri===prefix+"root")thread={post:post("root"),replies:[{post:post("sibling")}]};
+          else thread={post:post("orphan"),parent:{notFound:true,uri:prefix+"deleted"}};
+          return new Response(JSON.stringify({thread}));
+        };
+        await writeStoredAuth({activeDid:did,accounts:[{did,identifier:"own.test",service:"https://bsky.social",session:{did,accessJwt:"fixture"}}]});
+        const sources=await loadThreadExplorerFeedSources(),actorFeed=await loadThreadExplorerActorFeed({actor:did,mode:"replies"});
+        const timeline=await loadThreadExplorerFeed({source:"timeline"}),generator=await loadThreadExplorerFeed({source:"feed:at://"+did+"/app.bsky.feed.generator/pinned"});
+        const search=await loadThreadExplorerFeed({source:"search:saved",search:{q:"fixture"}}),relationship=await loadThreadExplorerFeed({source:"mutuals"});
+        const resolved=await resolveThreadExplorerPostUrl({url:prefix+"selected"});
+        const selected=await loadThreadExplorerThread({uri:prefix+"selected"}),orphan=await loadThreadExplorerThread({uri:prefix+"orphan"});
+        const embedded=normalizeThreadExplorerPost({...post("embed"),record:{text:"current",originalText:"old",updatedAt:"now"},embed:{media:{items:[{image:{fullsize:"https://image.test/full"},alt:"gallery alt"}],video:{}},record:{record:{uri:prefix+"quoted",author:{handle:"quote.test"},value:{text:"quoted"},embeds:[{external:{uri:"https://example.test",title:"card"}}]}}}});
+        self.postMessage({sources,actorFeed,timeline,generator,search,relationship,resolved,loadFrozen:Object.isFrozen(getWorkerExplorerLoadService()),loadCached:["explorer-feed-models","explorer-load-service"].every(name=>APP_SHELL.includes("./js/worker/"+name+".js")),selected,orphan,embedded,calls,contains:threadExplorerTreeContainsUri(selected.root,prefix+"selected"),frozen:Object.isFrozen(workerExplorerModels),cached:APP_SHELL.includes("./js/worker/explorer-models.js")});
+      }catch(error){self.postMessage({error:error.message,stack:error.stack});}};
+    `}));
+    await page.goto(pathname,{waitUntil:"domcontentloaded"});await expect(page.locator("#language-select")).toHaveValue("en");
+    const result=await page.evaluate(()=>new Promise((resolve,reject)=>{const worker=new Worker("/explorer-models-harness.js");worker.onerror=error=>{worker.terminate();reject(Error(error.message));};worker.onmessage=event=>{worker.terminate();resolve(event.data);};worker.postMessage({});}));
+    expect(result.error).toBeUndefined();expect(result.frozen).toBe(true);expect(result.cached).toBe(true);expect(result.contains).toBe(true);
+    expect(result.selected.postCount).toBe(3);expect(result.selected.root.replies.map(node=>node.post.text)).toEqual(["sibling","selected"]);
+    expect(result.orphan.root.post.isDeletedThreadAnchor).toBe(true);expect(result.orphan.postCount).toBe(1);expect(result.calls.filter(call=>call.parentHeight!==null).map(call=>call.parentHeight)).toEqual(["100","0","100"]);
+    expect(result.loadFrozen).toBe(true);expect(result.loadCached).toBe(true);expect(result.sources.feeds[0].displayName).toBe("Pinned fixture");
+    expect(result.actorFeed.mode).toBe("replies");expect(result.actorFeed.items.map(item=>item.post.text)).toEqual(["reply"]);
+    expect(result.timeline.items).toHaveLength(1);expect(result.generator.items).toHaveLength(1);expect(result.search.items).toHaveLength(1);expect(result.relationship.items[0].post.author.followedByViewer).toBe(true);expect(result.resolved.uri).toBe(result.selected.selectedUri);
+    expect(result.embedded.images[0]).toEqual({thumb:"https://image.test/full",fullsize:"https://image.test/full",alt:"gallery alt"});expect(result.embedded.hasVideo).toBe(true);expect(result.embedded.quoteCard.externalCard.title).toBe("card");expect(result.embedded.editInfo.originalText).toBe("old");expect(errors).toEqual([]);
+  });
+  test(`classic Composer image storage restores persisted blobs and prunes only unused data from ${pathname}`, async ({ page }) => {
+    const errors = []; page.on("pageerror", error => errors.push(error.message));
+    await prepareSearch(page);
+    await page.route("**/composer-image-store-harness.js", route => route.fulfill({ contentType: "text/javascript", body: `
+      importScripts("/sw.js");
+      self.onmessage=async event=>{
+        try {
+          const store=getWorkerComposerImageStore();
+          if(event.data.action==="save") {
+            const image={id:"draft-image",dataUrl:event.data.url,type:"image/png",alt:"draft alt",width:2,height:2,edit:{zoom:2,rotation:-450,fitMode:"cover"},validation:{sizeBytes:3,width:2,height:2,exceedsDimensions:true}};
+            await saveDraft({draft:"saved text",segmentImages:[[image]]});
+            await saveSettings({segmentImages:[[{...image,id:"settings-image",alt:"settings alt"}]]});
+            await store.put([{id:"orphan",blob:new Blob(["unused"])}]);
+            await pruneComposerImageBlobs();
+            const draft=await readStoredValue(DRAFT_KEY),settings=await readStoredValue(SETTINGS_KEY),records=await store.read(["draft-image","settings-image"]);
+            self.postMessage({ids:await store.list(),draft,settings,blobs:[...records.values()].every(record=>record.blob instanceof Blob),frozen:Object.isFrozen(store),cached:APP_SHELL.includes("./js/worker/composer-image-store.js")&&APP_SHELL.includes("./js/worker/composer-image-models.js"),modelsFrozen:Object.isFrozen(workerComposerImageModels)});
+          } else {
+            const restored=await getAppState({browserLocale:"en"});
+            const draft=await readStoredValue(DRAFT_KEY),draftImages=await hydrateStoredSegmentImages(draft.segmentImages);
+            await saveDraft({draft:"",segmentImages:[]});
+            const retained=await store.list();
+            await saveSettings({segmentImages:[]});
+            self.postMessage({restored:restored.segmentImages,draftImages,retained,remaining:await store.list()});
+          }
+        } catch(error) { self.postMessage({error:error.message,stack:error.stack}); }
+      };
+    ` }));
+    await page.goto(pathname, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    const dataUrl = await page.evaluate(() => { const canvas=document.createElement("canvas");canvas.width=2;canvas.height=2;canvas.getContext("2d").fillRect(0,0,2,2);return canvas.toDataURL("image/png"); });
+    const run = input => page.evaluate(input => new Promise((resolve, reject) => {
+      const worker = new Worker("/composer-image-store-harness.js");
+      worker.onerror = error => { worker.terminate(); reject(new Error(error.message)); };
+      worker.onmessage = event => { worker.terminate(); resolve(event.data); }; worker.postMessage(input);
+    }), input);
+    const saved = await run({action:"save",url:dataUrl});
+    expect(saved.error).toBeUndefined(); expect(saved.ids.sort()).toEqual(["draft-image","settings-image"]);expect(saved.blobs).toBe(true);expect(saved.frozen).toBe(true);expect(saved.cached).toBe(true);expect(saved.modelsFrozen).toBe(true);
+    expect(saved.draft.segmentImages[0][0].edit).toEqual({zoom:2,offsetX:0,offsetY:0,flipX:false,flipY:false,rotation:270});expect(saved.draft.segmentImages[0][0].validation).toEqual({sizeBytes:3,tooBig:false});
+    expect(saved.draft.segmentImages[0][0].dataUrl).toBeUndefined();expect(saved.settings.segmentImages[0][0].dataUrl).toBeUndefined();
+    await page.reload({waitUntil:"domcontentloaded"});
+    const loaded = await run({action:"restore"});expect(loaded.error).toBeUndefined();
+    expect(loaded.restored[0][0]).toMatchObject({id:"settings-image",alt:"settings alt",dataUrl});expect(loaded.draftImages[0][0]).toMatchObject({id:"draft-image",alt:"draft alt",dataUrl});
+    expect(loaded.retained).toEqual(["settings-image"]);expect(loaded.remaining).toEqual([]);
+    const decoded = await page.evaluate(url => new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve([image.naturalWidth,image.naturalHeight]);image.onerror=()=>reject(Error("image decode"));image.src=url;}),loaded.restored[0][0].dataUrl);
+    expect(decoded).toEqual([2,2]);expect(errors).toEqual([]);
+  });
+  test(`classic network data and workspace callers preserve slice, focus and mutuals from ${pathname}`, async ({ page }) => {
+    const errors = []; page.on("pageerror", error => errors.push(error.message));
+    await prepareSearch(page);
+    await page.route("**/network-data-harness.js", route => route.fulfill({ contentType: "text/javascript", body: `
+      importScripts("/sw.js");
+      self.onmessage=async()=>{
+        try {
+          const calls=[],progress=[],did="did:plc:fixture",actor="did:plc:actor",now=new Date().toISOString();
+          const auth={did,session:{did,accessJwt:"fixture"}};
+          fetch=async(url,settings={})=>{
+            const parsed=new URL(url);calls.push({url:String(url),authorization:settings.headers?.authorization});
+            if(parsed.pathname.endsWith("getAuthorFeed")){const owner=parsed.searchParams.get("actor");return new Response(JSON.stringify({feed:[{post:{uri:"at://"+owner+"/app.bsky.feed.post/one",author:{did:owner},record:{createdAt:now},likeCount:3,viewer:{like:"at://like"}}}]}));}
+            if(parsed.pathname.endsWith("listNotifications"))return new Response(JSON.stringify({notifications:[{reason:"like",author:{did:actor},reasonSubject:"at://"+did+"/app.bsky.feed.post/one",indexedAt:now}]}));
+            if(parsed.pathname.endsWith("getFollowers"))return new Response(JSON.stringify({followers:[{did:actor,handle:"actor.test"}]}));
+            if(parsed.pathname.endsWith("getFollows"))return new Response(JSON.stringify({follows:[{did:actor,handle:"actor.test"}]}));
+            if(parsed.pathname.endsWith("getProfile"))return new Response(JSON.stringify({did:parsed.searchParams.get("actor"),handle:"actor.test",viewer:{following:"at://"+did+"/app.bsky.graph.follow/one"}}));
+            if(parsed.pathname.endsWith("getRecord"))return new Response(JSON.stringify({value:{createdAt:" 2026-01-01T00:00:00Z "}}));
+            throw Error("Unexpected "+url);
+          };
+          const activity=await collectNetworkActivityForActor(auth,actor),likes=await collectNetworkLikeStats(auth,actor);
+          const wave=await collectGraphWave(auth,"app.bsky.graph.getFollowers",did,"",100,"followers",value=>progress.push(value),"fixture");
+          const dates=await loadNetworkRelationshipDates(auth,{following:"at://"+did+"/app.bsky.graph.follow/one"});
+          const graph=await collectEntireGraph(auth,"app.bsky.graph.getFollows",did,"following",()=>{},"title","step",30);
+          await writeStoredAuth({activeDid:did,accounts:[{...auth,identifier:"own.test",handle:"own.test",service:"https://bsky.social"}]});
+          const slice=await loadNetworkSlice({limit:100},value=>progress.push(value));
+          const focus=await loadNetworkActorFocus({actor},value=>progress.push(value));
+          const mutuals=await loadNetworkCommonMutuals({centerActor:did,focusActor:actor},value=>progress.push(value));
+          self.postMessage({slice,focus,mutuals,workspaceFrozen:Object.isFrozen(getWorkerNetworkWorkspaceService()),workspaceCached:APP_SHELL.includes("./js/worker/network-workspace-service.js"),activity,likes,wave,dates,graph,progress,calls,frozen:Object.isFrozen(getWorkerNetworkDataService()),cached:APP_SHELL.includes("./js/worker/network-data-service.js")});
+        } catch(error) { self.postMessage({error:error.message,stack:error.stack}); }
+      };
+    ` }));
+    await page.goto(pathname, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    const result = await page.evaluate(() => new Promise((resolve, reject) => {
+      const worker = new Worker("/network-data-harness.js");
+      worker.onerror = error => { worker.terminate(); reject(new Error(error.message)); };
+      worker.onmessage = event => { worker.terminate(); resolve(event.data); }; worker.postMessage({});
+    }));
+    expect(result.error).toBeUndefined(); expect(result.frozen).toBe(true); expect(result.cached).toBe(true);
+    expect(result.activity.windows[14]).toEqual({postsCount:1,likesReceivedCount:3}); expect(result.likes.mutualLikesCount).toBe(2);
+    expect(result.wave.profiles[0].did).toBe("did:plc:actor"); expect(result.progress[0].detail).toBe("1/100 geladen · Seite 1");
+    expect(result.dates).toEqual({youFollowSince:"2026-01-01T00:00:00Z",followsYouSince:""}); expect(result.graph[0].did).toBe("did:plc:actor");
+    expect(result.workspaceFrozen).toBe(true); expect(result.workspaceCached).toBe(true);
+    expect(result.slice.viewer.did).toBe("did:plc:fixture"); expect(result.slice.wave).toEqual({followers:1,follows:1});
+    expect(result.focus.profile.did).toBe("did:plc:actor"); expect(result.focus.likeStats.mutualLikesCount).toBe(2);
+    expect(result.focus.relationshipDates.youFollowSince).toBe("2026-01-01T00:00:00Z");
+    expect(result.mutuals.commonDids).toEqual(["did:plc:actor"]);
+    expect(result.calls.every(call=>call.authorization==="Bearer fixture")).toBe(true); expect(errors).toEqual([]);
+  });
   test(`classic login, token renewal and identity services preserve stored account flows from ${pathname}`, async ({ page }) => {
     const errors = []; page.on("pageerror", error => errors.push(error.message));
     await prepareSearch(page);
@@ -27,11 +322,19 @@ for (const pathname of ["/", "/tools.html"]) {
           failRefresh=true;const fallback=await ensureSession();
           const mu=await login({identifier:"own.test",appPassword:"fixture-password",service:MU_WEB_CLIENT});
           const cache=new Map(),first=await resolvePdsForDid(did,"https://fallback.test",cache),before=calls.length,second=await resolvePdsForDid(did,"https://other.test",cache),cacheHit=calls.length===before;
+          const imported=await importAccountMetadata({accounts:[{did:"did:plc:other",identifier:"other.test",handle:"other.test"}]});
+          const selected=await switchAccount({did});
+          const verified=await verifySession();
+          const removed=await removeAccount({did:"did:plc:other"});
+          await saveArchiveSession({session:{status:"fixture"}});
+          const signedOut=await logout({did});
+          const archiveCleared=(await getArchiveSession())===null;
+          await login({identifier:"own.test",appPassword:"fixture-password",service:MU_WEB_CLIENT});
           const connected=await checkConnectivity(),saved=await readStoredAuth();
-          self.postMessage({logged,fresh,fallbackHandle:fallback.handle,mu,first,second,cacheHit,connected,calls,createCount,activeDid:saved.activeDid,
+          self.postMessage({imported,selected,verified,removed,signedOut,archiveCleared,logged,fresh,fallbackHandle:fallback.handle,mu,first,second,cacheHit,connected,calls,createCount,activeDid:saved.activeDid,
             stored:saved.accounts.map(account=>({did:account.did,pdsUrl:account.pdsUrl,webApp:account.webApp})),
             frozen:Object.isFrozen(getAtprotoSession())&&Object.isFrozen(getAtprotoIdentity()),
-            cached:["session-service","identity-service"].every(name=>APP_SHELL.includes("./js/worker/"+name+".js"))});
+            cached:["session-service","identity-service","account-service"].every(name=>APP_SHELL.includes("./js/worker/"+name+".js"))});
         }catch(error){self.postMessage({error:error.message,stack:error.stack});}
       };
     ` }));
@@ -43,7 +346,8 @@ for (const pathname of ["/", "/tools.html"]) {
       worker.onmessage = event => { worker.terminate(); resolve(event.data); }; worker.postMessage({});
     }));
     expect(result.error).toBeUndefined(); expect(result.frozen).toBe(true); expect(result.cached).toBe(true);
-    expect(result.logged.authenticated).toBe(true); expect(result.fresh).toBe(true); expect(result.fallbackHandle).toBe("own.test"); expect(result.createCount).toBe(3);
+    expect(result.logged.authenticated).toBe(true); expect(result.fresh).toBe(true); expect(result.fallbackHandle).toBe("own.test"); expect(result.createCount).toBe(4);
+    expect(result.imported.accounts).toHaveLength(2); expect(result.selected.authenticated).toBe(true); expect(result.verified.authenticated).toBe(true); expect(result.removed.accounts).toHaveLength(1); expect(result.signedOut.authenticated).toBe(false); expect(result.archiveCleared).toBe(true);
     expect(result.mu.webApp).toBe("https://mu.social"); expect(result.first).toBe("https://pds.fixture.test"); expect(result.second).toBe(result.first); expect(result.cacheHit).toBe(true);
     expect(result.connected.ok).toBe(true); expect(result.activeDid).toBe("did:plc:fixture"); expect(result.stored).toEqual([{did:"did:plc:fixture",pdsUrl:"https://pds.fixture.test",webApp:"https://mu.social"}]);
     expect(result.calls.filter(call=>call.url.includes("refreshSession")).map(call=>call.authorization)).toEqual(["Bearer refresh-fixture","Bearer expired-refresh"]);
