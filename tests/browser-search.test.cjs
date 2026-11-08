@@ -1,4 +1,5 @@
 "use strict";
+const { cacheVersion } = require("../version.json");
 const { test, expect } = require("@playwright/test");
 test.use({ serviceWorkers: "block" });
 
@@ -488,7 +489,7 @@ for (const pathname of ["/", "/tools.html"]) {
     expect(result.results.tree.posts.map(post=>post.rkey)).toEqual(["root","child","other"]);
     expect(result.results.author.posts.map(post=>post.rkey)).toEqual(["root","child"]);
     expect(result.results.path.assets.map(asset=>asset.path)).toEqual(["link-cards/own.test-root.png","images/2026/own.test-child-1.png"]);
-    expect(result.results.path.assets[1].bytes).toEqual([1,2]); expect(result.results.path.manifest).toMatchObject({imageCount:1,postCount:2,appVersion:"v375"});
+    expect(result.results.path.assets[1].bytes).toEqual([1,2]); expect(result.results.path.manifest).toMatchObject({imageCount:1,postCount:2,appVersion:cacheVersion});
     expect(result.results.path.manifest.threadImport).toMatchObject({entryMode:"reply",importMode:"path"});
     expect(result.cancelled.session.status).toBe("cancelled"); expect(result.cancelled.manifest.postCount).toBeUndefined();
     expect(result.absent.manifest.threadImport).toMatchObject({entryMode:"missing",note:"Post nicht gefunden oder gelöscht"});
@@ -638,7 +639,7 @@ for (const pathname of ["/", "/tools.html"]) {
     expect(result.own).toMatchObject({did:"did:example:own",isOwnAccount:true}); expect(result.other).toMatchObject({handle:"other.test",displayName:"<b>Other</b>",avatar:"avatar",isOwnAccount:false});
     expect(result.sourceCalls).toHaveLength(1); expect(result.sourceCalls[0].params.actor).toBe("did:example:other");
     expect(result.sourceCalls[0].transport.headers.authorization).toBe("Bearer fixture"); expect(result.resumeRefs).toEqual({copied:true,raw:true,images:true});
-    expect(result.completed.manifest).toMatchObject({postCount:1,pageCount:7,appVersion:"v375",imageCount:0,phase:"assets"});
+    expect(result.completed.manifest).toMatchObject({postCount:1,pageCount:7,appVersion:cacheVersion,imageCount:0,phase:"assets"});
     expect(result.completed.posts[0]).toMatchObject({text:"<b>Literal saved</b>",counts:{likeCount:4}}); expect(result.completed.assets).toEqual([]);
     expect(result.completed.session).toMatchObject({waveIndex:1,status:"completed",hasMore:false,exportedPosts:1,pageCount:7});
     expect(result.cancelled.session).toMatchObject({status:"cancelled",exportedPosts:1,pageCount:7});
@@ -916,7 +917,7 @@ for (const pathname of ["/", "/tools.html"]) {
     expect(result.error).toBeUndefined(); expect(result.wired).toBe(true); expect(result.frozen).toBe(true); expect(result.cached).toBe(true);
     expect(result.contacts).toHaveLength(1); expect(result.contacts[0].handle).toBe("peer.test");
     expect(result.avatar).toBe("dm-avatars/peer.test.png"); expect(result.copied).toBe(true);
-    expect(result.manifest).toMatchObject({messageCount:2,conversationCount:1,participantCount:1,appVersion:"v375",exportedAt:"2026-10-22T10:00:00.000Z"});
+    expect(result.manifest).toMatchObject({messageCount:2,conversationCount:1,participantCount:1,appVersion:cacheVersion,exportedAt:"2026-10-22T10:00:00.000Z"});
     expect(result.messages.map(message => message.id)).toEqual(["start","end"]); expect(result.messages[0].text).toBe("<b>Literal</b>");
     expect(result.messages[1].card.thumbPath).toBe("dm-link-cards/peer.test-end.png");
     expect(result.assets.map(asset => asset.path)).toEqual(["dm-avatars/peer.test.png","dm-link-cards/peer.test-end.png","dm-avatars/self.test.png"]);
@@ -1858,3 +1859,40 @@ for (const pathname of ["/", "/tools.html"]) {
     expect(errors).toEqual([]);
   });
 }
+
+for (const pathname of ["/", "/tools.html"]) {
+  test(`final translation and rich-text module contracts render from ${pathname}`, async ({ page }) => {
+    const errors = []; page.on("pageerror", error => errors.push(error.message));
+    await prepareSearch(page); await page.goto(pathname);
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    await page.locator("#language-select").selectOption("de", { force: true });
+    await expect(page.locator("html")).toHaveAttribute("lang", "de");
+    await page.locator("#language-select").selectOption("fr", { force: true });
+    await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+    const result = await page.evaluate(async () => {
+      const { createApplicationTranslationRenderer } = await import("/js/core/app-i18n.js");
+      const { createRichTextPresentation } = await import("/js/shared/shared-post-rendering.js");
+      let invalid = false; try { createApplicationTranslationRenderer({ bindings: null }); } catch (error) { invalid = error instanceof TypeError; }
+      const host = document.createElement("div"); host.textContent = "literal <img> Word word"; document.body.append(host);
+      const renderer = createRichTextPresentation({ document, nodeFilter: NodeFilter, queryTerms: () => ["word"], escape: value => value });
+      renderer.highlight(host, "word"); renderer.highlight(host, "word");
+      const highlighted = host.querySelectorAll("mark").length, nested = host.querySelectorAll("mark mark").length;
+      renderer.clear(host); const text = host.textContent, remaining = host.querySelectorAll("mark,img").length; host.remove();
+      return { invalid, highlighted, nested, text, remaining };
+    });
+    expect(result).toEqual({ invalid: true, highlighted: 2, nested: 0, text: "literal <img> Word word", remaining: 0 });
+    expect(errors).toEqual([]);
+  });
+}
+
+test("archive export cards fit the entire mobile viewport", async ({ page }) => {
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  await prepareSearch(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto("/tools.html");
+  await expect(page.locator("#archive-button")).toBeEnabled(); await page.locator("#archive-button").click();
+  const cards = page.locator("#archive-workspace .archive-export-card"); await expect(cards.first()).toBeVisible();
+  for (const card of await cards.all()) {
+    const bounds = await card.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(391);
+  }
+  expect(errors).toEqual([]);
+});

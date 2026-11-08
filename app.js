@@ -1,3 +1,4 @@
+import { createRichTextPresentation } from "./js/shared/shared-post-rendering.js";
 import { createSearchModels, createSavedSearchModels } from "./js/tools/search-models.js";
 import { createSearchFormController } from "./js/tools/search-form.js";
 import { createSearchRunController, createSavedSearchController } from "./js/tools/search-controller.js";
@@ -17,7 +18,7 @@ import { createArchivePdfLayout } from "./js/tools/archive-pdf-layout.js";
 import { createArchivePdfRenderer } from "./js/tools/archive-pdf-rendering.js";
 import { createArchivePdfExportController } from "./js/tools/archive-pdf-export.js";
 ﻿import { inferDefaultPostLanguages, getPostLanguageDisplayName, getPostLanguageOptions, normalizePostLanguageTags } from "./js/shared/shared-languages.js";
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./js/core/app-i18n.js";
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations, createApplicationTranslationRenderer } from "./js/core/app-i18n.js";
 import { createStoredZipCodec } from "./js/shared/shared-zip.js";
 import { buildArchiveThreadGroups, buildArchiveThreadDepthMap, shortenArchiveUrlForDisplay, shouldAutoFallbackArchiveHtmlToCompact, isArchiveStringLengthError, createArchiveHtmlModels } from "./js/tools/archive-html-models.js";
 import { createArchiveHtmlRenderer } from "./js/tools/archive-html-rendering.js";
@@ -38,7 +39,7 @@ import { hasEmojiLikeGraphemes, hasCjkGraphemes,
 import { syncComposerSegmentLinkCards } from "./js/composer/composer-link-cards.js";
 import { autoSizeComposerTextarea as autoSizeTextarea, resizeComposerTextareas } from "./js/composer/composer-segment-rendering.js";
 import { createComposerMentionDialogController } from "./js/composer/composer-mentions.js";
-import { createApplicationStorage } from "./js/core/app-storage.js";
+import { createApplicationStorage, createWorkerRequestClient } from "./js/core/app-storage.js";
 import { createApplicationHydrationController } from "./js/core/app-state.js";
 import { createApplicationBootstrap } from "./js/core/app-bootstrap.js";
 import { createHelpController } from "./js/core/app-help.js";
@@ -2367,112 +2368,16 @@ const DESKTOP_LAYOUT_MEDIA = window.matchMedia("(min-width: 981px)");
 /** Starts the application worker lifecycle. @returns {Promise<void>} Startup completion. */
 async function registerServiceWorker() { await applicationBootstrap.start(); }
 
-async function sendToServiceWorker(type, payload = {}, options = {}) {
-  const registration = await navigator.serviceWorker.ready;
-  const worker = registration.active || navigator.serviceWorker.controller;
-
-  if (!worker) {
-    throw new Error(t("statusNoWorker"));
+let workerRequestClient = null;
+/** Sends a worker request through the shared transport. @param {...unknown} args - Type, payload and settings. @returns {Promise<unknown>} Result. */
+function sendToServiceWorker(...args) {
+  if (!workerRequestClient) {
+    workerRequestClient = createWorkerRequestClient({ ready: () => navigator.serviceWorker.ready,
+      controller: () => navigator.serviceWorker.controller, channel: () => new MessageChannel(),
+      schedule: (callback, ms) => window.setTimeout(callback, ms), clearTimer: id => window.clearTimeout(id),
+      translate: t, abortError: createThreadExplorerSnapshotAbortError });
   }
-
-  return new Promise((resolve, reject) => {
-    const channel = new MessageChannel();
-    const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 15000);
-    let timeoutId = null;
-    let settled = false;
-    const abortSignal = options.signal || null;
-    let handleAbort = null;
-    const cleanup = () => {
-      settled = true;
-      window.clearTimeout(timeoutId);
-      channel.port1.onmessage = null;
-      channel.port1.close();
-      if (abortSignal && handleAbort) {
-        abortSignal.removeEventListener("abort", handleAbort);
-      }
-    };
-    const rejectOnce = (error) => {
-      if (settled) {
-        return;
-      }
-      cleanup();
-      reject(error);
-    };
-    const resolveOnce = (value) => {
-      if (settled) {
-        return;
-      }
-      cleanup();
-      resolve(value);
-    };
-    const createAbortError = () => {
-      if (typeof options.createAbortError === "function") {
-        return options.createAbortError();
-      }
-      return createThreadExplorerSnapshotAbortError();
-    };
-    const scheduleTimeout = () => {
-      window.clearTimeout(timeoutId);
-      timeoutId = window.setTimeout(() => {
-        rejectOnce(new Error(t("statusSwTimeout")));
-      }, timeoutMs);
-    };
-
-    if (abortSignal?.aborted) {
-      rejectOnce(createAbortError());
-      return;
-    }
-
-    handleAbort = () => {
-      rejectOnce(createAbortError());
-    };
-    if (abortSignal) {
-      abortSignal.addEventListener("abort", handleAbort, { once: true });
-    }
-
-    scheduleTimeout();
-
-    channel.port1.onmessage = (event) => {
-      if (settled) {
-        return;
-      }
-      if (event.data?.progress) {
-        scheduleTimeout();
-        options.onProgress?.(event.data.progress);
-        return;
-      }
-
-      window.clearTimeout(timeoutId);
-
-      if (event.data?.ok) {
-        resolveOnce(event.data.result);
-        return;
-      }
-
-      const errorCode = String(event.data?.details?.code || "");
-      const localizedServiceWorkerErrors = {
-        ANALYSIS_ACCOUNT_MISSING: "analysisAccountMissingGeneric",
-        ANALYSIS_ACCOUNT_NOT_FOUND: "analysisAccountNotFound",
-        ANALYSIS_ACCOUNT_CHECK_FAILED: "analysisAccountCheckFailed",
-        POST_EDIT_URL_INVALID: "postEditCheckInvalidUrl",
-        POST_EDIT_ACTOR_NOT_FOUND: "postEditCheckActorNotFound",
-        POST_EDIT_RECORD_LOAD_FAILED: "postEditCheckLoadFailed",
-        POST_EDIT_RECORD_INVALID: "postEditCheckRecordInvalid",
-      };
-      const errorMessage = errorCode === "ARCHIVE_ASSET_LOAD_FAILED"
-        ? t("archiveAssetLoadFailed", { status: event.data?.details?.status || "?" })
-        : errorCode === "ANALYSIS_ACCOUNT_NOT_FOUND"
-        ? t("analysisAccountNotFound", { account: event.data?.details?.actor || "" })
-        : localizedServiceWorkerErrors[errorCode]
-        ? t(localizedServiceWorkerErrors[errorCode])
-        : event.data?.error || t("statusSwUnknownError");
-      const error = new Error(errorMessage);
-      error.details = event.data?.details || null;
-      rejectOnce(error);
-    };
-
-    worker.postMessage({ type, payload }, [channel.port2]);
-  });
+  return workerRequestClient.request(...args);
 }
 
 /** Formats publication errors. @param {object|null} error - Worker failure. @returns {string} Localized failure. */
@@ -3619,20 +3524,7 @@ function scheduleSearchUrlImport() {
  * @param {Element|null} element - Target element containing highlighted text.
  * @returns {void}
  */
-function clearSearchHighlights(element) {
-  if (!element) {
-    return;
-  }
 
-  element.querySelectorAll("mark[data-search-highlight='true']").forEach((mark) => {
-    const parent = mark.parentNode;
-    if (!parent) {
-      return;
-    }
-    parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
-    parent.normalize();
-  });
-}
 
 /**
  * Highlights current search terms inside one rendered search result element.
@@ -3640,106 +3532,7 @@ function clearSearchHighlights(element) {
  * @param {string} query - Raw search query from the workspace.
  * @returns {void}
  */
-function highlightSearchQueryInElement(element, query = "") {
-  clearSearchHighlights(element);
-  if (!element) {
-    return;
-  }
 
-  const terms = parseSearchQueryTerms(query);
-  if (!terms.length) {
-    return;
-  }
-
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      if (!node.nodeValue || !node.nodeValue.trim()) {
-        return NodeFilter.FILTER_REJECT;
-      }
-      const parentTag = node.parentElement?.tagName || "";
-      if (parentTag === "MARK" || parentTag === "SCRIPT" || parentTag === "STYLE") {
-        return NodeFilter.FILTER_REJECT;
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    },
-  });
-  const textNodes = [];
-  while (walker.nextNode()) {
-    textNodes.push(walker.currentNode);
-  }
-
-  textNodes.forEach((node) => {
-    const source = node.nodeValue || "";
-    const matches = [];
-
-    terms.forEach((term) => {
-      const escapedTerm = escapeSearchHighlightRegex(term);
-      if (!escapedTerm) {
-        return;
-      }
-
-      const matcher = new RegExp(escapedTerm, "giu");
-
-      let match = matcher.exec(source);
-      while (match) {
-        const directMatch = String(match[0] || "");
-        const start = match.index;
-        const end = start + directMatch.length;
-        if (end > start) {
-          matches.push({
-            start,
-            end,
-            length: end - start,
-          });
-        }
-        match = matcher.exec(source);
-      }
-    });
-
-    if (!matches.length) {
-      return;
-    }
-
-    matches.sort((left, right) => {
-      if (left.start !== right.start) {
-        return left.start - right.start;
-      }
-      return right.length - left.length;
-    });
-
-    const filteredMatches = [];
-    let lastEnd = -1;
-    matches.forEach((entry) => {
-      if (entry.start < lastEnd) {
-        return;
-      }
-      filteredMatches.push(entry);
-      lastEnd = entry.end;
-    });
-
-    if (!filteredMatches.length) {
-      return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    let cursor = 0;
-    filteredMatches.forEach((entry) => {
-      if (entry.start > cursor) {
-        fragment.appendChild(document.createTextNode(source.slice(cursor, entry.start)));
-      }
-      const mark = document.createElement("mark");
-      mark.dataset.searchHighlight = "true";
-      mark.textContent = source.slice(entry.start, entry.end);
-      fragment.appendChild(mark);
-      cursor = entry.end;
-    });
-    if (cursor < source.length) {
-      fragment.appendChild(document.createTextNode(source.slice(cursor)));
-    }
-
-    node.parentNode?.replaceChild(fragment, node);
-  });
-}
 
 /**
  * Builds the readable topic fragment for the live search summary.
@@ -9186,255 +8979,44 @@ function updatePrivacyPageLanguageLinks() {
  * Applies translated text and locale-dependent interface settings.
  * @returns {void} Does not return a value.
  */
+let richTextPresentation = null;
+let applicationTranslationRenderer = null;
+/** Refreshes application language through the shared renderer. @returns {void} Updates controls and views. */
 function applyTranslations() {
-  document.documentElement.lang = currentLocale;
-  updatePrivacyPageLanguageLinks();
-  syncArchiveTransientNoticeFromCatalog();
-  ensureArchiveWorkspaceLayout();
-
-  document.querySelectorAll("[data-i18n]").forEach((element) => {
-    const key = element.dataset.i18n;
-    element.textContent = t(key);
-  });
-  restoreSearchStatusFromResultState();
-
-  document.querySelectorAll("[data-i18n-title]").forEach((element) => {
-    applyTranslatedTitle(element, element.dataset.i18nTitle);
-  });
-
-  identifierField.placeholder = "z. B. name.bsky.social";
-  passwordField.placeholder = "xxxx-xxxx-xxxx-xxxx";
-  customServerField.placeholder = "https://example.com";
-  if (linkCardEndpointInput) {
-    linkCardEndpointInput.placeholder = "https://example.com/wp-json/threadline/v1/link-card";
+  if (!applicationTranslationRenderer) {
+    applicationTranslationRenderer = createApplicationTranslationRenderer({ bindings: () => ({
+      document, currentLocale, updatePrivacyPageLanguageLinks, syncArchiveTransientNoticeFromCatalog, ensureArchiveWorkspaceLayout,
+      t, restoreSearchStatusFromResultState, applyTranslatedTitle, identifierField, passwordField,
+      customServerField, linkCardEndpointInput, linkCardUrlInput, sourceText, hashtagInput,
+      networkSearchInput, renderSearchHashtagSummary, networkAccountInput, archiveThreadUrlInput, postEditCheckUrlInput,
+      renderSearchLanguageSummary, replyTargetUrlInput, threadExplorerUrlInput, savedSearchUrlInput, archiveMediaActorInput,
+      analysisWorkspaceController, loginButton, loginDialogCancelButton, loginDialogCloseTop, addAccountButton,
+      publishButton, getPublishButtonLabel, clearButton, settingsButton, loadThreadButton,
+      helpButton, installButton, saveThreadButton, resetColumnWidthsButton, updateAppearanceModeControls,
+      archiveButton, networkButton, dmButton, networkLoadButton, networkLoading,
+      networkResetButton, archiveNextWaveButton, archiveLoadThreadUrlButton, archiveCheckPostEditButton, archiveSavedSearchesButton,
+      renderArchiveSavedSearchNote, postEditCheckSubmitButton, archiveExportZipButton, archiveExportMediaZipButton, archiveExportHtmlButton,
+      archiveExportHtmlCompactButton, archiveExportPdfButton, archiveActionsExportHtmlButton, archiveActionsExportHtmlCompactButton, archiveProgressExportHtmlCompactButton,
+      renderArchiveZipHtmlScriptHelp, updateArchiveHtmlExportButtons, archiveActionsExportPdfButton, archiveImportButton, updateAuthButtons,
+      renderAccountSwitcher, archiveResetButton, dmLoadButton, dmExportJsonButton, dmExportHtmlButton,
+      dmExportPdfButton, dmCheckButton, dmLoadPartnersButton, dmContactSearchInput, archivePauseButton,
+      archiveResumeButton, archiveCancelButton, renderArchiveProgressHeartbeat, renderArchiveBackgroundNotice, renderVersionLabel,
+      checkUpdatesButton, reloadAppButton, exportSettingsButton, importSettingsButton, shareAppButton,
+      shareQrImage, shareUrl, APP_SHARE_URL, clearHistoryButton, hashtagEditSaveButton,
+      hashtagEditCancelButton, hashtagEditCancelTop, altTextSaveButton, altTextCancelButton, altTextCloseTop,
+      imageEditorSaveButton, imageEditorCancelButton, imageEditorCloseTop, imageFlipHorizontalButton, imageFlipVerticalButton,
+      imageRotateLeftButton, imageResetButton, imageFitDimensionsButton, confirmDialogConfirmButton, confirmDialogCancelButton,
+      publishResultLink, historyButton, composerUnlockButton, composerPostedDismissButton, applySidebarState,
+      altTextPreviewCanvas, hashtagAddButton, nextTipButton, hideTipsButton, postSettingsButton,
+      replyTargetButton, postLanguagesSearch, hashtagPlacementSelect, archiveScopeSelect, archiveContentModeSelect,
+      archiveImageSizeSelect, renderTip, renderHashtagCloud, renderHistoryList, updateTipsVisibility,
+      altTextRequiredToggle, altTextRequired, publishWarning, updateComposerLockState, renderNetworkWorkspace,
+      renderDmWorkspace, languageSelect, localePreference, renderPostLanguageSummary, renderPostInteractionControls,
+      renderPostLanguageDialog, renderReplyTargetCard, renderSegments, renderAnalysisWorkspace, updateStatusForAuth,
+      renderArchiveWorkspace, applyTheme, applyCompactMode,
+    }) });
   }
-  if (linkCardUrlInput) {
-    linkCardUrlInput.placeholder = t("linkCardUrlPlaceholder");
-  }
-  sourceText.placeholder = t("sourcePlaceholder");
-  hashtagInput.placeholder = t("hashtagInputPlaceholder");
-  if (networkSearchInput) {
-    networkSearchInput.placeholder = t("networkSearchPlaceholder");
-  }
-  document.querySelectorAll(".help-trigger").forEach((element) => {
-    element.setAttribute("aria-label", t("contextHelpButtonLabel"));
-    element.setAttribute("title", t("contextHelpButtonLabel"));
-  });
-  renderSearchHashtagSummary();
-  if (networkAccountInput) {
-    networkAccountInput.placeholder = t("networkAccountInputPlaceholder");
-  }
-  if (archiveThreadUrlInput) {
-    archiveThreadUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
-  }
-  if (postEditCheckUrlInput) {
-    postEditCheckUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
-  }
-  renderSearchLanguageSummary();
-  if (replyTargetUrlInput) {
-    replyTargetUrlInput.placeholder = t("archiveThreadUrlPlaceholder");
-  }
-  if (threadExplorerUrlInput) {
-    threadExplorerUrlInput.placeholder = t("threadExplorerUrlPlaceholder");
-  }
-  if (savedSearchUrlInput) {
-    savedSearchUrlInput.placeholder = t("savedSearchUrlPlaceholder");
-  }
-  if (archiveMediaActorInput) {
-    archiveMediaActorInput.placeholder = t("archiveMediaActorPlaceholder");
-  }
-  analysisWorkspaceController.translate();
-  loginButton.textContent = t("loginButton");
-  loginDialogCancelButton.textContent = t("cancelButton");
-  loginDialogCloseTop.textContent = t("closeButton");
-  addAccountButton.textContent = t("addAccountButton");
-  publishButton.textContent = getPublishButtonLabel();
-  clearButton.textContent = t("clearButton");
-  settingsButton.textContent = t("settingsButton");
-  loadThreadButton.textContent = t("loadThreadButton");
-  helpButton.textContent = t("helpButton");
-  installButton.textContent = t("installButton");
-  saveThreadButton.textContent = t("saveThreadButton");
-  resetColumnWidthsButton.textContent = t("resetColumnWidthsButton");
-  updateAppearanceModeControls();
-  archiveButton.textContent = t("archiveLaunchButton");
-  networkButton.textContent = t("networkLaunchButton");
-  dmButton.textContent = t("dmLaunchButton");
-  networkLoadButton.textContent = networkLoading ? t("networkLoadingButton") : t("networkLoadButton");
-  networkResetButton.textContent = t("networkResetButton");
-  archiveNextWaveButton.textContent = t("archiveNextWaveButton");
-  if (archiveLoadThreadUrlButton) {
-    archiveLoadThreadUrlButton.textContent = t("archiveLoadThreadUrlButton");
-  }
-  if (archiveCheckPostEditButton) {
-    archiveCheckPostEditButton.textContent = t("postEditCheckOpenButton");
-  }
-  if (archiveSavedSearchesButton) {
-    archiveSavedSearchesButton.textContent = t("savedSearchesButton");
-  }
-  renderArchiveSavedSearchNote();
-  if (postEditCheckSubmitButton) {
-    postEditCheckSubmitButton.textContent = t("postEditCheckButton");
-  }
-  archiveExportZipButton.textContent = t("archiveExportZipButton");
-  if (archiveExportMediaZipButton) {
-    archiveExportMediaZipButton.textContent = t("archiveExportMediaZipButton");
-  }
-  archiveExportHtmlButton.textContent = t("archiveExportHtmlButton");
-  if (archiveExportHtmlCompactButton) {
-    archiveExportHtmlCompactButton.textContent = t("archiveExportHtmlCompactButton");
-  }
-  archiveExportPdfButton.textContent = t("archiveExportPdfButton");
-  if (archiveActionsExportHtmlButton) {
-    archiveActionsExportHtmlButton.textContent = t("archiveExportHtmlButton");
-  }
-  if (archiveActionsExportHtmlCompactButton) {
-    archiveActionsExportHtmlCompactButton.textContent = t("archiveExportHtmlCompactButton");
-  }
-  if (archiveProgressExportHtmlCompactButton) {
-    archiveProgressExportHtmlCompactButton.textContent = t("archiveExportHtmlCompactButton");
-  }
-  renderArchiveZipHtmlScriptHelp();
-  updateArchiveHtmlExportButtons();
-  if (archiveActionsExportPdfButton) {
-    archiveActionsExportPdfButton.textContent = t("archiveExportPdfButton");
-  }
-  archiveImportButton.textContent = t("archiveImportButton");
-  updateAuthButtons();
-  renderAccountSwitcher();
-  archiveResetButton.textContent = t("archiveResetButton");
-  dmLoadButton.textContent = t("dmLoadButton");
-  dmExportJsonButton.textContent = t("dmExportJsonButton");
-  if (dmExportHtmlButton) {
-    dmExportHtmlButton.textContent = t("dmExportHtmlButton");
-  }
-  if (dmExportPdfButton) {
-    dmExportPdfButton.textContent = t("dmExportPdfButton");
-  }
-  dmCheckButton.textContent = t("dmCheckButton");
-  dmLoadPartnersButton.textContent = t("dmLoadPartnersButton");
-  if (dmContactSearchInput) {
-    dmContactSearchInput.placeholder = t("dmContactSearchPlaceholder");
-  }
-  archivePauseButton.textContent = t("archivePauseButton");
-  archiveResumeButton.textContent = t("archiveResumeButton");
-  archiveCancelButton.textContent = t("archiveCancelButton");
-  renderArchiveProgressHeartbeat();
-  renderArchiveBackgroundNotice();
-  renderVersionLabel();
-  checkUpdatesButton.textContent = t("checkUpdatesButton");
-  reloadAppButton.textContent = t("reloadButton");
-  exportSettingsButton.textContent = t("exportSettingsButton");
-  importSettingsButton.textContent = t("importSettingsButton");
-  if (shareAppButton) {
-    shareAppButton.textContent = t("shareButton");
-  }
-  if (shareQrImage) {
-    shareQrImage.alt = t("shareQrAlt");
-  }
-  if (shareUrl) {
-    shareUrl.textContent = APP_SHARE_URL;
-  }
-  clearHistoryButton.textContent = t("clearHistoryButton");
-  hashtagEditSaveButton.textContent = t("saveButton");
-  hashtagEditCancelButton.textContent = t("cancelButton");
-  hashtagEditCancelTop.textContent = t("closeButton");
-  altTextSaveButton.textContent = t("saveButton");
-  altTextCancelButton.textContent = t("cancelButton");
-  altTextCloseTop.textContent = t("closeButton");
-  imageEditorSaveButton.textContent = t("saveButton");
-  imageEditorCancelButton.textContent = t("cancelButton");
-  imageEditorCloseTop.textContent = t("closeButton");
-  imageFlipHorizontalButton.textContent = t("flipHorizontalButton");
-  imageFlipVerticalButton.textContent = t("flipVerticalButton");
-  imageRotateLeftButton.textContent = t("rotateLeftButton");
-  imageResetButton.textContent = t("resetImageButton");
-  imageFitDimensionsButton.textContent = t("fitImageDimensionsButton");
-  confirmDialogConfirmButton.textContent = t("confirmYes");
-  confirmDialogCancelButton.textContent = t("confirmNo");
-  publishResultLink.textContent = t("openPostLink");
-  historyButton.textContent = t("historyButton");
-  composerUnlockButton.textContent = t("composerUnlockButton");
-  if (composerPostedDismissButton) {
-    composerPostedDismissButton.textContent = t("composerPostedDismissButton");
-  }
-  applySidebarState();
-  altTextPreviewCanvas.setAttribute("aria-label", t("altPreviewLabel"));
-  hashtagAddButton.textContent = t("addHashtagButton");
-  nextTipButton.textContent = t("nextTipButton");
-  hideTipsButton.textContent = t("hideTipsButton");
-  postSettingsButton.textContent = t("postSettingsButton");
-  if (replyTargetButton) {
-    replyTargetButton.textContent = t("replyTargetButton");
-  }
-  postLanguagesSearch.placeholder = t("postLanguagesSearchPlaceholder");
-  Array.from(hashtagPlacementSelect.options).forEach((option) => {
-    if (option.value === "last") {
-      option.textContent = t("hashtagPlacementLast");
-    } else if (option.value === "all-top") {
-      option.textContent = t("hashtagPlacementAllTop");
-    } else if (option.value === "all-bottom") {
-      option.textContent = t("hashtagPlacementAllBottom");
-    } else {
-      option.textContent = t("hashtagPlacementFirst");
-    }
-  });
-  Array.from(archiveScopeSelect.options).forEach((option) => {
-    if (option.value === "year") {
-      option.textContent = t("archiveScopeYear");
-    } else if (option.value === "range") {
-      option.textContent = t("archiveScopeRange");
-    } else {
-      option.textContent = t("archiveScopeAll");
-    }
-  });
-  Array.from(archiveContentModeSelect.options).forEach((option) => {
-    if (option.value === "full") {
-      option.textContent = t("archiveContentModeFull");
-    } else if (option.value === "thread_roots") {
-      option.textContent = t("archiveContentModeThreadRoots");
-    } else if (option.value === "threads") {
-      option.textContent = t("archiveContentModeThreads");
-    } else {
-      option.textContent = t("archiveContentModePosts");
-    }
-  });
-  Array.from(archiveImageSizeSelect.options).forEach((option) => {
-    if (option.value === "small") {
-      option.textContent = t("archiveImageSizeSmall");
-    } else if (option.value === "large") {
-      option.textContent = t("archiveImageSizeLarge");
-    } else {
-      option.textContent = t("archiveImageSizeMedium");
-    }
-  });
-  renderTip();
-  renderHashtagCloud();
-  renderHistoryList();
-  updateTipsVisibility();
-  altTextRequiredToggle.checked = altTextRequired;
-  publishWarning.textContent = t("publishAltTextWarning");
-  updateComposerLockState();
-  renderNetworkWorkspace();
-  renderDmWorkspace();
-
-  const languageNames = t("languageNames");
-  Array.from(languageSelect.options).forEach((option) => {
-    option.textContent = languageNames[option.value] || option.value;
-  });
-  languageSelect.value = localePreference;
-  renderPostLanguageSummary();
-  renderPostInteractionControls();
-  renderPostLanguageDialog();
-  applySidebarState();
-
-  renderReplyTargetCard();
-  renderSegments();
-  renderAnalysisWorkspace();
-  updateStatusForAuth();
-  renderArchiveWorkspace();
-  applyTheme();
-  applyCompactMode();
+  applicationTranslationRenderer.render();
 }
 
 function preserveScrollPosition(callback) {
@@ -10376,105 +9958,11 @@ async function ensureArchiveAvatarAssets(catalog) { return catalogAvatarAssets.a
  */
 async function ensureDmAvatarAssets(catalog) { return catalogAvatarAssets.dm(catalog); }
 
-function utf8IndexToUtf16Index(text, byteIndex) {
-  const value = String(text || "");
-  const bytes = Math.max(0, Number(byteIndex) || 0);
-  let currentBytes = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    const codePoint = value.codePointAt(index);
-    const char = String.fromCodePoint(codePoint);
-    const nextBytes = currentBytes + new TextEncoder().encode(char).length;
-    if (nextBytes > bytes) {
-      return index;
-    }
-    currentBytes = nextBytes;
-    if (codePoint > 0xffff) {
-      index += 1;
-    }
-  }
-  return value.length;
-}
 
-function getFacetLinkInfo(feature, rawText = "") {
-  const type = String(feature?.$type || "");
-  if (type.includes("#link") && feature?.uri) {
-    return {
-      kind: "link",
-      url: String(feature.uri),
-    };
-  }
-  if (type.includes("#mention")) {
-    const handle = String(rawText || "").trim().replace(/^@/, "");
-    return {
-      kind: "mention",
-      url: `https://bsky.app/profile/${encodeURIComponent(handle || feature.did || "")}`,
-    };
-  }
-  if (type.includes("#tag")) {
-    const tag = String(feature.tag || rawText || "").trim().replace(/^#/, "");
-    return {
-      kind: "tag",
-      url: `https://bsky.app/hashtag/${encodeURIComponent(tag)}`,
-    };
-  }
-  return null;
-}
 
-function extractFacetRichTextRuns(text, facets = []) {
-  const value = String(text || "");
-  const facetRanges = [];
 
-  (Array.isArray(facets) ? facets : []).forEach((facet) => {
-    const byteStart = Number(facet?.index?.byteStart);
-    const byteEnd = Number(facet?.index?.byteEnd);
-    if (!Number.isFinite(byteStart) || !Number.isFinite(byteEnd) || byteEnd <= byteStart) {
-      return;
-    }
-    const start = utf8IndexToUtf16Index(value, byteStart);
-    const end = utf8IndexToUtf16Index(value, byteEnd);
-    if (end <= start) {
-      return;
-    }
-    const rawText = value.slice(start, end);
-    const feature = (Array.isArray(facet?.features) ? facet.features : [])
-      .map((entry) => getFacetLinkInfo(entry, rawText))
-      .find(Boolean);
-    if (!feature?.url) {
-      return;
-    }
-    facetRanges.push({
-      start,
-      end,
-      url: feature.url,
-      kind: feature.kind,
-    });
-  });
 
-  facetRanges.sort((left, right) => left.start - right.start || left.end - right.end);
-  const runs = [];
-  let cursor = 0;
 
-  facetRanges.forEach((range) => {
-    if (range.start < cursor) {
-      return;
-    }
-    if (range.start > cursor) {
-      runs.push({ text: value.slice(cursor, range.start) });
-    }
-    runs.push({
-      text: value.slice(range.start, range.end),
-      url: range.url,
-      kind: range.kind,
-    });
-    cursor = range.end;
-  });
-
-  if (cursor < value.length) {
-    runs.push({ text: value.slice(cursor) });
-  }
-
-  return runs.length > 0 ? runs : null;
-}
 
 /** Extracts hashtag data using the shared parser. @param {*} text - Post text. @returns {object[]} Normalized hashtag values. */
 function extractArchiveHashtagsFromText(text) {
@@ -13334,3 +12822,15 @@ registerServiceWorker();
 renderSegments();
 
 
+
+
+/** Returns shared post-text presentation helpers. @returns {object} Presentation API. */
+function getRichTextPresentation() {
+  if (!richTextPresentation) { richTextPresentation = createRichTextPresentation({ document, nodeFilter: NodeFilter,
+    queryTerms: parseSearchQueryTerms, escape: escapeSearchHighlightRegex }); }
+  return richTextPresentation;
+}
+/** Extracts facet runs. @param {...unknown} args - Text/facets. @returns {Array|null} Runs. */
+function extractFacetRichTextRuns(...args) { return getRichTextPresentation().runs(...args); }
+/** Applies text highlights. @param {...unknown} args - Host/query. @returns {void} DOM update. */
+function highlightSearchQueryInElement(...args) { return getRichTextPresentation().highlight(...args); }

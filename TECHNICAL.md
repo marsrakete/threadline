@@ -4,13 +4,21 @@
 
 This file collects the technical background information that would otherwise overload the quick-start README.
 
+## Modularization Complete — 2026-11-08
+
+Application version `0.4.357`, shell cache `v376`. The entry points retain DOM/state wiring and message dispatch; domain behavior belongs to the Composer, tools, core, shared, AT Protocol and worker modules described below. Delegating entry functions preserve existing callers; extracted implementations were removed rather than duplicated.
+
+The final boundaries are `archive-wave-controller.js` for resumable archive orchestration, `createWorkerRequestClient` in `app-storage.js` for request/progress/timeout/cancellation, `createApplicationTranslationRenderer` in `app-i18n.js` for live translated UI refresh, and `createRichTextPresentation` in `shared-post-rendering.js` for Unicode facets and search highlights. Dependencies are explicit. Archive date stopping now calls the existing media model instead of a removed global helper.
+
+Completion validation: `npm run check` passed, including encoding/syntax, 857 unit/contract tests and all 150 Chromium browser tests with regular teardown. Both entry pages, the real Service Worker installation/cache activation and offline loading are covered. The mobile archive grid now constrains its tracks and export cards to the viewport. The Explorer screenshot has a committed Linux baseline plus geometry assertions. Use `THREADLINE_BROWSER_EXECUTABLE` to select a locally installed Chromium; the default remains Edge.
+
+This closes the refactor. Live provider/account acceptance and the separately recorded PDF layout defects remain product QA tasks; the tests use controlled authenticated responses and do not publish live records. Optional user-triggered rollback remains a separate feature in TODO.md.
+
 ## Thread Publishing And Record Interactions
 
 `js/worker/interaction-service.js` owns interaction gates, record deletion, likes and unlikes. `js/worker/publish-service.js` owns sequential publishing, media uploads, facets, reply chaining, gates and partial-error projection. Session, transport/PDS base, existing normalization/URI/rule/facet/upload adapters, Blob constructor and ISO clock are explicit. Existing publish/like/unlike worker entries delegate to lazy services; old bodies were removed, messages centralized and both scripts imported/precached.
 
 Existing behavior remains: validation/auth ordering, threadgate then postgate writes, shared rkeys, rate-limit precedence, per-run mention cache, image limit, four-image/gallery boundary, card/image exclusivity, upload order, root/parent links and language normalization. A post is counted as completed only after gate setup; a failure there can leave a created post outside the completed-post list. Subsequent failures retain PARTIAL_PUBLISH counts/rate/retry/status details. No rollback was added; optional user-triggered rollback, immediate created-reference tracking and ambiguous-timeout reconciliation are now TODO items.
-
-Validation: eleven new contracts, sixteen temporary old/new comparisons and the unit suite across 58 files passed. Twenty focused Chromium cases passed across both entry pages with pageerror collection. Two new cases exercise actual worker publish/like/unlike callers, Blob uploads, image/gallery embeds, rich-text facets, gates, reply chains and partial errors through controlled transport responses. No live records were written. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression, live acceptance and offline/cache activation remain open. Review the remaining worker composition/helper boundaries and complete the outstanding acceptance work before declaring overall modularization done.
 
 ## Reply Eligibility And Post Edit Checks
 
@@ -18,15 +26,11 @@ Validation: eleven new contracts, sixteen temporary old/new comparisons and the 
 
 Preserved policies include auth-before-URL processing, existing follower/following viewer semantics, mention matching, unknown list-rule warnings, newest-own-post selection in thread mode, selected/root fallback metadata and blocked-target errors. Thread reads retain depth 100, parentHeight 0, one retry and 20s timeout. Edit checks retain coded URL/actor/load/record failures, author-PDS selection, unauthenticated repository-record request options and original Mu-compatible edit fields. These workflows only read post data.
 
-Validation: nine new contracts, 27 temporary model and eighteen workflow old/new comparisons and the unit suite across 57 files passed. Eighteen focused Chromium cases passed across both entry pages with pageerror collection. Two new cases exercise actual reply/edit worker callers, own-target selection, list warnings, blocked gates, PDS record reads and error codes with controlled HTTP responses. Existing settings/rich-text/media/Explorer/account coverage remains green. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression, live provider and offline/cache activation remain open. Posting and interaction write workflows now live in `publish-service.js` and `interaction-service.js`.
-
 ## Stored Settings And Draft Workflows
 
 `js/worker/settings-models.js` owns persisted link cards/provider/proxy/usage, saved search results, segment overrides, posting history, reply targets, Explorer state and resize/expert flags. Publication metadata and ISO time are explicit adapters. `js/worker/settings-service.js` owns app-state loading and draft/settings saves with explicit storage, image persistence, field normalization, account and frontend dependencies. Existing worker names are bound to the model instance and three workflow delegates; old implementations were removed and both scripts imported/precached.
 
 Behavior remains: legacy string drafts and locale fallback, settings-image versus draft-card precedence, raw reference retention where previously used, null-to-zero numeric coercion, per-field patch/reset rules, compact-mode persistence, unknown-field retention and existing language normalization (including legacy scalar language values). Draft saves store image bytes before metadata, then prune; settings saves write settings then locale before pruning. Failed writes propagate and skip later pruning. No schema, field defaults or storage migration was introduced.
-
-Validation: nine new contracts, 144 temporary model and 24 workflow old/new comparisons and the unit suite across 56 files passed. Sixteen focused Chromium cases passed across both entry pages with pageerror collection. Two new cases use real IndexedDB to verify legacy draft/locale reads, patch rules, retained fields, reply/Explorer state and page/worker-restart restoration. Existing image persistence and media/Explorer/account tests remain green. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression, existing-user-data/quota and offline/cache-activation acceptance remain open. Reply eligibility/edit checks are now extracted; posting workflows are next.
 
 ## Rich Text And Mention Workflows
 
@@ -34,15 +38,11 @@ Validation: nine new contracts, 144 temporary model and 24 workflow old/new comp
 
 Preserved policies include regex boundaries/punctuation, UTF-8 indices, link/mention/tag overlap priority, sorted facets, undefined facets for plain text, successful duplicate mentions, unique unresolved handles, per-run resolver caches, optional preview auth, strict-to-broad sequential query variants, tolerated per-query failures, first-DID metadata, existing score/tie rules and twelve-result cap. No posting behavior or external account data was changed.
 
-Validation: eleven new contracts, 77 temporary model and twenty service old/new comparisons and the unit suite across 55 files passed. Fourteen focused Chromium cases passed across both entry pages with pageerror collection. Two new cases exercise actual worker rich-text/preview/search callers with Unicode byte offsets, unresolved handles, signed-out preview and failed typeahead variants; HTTP responses are controlled. Existing media/Explorer/cache/account coverage remains green. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression, live account/provider and offline/cache activation remain open. Settings/draft orchestration is now extracted; reply/posting workflows remain worker-owned.
-
 ## Media Export Scan And Download Workflows
 
 `js/worker/media-export-service.js` owns actor selection, author-feed scanning, archive/hashtag selection, manifest assembly and item downloads. Session, request/base, archive filter/post adapters, hashtag checks, existing media models, CID/URL downloads, timeout, extension, ISO clock and heartbeat timers are explicit. The lower-bound stop rule now belongs to `media-export-models.js`. Existing scan/download worker entries delegate to one lazy service; old implementations and unused facade helpers were removed. The new script is imported/precached and existing progress/error copy is centralized.
 
 Preserved behavior includes 100-post paging, owner filtering, per-scan hashtag caches, post-list versus media-ID deduplication rules, final date ordering, year/range stop after processing a page and unchanged manifest/schema/version fields. Downloads authenticate before item validation, prefer CID over remote URL, retain 30s timeout and 10s heartbeat with finally cleanup, preserve existing extension fallbacks and return original byte references/metadata. No transport or persistence format was changed.
-
-Validation: ten new contracts, twelve temporary old/new workflow comparisons (results, errors, requests, progress and cleanup) and the unit suite across 54 files passed. Twelve focused Chromium cases passed across both entry pages with pageerror collection. Media cases exercise the actual scan plus CID/PDS and remote-URL download paths, returned bytes, extensions, manifest paths and kind exclusions using controlled HTTP responses. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression, live provider/download acceptance and offline/cache activation remain open. Remaining worker areas include rich-text/mentions, settings/draft orchestration and reply/posting workflows.
 
 ## Explorer Reactions And Media Export Models
 
@@ -50,15 +50,11 @@ Two further units are extracted. `js/worker/explorer-reaction-service.js` owns l
 
 `js/worker/media-export-models.js` owns UTC filename timestamps, post folders, indexed path stems and image/video/card manifest entries. It reuses the existing archive embed extractors and Blob CID adapter. Original invalid-date sentinels, rkey sanitation/length, source indices, image/video/card order, alt limits, dimensions, MIME hints, inclusion flags and thumbnail CID/remote-URL forms remain unchanged. The existing scan uses thin folder/entries delegates; scan/download orchestration remains separate work. Old implementations were removed and both scripts imported/precached.
 
-Validation: ten new contracts and the unit suite across 53 files passed. Twenty reaction and 41 media-model temporary old/new comparisons passed. Twelve focused Chromium cases passed across both entry pages with pageerror collection; two new cases exercise all three reaction endpoints and the actual media scan, including manifest paths/kind counts and image/video exclusion. HTTP responses are controlled. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression, live reactions/accounts, downloads and offline/cache activation remain open. Media scan/download workflows now live in `media-export-service.js`.
-
 ## Explorer Avatar And Media Hydration
 
 `js/worker/explorer-hydration-service.js` owns avatar hydration, readable media-cache access, cache/download deadlines, direct-versus-blob fallback, heartbeat progress and media hydration. Auth/refresh, avatar storage/models, Cache/Response access, downloads, Blob URL parsing, image normalization, conversions, concurrency, clocks and timers are explicit adapters. Author and media-entry collection now extend `explorer-models.js`; recursive collection preserves first-media-URL ownership and explicit-entry priority. Existing avatar/media worker messages and the shared timeout caller delegate to one lazy service. Old bodies were removed and the new script is imported/precached.
 
 Existing behavior remains: avatar TTL and same-DID replacement, four-avatar/16-media concurrency, 1.5s cache-match/body deadlines, 12s direct and 30s item deadlines, 5s heartbeat, known-blob routing before direct fetch, per-image failure tolerance, SVG placeholder normalization, progress counters and heartbeat cleanup. Cache writes start during hydration and remain asynchronous; hydration does not await their completion. Cache match/body failures become misses; cache-open errors retain their original propagation behavior. Avatar results retain the existing TTL/count shape and persist assets in the shared avatar key.
-
-Validation: eleven new contracts, twelve temporary old/new comparisons (results, requests, storage, progress, timer delays/cleanup) and the unit suite across 52 files passed. Ten focused Chromium cases passed across both entry pages with pageerror collection. Two new cases use real CacheStorage and persisted avatar bytes, verify cache reuse and skipped downloads, and decode actual avatar/media PNGs plus the SVG replacement. HTTP responses are controlled. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression, live provider/network and Service Worker offline/cache activation remain open. Reaction loading now lives in `explorer-reaction-service.js`.
 
 ## Explorer Feed Rules And Loading
 
@@ -66,23 +62,17 @@ Validation: eleven new contracts, twelve temporary old/new comparisons (results,
 
 Policies remain: legacy/current pinned preferences with saved-array precedence, 25-source enrichment with per-source fallback, eight-profile relationship batches with per-profile failure tolerance, strict relationship flags, 12-post author previews, stable chronological sorting, 25-URI existence batches, actor URI deduplication and five-page cap, four-page timeline/search cap, search root deduplication, original cursor semantics and target/page limits. Thread loading retains auth refresh, depth/parent heights, deleted-anchor short circuit and selected-path merge. Required transport/auth failures propagate.
 
-Validation: 13 new contracts and the unit suite across 51 files passed, plus 25 temporary old/new load comparisons including errors and adapter traces. Eight focused Chromium cases passed across both entry pages with pageerror collection. Expanded Explorer cases call actual worker entries for pinned sources, actor replies, timeline, generator/search/mutuals feeds, URL resolution and selected/deleted-root threads. HTTP responses are controlled. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression, live provider acceptance and offline/cache activation remain open. Explorer avatar/media hydration is now extracted; reaction loading and remaining worker domains are still separate work.
-
 ## Worker Thread Explorer Record And Tree Models
 
 `js/worker/explorer-models.js` owns normalized actors, post edits, post/quote/media records, deleted anchors, recursive trees, parent-chain reconstruction, selected-path merging, URI lookup and post counts. Standard.site metadata normalization is an explicit adapter. The record/tree API, extended by hydration collection helpers, is bound to the existing worker names after classic imports, before archive/analysis composition. Existing archive edit-metadata callers use the same implementation; old worker bodies were removed and the module is imported/precached.
 
 Preserved contracts include direct-image precedence over gallery/nested media, quote embed priority, array/viewer/reply reference identity, placeholder shapes, replacing an existing selected reply during parent reconstruction, preserving sibling order and target/appended node identities during path merge, and excluding deleted anchors from counts while keeping them searchable. Models perform no network or storage operations. Feed/thread loading now lives in `explorer-load-service.js`; media/avatar hydration remains worker-owned for the next extraction.
 
-Validation: ten new contracts, 78 temporary old/new comparisons and the unit suite across 50 files passed. Eight focused Chromium cases passed across both entry pages with pageerror collection. Two new cases call the real loadThreadExplorerThread entry with controlled HTTP responses, verify the selected/full-root merge, deleted-root early exit, request parent heights, counts and gallery/video/quote/edit normalization. Existing image/network/account cases remain green. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache stay `0.4.356`/`v375`; full browser regression, live threads and Service Worker offline/cache activation remain open.
-
 ## Worker Composer Image Models
 
 `js/worker/composer-image-models.js` owns worker image edit/record normalization, inline segment normalization and metadata projections. ID generation and the per-segment limit are explicit dependencies; the worker binds the previous function names to one model instance. The image store and settings/draft callers use this same instance. Old model bodies were removed and the script is imported/precached.
 
 The frontend `shared-images.js` and worker contracts are currently different: frontend edits carry `fitMode`, validation includes dimensions, and frontend inline-data acceptance differs. Worker metadata allows missing inline data and retains only its previous edit/validation fields. This extraction preserves both formats; unifying them would change persistence behavior. The differences are covered by a cross-contract test and tracked separately in TODO.
-
-Validation: seven new contracts, 70 temporary old/new comparisons (including generated-ID traces) and the unit suite across 49 files passed. Six focused Chromium cases passed across both entry pages; image cases verify stored normalized rotation/zoom and reduced validation metadata, then restore and decode actual PNG Blobs after page/worker restart. Network/account regression remains green. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression and live/offline acceptance remain open.
 
 Remaining worker areas include Thread Explorer record/tree/feed models and loading/hydration, rich-text mentions, media export, settings/draft orchestration and posting/reply workflows. Thread Explorer record/tree models are now extracted; next extract their loading services. Keep equivalent-normalization review separate from behavior changes.
 
@@ -92,15 +82,11 @@ Remaining worker areas include Thread Explorer record/tree/feed models and loadi
 
 The database schema and completion boundaries remain unchanged: multi-get resolves after all request successes, key listing resolves on request success, writes/deletes wait for transaction completion. Reads deduplicate normalized IDs; writes reuse existing Blob records when size/type rules match. Hydration keeps inline-data priority, converts persisted Blobs and drops images without data. Pruning preserves the union of draft and settings references. Existing normalization and conversion policies remain unchanged.
 
-Validation: eight new contracts and the unit suite across 48 files passed. Six focused Chromium cases passed across both entry pages, including two new cases using real IndexedDB/Blobs and classic saveDraft/saveSettings/getAppState callers. These verify metadata-only settings/drafts, orphan removal, page/worker restart restoration, actual PNG decoding and independent draft/settings references during cleanup. Network and account/session regression cases remain green. Syntax, encoding, module/cache/version contracts and whitespace passed. Version/cache stay `0.4.356`/`v375`; full browser regression, existing-user-data migration, quota errors and Service Worker offline/cache activation remain open. Worker image models and remaining boundaries are documented in the worker Composer image models section.
-
 ## Network Workspace Loading
 
 `js/worker/network-workspace-service.js` owns network slices, actor focus, common mutuals and normalized profile merging. Session, profile request/base, graph waves/pages/full collections, relationship dates, activity/like data, sample sizes and progress messages are explicit dependencies. Existing worker entry functions delegate to one lazy instance; obsolete bodies were removed. The service is imported and precached, and existing visible copy is centralized in `adapter-messages.js`.
 
 Behavior remains: 100..500 slice limits, profile lookup concurrent with sequential follower/following waves, tolerated slice-profile failure with the original fallback metadata/flags, own versus external viewer relationship flags, sequential focus stages with twelve-profile previews, short-circuit for missing/equal mutual actors, four complete graph reads, duplicate profile merging, center-follower intersection order and progress/error propagation. Profile merging keeps nonempty metadata/counts and cumulative relationship flags.
-
-Validation: nine new contracts, 18 temporary old/new comparisons and the unit suite across 47 files passed. Four focused Chromium cases passed across both entry pages with pageerror collection; real worker/storage calls exercise slice, focus and common mutuals alongside shared network data and account/session flows. HTTP responses are controlled. Syntax, encoding, module/cache/version contracts and whitespace passed. App/cache remain `0.4.356`/`v375`; full browser regression, live accounts and offline/cache activation remain open. Composer image persistence now lives in `composer-image-store.js`.
 
 ## Shared Network Data Access
 
@@ -108,13 +94,9 @@ Validation: nine new contracts, 18 temporary old/new comparisons and the unit su
 
 Existing policies remain: author filtering, cursor termination, 100-post page size, eight notification pages, distinct liked subjects, processing an entire notification page before stopping for age, inclusive activity windows (including future timestamps), an initial graph request even for a zero target, progress after every graph page and follow-record requests without an added base override. Transport and observer failures propagate. Network slice/focus/common-mutual orchestration and profile merging now live in `network-workspace-service.js`.
 
-Validation: nine new contracts passed, along with the unit suite across 46 files. Four focused Chromium cases passed across both entry pages: the new worker case exercises activity, reciprocal likes, graph waves, relationship dates and the analysis graph caller; existing account/session coverage remains green. Pages collect pageerror events; transport responses are controlled. Syntax, encoding, cache/module/version contracts and whitespace passed. Version/cache remain `0.4.356`/`v375`; full browser regression and live/offline/cache-activation acceptance remain open.
-
 ## Stored Account Lifecycle
 
 `js/worker/account-service.js` owns account switching, public metadata import, removal, logout and session verification. Storage, session renewal, account models, frontend fallback, archive cleanup and the ISO clock are explicit dependencies. Worker entry functions remain thin delegates; the old implementations were removed. Failure precedence remains offline, missing password, invalid credentials, then signed out. Logout retains the stored app password and only clears archive session/catalog when logging out the active account. Removal retains the existing first-remaining-session selection policy. The service is imported and precached; messages use `adapter-messages.js`.
-
-Validation: seven new contract tests and 76 temporary old/new comparisons passed. The unit suite passed across 45 test files. Two focused Chromium browser cases load both entry pages with pageerror collection and exercise the classic worker imports, real IndexedDB, metadata import, switch, verification, removal, logout and archive cleanup with controlled network responses. Syntax, encoding and whitespace checks passed. Version/cache stay `0.4.356`/`v375`. Full browser regression, live accounts and offline/cache activation remain open.
 
 ## Login, Session Renewal and Identity Services
 
@@ -122,15 +104,11 @@ Validation: seven new contract tests and 76 temporary old/new comparisons passed
 
 `identity-service.js` owns handle resolution, DID documents, PDS endpoint selection/memoization, avatar/frontend helpers and connectivity checks. Fetch/request, URL/error/storage, AbortController and scheduler/cleanup are injected. Positive/negative handle caches, existing PLC/web URL rules, 8s defaults/1s DID minimum, first PDS match and cached fallback remain. DID timers still clear when returning the JSON promise, rather than adding a response-body deadline. Connectivity retains its 8s abort and existing error codes. The two services are lazy-wired after worker dependencies are ready; classic client/session/JWT functions remain documented thin delegates. Old bodies were removed and both scripts are imported/precached; existing strings moved to adapter messages.
 
-Current validation: 716 unit/contract tests and 53 old/new comparisons passed. Seventeen new contracts cover normal/boundary/invalid cases and virtual timers. Comparisons include 44 full login/renewal scenarios with results, state, requests, warnings/timers and nine JWT/PDS model cases. 66 focused browser cases passed in one final run (60s test limit). Two new cases load both entry pages with pageerror collection and exercise actual local storage plus classic login, HTTP token refresh, fallback login after refresh failure, Mu.social handle/PDS selection, PDS cache and connectivity through controlled fetch responses. Syntax, encoding, module/cache/version contracts, no new ternaries and whitespace passed. App/cache remain `0.4.356`/`v375`; full browser regression, real provider/login/token-renewal acceptance, existing-data/quota/offline/cache activation and full-tree snapshot acceptance remain open.
-
 ## Shared Worker Transport, Auth Models and Storage
 
 `transport-service.js` now owns XRPC request parsing, GET serialization and rate-limit headers. Browser fetch, the classic GET-to-request bridge, URLSearchParams creation, service errors, clock, default API and existing messages are explicit. The classic `atproto-client.js` names remain thin mutable delegates to a lazily constructed service, preserving existing interceptors. Request option/header precedence, JSON/plain/empty bodies, metadata envelopes, 401 codes, seconds/date Retry-After and scalar/array query omission rules remain unchanged.
 
 `auth-models.js` owns service URL/security rules, account/state normalization, public account/response projection and upsert. Default service/frontend, frontend inference, error creation and ISO clock are injected. Legacy single-account data, active DID selection, session identities, duplicate matching and public credential omission retain their contracts. `storage-service.js` owns existing store creation and shared general/auth read/write/delete operations. Database/store configuration, IndexedDB access and auth normalization are explicit. Schema version two, image keyPath id, nullish general values, falsey-auth fallback, opening before auth-write normalization and resolving writes on request success remain. Injected normalization errors reject the operation; transaction-completion semantics were not introduced. `adapter-messages.js` centralizes existing strings. Old implementations were removed; four classic scripts are imported and precached.
-
-Previous checkpoint: 699 unit/contract tests, 64 focused browser cases in one run and 91 direct old/new comparisons passed. Twelve new contracts cover adapter boundaries and failures. Two new browser cases exercise actual IndexedDB stores/read/write/auth deletion, a valid stored session and mutable auth-reference refresh, plus real classic XRPC callers with controlled fetch, on both entry pages with pageerror collection. Syntax, encoding, module/cache/version contracts, no new ternaries and whitespace passed. Login/expired-token renewal and DID/PDS/account orchestration remain the next extraction boundary. App/cache stay `0.4.356`/`v375`; full browser regression, live login/token renewal, existing-data/quota/offline/cache activation and full-tree snapshot acceptance remain open.
 
 ## Complete Worker Analysis Module
 
@@ -140,15 +118,11 @@ Worker analysis is now extracted as one cohesive block. `analysis-models.js` con
 
 Fifteen old function bodies and the global cache were removed. Search still receives the same facet contract, settings still use the same snapshot normalizer, and network comparison still calls the shared complete-graph operation. The dispatcher binds the new check/load methods; all three classic scripts are imported and precached. Global network page normalization, generic transport/auth/storage and UI error classification remain explicit entry adapters rather than duplicated analysis code.
 
-Previous checkpoint: 687 unit/contract tests and 133 old/new comparisons passed, including 80 complete analysis runs and 53 model/snapshot/account-selection comparisons. 62 browser cases passed in the complete worker/search/explorer run; two existing analysis UI cases passed in an isolated repeat (64 focused cases total). New classic-worker cases cover both pages with pageerror collection, real check/load bindings, corpus/network results, partial graph failure, cache/top lists and snapshot normalization. UI cases cover rendering, account loading/comparison, reload and an actual PDF download with fixture data. The first supplemental run hit a navigation timeout and a PDF download canceled at the test deadline; both passed unchanged on repeat. Syntax, encoding, module/cache/version contracts, absence of new ternaries and whitespace passed. App/cache remain `0.4.356`/`v375`; full browser regression, real-account/provider acceptance, IndexedDB/offline/cache activation and full-tree snapshot acceptance remain open.
-
 ## Worker Thread-URL Import
 
 `archive-import-service.js` exposes frozen `load`, `collect`, `enrich` and `result` operations. Source parsing/handle resolution, session/transport/base URL, existing archive models, asset service, run control, messages and export clock/version are explicit. Collection retains DID bypass, default path mode, root/reply classification, swallowed entry-request failures, missing-post results and the early cancellation boundary. Tree requests retain depth 100 and parent height zero without adding refresh/retry behavior. Selection delegates to the existing all/path/author models.
 
 Metadata enrichment uses the existing archive post builder and retains raw references, last duplicate URI precedence, author/count fallbacks and descending date order. `archive-asset-service.attachThreadAssets` preserves the import-specific sequential policy: shared avatars, one card attempt with a 5s timeout, two image attempts with 350ms delay, normalized output bytes, fifth-image previews and cancellation between posts. It intentionally does not substitute the wave's concurrent asset policy. Result building retains the different missing/early-cancel/final schemas, original array identities and account/source-author metadata. Unexpected tree/observer failures still propagate with the prior lifecycle behavior; this extraction adds no recovery policy. The old entry implementation was removed; the new classic script is imported and precached, and existing messages are centralized.
-
-Eleven contracts and 80 complete old/new import comparisons passed across four mode inputs, root/reply and ten success/failure/cancellation scenarios. Comparisons cover results, requests, progress and remaining run state. Previous checkpoint: 672 unit/contract tests passed. 60 focused browser cases passed together (60s test limit). Two new cases load both entry pages, collect pageerror events and exercise the real import caller for all three modes, card/image assets, missing entries, early cancellation, authentication payloads and run cleanup with controlled network/blob adapters. Syntax, encoding, module/cache/version contracts and whitespace passed. App/cache remain `0.4.356`/`v375`; full browser regression, live import/collection, IndexedDB/offline/cache activation and full-tree snapshot acceptance remain open.
 
 ## Worker Archive Asset Pipeline and Finalization
 
@@ -156,15 +130,11 @@ The existing `archive-asset-service.js` now exposes `attachLinkCards` and `attac
 
 Images retain task order, bounded mapping, pause/cancel checks, retry/skip policy, descriptor/path rules, previews and progress. A live saved/skipped-count adapter retains partial mutations after failures. The prior distinction between normalized descriptor/preview data and original downloaded output-asset bytes is intentionally unchanged and tested. `archive-wave-service.finalize` centralizes every wave completion path and caught failure, releasing run state before result building and sorting partial posts only on failure. Cancellation/error messages and fallback classification remain unchanged; entry wiring retains explicit live state.
 
-Ten new contracts and 48 old/new pipeline comparisons passed; the link-card comparison baseline includes only the intended reference correction. Previous checkpoint: 661 unit/contract tests passed. 58 focused browser cases passed in one final run (60s test limit). Two new cases load both entry pages, collect pageerror events and exercise the actual wave caller with card/image assets, cancelled/paused partial results and run cleanup through controlled auth/network/blob adapters. Syntax, encoding, module/cache/version contracts and whitespace passed. The first run exposed an incorrect new assumption about late control commands; it was corrected. An unchanged pan case failed a timing expectation and passed in the subsequent complete run. App/cache remain `0.4.356`/`v375`; full browser regression, live collection, IndexedDB/offline/cache activation and full-tree snapshot acceptance remain open.
-
 ## Worker Archive Collection, Metrics and Avatars
 
 `archive-wave-service.js` exposes frozen `readPage` and `enrichMetrics` operations. Requests, refreshed authentication, XRPC base, retries, cooperative wait, chunking, selection, hashtag lookups and messages are explicit dependencies. Page collection retains repo/feed distinctions, foreign-author filtering, raw references, oldest timestamps before filtering and caller caches. A live cursor/skipped-counter adapter preserves updates when hashtag selection fails midway; selected page records commit only after the whole page succeeds.
 
 Metrics retain 25-URI batches, known-post updates, author fallbacks, second-batch previews and progress wording. Cancellation returns to the entry point for sorting, lifecycle cleanup and result building. Partial updates and transport/observer failures propagate. `archive-asset-service.js` provides shared `attachAvatars` for archive waves and thread import, with explicit download, image normalization, extension, bounded mapping and cache dependencies. URL grouping, slug limits, path deduplication and per-download failure clearing remain unchanged. The old implementations were removed; both classic scripts are imported and precached. Existing strings moved into the archive message file.
-
-Twelve new contracts and 52 direct old/new comparisons passed. Previous checkpoint: 651 unit/contract tests and 56 focused browser cases passed together (60s test limit), including a real wave collecting one repo page and metrics through controlled adapters on both entry pages, plus foreign feed/avatar services. Browser cases collect pageerror events. Syntax, encoding, module/cache/version contracts and whitespace passed. App/cache remain `0.4.356`/`v375`; full browser regression, live collection, IndexedDB/offline/cache activation and full-tree snapshot acceptance remain open. At that checkpoint, link cards still contained an undefined `normalizedBlob` reference; the asset-pipeline block above fixes and tests it.
 
 ## Worker Archive Wave Preparation
 
@@ -174,8 +144,6 @@ The existing `archive-models.js` now exposes a fourth frozen API, `wave`. `wave.
 
 Ten new contracts and 79 old/new comparisons cover source transport, restoration, schemas and nine complete-wave fixtures. Browser coverage exercises the real wave caller for completed/cancelled/paused results while authentication, storage, network and avatar assets are controlled. These fixtures do not prove live collection or persistent/offline recovery.
 
-Previous checkpoint: 639 unit/contract tests and 54 focused browser cases passed in one final run with a 60s test limit. Syntax, encoding, module/cache/version contracts and diff whitespace passed. The initial new test expected the wrong final phase; it now checks the existing assets phase. A concurrent supplemental run had a navigation timeout before the final isolated run passed. App/cache remain `0.4.356`/`v375`; full browser regression, live/offline/IndexedDB/cache activation and full-tree snapshot acceptance remain open.
-
 ## Worker Archive Thread Service
 
 `js/worker/archive-thread-service.js` owns root/thread hashtag lookups, media hashtag selection, thread error classification, bounded thread requests and conversation-context expansion. `sw.js` constructs `createThreadlineArchiveThreadService` after archive models/run control and binds the seven previous helper names. Models, refreshed auth, transport/base URL, cooperative wait, AbortController/timer creation and cleanup, deadline/retry defaults and existing messages are explicit adapters. The seven old bodies were removed and the classic script is imported/precached. Progress/error wording now lives in the existing archive message file.
@@ -183,8 +151,6 @@ Previous checkpoint: 639 unit/contract tests and 54 focused browser cases passed
 The service retains URI-keyed caller caches, direct-tag priority, root-only versus whole-thread scopes and missing-post caching. Hashtag requests share one auth/transport helper. Bounded requests still use a fresh controller/deadline before refreshing auth on each attempt, default to 15 seconds and one retry, and clear every timer in finally. The last transport failure and timeout/progress wording remain. Context expansion keeps a unique root snapshot, checks cooperative cancellation between roots, skips missing/timed-out conversations and passes real archive entities/raw records to the existing upsert callback. The legacy raw-record map argument remains accepted without additional mutation.
 
 Twelve new contracts and 59 old/new comparisons passed for response envelopes, caches, auth/transport, timer order/cleanup, timeout retries, observer failures, cancellation, skip behavior and upserts. Two new browser cases load actual `sw.js` from both entry pages, verify all bindings/cache inclusion and exercise real AbortController deadlines with controlled auth/network responses. Full live archive-wave/thread-import and offline acceptance remain separate.
-
-At the archive-thread extraction checkpoint, 629 unit/contract tests and 52 focused browser cases passed with a 60s test limit. Syntax, encoding, module/cache/version contracts and diff whitespace passed. App/cache remain `0.4.356`/`v375`. Full browser regression, live archive collection, offline/IndexedDB/cache activation and full-tree snapshot acceptance remain open.
 
 ## Worker Archive Models
 
@@ -194,8 +160,6 @@ Existing contracts remain: source/enumeration defaults, normalized OR hashtags, 
 
 Fourteen new contract tests load the actual worker import chain and shared adapters. A further 841 old/new model comparisons matched values, mutations and error categories. Two new browser cases load real `sw.js` from both entry pages, verify all helper bindings and cache inclusion, then exercise Unicode/date/ownership/tree/embed/schema/reference behavior without live network access.
 
-At the archive-model extraction checkpoint, 617 unit/contract tests and 50 focused browser cases passed with a 60s test limit; syntax, encoding, module/cache/version contracts and diff whitespace passed. App/cache stay `0.4.356`/`v375`. Live archive collection/accounts, offline/IndexedDB/cache activation, full browser regression and full-tree snapshot acceptance remain open.
-
 ## Worker Archive Run Control
 
 `js/worker/archive-run-control.js` owns private per-run state, start/finish, pause/resume/cancel commands, cooperative waits, request retries and voluntary feed pauses. Scheduler, service-error creation and the existing text templates in `archive-run-messages.js` are explicit dependencies. `sw.js` binds the six existing helper names to the controller and delegates run lifecycle operations in archive waves/thread imports; the six old bodies and public state map were removed. Both scripts are imported by the classic worker and precached.
@@ -204,17 +168,13 @@ Behavior remains unchanged: pause polling at 350 ms, sleeps in at most one-secon
 
 Twelve new contract tests and 100 old/new workflow comparisons passed, covering state isolation, lifecycle, pause/resume/cancel, empty/invalid duration inputs, chunk boundaries, retry classification/limits, backoff, progress and feed thresholds. Two new browser cases load the real `sw.js` from both entry pages, exercise actual controller bindings and timers for pause/resume/cancel plus a controlled request retry; virtual delays cover longer retry/feed pacing.
 
-At the archive-run extraction checkpoint, 603 unit/contract tests and 48 focused browser cases passed with a 60s test limit. Syntax, encoding, module/cache/version contracts and diff whitespace passed. App/cache remain `0.4.356`/`v375`. Full archive-wave/thread-import collection with live accounts, offline/IndexedDB/cache activation, full browser regression and full-tree snapshot acceptance remain open.
-
 ## Worker DM Service
 
-`js/worker/dm-service.js` owns chat access checks, paged partner collection, missing-profile and avatar hydration, and selected-partner archive collection. `sw.js` constructs `createThreadlineDmService` after the shared DM models and binds its four operations to the existing message handlers. Authentication, chat/profile transport, XRPC base, account-avatar lookup, remote/blob downloads, CID/extension resolution, ISO clock, random IDs, cache version and text formatting are explicit adapters. The five old function bodies were removed. Both new classic-worker scripts are imported and included in the shell cache; app/cache versions remain `0.4.356`/`v375`.
+`js/worker/dm-service.js` owns chat access checks, paged partner collection, missing-profile and avatar hydration, and selected-partner archive collection. `sw.js` constructs `createThreadlineDmService` after the shared DM models and binds its four operations to the existing message handlers. Authentication, chat/profile transport, XRPC base, account-avatar lookup, remote/blob downloads, CID/extension resolution, ISO clock, random IDs, cache version and text formatting are explicit adapters. The five old function bodies were removed. Both new classic-worker scripts are imported and included in the shell cache; app/cache versions are `0.4.357`/`v376`.
 
 The service retains partner pagination and latest-contact selection, optional asset skipping, 25-profile batches, copied hydration inputs, deduplicated avatar paths, best-effort assets, cached-partner fallback, message pagination, inclusive UTC dates, sender enrichment and URL/CID card thumbnails. Existing cache mutation and participant-count rules remain unchanged. Both partner paths now share one avatar attachment helper. `dm-messages.js` centralizes the existing German progress/error wording and formats literal placeholders; this extraction adds no locale switching. New service code uses documented functions and if/else branches without ternaries.
 
 Eleven new contract tests exercise required adapters, text, auth/transport failures, pagination, latest-contact selection, empty/malformed collections, profile batching, input copies, asset failures/deduplication, cached/fallback collection, UTC boundaries and card downloads. Eighty direct comparisons with the previous worker code matched data, cache effects, transport calls and progress across success, empty, malformed and failure cases. Two new browser cases load the actual `sw.js` import chain in classic workers, assert existing caller bindings/cache assets, and exercise collection/hydration/export from both page entry routes with controlled adapters.
-
-At the DM extraction checkpoint, 591 unit/contract tests and 46 focused browser cases passed with a 60s test limit; syntax, encoding, module/cache/version contracts and diff whitespace passed. These tests do not verify live DM accounts/chat permissions, offline/IndexedDB restoration, cache activation, the full browser regression or the outstanding full-tree snapshot acceptance.
 
 ## HTML Archive Cleanup
 
@@ -256,8 +216,6 @@ Nine additional contract tests cover required adapters, each meaningful-filter b
 
 Eleven new contract tests cover storage/fallback, URL/parser boundaries, deterministic IDs/clocks, normalized formats/deduplication/limits, legacy labels/metadata, lookup and dialog contexts. Seventy-four old/new comparisons passed. Four new browser cases on both entry routes exercise real local view storage/reload/explorer-open restore and real saved-search save/load/reload/remove, literal labels, SVG templates, contexts and mobile button bounds.
 
-At the saved-search extraction checkpoint, 580 unit/contract tests and 44 focused browser cases passed with a 60s per-test limit. Syntax, encoding, module/cache/version contracts and diff whitespace passed. App `0.4.356` and cache `v375` stay unchanged until completion. Worker/settings responses are controlled; full browser regression, full-tree snapshot, live account and offline/IndexedDB acceptance remain open.
-
 ## Explorer Selection Storage, Favorite Models And Replies
 
 `thread-explorer-controller.js` owns optional selection storage with injected storage/key, active account/source, source normalization and ISO clock. The stored schema, source restoration and existing account rule remain: an explicit saved account is rejected only when the active account is also explicit and differs. Restricted storage, malformed JSON and missing selection are tolerated. Page adapters retain assignments made during restore.
@@ -268,8 +226,6 @@ At the saved-search extraction checkpoint, 580 unit/contract tests and 44 focuse
 
 Ten new contract tests cover storage schema, accounts/source recovery, malformed/blocked storage, deterministic favorite fields, missing identities and tree traversal. Ninety-six extraction-time old/new comparisons passed. Four new browser cases on both entry pages use real LocalStorage and reloads, reject a different account, exercise template reply labels and mouse/Enter/Space selection after repeated rendering, and check empty output and mobile containment. Existing search/favorite flows exercise the shared builder as well.
 
-Current working-tree validation: 560 unit/contract tests and 36 focused browser cases passed with a 60s per-test limit. Syntax, encoding, module/cache/version contracts and diff whitespace passed. App `0.4.356` and cache `v375` remain unchanged until completion. LocalStorage tests do not prove IndexedDB/offline recovery, live accounts, full browser regression or full-tree snapshot acceptance.
-
 ## Explorer Feed Models, Selection And Favorites
 
 The existing `thread-explorer.js` owns feed merging, optional root grouping, date timestamps and stable newest-first sorting. It preserves the first item identity, created/indexed/zero timestamp fallback and source order for equal dates. Selection resolution keeps current, lazily read stored, then first-feed-item priority with exact URI membership and the outside-feed option. Selection persistence adapters remain in the page.
@@ -277,8 +233,6 @@ The existing `thread-explorer.js` owns feed merging, optional root grouping, dat
 Favorite normalization also belongs to that module, retaining first-root deduplication, archive fields, 260-character previews and the 100-entry cap. The controller module shares insert/remove/persist operations between search and thread callers; page callbacks retain status and workspace updates. The rendering module fills the existing favorite template with literal text and injected load/remove handlers. Previous implementations and duplicate save logic were removed. Search cards now read the current favorites getter during rendering instead of capturing the initial list; saving/removing updates their saved indicator.
 
 Ten new contract tests cover feed order/identity/invalid inputs, selection and lazy storage reads, favorite format/limits, updated-state persistence and failures. There are 187 extraction-time old/new model comparisons. Four new browser cases on both entry pages check feed template order, selection, repeated favorite rendering without duplicate events, literal content and real search favorite save/reload/dialog/remove flows including saved indicators and mobile button bounds. Worker/settings storage are controlled fixtures.
-
-Current working-tree validation: 550 unit/contract tests and 32 focused browser cases passed with a 60s per-test limit; syntax, encoding, asset/version contracts and diff whitespace passed. App version `0.4.356` and cache `v375` remain unchanged until the modularization finishes. Live accounts, real IndexedDB/offline persistence, full browser regression and full-tree snapshot acceptance remain open.
 
 ## Explorer Feed Sources, Gallery Fullscreen And Focus
 
@@ -292,8 +246,6 @@ The focus controller owns exact URI lookup, selected/root/cluster target resolut
 
 Ten new contract tests and 96 old/new pan comparisons passed. Four new browser cases check stale account replies, real select templates/literal labels, and rendered card centering at 390/1100 pixels on both entry pages. The existing real gallery tests additionally check rejected native fullscreen and Escape leaving fallback before closing the dialog. The focused batch passed 540 unit/contract tests and 28 browser cases; syntax, encoding, asset contracts and diff whitespace passed.
 
-Per user decision, app version `0.4.356`, cache `v375`, package metadata and version label stay unchanged until modularization is complete. Existing module assets remain precached. Full browser regression, full-tree snapshot timeout, live accounts, native OS fullscreen and offline/cache activation remain open.
-
 ## Explorer Toolbar, Gallery Selection And Render Scheduling
 
 `thread-explorer-rendering.js` owns toolbar availability, account input/field visibility, mode labels, saved state and ARIA presentation. Controls, normalized workspace state, translation and note/feed rendering are explicit inputs. Focused account input remains untouched. Three contract tests and 256 extraction-time old/new comparisons cover authentication, tree/loading state, account/focus modes, orientation, saved status and fullscreen combinations.
@@ -301,8 +253,6 @@ Per user decision, app version `0.4.356`, cache `v375`, package metadata and ver
 The existing `thread-explorer.js` owns gallery image/index state and selection orchestration through `createThreadExplorerGalleryController`. It reuses the existing thumbnail template, normalizers and gallery renderer. Open/render/step/current operations preserve clamping, wrap-around and invalid/empty handling; image-error fallback reads the controller current image. Three new contract tests cover selection and replacement. Fullscreen behavior is now owned by the controller described above; native/DOM integration remains injected.
 
 `thread-explorer-controller.js` owns edge frames and focus frames/timers. Edge requests coalesce and recheck cluster/drag/inertia guards at execution. A new focus request cancels old frames and the delayed pass, preserving the two-frame layout wait and 80ms settling pass. Three tests cover guards, replacement and cancellation. Previous page implementations and selection/frame globals were removed.
-
-Four new browser cases on both entry pages open actual search-result images and exercise gallery buttons, keyboard wrap-around, thumbnails, ARIA state and PNG decoding. They also apply mode state to real toolbar controls and exercise real animation-frame/timer scheduling. Previous batch: application `0.4.356`, cache `v375`, 530 unit/contract tests and 24 focused browser cases passed. Syntax, encoding, module/cache/version contracts and diff whitespace checks passed. Full browser regression, full-tree snapshot timeout, live account access and offline/cache activation remain open.
 
 ## Explorer Lazy And Snapshot Hydration
 
@@ -312,8 +262,6 @@ The same module owns snapshot avatar requests, the 120s timeout, phase filtering
 
 Ten new contract tests cover observer reuse/reset, stale callbacks, selected/forced/fallback/deleted cards, payloads, zero/invalid counters, response identity, optional failures and aborts. Thirty-six extraction-time comparisons match old/new snapshot requests, progress and results. Four new browser cases on both entry pages use real IntersectionObserver events and rendered templates, force snapshot content, decode real local PNG images, apply avatars to replies/quotes and exercise aborts before/during transport. Transport replies remain controlled.
 
-Previous batch: application `0.4.353`, cache `v372`, 521 unit/contract tests and 20 focused browser cases passed. Syntax, encoding, module/cache/version contracts and diff whitespace checks passed. Toolbar, gallery selection and render scheduling are now extracted as described above. Full browser regression, the known full-tree snapshot timeout, live accounts and offline/cache activation remain open.
-
 ## Explorer Anchored Zoom, Reset And Card Neighborhoods
 
 `thread-explorer-controller.js` now owns absolute, point-anchored and viewport-center zoom, as well as a separate reset controller with private timer and remembered zoom. Viewport measurements, state updates, rendering, edge scheduling and timers are explicit adapters. `thread-explorer-layout.js` calculates the anchored transform, preserving the same stage point under the cursor after clamping to 0.01–2. Invalid measurements/anchors are ignored. Page and existing viewport-controller coordinates are synchronized through one page adapter.
@@ -321,8 +269,6 @@ Previous batch: application `0.4.353`, cache `v372`, 521 unit/contract tests and
 A single reset click defers fitting by 220ms; a double click cancels it and toggles between 100 percent and remembered zoom around the viewport center, retaining the 8 percent restore minimum. The layout module also owns reply-cluster node lookup and neighborhood bounds for the selected card and its direct children. Grandchildren remain excluded in both tree and cluster mode. The previous page implementations and reset globals were removed.
 
 Ten new contract tests cover point invariance, clamping, invalid values, controller synchronization, reset replacement/cancellation/restoration, lookup and neighborhood boundaries. There are 138 extraction-time old/new comparisons. Two new browser cases exercise the actual page zoom buttons and rendered template fixtures on both entry pages at 390/1100 pixels. Measurements check the fixed anchor, scale, restore and direct-child bounds; reset events check fit cancellation and delayed single-click fitting. These remain controlled fixtures, not full-tree or live account acceptance.
-
-Previous batch: application `0.4.350`, cache `v369`, 511 unit/contract tests and 16 focused browser cases passed. Syntax, encoding, module/cache/version contracts and diff whitespace checks passed. Full browser regression, the known full-tree snapshot timeout, live accounts and offline/cache activation remain open.
 
 ## Explorer Pan, Card Focus And Worker DM Models
 
@@ -333,8 +279,6 @@ The existing `thread-explorer-controller.js` coordinates delayed card selection,
 `js/worker/dm-models.js` exposes a frozen classic-worker API for UTC date boundaries, filters, conversations, messages, embed/facet priority and external link cards. Missing IDs use an injected UUID adapter. Raw data identity, field fallback order and archive format remain unchanged; the previous implementations were removed from `sw.js`. Seven new contract tests and 100 extraction-time old/new comparisons passed. The asset is precached and imported before caller composition.
 
 Four new browser cases on both entry pages use rendered card templates to check pan movement/cancellation, focus geometry, selection timing, restore, native controls and touch events. The classic-worker cases additionally exercise real DM aliases and UUID/date/card operations loaded through `sw.js`. These are controlled fixtures, not real account, full-tree or offline acceptance.
-
-Previous batch: application `0.4.347`, cache `v366`, 501 unit/contract tests and 14 focused browser cases passed. Syntax, encoding, module/cache/version contracts and diff whitespace checks passed. Full browser regression, the known full-tree snapshot timeout, live accounts and offline/cache activation remain open.
 
 ## Worker Search Filters And Runs
 
@@ -350,15 +294,11 @@ The existing `thread-explorer-layout.js` now owns rendered-to-stage rectangle co
 
 Six new contract tests and 64 extraction-time old/new comparisons cover negative coordinates, hidden cards, limits, defaults, centering and invalid bounds. Two browser cases use rendered template-based card fixtures on both entry pages at 390/1100 pixels; all measured cards remain inside the viewport and reverse conversion recovers the original coordinates. Representative fixture screenshots were inspected. This verifies viewport geometry, not the full Thread Explorer layout or the known full-tree snapshot timeout.
 
-Previous batch: application `0.4.344`, cache `v363`, 485 unit/contract tests and ten focused browser cases passed.
-
 ## Worker Search Query Planning
 
 `js/worker/search-queries.js` owns the classic worker's pure search mode/sort/tag/language normalization, exclusion-query formatting, searchPosts parameters, author-feed fallback decision, language/tag request cross-product, per-variant cursor codec and continuation URI set. It exposes one frozen `ThreadlineSearchQueries` namespace; `sw.js` imports and explicitly binds its 14 operations. The old declarations were removed. Filtering and paging are now owned by the modules above; authentication and persistence remain explicit entry-point adapters. The existing eight-tag/three-language limits and cursor format are retained. Page and worker exclusion-query contracts are compared without changing their module formats.
 
 Seven new contract tests cover normal/boundary/invalid inputs, server parameters, variants, cursor exhaustion and malformed data, URI deduplication and page/worker query agreement. A one-time 33-case old/new comparison passed. A browser worker imports the real `sw.js` and checks the imported operations through their actual worker callers, including local post matching. It does not simulate Service Worker installation, cache activation or live network/auth flows.
-
-The current validation state is recorded above and in `TODO.md`. Full browser regression, the known full-tree snapshot timeout, live providers and offline activation remain separate acceptance work.
 
 ## Snapshot Export Lifecycle
 
@@ -371,8 +311,6 @@ Five new contract tests cover success, progress limits, missing optional nodes, 
 The entry point now composes three explicit boundaries: `search-models.js` for localized summaries/progress/share URLs/saved labels, `search-form.js` for controls, URL imports, language/sort constraints and private 30/280 ms timers, and `search-controller.js` for worker pages, cancellation, persistence and restored results. The existing preference normalizer in `search.js` now also owns post-type aliases/defaults; its duplicate in the entry point is removed. Shared result-state helpers remain authoritative.
 
 Continuation compares effective request filters, ignoring the source URL field and resolving the implicit own-account actor. Startup passes account identity from the same saved bundle before global authentication state is applied. Reset and saved-query selection invalidate pending replies; late progress, result, error and cancel-finalization callbacks cannot overwrite a later run. Form changes refresh continuation controls, and search language changes refresh disabled sorting options. Loaded status is restored after generic translation updates. Storage schema and worker message contracts are unchanged.
-
-Thirteen new unit/contract cases and four focused browser cases pass across both entry pages, including continuation, reload, URL import, language rules, partial cancellation, worker errors and stale replies after reset. Worker/storage replies are controlled; live accounts, offline activation and full browser regression remain separate.
 
 ## DM HTML And PDF Export
 
@@ -388,23 +326,17 @@ Seven new unit/contract tests cover models, fallbacks, invalid adapters/data, ov
 
 The existing workspace-rendering module now also exports `createArchiveWorkspaceLayout`. Export cards, tools headings, content columns and action rows use four additional templates on both pages. The module moves the existing controls instead of recreating them, preserving values and listeners. The old heading builder, layout implementation and validation token/timer were removed from the entry point. Page event/busy wiring and global profile state remain there intentionally.
 
-Eleven new unit/contract tests cover normalized/empty/invalid configuration, out-of-order success/failure, the input/debounce race, timer coalescing, immediate/picker checks and cancellation. Fourteen targeted browser cases pass across archive/DM/media/workspace flows. The new cases exercise real picker selection and delayed stale responses on both entry pages, plus repeated layout with all required elements, unique IDs and retained button/input identity and listeners. A 390-pixel export-card screenshot was inspected; it shows a 433-pixel card, so overall mobile grid containment remains an explicit TODO rather than being inferred from container-bound assertions. Worker replies are controlled; live-provider, offline and complete regression acceptance remain open.
-
 ## Archive Workspace Presentation And Run Controller
 
 `archive-workspace-models.js` owns localized run status, start hints, heartbeat formatting, background activity, catalog notices, control availability and summary counts. `archive-workspace-rendering.js` owns source identity, preview, description, results, progress and workspace rendering. Six templates on both entry pages replace the previous repeated DOM construction. Content is assigned through textContent; export callbacks are explicit adapters. The full-HTML size threshold and result export behavior are retained.
 
 `archive-run-controller.js` owns wave loading and saved-session reuse, thread-URL import, session/catalog writes, pause/resume/cancel, clear and invalidation. Wave/thread progress now shares one handler while preserving their control-refresh policies. Worker message names, timeouts, payload formats and storage behavior are retained, including optional catalog-storage warnings. State reads/patches, normalized filters/catalogs, UI refreshes, clock and run IDs are explicit dependencies. Global state, form adapters and button/busy event wiring remain in the entry point. Source validation and dynamic card arrangement are now module-owned as described above.
 
-Thirteen new contract tests cover status priorities, boundaries, resume compatibility, worker progress and failure, imported metadata, persistence warnings and reset. Eleven targeted browser tests pass: eight existing archive/DM/media cases and three workspace tests. Both entry pages exercise source identity, live preview, active pause/resume, off-workspace notice, saved cursor/catalog reuse, thread import and reset with pageerror collection. Empty/oversized/literal/template-error rendering states are checked directly. Result bounds are checked at 390/1100 pixels and a result screenshot was inspected. Worker responses are controlled; live requests, real storage/offline activation and the full browser regression remain separate acceptance work.
-
 ## Shared Binary Assets And Catalog Avatars
 
 `shared-assets.js` owns chunked base64, synchronous/reader-based Data URLs, remote binary downloads, MIME suffix selection and image bitmap decoding. Base64, Blob, FileReader, fetch, bitmap and localized error adapters are supplied explicitly. Existing empty/MIME/view behavior is retained; the Data-URL fallback error now comes from all three translations. Bitmap lifetime remains with the drawing caller. Backup, Thread Explorer, accounts and archive/DM exports share these implementations.
 
 `archive-assets.js` owns post-avatar hydration and DM avatar-path propagation. It receives active account state, the existing primary-partner resolver and binary download/suffix adapters. Archive hydration retains self-account fallback, per-pass URL reuse, existing paths and optional download failures. DM hydration only propagates cached self/partner/contact/member paths and does not download more assets. Existing filename collisions retain the first asset, as before. `resolveStoredAccountAvatar` extends the existing shared account module with path, DID/URL and remote fallback precedence, including the prior avatarPath update. Cache state and restoration messages remain in the entry point.
-
-Twelve new unit/contract tests cover empty/invalid inputs, byte views, large chunks, MIME fallbacks, reader/network/bitmap failures, hydration, cache priorities and collisions. Ten targeted browser tests pass: eight archive/DM/media cases and the existing backup/shared-avatar integrations. Both entry pages export real HTML/PDF files; DM message avatars decode in the downloaded HTML and a screenshot was inspected. Archive avatar requests are reused rather than repeated for the same URL. These are controlled worker/HTTP fixtures and a controlled media file sink; real DM accounts, native dialogs, offline activation and the full browser regression remain separate checks. DM PDF download/initialization is tested, not comprehensive PDF visual acceptance.
 
 ## Catalog Files And Resumable Media Export
 
@@ -431,8 +363,6 @@ Three shared modules replace the common implementations in `app.js`:
 - `shared-canvas.js`: explicit Canvas-context functions own rounded fills/strokes, contained images and circular cover images. Archive/DM page layout and pagination remain in their existing callers; analysis keeps its renderer and layout modules. Snapshot-specific drawing is unchanged.
 
 All three modules are precached and have contract-test assignments. Nine new tests cover adapters, normal/empty/invalid inputs, text/link geometry, image fitting, Unicode metadata, timezone offsets, PDF references and byte-correct cross-reference tables. Forty-seven direct comparisons against the previous implementation matched PDF bytes, text/link runs, wrapping, drawing calls and annotation bounds.
-
-The two archive browser cases now also export real image-backed PDFs after a ZIP round trip; a valid Canvas-generated PNG replaces the old undecodable image fixture. Together with the existing analysis integration, three targeted browser tests pass with `pageerror` collection and regular process exit outside the sandbox. Poppler confirmed A4 and unchanged page counts: one page per archive case and ten analysis pages. Of twelve rendered pages, the archive pages are pixel-identical; analysis differences are confined to the changed creation-time text in the header. Representative final pages were visually inspected. Full browser regression, actual DM exports, all locale/account shapes, native media streaming and offline activation remain separate acceptance work.
 
 ## Analysis Calculations
 

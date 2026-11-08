@@ -75,3 +75,124 @@ export function createApplicationStorage(options) {
   }
   return { load, persist };
 }
+
+
+/** Creates the worker MessageChannel request client with explicit timers and cancellation.
+ * @param {object} adapters - Ready/controller/channel/clock/translation/abort adapters.
+ * @returns {object} Request API.
+ */
+export function createWorkerRequestClient(adapters) {
+  for (const name of ["ready", "controller", "channel", "schedule", "clearTimer", "translate", "abortError"]) {
+    if (typeof adapters?.[name] !== "function") { throw new TypeError("Worker request client requires " + name); }
+  }
+  /** Sends one request, renewing timeout on progress. @param {string} type - Command. @param {object} payload - Input. @param {object} options - Timeout/progress/abort configuration. @returns {Promise<unknown>} Result. */
+  async function sendToServiceWorker(type, payload = {}, options = {}) {
+    const registration = await adapters.ready();
+    const worker = registration.active || adapters.controller();
+
+    if (!worker) {
+      throw new Error(adapters.translate("statusNoWorker"));
+    }
+
+    return new Promise((resolve, reject) => {
+      const channel = adapters.channel();
+      const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 15000);
+      let timeoutId = null;
+      let settled = false;
+      const abortSignal = options.signal || null;
+      let handleAbort = null;
+      const cleanup = () => {
+        settled = true;
+        adapters.clearTimer(timeoutId);
+        channel.port1.onmessage = null;
+        channel.port1.close();
+        if (abortSignal && handleAbort) {
+          abortSignal.removeEventListener("abort", handleAbort);
+        }
+      };
+      const rejectOnce = (error) => {
+        if (settled) {
+          return;
+        }
+        cleanup();
+        reject(error);
+      };
+      const resolveOnce = (value) => {
+        if (settled) {
+          return;
+        }
+        cleanup();
+        resolve(value);
+      };
+      const createAbortError = () => {
+        if (typeof options.createAbortError === "function") {
+          return options.createAbortError();
+        }
+        return adapters.abortError();
+      };
+      const scheduleTimeout = () => {
+        adapters.clearTimer(timeoutId);
+        timeoutId = adapters.schedule(() => {
+          rejectOnce(new Error(adapters.translate("statusSwTimeout")));
+        }, timeoutMs);
+      };
+
+      if (abortSignal?.aborted) {
+        rejectOnce(createAbortError());
+        return;
+      }
+
+      handleAbort = () => {
+        rejectOnce(createAbortError());
+      };
+      if (abortSignal) {
+        abortSignal.addEventListener("abort", handleAbort, { once: true });
+      }
+
+      scheduleTimeout();
+
+      channel.port1.onmessage = (event) => {
+        if (settled) {
+          return;
+        }
+        if (event.data?.progress) {
+          scheduleTimeout();
+          options.onProgress?.(event.data.progress);
+          return;
+        }
+
+        adapters.clearTimer(timeoutId);
+
+        if (event.data?.ok) {
+          resolveOnce(event.data.result);
+          return;
+        }
+
+        const errorCode = String(event.data?.details?.code || "");
+        const localizedServiceWorkerErrors = {
+          ANALYSIS_ACCOUNT_MISSING: "analysisAccountMissingGeneric",
+          ANALYSIS_ACCOUNT_NOT_FOUND: "analysisAccountNotFound",
+          ANALYSIS_ACCOUNT_CHECK_FAILED: "analysisAccountCheckFailed",
+          POST_EDIT_URL_INVALID: "postEditCheckInvalidUrl",
+          POST_EDIT_ACTOR_NOT_FOUND: "postEditCheckActorNotFound",
+          POST_EDIT_RECORD_LOAD_FAILED: "postEditCheckLoadFailed",
+          POST_EDIT_RECORD_INVALID: "postEditCheckRecordInvalid",
+        };
+        let errorMessage = event.data?.error || adapters.translate("statusSwUnknownError");
+        if (errorCode === "ARCHIVE_ASSET_LOAD_FAILED") {
+          errorMessage = adapters.translate("archiveAssetLoadFailed", { status: event.data?.details?.status || "?" });
+        } else if (errorCode === "ANALYSIS_ACCOUNT_NOT_FOUND") {
+          errorMessage = adapters.translate("analysisAccountNotFound", { account: event.data?.details?.actor || "" });
+        } else if (localizedServiceWorkerErrors[errorCode]) {
+          errorMessage = adapters.translate(localizedServiceWorkerErrors[errorCode]);
+        }
+        const error = new Error(errorMessage);
+        error.details = event.data?.details || null;
+        rejectOnce(error);
+      };
+
+      worker.postMessage({ type, payload }, [channel.port2]);
+    });
+  }
+  return { request: sendToServiceWorker };
+}

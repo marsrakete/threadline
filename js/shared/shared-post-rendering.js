@@ -689,3 +689,234 @@ export {
   isPostLikedByViewer,
   stripPostUrlsFromText,
 };
+
+
+/** Creates text presentation using explicit DOM and query parsing adapters.
+ * @param {object} options - document, nodeFilter, queryTerms and escape callbacks.
+ * @returns {object} utf16/runs/highlight/clear API.
+ */
+export function createRichTextPresentation(options) {
+  if (typeof options?.queryTerms !== "function" || typeof options?.escape !== "function") { throw new TypeError("Rich-text presentation requires query adapters"); }
+  const { document, nodeFilter: NodeFilter, queryTerms: parseSearchQueryTerms, escape: escapeSearchHighlightRegex } = options;
+  /** Converts a UTF-8 byte offset into a UTF-16 index. @param {string} text - Text. @param {number} byteIndex - Byte offset. @returns {number} Character offset. */
+  function utf8IndexToUtf16Index(text, byteIndex) {
+    const value = String(text || "");
+    const bytes = Math.max(0, Number(byteIndex) || 0);
+    let currentBytes = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      const codePoint = value.codePointAt(index);
+      const char = String.fromCodePoint(codePoint);
+      const nextBytes = currentBytes + new TextEncoder().encode(char).length;
+      if (nextBytes > bytes) {
+        return index;
+      }
+      currentBytes = nextBytes;
+      if (codePoint > 0xffff) {
+        index += 1;
+      }
+    }
+    return value.length;
+  }
+
+  /** Builds a facet navigation model. @param {object} feature - Facet feature. @param {string} rawText - Selected text. @returns {object|null} Link model. */
+  function getFacetLinkInfo(feature, rawText = "") {
+    const type = String(feature?.$type || "");
+    if (type.includes("#link") && feature?.uri) {
+      return {
+        kind: "link",
+        url: String(feature.uri),
+      };
+    }
+    if (type.includes("#mention")) {
+      const handle = String(rawText || "").trim().replace(/^@/, "");
+      return {
+        kind: "mention",
+        url: `https://bsky.app/profile/${encodeURIComponent(handle || feature.did || "")}`,
+      };
+    }
+    if (type.includes("#tag")) {
+      const tag = String(feature.tag || rawText || "").trim().replace(/^#/, "");
+      return {
+        kind: "tag",
+        url: `https://bsky.app/hashtag/${encodeURIComponent(tag)}`,
+      };
+    }
+    return null;
+  }
+
+  /** Splits post text into plain/link runs. @param {string} text - Post text. @param {Array} facets - Facets. @returns {Array|null} Runs. */
+  function extractFacetRichTextRuns(text, facets = []) {
+    const value = String(text || "");
+    const facetRanges = [];
+
+    (Array.isArray(facets) ? facets : []).forEach((facet) => {
+      const byteStart = Number(facet?.index?.byteStart);
+      const byteEnd = Number(facet?.index?.byteEnd);
+      if (!Number.isFinite(byteStart) || !Number.isFinite(byteEnd) || byteEnd <= byteStart) {
+        return;
+      }
+      const start = utf8IndexToUtf16Index(value, byteStart);
+      const end = utf8IndexToUtf16Index(value, byteEnd);
+      if (end <= start) {
+        return;
+      }
+      const rawText = value.slice(start, end);
+      const feature = (Array.isArray(facet?.features) ? facet.features : [])
+        .map((entry) => getFacetLinkInfo(entry, rawText))
+        .find(Boolean);
+      if (!feature?.url) {
+        return;
+      }
+      facetRanges.push({
+        start,
+        end,
+        url: feature.url,
+        kind: feature.kind,
+      });
+    });
+
+    facetRanges.sort((left, right) => left.start - right.start || left.end - right.end);
+    const runs = [];
+    let cursor = 0;
+
+    facetRanges.forEach((range) => {
+      if (range.start < cursor) {
+        return;
+      }
+      if (range.start > cursor) {
+        runs.push({ text: value.slice(cursor, range.start) });
+      }
+      runs.push({
+        text: value.slice(range.start, range.end),
+        url: range.url,
+        kind: range.kind,
+      });
+      cursor = range.end;
+    });
+
+    if (cursor < value.length) {
+      runs.push({ text: value.slice(cursor) });
+    }
+
+    return runs.length > 0 ? runs : null;
+  }
+
+  /** Removes only generated highlights. @param {Element} element - Host. @returns {void} Updated DOM. */
+  function clearSearchHighlights(element) {
+    if (!element) {
+      return;
+    }
+
+    element.querySelectorAll("mark[data-search-highlight='true']").forEach((mark) => {
+      const parent = mark.parentNode;
+      if (!parent) {
+        return;
+      }
+      parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
+      parent.normalize();
+    });
+  }
+
+  /** Highlights query matches using text nodes. @param {Element} element - Host. @param {string} query - Query. @returns {void} Updated DOM. */
+  function highlightSearchQueryInElement(element, query = "") {
+    clearSearchHighlights(element);
+    if (!element) {
+      return;
+    }
+
+    const terms = parseSearchQueryTerms(query);
+    if (!terms.length) {
+      return;
+    }
+
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.nodeValue || !node.nodeValue.trim()) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        const parentTag = node.parentElement?.tagName || "";
+        if (parentTag === "MARK" || parentTag === "SCRIPT" || parentTag === "STYLE") {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const textNodes = [];
+    while (walker.nextNode()) {
+      textNodes.push(walker.currentNode);
+    }
+
+    textNodes.forEach((node) => {
+      const source = node.nodeValue || "";
+      const matches = [];
+
+      terms.forEach((term) => {
+        const escapedTerm = escapeSearchHighlightRegex(term);
+        if (!escapedTerm) {
+          return;
+        }
+
+        const matcher = new RegExp(escapedTerm, "giu");
+
+        let match = matcher.exec(source);
+        while (match) {
+          const directMatch = String(match[0] || "");
+          const start = match.index;
+          const end = start + directMatch.length;
+          if (end > start) {
+            matches.push({
+              start,
+              end,
+              length: end - start,
+            });
+          }
+          match = matcher.exec(source);
+        }
+      });
+
+      if (!matches.length) {
+        return;
+      }
+
+      matches.sort((left, right) => {
+        if (left.start !== right.start) {
+          return left.start - right.start;
+        }
+        return right.length - left.length;
+      });
+
+      const filteredMatches = [];
+      let lastEnd = -1;
+      matches.forEach((entry) => {
+        if (entry.start < lastEnd) {
+          return;
+        }
+        filteredMatches.push(entry);
+        lastEnd = entry.end;
+      });
+
+      if (!filteredMatches.length) {
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      let cursor = 0;
+      filteredMatches.forEach((entry) => {
+        if (entry.start > cursor) {
+          fragment.appendChild(document.createTextNode(source.slice(cursor, entry.start)));
+        }
+        const mark = document.createElement("mark");
+        mark.dataset.searchHighlight = "true";
+        mark.textContent = source.slice(entry.start, entry.end);
+        fragment.appendChild(mark);
+        cursor = entry.end;
+      });
+      if (cursor < source.length) {
+        fragment.appendChild(document.createTextNode(source.slice(cursor)));
+      }
+
+      node.parentNode?.replaceChild(fragment, node);
+    });
+  }
+  return { utf16: utf8IndexToUtf16Index, runs: extractFacetRichTextRuns, highlight: highlightSearchQueryInElement, clear: clearSearchHighlights };
+}

@@ -64,7 +64,7 @@ test("analysis calculations delegate to cached domain modules without duplicate 
   assert.ok(source.indexOf("bindAnalysisWorkspaceEvents({") > source.indexOf("const analysisController ="));
   assert.ok(source.includes("analysisWorkspaceController.show()"));
   assert.ok(source.includes("analysisWorkspaceController.render()"));
-  assert.ok(source.includes("analysisWorkspaceController.translate()"));
+  assert.ok(readProjectFile("js/core/app-i18n.js").includes("analysisWorkspaceController.translate()"));
   assert.ok(source.includes("analysisRenderer.result(analysisComparisonResult)"));
   const workspace = readProjectFile("js/tools/analysis.js");
   for (const operation of ["renderer.summary(", "renderer.result(", "renderer.temporal(", "renderer.network(", "renderer.metrics(", "renderer.patterns(", "options.tables.network(", "options.tables.temporal("]) {

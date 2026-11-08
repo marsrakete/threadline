@@ -9,7 +9,10 @@ module.exports = defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${testPort}`,
     browserName: "chromium",
-    channel: "msedge",
+    channel: process.env.THREADLINE_BROWSER_EXECUTABLE ? undefined : "msedge",
+    launchOptions: process.env.THREADLINE_BROWSER_EXECUTABLE
+      ? { executablePath: process.env.THREADLINE_BROWSER_EXECUTABLE }
+      : {},
     headless: true,
   },
   webServer: {

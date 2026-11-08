@@ -1181,3 +1181,38 @@ test("hydration restores explicit counter choice before rendering and keeps the 
     assert.equal(f.calls.includes("error-status"), false);
   }
 });
+
+test("worker request transport renews progress deadlines and cleans success, errors, timeout and abort", async () => {
+  const { createWorkerRequestClient } = await importProjectModule("js/core/app-storage.js");
+  assert.throws(() => createWorkerRequestClient(), /ready/);
+  for (const outcome of ["success", "error", "timeout", "abort", "unavailable"]) {
+    const timers = [], cleared = [], progress = [], controller = new AbortController(); let closed = 0;
+    const port = { close() { closed++; } };
+    const adapters = { ready: async () => ({ active: outcome === "unavailable" ? null : { postMessage(message) { assert.equal(message.type, "LOAD"); } } }),
+      controller: () => null, channel: () => ({ port1: port, port2: {} }), schedule: callback => { timers.push(callback); return timers.length; },
+      clearTimer: id => cleared.push(id), translate: key => key, abortError: () => new DOMException("cancelled", "AbortError") };
+    const client = createWorkerRequestClient(adapters);
+    const pending = client.request("LOAD", {}, { signal: controller.signal, timeoutMs: 1, onProgress: value => progress.push(value) });
+    await Promise.resolve();
+    if (outcome === "unavailable") { await assert.rejects(pending, /statusNoWorker/); continue; }
+    port.onmessage({ data: { progress: { percent: 10 } } });
+    assert.equal(timers.length, 2); assert.deepEqual(progress, [{ percent: 10 }]);
+    if (outcome === "success") { port.onmessage({ data: { ok: true, result: 42 } }); assert.equal(await pending, 42); }
+    if (outcome === "error") { port.onmessage({ data: { details: { code: "POST_EDIT_URL_INVALID" } } }); await assert.rejects(pending, /postEditCheckInvalidUrl/); }
+    if (outcome === "timeout") { timers.at(-1)(); await assert.rejects(pending, /statusSwTimeout/); }
+    if (outcome === "abort") { controller.abort(); await assert.rejects(pending, { name: "AbortError" }); }
+    assert.equal(closed, 1); assert.equal(port.onmessage, null); assert.ok(cleared.length >= 2);
+  }
+});
+
+test("rich-text presentation preserves Unicode facet boundaries and rejects unusable ranges", async () => {
+  const { createRichTextPresentation } = await importProjectModule("js/shared/shared-post-rendering.js");
+  assert.throws(() => createRichTextPresentation(), /query adapters/);
+  const renderer = createRichTextPresentation({ queryTerms: () => [], escape: value => value });
+  assert.equal(renderer.utf16("😀äx", 4), 2); assert.equal(renderer.utf16("😀äx", 5), 2);
+  assert.equal(renderer.utf16("😀äx", 100), 4); assert.equal(renderer.utf16(null, -1), 0);
+  const facet = { index: { byteStart: 4, byteEnd: 6 }, features: [{ $type: "app.bsky.richtext.facet#link", uri: "https://example.test" }] };
+  assert.deepEqual(renderer.runs("😀äx", [facet, facet]), [{ text: "😀" }, { text: "ä", url: "https://example.test", kind: "link" }, { text: "x" }]);
+  assert.deepEqual(renderer.runs("plain", [{ index: { byteStart: 7, byteEnd: 2 } }]), [{ text: "plain" }]);
+  assert.equal(renderer.runs(null, null), null);
+});
