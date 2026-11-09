@@ -16,3 +16,19 @@ test("draft save stores image metadata then prunes after write",async()=>{const 
 test("settings save preserves per-field patch/reset rules and legacy language values",async()=>{const f=fixture();f.data.values.settings={themeMode:"dark",compactMode:true,tipsVisible:false,altTextRequired:false,sidebarCollapsedDesktop:true,appendThreadIntro:true,postLanguages:"de-DE",desktopLayoutVersion:4,unknown:"retained"};await f.service.settings({compactMode:false,desktopLayoutVersion:null});const saved=f.data.values.settings;assert.equal(saved.themeMode,"dark");assert.equal(saved.compactMode,true);assert.equal(saved.tipsVisible,false);assert.equal(saved.altTextRequired,true);assert.equal(saved.sidebarCollapsedDesktop,false);assert.equal(saved.appendThreadIntro,false);assert.equal(saved.desktopLayoutVersion,0);assert.deepEqual(plain(saved.postLanguages),["de"]);assert.equal(saved.unknown,"retained");assert.deepEqual(f.calls.filter(c=>c[0]==="write").map(c=>c[1]),["settings","locale"]);assert.equal(f.calls.at(-1)[0],"prune");});
 test("settings preserve metadata when no image payload is supplied",async()=>{const f=fixture();f.data.values.settings={segmentImages:[[{id:"stored"}]],savedSearches:[{id:"search"}],archivePreferences:{scope:"all"}};await f.service.settings({tipsVisible:null});assert.equal(f.calls.some(c=>c[0]==="storeImages"),false);assert.equal(f.data.values.settings.segmentImages[0][0].id,"stored");assert.equal(f.data.values.settings.tipsVisible,null);assert.equal(f.data.values.settings.savedSearches[0].id,"search");});
 test("storage failure retains write ordering and skips prune",async()=>{for(const failure of ["draft","settings","locale"]){const f=fixture();f.data.fail=failure;await assert.rejects(failure==="draft"?f.service.draft({}):f.service.settings({}),/write/);assert.equal(f.calls.some(c=>c[0]==="prune"),false);}});
+
+
+test("counter preference persists false and true, survives unrelated settings writes and defaults to enabled", async () => {
+  const f = fixture();
+  assert.equal((await f.service.load()).useCounters, true);
+  for (const useCounters of [false, true]) {
+    await f.service.settings({ useCounters });
+    assert.equal(f.data.values.settings.useCounters, useCounters);
+    await f.service.settings({ themeMode: "dark" });
+    assert.equal((await f.service.load()).useCounters, useCounters);
+    assert.equal(f.data.values.settings.useCounters, useCounters);
+  }
+  f.data.values.settings = {};
+  await f.service.settings({ themeMode: "light" });
+  assert.equal(f.data.values.settings.useCounters, true);
+});

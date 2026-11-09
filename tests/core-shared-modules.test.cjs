@@ -525,7 +525,7 @@ test("startup preferences preserve local appearance precedence, strict flags and
 async function createHydrationFixture(overrides = {}) {
   const module = await importProjectModule("js/core/app-state.js");
   const calls = []; const state = {}; const elements = {};
-  for (const name of ["proxyEndpoint", "proxySecret", "resize", "expert", "identifier", "source", "password", "placement", "intro", "emoji", "spacing"]) {
+  for (const name of ["proxyEndpoint", "proxySecret", "resize", "expert", "identifier", "source", "password", "placement", "counter", "intro", "emoji", "spacing"]) {
     elements[name] = { value: "", checked: false };
   }
   const normalize = {};
@@ -1170,4 +1170,14 @@ test("application initialization binds page navigation through supplied handlers
   link.dispatchEvent(new Event("click"));
   assert.equal(pageSwitchCalls, 1);
   assert.equal(privacyCalls, 1);
+});
+
+
+test("hydration restores explicit counter choice before rendering and keeps the legacy enabled default", async () => {
+  for (const useCounters of [false, true, undefined]) {
+    const f = await createHydrationFixture({ load: async () => ({ state: { useCounters, desktopLayoutVersion: 2 } }) });
+    await f.controller.hydrate();
+    assert.equal(f.elements.counter.checked, useCounters !== false);
+    assert.equal(f.calls.includes("error-status"), false);
+  }
 });
