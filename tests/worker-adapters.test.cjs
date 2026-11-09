@@ -134,3 +134,63 @@ test("storage propagates open, transaction, request and normalization failures",
     await assert.rejects(f.service.writeAuth({}), error => error === failure);
   }
 });
+
+test("record boundary models expose a frozen pure API with language, rule, URI and tag contracts",()=>{
+  const f=archiveModelsFixture(),m=f.context.ThreadlineRecordModels;assert.equal(Object.isFrozen(m),true);
+  assert.equal(m.normalizeStandardSiteMetadata(null),null);assert.equal(m.normalizeStandardSiteMetadata({}),null);
+  assert.equal(m.normalizeStandardSiteMetadata({name:" Example ",publicationVerified:true}).publicationName,"Example");
+  assert.equal(m.normalizeStandardSiteMetadata({name:"Example"}).ctaLabel,"View Publication");
+  assert.deepEqual(plain(m.normalizePostLanguageTags(["de-DE","DE","en-US","fr"],2)),["de","en"]);assert.deepEqual(plain(m.normalizePostLanguageTags(null)),[]);
+  assert.deepEqual(plain(m.normalizePostInteractionSettings({replyMode:"bad",allowFollowers:true,quotePostsAllowed:false})),{replyMode:"everyone",allowFollowers:true,allowFollowing:false,allowMentioned:false,quotePostsAllowed:false});
+  assert.equal(m.buildThreadGateAllowRules(m.normalizePostInteractionSettings()),null);
+  assert.deepEqual(plain(m.buildThreadGateAllowRules({replyMode:"nobody"})),[]);
+  assert.equal(m.buildThreadGateAllowRules({replyMode:"custom",allowFollowers:true,allowFollowing:true,allowMentioned:true}).length,3);
+  assert.equal(m.extractRecordKeyFromAtUri("at://did/app.bsky.feed.post/key"),"key");assert.equal(m.extractRecordKeyFromAtUri("bad"),"");
+  assert.deepEqual(plain(m.parseAtUriParts("at://did/app.bsky.feed.post/key")),{repo:"did",collection:"app.bsky.feed.post",rkey:"key"});assert.equal(m.parseAtUriParts("at://missing"),null);assert.equal(m.parseAtUriParts(null),null);
+  assert.deepEqual(plain(m.parseHashtagValue(" ##Äpfel! ")),{value:"Äpfel",normalized:"äpfel"});assert.equal(m.parseHashtagValue("###"),null);
+  const tags=m.normalizeHashtagEntries(["#Tag",{tag:"TAG"},null,"#two"]);assert.equal(tags.length,2);assert.deepEqual(plain(m.normalizeHashtagEntries(null)),[]);
+  assert.deepEqual(plain(m.normalizeSelectedHashtagEntries(["#TAG","tag","missing"],tags)),["tag"]);assert.deepEqual(plain(m.normalizeSelectedHashtagEntries(null,null)),[]);
+});
+
+test("record source and profile models retain permissive frontend routing and explicit AT parser",()=>{
+  const f=archiveModelsFixture(),m=f.context.ThreadlineRecordModels;
+  const parse=()=>({did:"did:one",collection:"app.bsky.feed.post",rkey:"key"});
+  assert.deepEqual(plain(m.parseArchiveThreadSource("at://did:one/app.bsky.feed.post/key",parse)),{sourceUrl:"at://did:one/app.bsky.feed.post/key",actor:"did:one",rkey:"key",entryUri:"at://did:one/app.bsky.feed.post/key"});
+  assert.equal(m.parseArchiveThreadSource("https://mu.social/profile/a%2Eb/post/key").actor,"a.b");
+  assert.throws(()=>m.parseArchiveThreadSource(""),/Posting/);assert.throws(()=>m.parseArchiveThreadSource("invalid"),/gueltig/);
+  assert.throws(()=>m.parseArchiveThreadSource("at://did/x/y",()=>({collection:"other"})),/gueltig/);
+  const profile=m.normalizeNetworkProfile({did:" did:one ",handle:" user ",followersCount:"2",viewer:{following:"uri"}},"followers");
+  assert.equal(profile.did,"did:one");assert.equal(profile.handle,"user");assert.equal(profile.followersCount,2);assert.equal(profile.followedByViewer,true);assert.equal(profile.followingViewer,true);
+  assert.equal(m.normalizeNetworkProfile().did,"");
+});
+
+test("shared account avatar cache preserves TTL, reuse, replacement and explicit download failure",async()=>{
+  const f=archiveModelsFixture(),factory=f.context.createThreadlineAccountAvatarCache,calls=[];
+  const options={now:()=>2000,ttlMs:1000,extension:()=>"png",download:async(...args)=>{calls.push(args);return {type:"image/png",bytes:new Uint8Array([1,2])};}};
+  assert.throws(()=>factory(),/download/);for(const name of ["download","extension","now"])assert.throws(()=>factory({...options,[name]:null}),/requires/);
+  const service=factory(options);assert.equal(Object.isFrozen(service),true);
+  const asset={did:"did:own",url:"https://avatar.test",path:"old.png",cachedAt:1000,bytes:[1],type:"image/png"};
+  assert.equal(service.prune({assets:[asset]}).assets.length,1);assert.equal(service.prune({assets:[{...asset,cachedAt:999}]}).assets.length,0);assert.equal(service.normalize(null).length,0);
+  const account={did:"did:own",handle:"own.test",avatar:"https://avatar.test"};
+  const reused=await service.cache(account,[asset]);assert.equal(reused.account.avatarPath,"old.png");assert.equal(calls.length,0);
+  const changed=await service.cache({...account,avatar:"https://new.test"},[asset],{cache:true});assert.equal(changed.assets.length,1);assert.equal(changed.assets[0].cachedAt,2000);assert.equal(changed.account.avatarPath,"account-avatars/own.test.png");assert.equal(calls.length,1);
+  const missing=await service.cache({did:""},[asset]);assert.equal(missing.account.avatarPath,"");assert.equal(calls.length,1);
+  const failure=Error("offline"),failed=factory({...options,download:async()=>{throw failure;}});await assert.rejects(failed.cache(account),error=>error===failure);
+});
+
+test("transport collections preserve map order, bound concurrency and reject nonprogressing chunk sizes",async()=>{
+  const m=archiveModelsFixture().context.ThreadlineWorkerCollections;assert.equal(Object.isFrozen(m),true);
+  let active=0,maximum=0;const result=await m.mapWithConcurrency([1,2,3,4],2,async value=>{active++;maximum=Math.max(active,maximum);await Promise.resolve();active--;return value*2;});
+  assert.deepEqual(plain(result),[2,4,6,8]);assert.equal(maximum,2);assert.deepEqual(plain(await m.mapWithConcurrency(null,2,null)),[]);
+  await assert.rejects(m.mapWithConcurrency([1],2,async()=>{throw Error("failed");}),/failed/);
+  assert.deepEqual(plain(m.chunkEntries([1,2,3],2)),[[1,2],[3]]);assert.deepEqual(plain(m.chunkEntries([],2)),[]);
+  for(const size of [0,-1,NaN,1.5])assert.throws(()=>m.chunkEntries([1],size),/positive integer/);
+});
+
+test("asset record models keep MIME extensions and replace SVG with explicit safe bytes",()=>{
+  const m=archiveModelsFixture().context.ThreadlineRecordModels;
+  for(const [type,extension] of [["video/mp4","mp4"],["video/webm","webm"],["image/png","png"],["image/svg+xml","svg"],["unknown","jpg"]])assert.equal(m.getAssetExtensionFromMimeType(type),extension);
+  const image=m.normalizeArchiveImageBlob({type:"image/png",bytes:[1,2]},{type:"safe",base64:"fixture"},()=>{throw Error("not needed");});assert.equal(image.replacedSvg,false);assert.deepEqual(Array.from(image.bytes),[1,2]);
+  let input;const svg=m.normalizeArchiveImageBlob({type:"image/svg+xml",bytes:[3]},{type:"image/png",base64:"fixture"},value=>{input=value;return new Uint8Array([9]);});
+  assert.equal(input,"fixture");assert.equal(svg.type,"image/png");assert.equal(svg.replacedSvg,true);assert.deepEqual(Array.from(svg.bytes),[9]);
+});

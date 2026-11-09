@@ -1181,3 +1181,158 @@ test("hydration restores explicit counter choice before rendering and keeps the 
     assert.equal(f.calls.includes("error-status"), false);
   }
 });
+
+test("worker request transport renews progress deadlines and cleans success, errors, timeout and abort", async () => {
+  const { createWorkerRequestClient } = await importProjectModule("js/core/app-storage.js");
+  assert.throws(() => createWorkerRequestClient(), /ready/);
+  for (const outcome of ["success", "error", "timeout", "abort", "unavailable"]) {
+    const timers = [], cleared = [], progress = [], controller = new AbortController(); let closed = 0;
+    const port = { close() { closed++; } };
+    const adapters = { ready: async () => ({ active: outcome === "unavailable" ? null : { postMessage(message) { assert.equal(message.type, "LOAD"); } } }),
+      controller: () => null, channel: () => ({ port1: port, port2: {} }), schedule: callback => { timers.push(callback); return timers.length; },
+      clearTimer: id => cleared.push(id), translate: key => key, abortError: () => new DOMException("cancelled", "AbortError") };
+    const client = createWorkerRequestClient(adapters);
+    const pending = client.request("LOAD", {}, { signal: controller.signal, timeoutMs: 1, onProgress: value => progress.push(value) });
+    await Promise.resolve();
+    if (outcome === "unavailable") { await assert.rejects(pending, /statusNoWorker/); continue; }
+    port.onmessage({ data: { progress: { percent: 10 } } });
+    assert.equal(timers.length, 2); assert.deepEqual(progress, [{ percent: 10 }]);
+    if (outcome === "success") { port.onmessage({ data: { ok: true, result: 42 } }); assert.equal(await pending, 42); }
+    if (outcome === "error") { port.onmessage({ data: { details: { code: "POST_EDIT_URL_INVALID" } } }); await assert.rejects(pending, /postEditCheckInvalidUrl/); }
+    if (outcome === "timeout") { timers.at(-1)(); await assert.rejects(pending, /statusSwTimeout/); }
+    if (outcome === "abort") { controller.abort(); await assert.rejects(pending, { name: "AbortError" }); }
+    assert.equal(closed, 1); assert.equal(port.onmessage, null); assert.ok(cleared.length >= 2);
+  }
+});
+
+test("rich-text presentation preserves Unicode facet boundaries and rejects unusable ranges", async () => {
+  const { createRichTextPresentation } = await importProjectModule("js/shared/shared-post-rendering.js");
+  assert.throws(() => createRichTextPresentation(), /query adapters/);
+  const renderer = createRichTextPresentation({ queryTerms: () => [], escape: value => value });
+  assert.equal(renderer.utf16("😀äx", 4), 2); assert.equal(renderer.utf16("😀äx", 5), 2);
+  assert.equal(renderer.utf16("😀äx", 100), 4); assert.equal(renderer.utf16(null, -1), 0);
+  const facet = { index: { byteStart: 4, byteEnd: 6 }, features: [{ $type: "app.bsky.richtext.facet#link", uri: "https://example.test" }] };
+  assert.deepEqual(renderer.runs("😀äx", [facet, facet]), [{ text: "😀" }, { text: "ä", url: "https://example.test", kind: "link" }, { text: "x" }]);
+  assert.deepEqual(renderer.runs("plain", [{ index: { byteStart: 7, byteEnd: 2 } }]), [{ text: "plain" }]);
+  assert.equal(renderer.runs(null, null), null);
+});
+
+test("shared profile, URL, engagement and edit models preserve domain semantics at their new owners", async () => {
+  const profiles = await importProjectModule("js/shared/shared-accounts.js");
+  assert.equal(profiles.getProfileInitials({ displayName: " Berta " }), "BE");
+  assert.equal(profiles.getProfileInitials(null), "?");
+  assert.equal(profiles.getProfileLabel({ displayName: "Berta", handle: "berta.test" }), "Berta @berta.test");
+  assert.equal(profiles.getProfileLabel({ handle: "berta.test" }), "@berta.test"); assert.equal(profiles.getProfileLabel(null), "");
+  const posts = await importProjectModule("js/shared/shared-post-rendering.js");
+  assert.equal(posts.shortenThreadExplorerUrlForDisplay("https://example.test/path?q=secret#part"), "example.test/path#part");
+  assert.equal(posts.shortenThreadExplorerUrlForDisplay(null), ""); assert.equal(posts.shortenThreadExplorerUrlForDisplay("invalid"), "invalid");
+  assert.equal(posts.shortenThreadExplorerUrlForDisplay("x".repeat(100)).length, 72);
+  assert.equal(posts.removeThreadExplorerCardUrlFromText("Text https://example.test/path?q=1", "https://example.test/path"), "Text ");
+  assert.equal(posts.removeThreadExplorerCardUrlFromText(null, null), "");
+  assert.equal(posts.removeThreadExplorerCardUrlFromText("literal [x]", "[x]"), "literal ");
+  assert.equal(posts.getThreadExplorerEngagementScore({ likeCount: 1, replyCount: 2, repostCount: 3, quoteCount: 4 }), 35);
+  assert.equal(posts.getThreadExplorerEngagementScore({}), 0);
+  for (const [score, tier] of [[0,"quiet"],[39,"quiet"],[40,"warm"],[180,"hot"],[1000,"viral"],["bad","quiet"]]) assert.equal(posts.getThreadExplorerEngagementTier(score), tier);
+  assert.equal(posts.getArchiveExternalCard({ externalCard: { url: "https://example.test" } }).url, "https://example.test"); assert.equal(posts.getArchiveExternalCard(null), null);
+  assert.deepEqual(posts.tokenizePostEditText("ä😀 z"), ["ä", "😀", " ", "z"]); assert.deepEqual(posts.tokenizePostEditText(null), []);
+  assert.deepEqual(posts.getCurrentPostEditTokenStates("one two", "one new two"), [{token:"one",changed:false},{token:" ",changed:false},{token:"new",changed:true},{token:" ",changed:true},{token:"two",changed:false}]);
+  assert.deepEqual(posts.getCurrentPostEditTokenStates("deleted", null), []);
+  assert.deepEqual(posts.getCurrentPostEditTokenStates(null, "new"), [{token:"new",changed:true}]);
+  const snapshot = await importProjectModule("js/tools/thread-explorer-snapshot.js");
+  assert.equal(snapshot.sanitizeThreadExplorerFileNamePart(" @a/b : c "), "a-b-c"); assert.equal(snapshot.sanitizeThreadExplorerFileNamePart(null), "thread");
+  assert.equal(snapshot.sanitizeThreadExplorerFileNamePart("a".repeat(100)).length, 80);
+});
+
+test("like controller deduplicates concurrent requests and rolls back rejected optimistic updates", async () => {
+  const { createLivePostInteractionController } = await importProjectModule("js/tools/thread-explorer-controller.js");
+  assert.throws(() => createLivePostInteractionController(), /liked/);
+  for (const wasLiked of [false, true]) {
+    const calls = []; let settle; let failure = false;
+    const request = value => { calls.push(["request", value]); return new Promise((resolve,reject) => { settle = () => failure ? reject(Error("failed")) : resolve({uri:"at://like"}); }); };
+    const options = { liked: () => wasLiked, likeUri: () => "old", like: request, unlike: request,
+      apply: (...args) => calls.push(["apply", ...args]), refresh: uri => calls.push(["refresh",uri]), error: error => calls.push(["error",error.message]) };
+    const controller = createLivePostInteractionController(options), post = {uri:"at://post",cid:"cid"};
+    await controller.toggle(null); assert.equal(calls.length, 0);
+    const pending = controller.toggle(post); assert.equal(controller.pending(post.uri), true); await controller.toggle(post);
+    assert.equal(calls.filter(call => call[0] === "request").length, 1); settle(); await pending;
+    assert.equal(controller.pending(post.uri), false);
+    failure = true; const rejected = controller.toggle(post); settle(); await rejected;
+    assert.deepEqual(calls.filter(call => call[0] === "apply").at(-1), ["apply",post.uri,"old",wasLiked ? 1 : -1]);
+    assert.deepEqual(calls.at(-2), ["error","failed"]); assert.equal(controller.pending(post.uri), false);
+    for (const key of Object.keys(options)) assert.throws(() => createLivePostInteractionController({...options,[key]:null}), TypeError);
+  }
+});
+
+test("shared like projection updates matching nested posts and tolerates absent collections", async () => {
+  const { applyLikeStateToItemCollection, applyLikeStateToThreadTree } = await importProjectModule("js/shared/shared-post-rendering.js");
+  const first={uri:"at://one",likeCount:2},second={uri:"at://two",likeCount:7};
+  applyLikeStateToItemCollection([{post:first},{post:second},null],first.uri,"like",1);
+  assert.equal(first.likeCount,3);assert.equal(first.viewer.like,"like");assert.equal(second.likeCount,7);
+  applyLikeStateToItemCollection(null,first.uri,"",-1);applyLikeStateToThreadTree(null,first.uri,"",-1);
+  const nested={post:{uri:first.uri,likeCount:3},replies:[]};
+  applyLikeStateToThreadTree({post:second,replies:[nested]},first.uri,"",-1);
+  assert.equal(nested.post.likeCount,2);assert.equal(Object.hasOwn(nested.post.viewer,"like"),false);assert.equal(second.likeCount,7);
+});
+
+test("native share controller preserves clipboard, file fallback, abort and status lifecycle",async()=>{
+  const {createApplicationShareController}=await importShellModule();assert.throws(()=>createApplicationShareController(),/schedule/);
+  const calls=[],timers=[],status={dataset:{},hidden:true},navigator={clipboard:{writeText:async value=>calls.push(["copy",value])}};
+  const adapters={navigator,status,title:"Title",url:"https://example.test",translate:key=>key,
+    schedule:(callback,ms)=>{timers.push({callback,ms});return timers.length;},clearTimer:id=>calls.push(["clear",id]),URL:{createObjectURL:()=>"blob:fixture",revokeObjectURL:value=>calls.push(["revoke",value])},
+    document:{createElement:tag=>({style:{},setAttribute(){},select(){calls.push(["select",this.value]);},remove(){calls.push(["remove"]);},click(){calls.push(["click",this.download]);}}),body:{append(){}},execCommand:command=>calls.push(["exec",command])}};
+  const controller=createApplicationShareController(adapters);await controller.recommend();assert.deepEqual(calls.find(call=>call[0]==="copy"),["copy","shareAppText\nhttps://example.test"]);assert.equal(status.textContent,"shareCopied");
+  timers.at(-1).callback();assert.equal(status.hidden,true);controller.status("error","error");assert.equal(status.dataset.tone,"error");controller.status("");assert.equal(Object.hasOwn(status.dataset,"tone"),false);
+  navigator.share=async()=>{throw new DOMException("cancelled","AbortError");};navigator.canShare=()=>true;
+  const before=calls.length;await controller.file({},"cancelled.txt");assert.equal(calls.length,before);
+  navigator.share=async()=>{throw Error("unavailable");};await controller.file({},"fallback.txt");assert.ok(calls.some(call=>call[0]==="click"&&call[1]==="fallback.txt"));
+  assert.equal(timers.at(-1).ms,1000);timers.at(-1).callback();assert.deepEqual(calls.at(-1),["revoke","blob:fixture"]);
+  delete navigator.share;delete navigator.clipboard;await controller.copy("literal");assert.ok(calls.some(call=>call[0]==="select"&&call[1]==="literal"));assert.ok(calls.some(call=>call[0]==="exec"&&call[1]==="copy"));
+});
+
+test("Composer tips handle empty data, changed locale length and next selection",async()=>{
+  const {createComposerTipController}=await importProjectModule("js/composer/composer-page.js");assert.throws(()=>createComposerTipController({}, {}, {}),/translate/);
+  const state={index:5,visible:false},elements={text:{},panel:{},toggle:{}};let tips=["one","two"];
+  const controller=createComposerTipController(state,elements,{translate:()=>tips,random:()=>0.75});
+  controller.render();assert.equal(elements.text.textContent,"two");controller.visibility();assert.equal(elements.panel.hidden,true);assert.equal(elements.toggle.checked,false);
+  state.index=0;controller.next();assert.equal(state.index,1);assert.equal(elements.text.textContent,"two");assert.equal(controller.pick(),1);
+  tips=[];controller.next();assert.equal(elements.text.textContent,"");assert.equal(controller.pick(),0);
+  tips=null;controller.render();assert.equal(elements.text.textContent,"");
+});
+
+test("post link and publish label models preserve provider routing and reply modes",async()=>{
+  const {createPostLinkModels}=await importProjectModule("js/shared/shared-post-rendering.js"),{buildComposerPublishButtonLabel}=await importProjectModule("js/composer/composer-publishing.js");
+  assert.throws(()=>createPostLinkModels(),/normalizeService/);
+  const models=createPostLinkModels({normalizeService:value=>value,frontends:{"mu.social":"https://mu.social"},defaultWebApp:"https://bsky.app"});
+  assert.equal(models.getPostTargetName("https://mu.social"),"Mu.social");assert.equal(models.getPostTargetName("invalid"),"Bluesky");
+  assert.equal(models.resolvePostWebBase("https://mu.social/x"),"https://mu.social");assert.equal(models.resolvePostWebBase("invalid"),"https://bsky.app");
+  assert.equal(models.buildBlueskyPostUrl("a/b","at://did/app.bsky.feed.post/key x","https://mu.social"),"https://mu.social/profile/a%2Fb/post/key%20x");assert.equal(models.buildBlueskyPostUrl("",null,"invalid"),"");
+  const translate=(key,values)=>key+(values?":"+values.target:"");
+  assert.equal(buildComposerPublishButtonLabel(null,false,translate,"Bluesky"),"publishButtonTarget:Bluesky");
+  assert.equal(buildComposerPublishButtonLabel(null,true,translate,"Mu.social"),"publishBusyTarget:Mu.social");
+  assert.equal(buildComposerPublishButtonLabel({mode:"thread"},false,translate,""),"publishButtonThreadContinuation");
+  assert.equal(buildComposerPublishButtonLabel({mode:"post"},true,translate,""),"publishBusyReplyTarget");
+});
+
+test("shell navigation owns auth and DM gating without changing public search access",async()=>{
+  const {renderApplicationNavigation}=await importShellModule();
+  const make=()=>({classList:{toggle(name,value){this[name]=value;}},setAttribute(name,value){this[name]=value;}});
+  const entries=["composer","search","archive","dm"].map(name=>({name,button:make(),note:{},requiresAuth:!["composer","search"].includes(name)}));
+  const controls={addAccount:{},publish:{},ownSearch:{},publishLabel:()=>"Publish",workspaces:entries};
+  renderApplicationNavigation({authenticated:false,workspace:"search",dmAvailable:false},controls,key=>key);
+  assert.equal(entries[1].button.disabled,false);assert.equal(entries[1].button["aria-pressed"],"true");assert.equal(entries[2].button.disabled,true);assert.equal(controls.ownSearch.disabled,true);
+  renderApplicationNavigation({authenticated:true,workspace:"dm",dmAvailable:false},controls,key=>key);assert.equal(entries[3].button.disabled,true);assert.equal(entries[2].button.disabled,false);
+  renderApplicationNavigation({authenticated:true,workspace:"dm",dmAvailable:true},controls,key=>key);assert.equal(entries[3].button.disabled,false);assert.equal(entries[0].note.textContent,"composerLaunchNote");
+});
+
+test("remaining display and export helpers receive locale, version and provider context explicitly",async()=>{
+  const images=await importProjectModule("js/shared/shared-images.js"),posts=await importProjectModule("js/shared/shared-post-rendering.js"),version=await importProjectModule("js/core/app-bootstrap.js"),archive=await importProjectModule("js/tools/archive.js"),tags=await importProjectModule("js/shared/shared-hashtags.js");
+  assert.equal(images.formatImageFileSize(1500000,"en"),"1.50 MB");assert.equal(images.formatImageFileSize(-1,"en"),"0.00 MB");
+  assert.equal(posts.formatApplicationTimestamp("bad","en"),"bad");assert.match(posts.formatApplicationTimestamp("2026-11-08T12:00:00Z","en"),/2026/);
+  assert.equal(version.buildExportApplicationLabel({appVersion:"1.2",cacheVersion:"v3"}),"Threadline 1.2 (v3)");assert.equal(version.buildExportApplicationLabel(),"Threadline");
+  assert.equal(posts.selectPostWebApplication({author:{handle:"user.mu.social"}},[],{"mu.social":"https://mu.social"},"https://bsky.app"),"https://mu.social");
+  assert.equal(posts.selectPostWebApplication({uri:"post"},[{rootUri:"post",webApp:"favorite"}],{},"default"),"favorite");assert.equal(posts.selectPostWebApplication(null,[],{},"default"),"default");
+  assert.deepEqual(posts.collectPostQuoteUrls({author:{handle:"a/b"},uri:"key"},()=>"primary",()=>"key","default","alternate"),["primary","default/profile/a%2Fb/post/key","alternate/profile/a%2Fb/post/key"]);
+  assert.deepEqual(posts.collectPostQuoteUrls(null,()=>"",()=>"","default","alternate"),[]);
+  assert.equal(archive.buildArchiveFileBaseName({manifest:{account:{handle:"a/b"},exportedAt:"2026-11-08T12:00:00Z"}},"fallback"),"threadline-archive-a-b-2026-11-08");
+  assert.deepEqual(tags.extractArchiveHashtagsFromText("Hello #Äpfel! #two"),[{normalized:"äpfel",value:"#Äpfel"},{normalized:"two",value:"#two"}]);assert.deepEqual(tags.extractArchiveHashtagsFromText(null),[]);
+});

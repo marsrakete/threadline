@@ -15,7 +15,7 @@ function fixture() {
 test("account service validates dependencies and freezes its public API",()=>{
  const f=fixture();assert.throws(()=>f.factory(),/requires/);
  for(const name of Object.keys(f.options).filter(k=>typeof f.options[k]==="function"))assert.throws(()=>f.factory({...f.options,[name]:null}),/requires/);
- assert.equal(Object.isFrozen(f.service),true);assert.deepEqual(Object.keys(f.service),["switch","import","remove","logout","verify"]);
+ assert.equal(Object.isFrozen(f.service),true);assert.deepEqual(Object.keys(f.service),["status","switch","import","remove","logout","verify"]);
 });
 test("switch selects a verified account and rejects unknown accounts",async()=>{
  const f=fixture();await f.service.switch({did:"b"});assert.equal(f.data.state.activeDid,"b");assert.equal(f.data.trace[0][0],"ensure");
@@ -43,4 +43,10 @@ test("logout preserves passwords and clears archives only for the active target"
 test("removing the final account clears storage and verify tolerates unreadable storage",async()=>{
  const f=fixture();f.data.state.accounts.splice(1);await f.service.remove({did:"a"});assert.deepEqual(f.data.trace,[["clear"]]);
  f.data.failure=Error("fetch failed");f.data.readFailure=true;const result=await f.service.verify();assert.equal(result.reason,"offline");assert.equal(result.authenticated,false);
+});
+
+test("authentication status delegates to account ownership and exposes only public metadata",async()=>{
+  const f=fixture(),result=await f.service.status();assert.equal(result.authenticated,true);assert.equal(result.did,"a");assert.equal(JSON.stringify(result).includes("secret"),false);
+  f.data.state.accounts[0].session=null;assert.deepEqual(plain(await f.service.status()),{authenticated:false});
+  f.data.readFailure=true;await assert.rejects(f.service.status(),/read/);
 });

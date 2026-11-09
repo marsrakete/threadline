@@ -25,6 +25,8 @@ const APP_SHELL = [
   "./js/worker/archive-wave-service.js",
   "./js/worker/archive-asset-service.js",
   "./js/worker/archive-import-service.js",
+  "./js/worker/account-avatar-cache.js",
+  "./js/worker/record-models.js",
   "./js/worker/adapter-messages.js",
   "./js/worker/transport-service.js",
   "./js/worker/auth-models.js",
@@ -51,6 +53,7 @@ const APP_SHELL = [
   "./js/worker/post-check-service.js",
   "./js/worker/interaction-service.js",
   "./js/worker/publish-service.js",
+  "./js/worker/archive-wave-controller.js",
   "./js/worker/analysis-models.js",
   "./js/worker/analysis-messages.js",
   "./js/worker/analysis-service.js",
@@ -231,7 +234,7 @@ const MENTION_SEARCH_HANDLE_SUFFIXES = [
   "eurosky.social",
 ];
 
-importScripts("./js/worker/adapter-messages.js", "./js/worker/transport-service.js", "./js/worker/auth-models.js", "./js/worker/storage-service.js", "./js/worker/identity-service.js", "./js/worker/session-service.js", "./js/worker/account-service.js", "./js/worker/network-data-service.js", "./js/worker/network-workspace-service.js", "./js/worker/composer-image-store.js", "./js/worker/composer-image-models.js", "./js/worker/explorer-models.js", "./js/worker/explorer-feed-models.js", "./js/worker/explorer-load-service.js", "./js/worker/explorer-hydration-service.js", "./js/worker/explorer-reaction-service.js", "./js/worker/media-export-models.js", "./js/worker/media-export-service.js", "./js/worker/richtext-models.js", "./js/worker/richtext-service.js", "./js/worker/settings-models.js", "./js/worker/settings-service.js", "./js/worker/reply-models.js", "./js/worker/post-check-service.js", "./js/worker/interaction-service.js", "./js/worker/publish-service.js", "./js/atproto/atproto-worker.js", "./js/worker/search-queries.js", "./js/worker/search-filters.js", "./js/worker/search-service.js", "./js/worker/dm-models.js", "./js/worker/dm-messages.js", "./js/worker/dm-service.js", "./js/worker/archive-run-messages.js", "./js/worker/archive-run-control.js", "./js/worker/archive-models.js", "./js/worker/archive-thread-service.js", "./js/worker/archive-source-service.js", "./js/worker/archive-wave-service.js", "./js/worker/archive-asset-service.js", "./js/worker/archive-import-service.js", "./js/worker/analysis-models.js", "./js/worker/analysis-messages.js", "./js/worker/analysis-service.js");
+importScripts("./js/worker/account-avatar-cache.js", "./js/worker/record-models.js", "./js/worker/adapter-messages.js", "./js/worker/transport-service.js", "./js/worker/auth-models.js", "./js/worker/storage-service.js", "./js/worker/identity-service.js", "./js/worker/session-service.js", "./js/worker/account-service.js", "./js/worker/network-data-service.js", "./js/worker/network-workspace-service.js", "./js/worker/composer-image-store.js", "./js/worker/composer-image-models.js", "./js/worker/explorer-models.js", "./js/worker/explorer-feed-models.js", "./js/worker/explorer-load-service.js", "./js/worker/explorer-hydration-service.js", "./js/worker/explorer-reaction-service.js", "./js/worker/media-export-models.js", "./js/worker/media-export-service.js", "./js/worker/richtext-models.js", "./js/worker/richtext-service.js", "./js/worker/settings-models.js", "./js/worker/settings-service.js", "./js/worker/reply-models.js", "./js/worker/post-check-service.js", "./js/worker/interaction-service.js", "./js/worker/publish-service.js", "./js/worker/archive-wave-controller.js", "./js/atproto/atproto-worker.js", "./js/worker/search-queries.js", "./js/worker/search-filters.js", "./js/worker/search-service.js", "./js/worker/dm-models.js", "./js/worker/dm-messages.js", "./js/worker/dm-service.js", "./js/worker/archive-run-messages.js", "./js/worker/archive-run-control.js", "./js/worker/archive-models.js", "./js/worker/archive-thread-service.js", "./js/worker/archive-source-service.js", "./js/worker/archive-wave-service.js", "./js/worker/archive-asset-service.js", "./js/worker/archive-import-service.js", "./js/worker/analysis-models.js", "./js/worker/analysis-messages.js", "./js/worker/analysis-service.js");
 const {
   normalizeSearchWorkspaceMode,
   normalizeSearchWorkspaceSort,
@@ -348,196 +351,33 @@ const searchFilters = globalThis.createThreadlineSearchFilters({ queries: global
 const searchService = globalThis.createThreadlineSearchService({ queries: globalThis.ThreadlineSearchQueries, filters: searchFilters, request: bskyGet, base: authXrpcBase, session: ensureSession, refresh: refreshAuthReference });
 const { load: loadSearchResults, control: setSearchRunControl } = searchService;
 
-function normalizePostLanguageTags(tags, max = 3) {
-  const values = Array.isArray(tags) ? tags : [tags];
-  const normalized = [];
-  const seen = new Set();
+function normalizePostLanguageTags(...args) { return globalThis.ThreadlineRecordModels.normalizePostLanguageTags(...args); }
 
-  for (const value of values) {
-    const raw = String(value || "").trim();
-    if (!raw) {
-      continue;
-    }
+function normalizePostInteractionSettings(...args) { return globalThis.ThreadlineRecordModels.normalizePostInteractionSettings(...args); }
 
-    let tag = raw.toLowerCase();
-    try {
-      tag = new Intl.Locale(raw).language || raw.toLowerCase();
-    } catch {
-      tag = raw.toLowerCase();
-    }
-
-    if (seen.has(tag)) {
-      continue;
-    }
-
-    seen.add(tag);
-    normalized.push(tag);
-    if (normalized.length >= max) {
-      break;
-    }
-  }
-
-  return normalized;
-}
-
-function normalizePostInteractionSettings(value = {}) {
-  const replyMode = ["everyone", "nobody", "custom"].includes(value.replyMode) ? value.replyMode : "everyone";
-  return {
-    replyMode,
-    allowFollowers: value.allowFollowers === true,
-    allowFollowing: value.allowFollowing === true,
-    allowMentioned: value.allowMentioned === true,
-    quotePostsAllowed: value.quotePostsAllowed !== false,
-  };
-}
-
-function extractRecordKeyFromAtUri(uri) {
-  const raw = String(uri || "").trim();
-  if (!raw.startsWith("at://")) {
-    return "";
-  }
-  const parts = raw.split("/");
-  return parts[parts.length - 1] || "";
-}
+function extractRecordKeyFromAtUri(...args) { return globalThis.ThreadlineRecordModels.extractRecordKeyFromAtUri(...args); }
 
 /**
  * Splits one AT URI into repo, collection, and record key.
  * @param {string} uri - Full `at://` URI.
  * @returns {object|null} Parsed AT URI parts, or null when the input is invalid.
  */
-function parseAtUriParts(uri) {
-  const raw = String(uri || "").trim();
-  if (!raw.startsWith("at://")) {
-    return null;
-  }
+function parseAtUriParts(...args) { return globalThis.ThreadlineRecordModels.parseAtUriParts(...args); }
 
-  const withoutScheme = raw.slice("at://".length);
-  const parts = withoutScheme.split("/");
-  if (parts.length < 3) {
-    return null;
-  }
+function buildThreadGateAllowRules(...args) { return globalThis.ThreadlineRecordModels.buildThreadGateAllowRules(...args); }
 
-  const repo = String(parts[0] || "").trim();
-  const collection = String(parts[1] || "").trim();
-  const rkey = String(parts[2] || "").trim();
-  if (!repo || !collection || !rkey) {
-    return null;
-  }
+function parseHashtagValue(...args) { return globalThis.ThreadlineRecordModels.parseHashtagValue(...args); }
 
-  return {
-    repo,
-    collection,
-    rkey,
-  };
-}
+function normalizeHashtagEntries(...args) { return globalThis.ThreadlineRecordModels.normalizeHashtagEntries(...args); }
 
-function buildThreadGateAllowRules(settings) {
-  if (settings.replyMode === "everyone") {
-    return null;
-  }
-
-  if (settings.replyMode === "nobody") {
-    return [];
-  }
-
-  const rules = [];
-  if (settings.allowFollowers) {
-    rules.push({ $type: "app.bsky.feed.threadgate#followerRule" });
-  }
-  if (settings.allowFollowing) {
-    rules.push({ $type: "app.bsky.feed.threadgate#followingRule" });
-  }
-  if (settings.allowMentioned) {
-    rules.push({ $type: "app.bsky.feed.threadgate#mentionRule" });
-  }
-  return rules;
-}
-
-function parseHashtagValue(value) {
-  const cleaned = String(value || "")
-    .trim()
-    .replace(/^#+/, "")
-    .replace(/\s+/g, "")
-    .replace(/[.,;:!?]+$/g, "");
-
-  if (!cleaned) {
-    return null;
-  }
-
-  return {
-    value: cleaned,
-    normalized: cleaned.toLowerCase(),
-  };
-}
-
-function normalizeHashtagEntries(entries) {
-  const seen = new Set();
-  const result = [];
-
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    const parsed = typeof entry === "string"
-      ? parseHashtagValue(entry)
-      : parseHashtagValue(entry?.value || entry?.tag || entry?.label || "");
-
-    if (!parsed || seen.has(parsed.normalized)) {
-      continue;
-    }
-
-    seen.add(parsed.normalized);
-    result.push(parsed);
-  }
-
-  return result;
-}
-
-function normalizeSelectedHashtagEntries(entries, hashtags) {
-  const validSet = new Set((hashtags || []).map((tag) => tag.normalized));
-  const seen = new Set();
-  const result = [];
-
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    const normalized = typeof entry === "string"
-      ? parseHashtagValue(entry)?.normalized || String(entry).trim().toLowerCase()
-      : parseHashtagValue(entry?.value || entry?.tag || entry?.normalized || "")?.normalized;
-
-    if (!normalized || !validSet.has(normalized) || seen.has(normalized)) {
-      continue;
-    }
-
-    seen.add(normalized);
-    result.push(normalized);
-  }
-
-  return result;
-}
+function normalizeSelectedHashtagEntries(...args) { return globalThis.ThreadlineRecordModels.normalizeSelectedHashtagEntries(...args); }
 
 /**
  * Normalizes Standard.site publication metadata attached to a link card.
  * @param {object|null} value - Raw metadata from a proxy response or saved archive.
  * @returns {object|null} Compact Standard.site metadata, or null when absent.
  */
-function normalizeStandardSiteMetadata(value = null) {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const documentUri = String(value.documentUri || value.document || "").trim();
-  const publicationUri = String(value.publicationUri || value.publication || "").trim();
-  const publicationUrl = String(value.publicationUrl || value.url || "").trim();
-  const publicationName = String(value.publicationName || value.name || "").trim().slice(0, 160);
-  if (!documentUri && !publicationUri && !publicationUrl && !publicationName) {
-    return null;
-  }
-
-  return {
-    documentUri,
-    publicationUri,
-    publicationUrl,
-    publicationName,
-    publicationVerified: value.publicationVerified === true,
-    ctaLabel: String(value.ctaLabel || "View Publication").trim().slice(0, 80),
-  };
-}
+function normalizeStandardSiteMetadata(...args) { return globalThis.ThreadlineRecordModels.normalizeStandardSiteMetadata(...args); }
 
 /**
  * Normalizes one composer link card for persistence and posting.
@@ -914,21 +754,7 @@ function decodeJwtPayload(jwt) { return getAtprotoSession().decode(jwt); }
 /** Checks JWT validity through the session service. @param {string} accessJwt - Token. @returns {boolean} Existing expiry result. */
 function isJwtValid(accessJwt) { return getAtprotoSession().valid(accessJwt); }
 
-function normalizeNetworkProfile(profile = {}, source = "") {
-  const viewer = profile?.viewer && typeof profile.viewer === "object" ? profile.viewer : {};
-  return {
-    did: String(profile.did || "").trim(),
-    handle: String(profile.handle || "").trim(),
-    displayName: String(profile.displayName || profile.handle || "").trim(),
-    avatar: String(profile.avatar || "").trim(),
-    description: String(profile.description || "").trim().slice(0, 280),
-    followersCount: Number(profile.followersCount) || 0,
-    followsCount: Number(profile.followsCount) || 0,
-    postsCount: Number(profile.postsCount) || 0,
-    followingViewer: source === "following" || Boolean(viewer.following),
-    followedByViewer: source === "followers" || Boolean(viewer.followedBy),
-  };
-}
+function normalizeNetworkProfile(...args) { return globalThis.ThreadlineRecordModels.normalizeNetworkProfile(...args); }
 
 let workerExplorerLoadService = null;
 /** Wires Explorer loading after worker dependencies initialize. @returns {object} Load service. */
@@ -1079,14 +905,7 @@ function loadNetworkActorFocus(...args) { return getWorkerNetworkWorkspaceServic
 /** Delegates network workspace loading. @param {...unknown} args - Existing arguments. @returns {Promise<object>} Workspace response. */
 function loadNetworkCommonMutuals(...args) { return getWorkerNetworkWorkspaceService().mutuals(...args); }
 
-async function authStatus() {
-  const state = await readStoredAuth();
-  const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid);
-  if (!activeAccount?.session?.did) {
-    return { authenticated: false };
-  }
-  return buildAuthResponse(state, activeAccount);
-}
+function authStatus() { return getWorkerAccountService().status(); }
 
 let workerSettingsService = null;
 /** Wires persisted app-state workflows after dependencies initialize. @returns {object} Settings service. */
@@ -1209,19 +1028,14 @@ async function clearDmPartnerCache() {
   return { ok: true };
 }
 
-function normalizeAccountAvatarAssets(assets = []) {
-  return (Array.isArray(assets) ? assets : [])
-    .map((asset) => ({
-      did: String(asset?.did || ""),
-      url: String(asset?.url || ""),
-      path: String(asset?.path || ""),
-      type: String(asset?.type || "application/octet-stream"),
-      sizeBytes: Number(asset?.sizeBytes) || 0,
-      cachedAt: Number(asset?.cachedAt) || Date.now(),
-      bytes: asset?.bytes instanceof Uint8Array ? asset.bytes : new Uint8Array(asset?.bytes || []),
-    }))
-    .filter((asset) => asset.did && asset.url && asset.path && asset.bytes.length > 0);
+let workerAccountAvatarCacheService = null;
+/** Wires the account-avatar cache native adapters. @returns {object} Cache service. */
+function getWorkerAccountAvatarCacheService() {
+  if (!workerAccountAvatarCacheService) { workerAccountAvatarCacheService = globalThis.createThreadlineAccountAvatarCache({
+    download: (...args) => downloadRemoteAssetViaBlob(...args), extension: getAssetExtensionFromMimeType, now: () => Date.now(), ttlMs: ACCOUNT_AVATAR_CACHE_TTL_MS }); }
+  return workerAccountAvatarCacheService;
 }
+function normalizeAccountAvatarAssets(...args) { return getWorkerAccountAvatarCacheService().normalize(...args); }
 
 /**
  * Removes expired account-avatar assets from the shared avatar cache.
@@ -1229,65 +1043,9 @@ function normalizeAccountAvatarAssets(assets = []) {
  * @param {number} now - Current epoch milliseconds.
  * @returns {object} Pruned cache with normalized assets.
  */
-function pruneAccountAvatarCache(cache = null, now = Date.now()) {
-  const assets = normalizeAccountAvatarAssets(cache?.assets)
-    .filter((asset) => now - asset.cachedAt <= ACCOUNT_AVATAR_CACHE_TTL_MS);
-  return {
-    ...cache,
-    assets,
-    updatedAt: cache?.updatedAt || new Date(now).toISOString(),
-  };
-}
+function pruneAccountAvatarCache(...args) { return getWorkerAccountAvatarCacheService().prune(...args); }
 
-async function cacheStoredAccountAvatar(account = {}, assets = null, serviceCache = null) {
-  const did = String(account?.did || "").trim();
-  const avatarUrl = String(account?.avatar || "").trim();
-  if (!did || !avatarUrl) {
-    return {
-      account: {
-        ...account,
-        avatarPath: "",
-      },
-      assets: normalizeAccountAvatarAssets(assets),
-    };
-  }
-
-  const nextAssets = normalizeAccountAvatarAssets(assets);
-  const existing = nextAssets.find((asset) => asset.did === did && asset.url === avatarUrl);
-  if (existing?.path) {
-    return {
-      account: {
-        ...account,
-        avatarPath: existing.path,
-      },
-      assets: nextAssets,
-    };
-  }
-
-  const blob = await downloadRemoteAssetViaBlob(account, avatarUrl, did, serviceCache);
-  const extension = getAssetExtensionFromMimeType(blob.type);
-  const slug = String(account.handle || account.identifier || did)
-    .replace(/[^\w.-]+/g, "-")
-    .slice(0, 60) || "account";
-  const path = `account-avatars/${slug}.${extension}`;
-  const filteredAssets = nextAssets.filter((asset) => !(asset.did === did));
-  filteredAssets.push({
-    did,
-    url: avatarUrl,
-    path,
-    type: blob.type,
-    sizeBytes: blob.bytes.length,
-    cachedAt: Date.now(),
-    bytes: blob.bytes,
-  });
-  return {
-    account: {
-      ...account,
-      avatarPath: path,
-    },
-    assets: filteredAssets,
-  };
-}
+function cacheStoredAccountAvatar(...args) { return getWorkerAccountAvatarCacheService().cache(...args); }
 
 let workerAccountService = null;
 /** Lazily wires stored-account lifecycle dependencies. @returns {object} Account service. */
@@ -1317,40 +1075,7 @@ async function logout(input) { return getWorkerAccountService().logout(input); }
 /** Delegates account lifecycle behavior. @param {object} input - Operation input. @returns {Promise<object>} Public response. */
 async function verifySession(input) { return getWorkerAccountService().verify(input); }
 
-function getAssetExtensionFromMimeType(mimeType = "") {
-  const value = String(mimeType || "").toLowerCase();
-  if (value.includes("mp4")) {
-    return "mp4";
-  }
-  if (value.includes("webm")) {
-    return "webm";
-  }
-  if (value.includes("mpeg")) {
-    return "mpeg";
-  }
-  if (value.includes("quicktime") || value.includes("mov")) {
-    return "mov";
-  }
-  if (value.includes("png")) {
-    return "png";
-  }
-  if (value.includes("webp")) {
-    return "webp";
-  }
-  if (value.includes("gif")) {
-    return "gif";
-  }
-  if (value.includes("jpeg") || value.includes("jpg")) {
-    return "jpg";
-  }
-  if (value.includes("svg")) {
-    return "svg";
-  }
-  if (value.includes("json")) {
-    return "json";
-  }
-  return "jpg";
-}
+function getAssetExtensionFromMimeType(...args) { return globalThis.ThreadlineRecordModels.getAssetExtensionFromMimeType(...args); }
 
 const ARCHIVE_SAFE_IMAGE_PLACEHOLDER_MIME_TYPE = "image/png";
 const ARCHIVE_SAFE_IMAGE_PLACEHOLDER_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAGAAAABICAYAAAAJZ/BjAAAAvUlEQVR4nO3XMRUCQRAFwVWEHNwgBj/EKLn8yJDA3NIVdD7vVzTr/bydmmtNH1DvC3AeL/0wAADaAQDQDgCAdgAAtAMAoB0AAO0AAGgHoAbwuK+tAgAAAAAAAAAAAAAAAAAAAAAAAABgWwABuFQAALQDAKAdAADtAPwLwPTHOh0AAPMjAAgHAMD8CADCAQAwPwKAcADqAAKwZQAAtAMAoB0AAO0AAGgHAEA7AADaAQDQDgCAdgCuBqCZAAz3AYEOqDkEidkXAAAAAElFTkSuQmCC";
@@ -1374,32 +1099,14 @@ function decodeBase64ToBytes(value = "") {
  * @param {string} mimeType MIME type to inspect.
  * @returns {boolean} True when the type represents SVG.
  */
-function isSvgMimeType(mimeType = "") {
-  const value = String(mimeType || "").toLowerCase();
-  return value.includes("image/svg") || value.includes("svg+xml");
-}
+
 
 /**
  * Replaces SVG archive assets with a small PNG placeholder for safer offline archives.
  * @param {{ type?: string, bytes?: Uint8Array }} blob Downloaded blob descriptor.
  * @returns {{ type: string, bytes: Uint8Array, replacedSvg: boolean }} Safe archive blob descriptor.
  */
-function normalizeArchiveImageBlob(blob = {}) {
-  const mimeType = String(blob?.type || "application/octet-stream");
-  const bytes = blob?.bytes instanceof Uint8Array ? blob.bytes : new Uint8Array(blob?.bytes || []);
-  if (!isSvgMimeType(mimeType)) {
-    return {
-      type: mimeType,
-      bytes,
-      replacedSvg: false,
-    };
-  }
-  return {
-    type: ARCHIVE_SAFE_IMAGE_PLACEHOLDER_MIME_TYPE,
-    bytes: decodeBase64ToBytes(ARCHIVE_SAFE_IMAGE_PLACEHOLDER_BASE64),
-    replacedSvg: true,
-  };
-}
+function normalizeArchiveImageBlob(blob) { return globalThis.ThreadlineRecordModels.normalizeArchiveImageBlob(blob, { type: ARCHIVE_SAFE_IMAGE_PLACEHOLDER_MIME_TYPE, base64: ARCHIVE_SAFE_IMAGE_PLACEHOLDER_BASE64 }, decodeBase64ToBytes); }
 
 async function downloadRemoteAsset(url) {
   const response = await fetch(url, { method: "GET" });
@@ -1448,31 +1155,9 @@ function scanAccountMediaExport(...args) { return getWorkerMediaExportService().
 /** Delegates media download. @param {...unknown} args - Input and progress observer. @returns {Promise<object>} Downloaded asset. */
 function downloadAccountMediaAsset(...args) { return getWorkerMediaExportService().download(...args); }
 
-async function mapWithConcurrency(items, concurrency, worker) {
-  const values = Array.isArray(items) ? items : [];
-  const limit = Math.max(1, Math.min(Number(concurrency) || 1, values.length || 1));
-  const results = new Array(values.length);
-  let nextIndex = 0;
+function mapWithConcurrency(...args) { return globalThis.ThreadlineWorkerCollections.mapWithConcurrency(...args); }
 
-  async function runWorker() {
-    while (nextIndex < values.length) {
-      const currentIndex = nextIndex;
-      nextIndex += 1;
-      results[currentIndex] = await worker(values[currentIndex], currentIndex);
-    }
-  }
-
-  await Promise.all(Array.from({ length: limit }, () => runWorker()));
-  return results;
-}
-
-function chunkEntries(items, size) {
-  const result = [];
-  for (let index = 0; index < items.length; index += size) {
-    result.push(items.slice(index, index + size));
-  }
-  return result;
-}
+function chunkEntries(...args) { return globalThis.ThreadlineWorkerCollections.chunkEntries(...args); }
 
 function bytesToDataUrl(bytes, mimeType = "image/jpeg") {
   let binary = "";
@@ -1484,44 +1169,7 @@ function bytesToDataUrl(bytes, mimeType = "image/jpeg") {
   return `data:${mimeType};base64,${btoa(binary)}`;
 }
 
-function parseArchiveThreadSource(value = "") {
-  const raw = String(value || "").trim();
-  if (!raw) {
-    throw new Error("Bitte eine Bluesky-Posting-URL eingeben.");
-  }
-
-  if (raw.startsWith("at://")) {
-    const parsed = parseAtUri(raw);
-    if (!parsed.did || parsed.collection !== "app.bsky.feed.post" || !parsed.rkey) {
-      throw new Error("Die Posting-URL ist nicht gueltig.");
-    }
-    return {
-      sourceUrl: raw,
-      actor: parsed.did,
-      rkey: parsed.rkey,
-      entryUri: raw,
-    };
-  }
-
-  let url;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error("Die Posting-URL ist nicht gueltig.");
-  }
-
-  const segments = url.pathname.split("/").filter(Boolean);
-  if (segments.length < 4 || segments[0] !== "profile" || segments[2] !== "post") {
-    throw new Error("Die Posting-URL ist nicht gueltig.");
-  }
-
-  return {
-    sourceUrl: url.toString(),
-    actor: decodeURIComponent(segments[1] || ""),
-    rkey: decodeURIComponent(segments[3] || ""),
-    entryUri: "",
-  };
-}
+function parseArchiveThreadSource(...args) { return globalThis.ThreadlineRecordModels.parseArchiveThreadSource(args[0], parseAtUri); }
 
 
 let workerPostCheckService = null;
@@ -1542,377 +1190,46 @@ function checkReplyTarget(input) { return getWorkerPostCheckService().reply(inpu
 /** Checks edit metadata. @param {object} input - URL. @returns {Promise<object>} Edit metadata. */
 function checkPostEditMetadata(input) { return getWorkerPostCheckService().edit(input); }
 
-async function exportAccountArchiveWave({ runId, filters, cursor: initialCursor = "", maxPosts = 500, waveIndex = 1, existingCatalog = null, existingSession = null } = {}, notifyProgress = () => {}) {
-  const auth = await ensureSession();
-  const storedSettings = await readStoredValue(SETTINGS_KEY) || {};
-  const archiveExpertMode = normalizeArchiveExpertMode(storedSettings?.archiveExpertMode);
-  const normalizedFilters = normalizeArchiveFilters(filters);
-  const sourceProfile = await resolveArchiveSourceActor(auth, normalizedFilters);
-  const sourceDid = sourceProfile.did || auth.session.did;
-  const pdsServiceCache = new Map();
-  const archiveBlobCache = new Map();
-  const threadHashtagMatchCache = new Map();
-  const rootHashtagMatchCache = new Map();
-  const hasHashtagFilter = Array.isArray(normalizedFilters.hashtagTags) && normalizedFilters.hashtagTags.length > 0;
-  const selectedHashtagCount = hasHashtagFilter ? normalizedFilters.hashtagTags.length : 0;
-  const resumedWave = archiveModels.wave.restore({ existingCatalog, existingSession, initialCursor, maxPosts });
-  const { records, rawRecordsByUri, postsByUri, pageSize } = resumedWave;
-  let cursor = resumedWave.cursor;
-  let pageCount = resumedWave.pageCount;
-  let imageCount = 0;
-  let skippedImageCount = 0;
-  let orderedPosts = [];
-  const assets = [];
-  const seenAssetPaths = new Set();
-  let previewCounter = 0;
-  let cancelled = false;
-  let hashtagFilteredOutCount = 0;
-  let stopScan = false;
-  let currentPhase = "fetch";
-
-  const waveAssetState = {
-    /** Reads saved images. @returns {number} Saved count. */
-    get imageCount() { return imageCount; },
-    /** Assigns saved images. @param {number} value - Count. @returns {void} Updates live state. */
-    set imageCount(value) { imageCount = value; },
-    /** Reads skipped images. @returns {number} Skipped count. */
-    get skippedImageCount() { return skippedImageCount; },
-    /** Assigns skipped images. @param {number} value - Count. @returns {void} Updates live state. */
-    set skippedImageCount(value) { skippedImageCount = value; },
-  };
-  // Live accessors preserve partial cursor/counter updates when page selection rejects.
-  const wavePageState = {
-    /** Reads the current cursor. @returns {string} Resume cursor. */
-    get cursor() { return cursor; },
-    /** Updates the resume cursor. @param {string} value - Provider cursor. @returns {void} Updates live state. */
-    set cursor(value) { cursor = value; },
-    /** Reads the cumulative skipped count. @returns {number} Filtered posts. */
-    get hashtagFilteredOutCount() { return hashtagFilteredOutCount; },
-    /** Updates the skipped count. @param {number} value - Cumulative count. @returns {void} Updates live state. */
-    set hashtagFilteredOutCount(value) { hashtagFilteredOutCount = value; },
-  };
-  const buildHashtagProgressDetail = (baseDetail = "") => {
-    if (!hasHashtagFilter) {
-      return baseDetail;
-    }
-    const suffix = `${selectedHashtagCount} Hashtags aktiv · ${hashtagFilteredOutCount} Posts wegen Hashtag-Filter übersprungen`;
-    return baseDetail ? `${baseDetail} · ${suffix}` : suffix;
-  };
-
-  archiveRunControl.start(runId);
-
-  /** Builds a result from the current wave state and explicit clock/version values.
-   * @param {string} status - Completion state. @param {object} settings - Optional error message.
-   * @returns {object} Existing archive result and continuation session.
-   */
-  const buildResult = (status = "completed", settings = {}) => archiveModels.wave.result({
-    sourceProfile, sourceDid, normalizedFilters, orderedPosts, assets, imageCount, skippedImageCount,
-    hashtagFilteredOutCount, pageCount, currentPhase, cursor,
-    exportedAt: new Date().toISOString(), appVersion: APP_VERSION,
-  }, status, settings);
-
-  /** Finishes the current run and builds its snapshot.
-   * @param {string} status - Completed/cancelled state. @returns {object} Existing wave result.
-   */
-  function finalizeWave(status) {
-    return archiveWaveService.finalize({ runId, status, buildResult, finish: archiveRunControl.finish });
-  }
-  notifyProgress({
-    title: "Archiv wird gelesen",
-    step: sourceProfile.isOwnAccount ? "Eigene Posts werden aus dem Repo geladen ..." : "Posts der Archivquelle werden geladen ...",
-    percent: 5,
-    detail: buildHashtagProgressDetail(
-      hasHashtagFilter
-        ? `Konto: ${sourceProfile.handle || sourceDid} · Hashtag-Filter aktiv`
-        : `Konto: ${sourceProfile.handle || sourceDid}`,
-    ),
-    checkpoint: "Archivlauf gestartet",
-    state: "running",
-  });
-
-  try {
-  let shouldContinueFetch = Boolean(cursor) || records.length === 0;
-  while (shouldContinueFetch) {
-    currentPhase = "fetch";
-    if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
-      cancelled = true;
-      break;
-    }
-    if (stopScan) {
-      cursor = "";
-      break;
-    }
-
-    const { pageRecords, oldestSeenCreatedAt } = await archiveWaveService.readPage({
-      auth, sourceProfile, sourceDid, normalizedFilters, pageSize, pageCount, runId, notifyProgress,
-      hasHashtagFilter, threadHashtagMatchCache, rootHashtagMatchCache,
-    }, wavePageState);
-
-    if (oldestSeenCreatedAt) {
-      stopScan = shouldStopAuthorFeedScanForFilters(oldestSeenCreatedAt, normalizedFilters);
-    }
-
-    records.push(...pageRecords);
-    pageCount += 1;
-    notifyProgress({
-      title: "Archiv wird gelesen",
-      step: sourceProfile.isOwnAccount
-        ? `${pageCount} Repo-Seiten geprüft · ${records.length} passende Posts gefunden`
-        : `${pageCount} Feed-Seiten geprüft · ${records.length} passende Posts gefunden`,
-      percent: Math.min(45, 5 + (pageCount * 3)),
-      detail: buildHashtagProgressDetail(
-        hasHashtagFilter
-          ? `${records.length} Posts vorgemerkt · Posts werden mit Hashtag-Filter geprüft`
-          : `${records.length} Posts vorgemerkt`,
-      ),
-      checkpoint: `${records.length} Posts gefunden`,
-      state: "running",
+let workerArchiveWaveController = null;
+/** Wires the resumable archive-wave controller. @returns {object} Controller. */
+function getWorkerArchiveWaveController() {
+  if (!workerArchiveWaveController) {
+    workerArchiveWaveController = globalThis.createThreadlineArchiveWaveController({
+      ensureSession: (...args) => ensureSession(...args),
+      readStoredValue: (...args) => readStoredValue(...args),
+      normalizeArchiveExpertMode: (...args) => normalizeArchiveExpertMode(...args),
+      normalizeArchiveFilters: (...args) => normalizeArchiveFilters(...args),
+      resolveArchiveSourceActor: (...args) => resolveArchiveSourceActor(...args),
+      waitForArchiveRunControl: (...args) => waitForArchiveRunControl(...args),
+      shouldStopAuthorFeedScanForFilters: (...args) => getWorkerMediaExportModels().stop(...args),
+      maybePauseArchiveFeedScan: (...args) => maybePauseArchiveFeedScan(...args),
+      mergeArchivePostEntity: (...args) => mergeArchivePostEntity(...args),
+      buildArchivePostEntity: (...args) => buildArchivePostEntity(...args),
+      getArchiveRootUri: (...args) => getArchiveRootUri(...args),
+      parseAtUri: (...args) => parseAtUri(...args),
+      runArchiveRequestWithRetry: (...args) => runArchiveRequestWithRetry(...args),
+      archiveGetPostThread: (...args) => archiveGetPostThread(...args),
+      isMissingArchivePostError: (...args) => isMissingArchivePostError(...args),
+      isArchiveThreadTimeoutError: (...args) => isArchiveThreadTimeoutError(...args),
+      collectThreadViewPosts: (...args) => collectThreadViewPosts(...args),
+      recordBelongsToOwnMainThreadPath: (...args) => recordBelongsToOwnMainThreadPath(...args),
+      postMatchesArchiveFilters: (...args) => postMatchesArchiveFilters(...args),
+      postMatchesMediaExportHashtagSelection: (...args) => postMatchesMediaExportHashtagSelection(...args),
+      expandArchiveConversationContexts: (...args) => expandArchiveConversationContexts(...args),
+      attachArchiveAvatarAssets: (...args) => attachArchiveAvatarAssets(...args),
+      get SETTINGS_KEY() { return SETTINGS_KEY; },
+      get archiveModels() { return archiveModels; },
+      get archiveRunControl() { return archiveRunControl; },
+      get APP_VERSION() { return APP_VERSION; },
+      get archiveWaveService() { return archiveWaveService; },
+      get archiveAssetService() { return archiveAssetService; },
+      now: () => new Date().toISOString(),
     });
-
-    if (records.length > 0) {
-      previewCounter += 1;
-      if (previewCounter % 10 === 0) {
-        const latest = records[Math.max(0, records.length - 1)];
-        notifyProgress({
-          preview: {
-            meta: `${records.length} Posts gefunden`,
-            text: String(latest?.value?.text || "").slice(0, 280),
-          },
-          checkpoint: `${records.length} Posts gefunden`,
-          state: "running",
-        });
-      }
-    }
-
-    if (!cursor || stopScan) {
-      break;
-    }
-
-    const pauseState = await maybePauseArchiveFeedScan({
-      runId,
-      notifyProgress,
-      pageCount,
-      recordsCount: records.length,
-      archiveExpertMode,
-    });
-    if (pauseState === "cancelled") {
-      cancelled = true;
-      break;
-    }
   }
-
-  records.sort((left, right) => Date.parse(right.value?.createdAt || 0) - Date.parse(left.value?.createdAt || 0));
-
-  const upsertArchivePost = (post, rawRecord = null) => {
-    const existing = postsByUri.get(post.uri);
-    if (existing) {
-      mergeArchivePostEntity(existing, post);
-    } else {
-      postsByUri.set(post.uri, post);
-    }
-    if (rawRecord) {
-      rawRecordsByUri.set(post.uri, rawRecord);
-    }
-  };
-
-  records.forEach((entry) => {
-    upsertArchivePost(
-      buildArchivePostEntity({
-        uri: entry.uri,
-        cid: entry.cid,
-        record: entry.value,
-        authorHandle: entry.authorHandle || sourceProfile.handle || "",
-        authorDisplayName: entry.authorDisplayName || sourceProfile.displayName || sourceProfile.handle || "",
-        authorDid: entry.authorDid || sourceDid,
-        authorAvatar: entry.authorAvatar || sourceProfile.avatar || "",
-        counts: entry.counts || null,
-      }),
-      entry.value,
-    );
-  });
-
-  if ((normalizedFilters.contentMode === "threads" || normalizedFilters.contentMode === "thread_roots") && records.length > 0) {
-    currentPhase = "threads";
-    const threadRootUris = [...new Set(records
-      .map((entry) => getArchiveRootUri(entry.value, entry.uri) || entry.uri)
-      .filter((uri) => parseAtUri(uri).did === sourceDid))];
-
-    for (const [threadIndex, rootUri] of threadRootUris.entries()) {
-      if (await waitForArchiveRunControl(runId, notifyProgress) === "cancelled") {
-        orderedPosts = Array.from(postsByUri.values())
-          .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
-        return finalizeWave("cancelled");
-      }
-
-        notifyProgress({
-          title: "Archiv wird gelesen",
-          step: `Thread ${threadIndex + 1}/${threadRootUris.length} wird erweitert`,
-          percent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
-          detail: buildHashtagProgressDetail(
-            hasHashtagFilter
-            ? (normalizedFilters.contentMode === "thread_roots"
-              ? "Eigene Thread-Hauptpfade werden nachgeladen und mit Hashtag-Filter geprüft"
-              : "Antworten in eigenen Threads werden nachgeladen und mit Hashtag-Filter geprüft")
-            : (normalizedFilters.contentMode === "thread_roots"
-              ? "Eigene Thread-Hauptpfade werden nachgeladen"
-              : "Antworten in eigenen Threads werden nachgeladen"),
-          ),
-          checkpoint: `Eigene Threads werden erweitert (${threadIndex + 1}/${threadRootUris.length})`,
-          state: "running",
-        });
-
-      let threadResponse = null;
-      try {
-        threadResponse = await runArchiveRequestWithRetry(() => archiveGetPostThread(auth, rootUri, {
-          depth: 100,
-          parentHeight: 0,
-          notifyProgress,
-          progressTitle: "Archiv wird gelesen",
-          progressPercent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
-          progressDetail: rootUri,
-          checkpointPrefix: `Eigene Threads werden erweitert (${threadIndex + 1}/${threadRootUris.length})`,
-        }), {
-          runId,
-          notifyProgress,
-          title: "Archiv wird gelesen",
-          percent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
-          baseDetail: rootUri,
-          checkpoint: `Eigene Threads werden erweitert (${threadIndex + 1}/${threadRootUris.length})`,
-        });
-      } catch (error) {
-        if (!isMissingArchivePostError(error) && !isArchiveThreadTimeoutError(error)) {
-          throw error;
-        }
-
-        notifyProgress({
-          title: "Archiv wird gelesen",
-          step: `Thread ${threadIndex + 1}/${threadRootUris.length} wird übersprungen`,
-          percent: 45 + Math.round(((threadIndex + 1) / Math.max(1, threadRootUris.length)) * 10),
-          detail: isArchiveThreadTimeoutError(error)
-            ? `Thread-Antwort zu langsam · ${rootUri}`
-            : `Startpost nicht mehr verfügbar · ${rootUri}`,
-          checkpoint: `Fehlenden Thread übersprungen (${threadIndex + 1}/${threadRootUris.length})`,
-          state: "running",
-        });
-        continue;
-      }
-
-      const threadViews = collectThreadViewPosts(threadResponse.thread || threadResponse.post || threadResponse);
-      for (const postView of threadViews) {
-        const record = postView?.record || {};
-        const rootCandidate = getArchiveRootUri(record, postView.uri) || postView.uri;
-        if (parseAtUri(rootCandidate).did !== sourceDid) {
-          continue;
-        }
-        if (normalizedFilters.contentMode === "thread_roots") {
-          if ((postView.author?.did || "") !== sourceDid) {
-            continue;
-          }
-          if (!recordBelongsToOwnMainThreadPath(record, sourceDid, postView.uri)) {
-            continue;
-          }
-        }
-        if (!postMatchesArchiveFilters(record, normalizedFilters)) {
-          continue;
-        }
-        if (hasHashtagFilter) {
-          const matchesHashtagSelection = await postMatchesMediaExportHashtagSelection(
-            postView,
-            normalizedFilters,
-            auth,
-            threadHashtagMatchCache,
-            rootHashtagMatchCache,
-          );
-          if (!matchesHashtagSelection) {
-            hashtagFilteredOutCount += 1;
-            continue;
-          }
-        }
-        upsertArchivePost(
-          buildArchivePostEntity({
-            uri: postView.uri,
-            cid: postView.cid,
-            record,
-            authorHandle: postView.author?.handle || "",
-            authorDisplayName: postView.author?.displayName || postView.author?.handle || "",
-            authorDid: postView.author?.did || "",
-            authorAvatar: postView.author?.avatar || "",
-            counts: {
-              likeCount: Number(postView.likeCount) || 0,
-              replyCount: Number(postView.replyCount) || 0,
-              repostCount: Number(postView.repostCount) || 0,
-              quoteCount: Number(postView.quoteCount) || 0,
-            },
-          }),
-          record,
-        );
-      }
-    }
-  }
-
-  if (normalizedFilters.includeConversationContext === true && postsByUri.size > 0) {
-    currentPhase = "conversation";
-    const conversationExpansionResult = await expandArchiveConversationContexts({
-      auth,
-      runId,
-      notifyProgress,
-      postsByUri,
-      rawRecordsByUri,
-      upsertArchivePost,
-    });
-    if (conversationExpansionResult === "cancelled") {
-      orderedPosts = Array.from(postsByUri.values())
-        .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
-      return finalizeWave("cancelled");
-    }
-  }
-
-  orderedPosts = Array.from(postsByUri.values())
-    .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
-
-  currentPhase = "metrics";
-  if (await archiveWaveService.enrichMetrics({ orderedPosts, postsByUri, auth, runId, notifyProgress, buildHashtagProgressDetail }) === "cancelled") {
-    orderedPosts = Array.from(postsByUri.values())
-      .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
-    return finalizeWave("cancelled");
-  }
-
-  const uniqueAvatarCount = new Set(
-    orderedPosts
-      .map((post) => String(post?.authorAvatar || "").trim())
-      .filter(Boolean),
-  ).size;
-
-  notifyProgress({
-    title: "Archiv wird gelesen",
-    step: "Profilbilder werden ergänzt …",
-    percent: 61,
-    detail: buildHashtagProgressDetail(
-      uniqueAvatarCount > 0
-        ? `${uniqueAvatarCount} eindeutige Avatare werden vorbereitet`
-        : "Keine zusätzlichen Avatare gefunden",
-    ),
-    checkpoint: "Avatare werden vorbereitet",
-    state: "running",
-  });
-
-  currentPhase = "assets";
-  await attachArchiveAvatarAssets(orderedPosts, assets, seenAssetPaths, auth, pdsServiceCache, notifyProgress, 61, archiveBlobCache);
-
-  const assetInput = { orderedPosts, rawRecordsByUri, assets, seenAssetPaths, auth, sourceDid,
-    pdsServiceCache, archiveBlobCache, runId, notifyProgress, buildHashtagProgressDetail };
-  await archiveAssetService.attachLinkCards(assetInput);
-  const cancelledDuringImagePhase = await archiveAssetService.attachImages(assetInput, waveAssetState);
-  let finalStatus = "completed";
-  if (cancelledDuringImagePhase || cancelled) {
-    finalStatus = "cancelled";
-  }
-  return finalizeWave(finalStatus);
-  } catch (error) {
-    return archiveWaveService.finalize({ runId, postsByUri, buildResult, finish: archiveRunControl.finish, error,
-      setOrderedPosts: (posts) => { orderedPosts = posts; } });
-  }
+  return workerArchiveWaveController;
 }
+/** Delegates archive-wave loading. @param {...unknown} args - Wave input and progress observer. @returns {Promise<object>} Wave result. */
+function exportAccountArchiveWave(...args) { return getWorkerArchiveWaveController().load(...args); }
 
 let workerInteractionService = null;
 /** Wires record interaction operations. @returns {object} Interaction service. */

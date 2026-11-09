@@ -59,7 +59,7 @@
         <div class="top-actions">
           <button type="button" class="ghost-button" id="settings-button" data-i18n="settingsButton">Einstellungen</button>
           <button type="button" class="ghost-button" id="help-button" data-i18n="helpButton">Hilfe</button>
-          <button type="button" class="ghost-button" id="install-button" data-i18n="installButton" hidden>App installieren</button>
+          <button type="button" class="ghost-button" id="install-button" hidden data-i18n="installButton">App installieren</button>
         </div>
 
         <div class="login-form account-hub-panel">
@@ -99,7 +99,7 @@
             </div>
 
             <div class="workspace-launch-chip" data-page-scope="tools">
-              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="archive-button" data-i18n="archiveLaunchButton" disabled>
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="archive-button" disabled data-i18n="archiveLaunchButton">
                 Archiv-Funktion
               </button>
               <p id="archive-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="archiveLaunchDisabledNote">
@@ -108,7 +108,7 @@
             </div>
 
             <div class="workspace-launch-chip" data-page-scope="tools">
-              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="network-button" data-i18n="networkLaunchButton" disabled>
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="network-button" disabled data-i18n="networkLaunchButton">
                 Netzwerk
               </button>
               <p id="network-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="networkLaunchDisabledNote">
@@ -144,7 +144,7 @@
             </div>
 
             <div class="workspace-launch-chip dm-launch-panel" data-page-scope="tools" hidden>
-              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="dm-button" data-i18n="dmLaunchButton" disabled>
+              <button type="button" class="ghost-button status-history-button workspace-chip-button" id="dm-button" disabled data-i18n="dmLaunchButton">
                 DM-Archiv
               </button>
               <p id="dm-launch-note" class="archive-launch-note workspace-chip-note" data-i18n="dmLaunchDisabledNote">
@@ -239,7 +239,7 @@
                 <label class="composer-label" for="source-text" data-i18n="sourceLabel">Ausgangstext</label>
                 <button type="button" class="help-trigger" data-help-topic="composer_input" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
               </div>
-              <textarea id="source-text" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …"></textarea>
+              <textarea id="source-text" placeholder="Schreibe hier deinen Post oder einen längeren Thread-Entwurf …" data-i18n-placeholder="sourcePlaceholder"></textarea>
               <p id="composer-input-warning" class="settings-note" hidden></p>
 
               <div class="composer-meta">
@@ -283,16 +283,16 @@
                 <button type="button" class="help-trigger" data-help-topic="composer_hashtags" aria-label="Hilfe zu diesem Bereich" title="Hilfe zu diesem Bereich">?</button>
               </div>
               <form id="hashtag-form" class="hashtag-form">
-                <input id="hashtag-input" type="text" placeholder="#deinTag" autocomplete="off">
+                <input id="hashtag-input" type="text" placeholder="#deinTag" autocomplete="off" data-i18n-placeholder="hashtagInputPlaceholder">
                 <button id="hashtag-add-button" type="submit" class="ghost-button" data-i18n="addHashtagButton">Hinzufügen</button>
               </form>
               <label id="hashtag-placement-label" class="hashtag-placement-label">
                 <span data-i18n="hashtagPlacementLabel">Ausgewählte Hashtags platzieren</span>
                 <select id="hashtag-placement-select">
-                  <option value="first">Im ersten Abschnitt</option>
-                  <option value="last">Im letzten Abschnitt</option>
-                  <option value="all-top">In jedem Abschnitt oben</option>
-                  <option value="all-bottom">In jedem Abschnitt unten</option>
+                  <option value="first" data-i18n="hashtagPlacementFirst">Im ersten Abschnitt</option>
+                  <option value="last" data-i18n="hashtagPlacementLast">Im letzten Abschnitt</option>
+                  <option value="all-top" data-i18n="hashtagPlacementAllTop">In jedem Abschnitt oben</option>
+                  <option value="all-bottom" data-i18n="hashtagPlacementAllBottom">In jedem Abschnitt unten</option>
                 </select>
               </label>
               <label id="archive-hashtag-scope-wrap" class="hashtag-placement-label" hidden>
@@ -511,8 +511,7 @@
                     id="archive-media-actor-input"
                   type="text"
                   inputmode="text"
-                  placeholder="@handle oder leer für mein Konto"
-                  >
+                  placeholder="@handle oder leer für mein Konto" data-i18n-placeholder="archiveMediaActorPlaceholder">
                 </div>
               </label>
               <label class="settings-check">
@@ -562,9 +561,9 @@
                 <p id="archive-progress-detail" class="settings-note"></p>
               </div>
               <div class="archive-run-controls">
-                <button type="button" class="ghost-button" id="archive-pause-button" data-i18n="archivePauseButton" disabled>Pausieren</button>
-                <button type="button" class="ghost-button" id="archive-resume-button" data-i18n="archiveResumeButton" disabled>Fortsetzen</button>
-                <button type="button" class="ghost-button" id="archive-cancel-button" data-i18n="archiveCancelButton" disabled>Abbrechen</button>
+                <button type="button" class="ghost-button" id="archive-pause-button" disabled data-i18n="archivePauseButton">Pausieren</button>
+                <button type="button" class="ghost-button" id="archive-resume-button" disabled data-i18n="archiveResumeButton">Fortsetzen</button>
+                <button type="button" class="ghost-button" id="archive-cancel-button" disabled data-i18n="archiveCancelButton">Abbrechen</button>
               </div>
               <p class="settings-note archive-run-controls-note" data-i18n="archiveRunControlsNote">
                 Pause und Abbruch greifen nach dem aktuellen Bluesky-Request. Einzelne Thread-Anfragen werden nach 15 Sekunden einmal neu versucht und sonst übersprungen.
@@ -624,8 +623,7 @@
                   id="archive-thread-url-input"
                   type="url"
                   inputmode="url"
-                  placeholder="https://bsky.app/profile/handle/post/..."
-                >
+                  placeholder="https://bsky.app/profile/handle/post/..." data-i18n-placeholder="archiveThreadUrlPlaceholder">
               </label>
               <label>
                 <span data-i18n="archiveThreadImportModeLabel">Was soll geladen werden?</span>
@@ -1169,12 +1167,12 @@
                 <div class="network-stage-toolbar-row">
                   <label class="network-search-field" for="network-search-input">
                     <span data-i18n="networkSearchLabel">Suche</span>
-                    <input id="network-search-input" type="search" placeholder="Handle oder Anzeigename">
+                    <input id="network-search-input" type="search" placeholder="Handle oder Anzeigename" data-i18n-placeholder="networkSearchPlaceholder">
                   </label>
                   <label class="network-search-field network-account-field" for="network-account-input">
                     <span data-i18n="networkAccountInputLabel">Account</span>
                     <div class="account-picker-row">
-                      <input id="network-account-input" type="search" placeholder="Handle oder DID eingeben">
+                      <input id="network-account-input" type="search" placeholder="Handle oder DID eingeben" data-i18n-placeholder="networkAccountInputPlaceholder">
                     </div>
                     <p id="network-account-note" class="settings-note account-field-note" hidden></p>
                   </label>
@@ -1443,7 +1441,7 @@
               <label>
                 <span data-i18n="dmContactSearchLabel">DM-Partner suchen</span>
                 <div class="account-picker-row">
-                  <input id="dm-contact-search-input" type="search" data-i18n-placeholder="dmContactSearchPlaceholder" placeholder="Handle oder Anzeigename">
+                  <input id="dm-contact-search-input" type="search" placeholder="Handle oder Anzeigename" data-i18n-placeholder="dmContactSearchPlaceholder">
                 </div>
               </label>
               <p id="dm-contact-search-note" class="settings-note account-field-note" hidden></p>
@@ -1531,7 +1529,7 @@
           <div class="settings-actions">
             <button type="button" id="compact-mode-toggle-button" class="ghost-button" data-i18n="compactModeButton">Kompaktmodus</button>
             <button type="button" id="check-updates-button" class="ghost-button" data-i18n="checkUpdatesButton">Auf Updates prüfen</button>
-            <button type="button" id="reload-app-button" class="ghost-button" data-i18n="reloadButton" hidden>Neu laden</button>
+            <button type="button" id="reload-app-button" class="ghost-button" hidden data-i18n="reloadButton">Neu laden</button>
           </div>
           <p id="update-status" class="settings-note" hidden></p>
         </section>
@@ -1665,8 +1663,7 @@
                 id="share-qr-image"
                 class="share-qr-image"
                 src="icons/threadline-share-qr.svg"
-                alt="QR-Code zu Threadline"
-              >
+                alt="QR-Code zu Threadline" data-i18n-alt="shareQrAlt">
             <div class="share-card-copy">
               <p class="field-hint" data-i18n="shareScanHint">Oder mit dem Smartphone scannen:</p>
               <code id="share-url" class="share-url">https://marsrakete.github.io/threadline/</code>
@@ -1828,8 +1825,7 @@
             id="post-edit-check-url"
             type="url"
             inputmode="url"
-            placeholder="https://bsky.app/profile/handle/post/..."
-          >
+            placeholder="https://bsky.app/profile/handle/post/..." data-i18n-placeholder="archiveThreadUrlPlaceholder">
         </label>
 
         <div class="settings-actions post-edit-check-actions">
@@ -2011,7 +2007,7 @@
 
             <label for="post-languages-search">
               <span data-i18n="postLanguagesSearchLabel">Sprachen suchen</span>
-              <input id="post-languages-search" type="search" autocomplete="off" placeholder="Sprachen suchen">
+              <input id="post-languages-search" type="search" autocomplete="off" placeholder="Sprachen suchen" data-i18n-placeholder="postLanguagesSearchPlaceholder">
             </label>
 
             <p id="search-language-dialog-note" class="settings-note" hidden></p>
@@ -2060,7 +2056,7 @@
 
         <div id="alt-text-preview-wrap" class="alt-text-preview-wrap" hidden>
           <p class="alt-text-preview-label" data-i18n="altPreviewLabel">Bildvorschau</p>
-          <canvas id="alt-text-preview-canvas" class="alt-text-preview-canvas" aria-label="Bildvorschau"></canvas>
+          <canvas id="alt-text-preview-canvas" class="alt-text-preview-canvas" aria-label="Bildvorschau" data-i18n-aria-label="altPreviewLabel"></canvas>
         </div>
 
         <label for="alt-text-input">
@@ -2205,8 +2201,7 @@
             id="reply-target-url"
             type="url"
             inputmode="url"
-            placeholder="https://bsky.app/profile/handle/post/..."
-          >
+            placeholder="https://bsky.app/profile/handle/post/..." data-i18n-placeholder="archiveThreadUrlPlaceholder">
         </label>
 
         <p id="reply-target-status" class="post-edit-check-status settings-note"></p>
@@ -2246,7 +2241,7 @@
         </p>
         <label class="settings-field" for="thread-explorer-url-input">
           <span data-i18n="threadExplorerUrlLabel">Posting-URL</span>
-          <input id="thread-explorer-url-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://bsky.app/profile/handle/post/...">
+          <input id="thread-explorer-url-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://bsky.app/profile/handle/post/..." data-i18n-placeholder="threadExplorerUrlPlaceholder">
         </label>
         <p id="thread-explorer-url-status" class="settings-note"></p>
         <div class="settings-actions">
@@ -2270,7 +2265,7 @@
         </p>
         <label id="saved-search-url-field" class="settings-field" for="saved-search-url-input">
           <span data-i18n="savedSearchUrlLabel">Such-URL</span>
-          <input id="saved-search-url-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://bsky.app/search?q=...">
+          <input id="saved-search-url-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://bsky.app/search?q=..." data-i18n-placeholder="savedSearchUrlPlaceholder">
         </label>
         <div id="saved-searches-actions" class="settings-actions">
           <button type="button" id="saved-search-add-button" data-i18n="savedSearchAddButton">Suche hinzufügen</button>
@@ -2375,8 +2370,7 @@
             autocapitalize="off"
             autocorrect="off"
             spellcheck="false"
-            placeholder="https://example.com/article"
-          >
+            placeholder="https://example.com/article" data-i18n-placeholder="linkCardUrlPlaceholder">
         </label>
         <div id="link-card-target-list-field" hidden>
           <p id="link-card-target-list-note" class="settings-note"></p>

@@ -554,14 +554,7 @@ export function getThreadExplorerStageBoxFromRects(rect, viewport, state = {}) {
   if (!hasFiniteThreadExplorerBox(rect) || !hasFiniteThreadExplorerBox(viewport) || rect.width <= 0 || rect.height <= 0) {
     return null;
   }
-  let zoom = Number(state?.zoom) || 1;
-  if (zoom <= 0) {
-    zoom = 1;
-  }
-  const panX = Number(state?.panX) || 0;
-  const panY = Number(state?.panY) || 0;
-  return { left: (rect.left - viewport.left - panX) / zoom, top: (rect.top - viewport.top - panY) / zoom,
-    width: rect.width / zoom, height: rect.height / zoom };
+  return transformThreadExplorerStageBox(rect, viewport, state);
 }
 
 /** Merges measured stage bounds without mutating either input.
@@ -733,4 +726,102 @@ export function getThreadExplorerCardNeighborhoodBounds(item, options) {
     return getThreadExplorerReplyClusterCardNeighborhoodBounds(uri, options);
   }
   return getThreadExplorerTreeCardNeighborhoodBounds(item, options);
+}
+
+/**
+ * Returns direct rendered child node items for a Thread Explorer item.
+ * @param {HTMLElement} item - Rendered Thread Explorer node item.
+ * @returns {HTMLElement[]} Direct child node items.
+ */
+export function getRenderedThreadExplorerChildItems(item) {
+  const childrenList = item.querySelector(":scope > .thread-explorer-children");
+  if (!childrenList) {
+    return [];
+  }
+  return Array.from(childrenList.children).filter((child) => child.classList.contains("thread-explorer-node-item"));
+}
+
+/**
+ * Returns the visible post card for a rendered Thread Explorer item.
+ * @param {HTMLElement} item - Rendered Thread Explorer node item.
+ * @returns {HTMLElement|null} Direct post card element, or null.
+ */
+export function getRenderedThreadExplorerCard(item) {
+  return item.querySelector(":scope > .thread-explorer-node > .thread-explorer-post-card");
+}
+
+/**
+ * Adds all collapsible Thread Explorer node URIs to a target set.
+ * @param {object|null} node - Tree node to inspect.
+ * @param {Set<string>} targetSet - Set that receives post URIs for nodes with replies.
+ * @returns {void}
+ */
+export function collectCollapsibleThreadExplorerUris(node, targetSet) {
+  if (!node || !Array.isArray(node.replies) || node.replies.length === 0) {
+    return;
+  }
+  if (node.post?.uri) {
+    targetSet.add(node.post.uri);
+  }
+  node.replies.forEach((reply) => {
+    collectCollapsibleThreadExplorerUris(reply, targetSet);
+  });
+}
+
+/** Builds a curved edge between measured cards. @param {object} parentRect - Parent geometry. @param {object} childRect - Child geometry. @param {string} orientation - Horizontal or vertical. @returns {string} SVG path. */
+export function buildThreadExplorerEdgePath(parentRect, childRect, orientation = "vertical") {
+  if (orientation === "horizontal") {
+    const startX = parentRect.right;
+    const startY = parentRect.centerY;
+    const endX = childRect.left;
+    const endY = childRect.centerY;
+    const distance = Math.max(72, Math.abs(endX - startX));
+    const controlOffset = Math.max(48, distance * 0.42);
+    return `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
+  }
+
+  const startX = parentRect.centerX;
+  const startY = parentRect.bottom;
+  const endX = childRect.centerX;
+  const endY = childRect.top;
+  const distance = Math.max(60, Math.abs(endY - startY));
+  const controlOffset = Math.max(36, distance * 0.45);
+  return `M ${startX} ${startY} C ${startX} ${startY + controlOffset}, ${endX} ${endY - controlOffset}, ${endX} ${endY}`;
+}
+
+/** Converts measured card geometry into stage coordinates, including zero-sized cards.
+ * @param {object} rect - Native element rectangle. @param {object} stageRect - Native stage rectangle.
+ * @param {number} zoom - Current zoom; nonpositive/invalid values fall back to one.
+ * @returns {object|null} Full card rectangle and center, or null for absent measurements.
+ */
+export function getThreadExplorerMeasuredStageRect(rect, stageRect, zoom) {
+  if (!rect || !stageRect) { return null; }
+  const box = transformThreadExplorerStageBox(rect, stageRect, { zoom });
+  return { ...box, right: box.left + box.width, bottom: box.top + box.height,
+    centerX: box.left + box.width / 2, centerY: box.top + box.height / 2 };
+}
+
+/** Converts measured boxes with caller-owned validation. @param {object} rect - Card box. @param {object} viewport - Stage box. @param {object} state - Zoom and pan. @returns {object} Stage box. */
+function transformThreadExplorerStageBox(rect, viewport, state) {
+  let zoom = Number(state?.zoom) || 1;
+  if (zoom <= 0) {
+    zoom = 1;
+  }
+  const panX = Number(state?.panX) || 0;
+  const panY = Number(state?.panY) || 0;
+  return { left: (rect.left - viewport.left - panX) / zoom, top: (rect.top - viewport.top - panY) / zoom,
+    width: rect.width / zoom, height: rect.height / zoom };
+}
+
+/** Adds every valid tree node to cluster expansion state. @param {object|null} node - Root node. @param {Set} expandedUris - Caller-owned set. @returns {void} Expanded tree state. */
+export function expandReplyClusterTree(node, expandedUris) {
+  if (!node || !node.post?.uri) {
+    return;
+  }
+
+  expandedUris.add(String(node.post.uri).trim());
+  const replies = Array.isArray(node.replies) ? node.replies : [];
+  replies.forEach((reply) => {
+    expandReplyClusterTree(reply, expandedUris);
+  });
 }

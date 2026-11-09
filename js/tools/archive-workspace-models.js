@@ -147,3 +147,19 @@ export function createArchiveWorkspaceModels(dependencies) {
     summary
   };
 }
+
+/** Formats an archive timestamp in local day/month/year and hour/minute notation.
+ * @param {string} value - Timestamp; invalid values are returned as plain text.
+ * @returns {string} Compact timestamp or the original fallback.
+ */
+export function formatCompactArchiveTimestamp(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value || "");
+  }
+  return [
+    String(date.getDate()).padStart(2, "0"),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getFullYear()),
+  ].join(".") + ` ${String(date.getHours()).padStart(2, "0")}.${String(date.getMinutes()).padStart(2, "0")}`;
+}

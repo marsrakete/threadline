@@ -2830,3 +2830,37 @@ export function findThreadExplorerParentNode(node, uri) {
 
   return null;
 }
+
+/** Checks native controls and selectable post content before starting a drag. @param {EventTarget|null} target - Pointer target. @param {Function} ElementConstructor - Native element adapter. @returns {boolean} Whether native interaction should win. */
+export function isThreadExplorerNativeInteractiveTarget(target, ElementConstructor) {
+  if (!(target instanceof ElementConstructor)) {
+    return false;
+  }
+
+  const nativeInteractiveTarget = target.closest("button, a, input, textarea, select, summary");
+  if (nativeInteractiveTarget) {
+    return true;
+  }
+
+  return false;
+}
+
+/** Gives native controls and selectable post text priority over drag gestures. @param {EventTarget|null} target - Pointer target. @param {Function} ElementConstructor - Native element adapter. @returns {boolean} Native interaction priority. */
+export function isThreadExplorerInteractiveTarget(target, ElementConstructor) {
+  if (isThreadExplorerNativeInteractiveTarget(target, ElementConstructor)) {
+    return true;
+  }
+
+  if (!(target instanceof ElementConstructor)) {
+    return false;
+  }
+
+  const selectableTextTarget = target.closest(
+    ".thread-explorer-post-text, .thread-explorer-quote-card-text, .thread-explorer-link-card-title, .thread-explorer-link-card-description, .thread-explorer-link-card-url, .thread-explorer-quote-link-card-title, .thread-explorer-quote-link-card-description, .thread-explorer-quote-link-card-url, .thread-explorer-image figcaption, .thread-explorer-post-author, .thread-explorer-post-handle, .thread-explorer-post-meta, .thread-explorer-feed-text, .thread-explorer-feed-author, .thread-explorer-feed-meta",
+  );
+  if (selectableTextTarget) {
+    return true;
+  }
+
+  return false;
+}

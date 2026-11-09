@@ -121,7 +121,7 @@ test("network selection and viewport calculations stay behind domain module cont
     assert.ok(source.includes(`networkStageController.${handlers}`));
   }
   assert.doesNotMatch(source, /networkStageSvg\.setPointerCapture\(/);
-  assert.match(source, /await networkStageController\.enter\(\)/);
+  assert.doesNotMatch(source, /function (?:enter|exit)NetworkStageMode\(/);
   assert.doesNotMatch(source, /sendToServiceWorker\("LOAD_NETWORK_ACTOR_FOCUS"|sendToServiceWorker\("LOAD_NETWORK_COMMON_MUTUALS"/);
   for (const [name, operation] of [["getKnownNetworkProfile", "known"], ["ingestNetworkProfiles", "ingest"],
     ["getNetworkStageFocusPreviewItems", "previews"], ["getPreferredNetworkSelection", "preferred"],
@@ -185,7 +185,7 @@ test("shared appearance and pending navigation remain module delegates", () => {
     "restoreAppearancePreferencesFromLocalStorage", "applyAppearancePreferencesFromUrl",
     "buildAppearanceAwarePageSwitchUrl", "syncAppearanceFromLocalStorage", "applyTheme",
     "applyCompactMode", "updateAppearanceModeControls", "persistPendingPageSwitchUrl",
-    "getPendingPageSwitchUrl", "consumePendingPageSwitchUrl", "clearPendingPageSwitchUrl",
+    "consumePendingPageSwitchUrl", "clearPendingPageSwitchUrl",
     "clearMatchingPendingPageSwitchUrl"]) {
     const match = source.match(new RegExp(`function ${name}\\([^\\n]*\\) \\{[^{}]*\\}`));
     assert.ok(match, `${name} must remain a thin delegate`);
@@ -204,7 +204,7 @@ test("completed Composer domain operations remain module delegates in the entry 
     getPublicationCardFooterLabel: "getSharedPublicationCardFooterLabel", formatComposerCharacterCount: "formatComposerCharacterCountFromModule",
     requestLinkCardFromProxy: "composerLinkCardRequests.proxy", requestLinkCardFromMicrolink: "composerLinkCardRequests.microlink",
     buildPublishErrorMessage: "buildComposerPublishErrorMessage", buildPublishRateLimitMessage: "composerRateLimitPresentation.message",
-    renderPublishRateLimitNote: "composerRateLimitPresentation.render", queueDraftSave: "composerDocument.scheduleDraft",
+    queueDraftSave: "composerDocument.scheduleDraft",
   };
   for (const [name, delegate] of Object.entries(operations)) {
     const match = source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[^{}]*\\}`));
@@ -391,4 +391,28 @@ test("package and service-worker versions stay synchronized", () => {
   assert.equal(packageInfo.version, versionInfo.appVersion);
   assert.match(versionScript, new RegExp(`appVersion: "${versionInfo.appVersion}"`));
   assert.match(versionScript, new RegExp(`cacheVersion: "${versionInfo.cacheVersion}"`));
+});
+
+test("responsibility inventory covers every entry function and matches the reviewed source", () => {
+  const inventory = JSON.parse(readProjectFile("docs/modularization-inventory.json"));
+  const crypto = require("node:crypto");
+  for (const filename of ["app.js", "sw.js"]) {
+    const source = readProjectFile(filename), entry = inventory.files[filename];
+    const functions = [...source.matchAll(/^(?:async )?function ([A-Za-z_$][\w$]*)\(/gm)].map(match => match[1]).sort();
+    assert.deepEqual(entry.functions.map(item => item.name).sort(), functions);
+    assert.equal(entry.sourceSha256, crypto.createHash("sha256").update(source).digest("hex"));
+    assert.equal(entry.functionCount, functions.length);
+    assert.deepEqual(entry.unresolvedBindings, []);
+    assert.ok(entry.functions.every(item => item.domain && item.category && Array.isArray(item.stateReads) && Array.isArray(item.stateWrites)));
+  }
+});
+
+test("explorer view fields have one controller-owned source and translator has no workspace dependencies", () => {
+  const source=readProjectFile("app.js"),translator=readProjectFile("js/core/app-i18n.js");
+  assert.match(source,/const threadExplorerViewState = threadExplorerController\.state/);
+  assert.doesNotMatch(source,/let threadExplorer(?:Source|Zoom|PanX|PanY|Orientation|ViewMode|ReplyClusterExpandedUris)\s*=/);
+  assert.doesNotMatch(translator,/analysisWorkspaceController|renderArchiveWorkspace|renderSegments|options\.bindings/);
+  for(const name of ["getDmSecretFromLocation","getPrivacyPageLanguageAnchor","updatePrivacyPageLanguageLinks","renderPublishRateLimitNote"]){
+    assert.doesNotMatch(source,new RegExp("function "+name+"\\("));
+  }
 });

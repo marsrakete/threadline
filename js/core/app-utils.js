@@ -60,3 +60,18 @@ export {
 };
 
 export { cloneTemplate } from "../shared/shared-templates.js";
+
+/**
+ * Sets multiple attributes on an element.
+ * @param {HTMLElement} element - The target element.
+ * @param {Object} attrs - Object with attribute name-value pairs.
+ * @returns {void}
+ */
+export function setAttrs(element, attrs) {
+  if (!element) return;
+  for (const [name, value] of Object.entries(attrs)) {
+    if (value !== undefined && value !== null) {
+      element.setAttribute(name, String(value));
+    }
+  }
+}
