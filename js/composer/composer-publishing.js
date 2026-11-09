@@ -501,3 +501,21 @@ export function createComposerPublishController(options) {
   }
   return { click, preparationProgress };
 }
+
+/** Resolves the publish button label for a reply, continuation or new thread.
+ * @param {object|null} replyTarget - Current reply context. @param {boolean} busy - Request state.
+ * @param {Function} translate - Translation callback. @param {string} target - Provider label.
+ * @returns {string} Current translated button text.
+ */
+export function buildComposerPublishButtonLabel(replyTarget, busy, translate, target) {
+  if (replyTarget?.mode === "thread") {
+    if (busy) { return translate("publishBusyThreadContinuation"); }
+    return translate("publishButtonThreadContinuation");
+  }
+  if (replyTarget?.mode === "post") {
+    if (busy) { return translate("publishBusyReplyTarget"); }
+    return translate("publishButtonReplyTarget");
+  }
+  if (busy) { return translate("publishBusyTarget", { target }); }
+  return translate("publishButtonTarget", { target });
+}

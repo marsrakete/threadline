@@ -216,3 +216,133 @@ export function createApplicationInstallController(elements, options) {
   }
   return { render, beforePrompt, installed, install };
 }
+
+/** Owns native recommendation/file sharing, clipboard fallback and transient status timers.
+ * @param {object} adapters - navigator, document, URL, schedule/clearTimer, translate, title/url and optional status node.
+ * @returns {object} Frozen status, recommend, file and copy operations.
+ */
+export function createApplicationShareController(adapters) {
+  for (const key of ['schedule','clearTimer','translate']) { if (typeof adapters?.[key] !== 'function') { throw new TypeError('Application share requires ' + key); } }
+  const { navigator, document, URL, schedule, clearTimer, translate: t, title: APP_SHARE_TITLE, url: APP_SHARE_URL, status: shareStatus } = adapters;
+  let shareStatusTimer = null;
+  /** Updates transient share feedback and its cleanup timer. @param {string} message - Feedback. @param {string} tone - Semantic tone. @returns {void} Updated status. */
+  function setShareStatus(message, tone = "neutral") {
+    if (!shareStatus) {
+      return;
+    }
+    clearTimer(shareStatusTimer);
+    shareStatus.textContent = message;
+    shareStatus.hidden = !message;
+    if (message) {
+      shareStatus.dataset.tone = tone;
+    } else {
+      delete shareStatus.dataset.tone;
+    }
+    if (message) {
+      shareStatusTimer = schedule(() => {
+        shareStatus.hidden = true;
+        shareStatus.textContent = "";
+        delete shareStatus.dataset.tone;
+      }, 5000);
+    }
+  }
+
+  /** Opens native recommendation sharing or copies its text. @returns {Promise<void>} Handoff or reported failure. */
+  async function shareAppRecommendation() {
+    const payload = {
+      title: APP_SHARE_TITLE,
+      text: t("shareAppText"),
+      url: APP_SHARE_URL,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(payload);
+        return;
+      }
+
+      const shareText = `${payload.text}\n${payload.url}`;
+      await copyTextToClipboard(shareText);
+      setShareStatus(t("shareCopied"));
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return;
+      }
+      setShareStatus(t("shareUnavailable"), "error");
+    }
+  }
+
+  /** Shares a file or performs its download fallback. @param {File} file - File data. @param {string} fallbackName - Download name. @param {object} options - preferDownload flag. @returns {Promise<void>} Handoff completion. */
+  async function shareOrDownloadFile(file, fallbackName, options = {}) {
+    const preferDownload = options.preferDownload === true;
+    if (!preferDownload && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          title: fallbackName,
+          files: [file],
+        });
+        return;
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fallbackName;
+    link.click();
+    schedule(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /** Copies literal text through native clipboard or DOM fallback. @param {string} text - Content. @returns {Promise<void>} Copy completion. */
+  async function copyTextToClipboard(text) {
+    const value = String(text || "");
+    if (!value) {
+      return;
+    }
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+
+    const helper = document.createElement("textarea");
+    helper.value = value;
+    helper.setAttribute("readonly", "readonly");
+    helper.style.position = "fixed";
+    helper.style.opacity = "0";
+    helper.style.pointerEvents = "none";
+    document.body.append(helper);
+    helper.select();
+    document.execCommand("copy");
+    helper.remove();
+  }
+  return Object.freeze({ status: setShareStatus, recommend: shareAppRecommendation, file: shareOrDownloadFile, copy: copyTextToClipboard });
+}
+
+/** Renders workspace navigation from current auth/access state and supplied control records.
+ * @param {object} state - authenticated, workspace and dmAvailable values.
+ * @param {object} controls - addAccount/publish/ownSearch nodes, publishLabel callback and workspaces records.
+ * @param {Function} translate - Current translation function.
+ * @returns {void} Updated disabled, pressed and translated navigation state.
+ */
+export function renderApplicationNavigation(state, controls, translate) {
+  controls.addAccount.textContent = translate("addAccountButton");
+  controls.publish.textContent = controls.publishLabel();
+  if (controls.ownSearch) { controls.ownSearch.disabled = !state.authenticated; }
+  for (const entry of controls.workspaces) {
+    entry.button.disabled = entry.requiresAuth && !state.authenticated;
+    if (entry.name === "dm" && !state.dmAvailable) { entry.button.disabled = true; }
+    const active = state.workspace === entry.name;
+    entry.button.classList.toggle("is-active", active);
+    let pressed = "false";
+    if (active) { pressed = "true"; }
+    entry.button.setAttribute("aria-pressed", pressed);
+    let key = entry.name + "LaunchDisabledNote";
+    if (state.authenticated) { key = entry.name + "LaunchEnabledNote"; }
+    if (entry.name === "composer") { key = "composerLaunchNote"; }
+    entry.note.textContent = translate(key);
+  }
+}

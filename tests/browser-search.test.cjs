@@ -1,4 +1,5 @@
 "use strict";
+const { cacheVersion } = require("../version.json");
 const { test, expect } = require("@playwright/test");
 test.use({ serviceWorkers: "block" });
 
@@ -488,7 +489,7 @@ for (const pathname of ["/", "/tools.html"]) {
     expect(result.results.tree.posts.map(post=>post.rkey)).toEqual(["root","child","other"]);
     expect(result.results.author.posts.map(post=>post.rkey)).toEqual(["root","child"]);
     expect(result.results.path.assets.map(asset=>asset.path)).toEqual(["link-cards/own.test-root.png","images/2026/own.test-child-1.png"]);
-    expect(result.results.path.assets[1].bytes).toEqual([1,2]); expect(result.results.path.manifest).toMatchObject({imageCount:1,postCount:2,appVersion:"v375"});
+    expect(result.results.path.assets[1].bytes).toEqual([1,2]); expect(result.results.path.manifest).toMatchObject({imageCount:1,postCount:2,appVersion:cacheVersion});
     expect(result.results.path.manifest.threadImport).toMatchObject({entryMode:"reply",importMode:"path"});
     expect(result.cancelled.session.status).toBe("cancelled"); expect(result.cancelled.manifest.postCount).toBeUndefined();
     expect(result.absent.manifest.threadImport).toMatchObject({entryMode:"missing",note:"Post nicht gefunden oder gelöscht"});
@@ -638,7 +639,7 @@ for (const pathname of ["/", "/tools.html"]) {
     expect(result.own).toMatchObject({did:"did:example:own",isOwnAccount:true}); expect(result.other).toMatchObject({handle:"other.test",displayName:"<b>Other</b>",avatar:"avatar",isOwnAccount:false});
     expect(result.sourceCalls).toHaveLength(1); expect(result.sourceCalls[0].params.actor).toBe("did:example:other");
     expect(result.sourceCalls[0].transport.headers.authorization).toBe("Bearer fixture"); expect(result.resumeRefs).toEqual({copied:true,raw:true,images:true});
-    expect(result.completed.manifest).toMatchObject({postCount:1,pageCount:7,appVersion:"v375",imageCount:0,phase:"assets"});
+    expect(result.completed.manifest).toMatchObject({postCount:1,pageCount:7,appVersion:cacheVersion,imageCount:0,phase:"assets"});
     expect(result.completed.posts[0]).toMatchObject({text:"<b>Literal saved</b>",counts:{likeCount:4}}); expect(result.completed.assets).toEqual([]);
     expect(result.completed.session).toMatchObject({waveIndex:1,status:"completed",hasMore:false,exportedPosts:1,pageCount:7});
     expect(result.cancelled.session).toMatchObject({status:"cancelled",exportedPosts:1,pageCount:7});
@@ -916,7 +917,7 @@ for (const pathname of ["/", "/tools.html"]) {
     expect(result.error).toBeUndefined(); expect(result.wired).toBe(true); expect(result.frozen).toBe(true); expect(result.cached).toBe(true);
     expect(result.contacts).toHaveLength(1); expect(result.contacts[0].handle).toBe("peer.test");
     expect(result.avatar).toBe("dm-avatars/peer.test.png"); expect(result.copied).toBe(true);
-    expect(result.manifest).toMatchObject({messageCount:2,conversationCount:1,participantCount:1,appVersion:"v375",exportedAt:"2026-10-22T10:00:00.000Z"});
+    expect(result.manifest).toMatchObject({messageCount:2,conversationCount:1,participantCount:1,appVersion:cacheVersion,exportedAt:"2026-10-22T10:00:00.000Z"});
     expect(result.messages.map(message => message.id)).toEqual(["start","end"]); expect(result.messages[0].text).toBe("<b>Literal</b>");
     expect(result.messages[1].card.thumbPath).toBe("dm-link-cards/peer.test-end.png");
     expect(result.assets.map(asset => asset.path)).toEqual(["dm-avatars/peer.test.png","dm-link-cards/peer.test-end.png","dm-avatars/self.test.png"]);
@@ -1856,5 +1857,161 @@ for (const pathname of ["/", "/tools.html"]) {
     await page.locator("#search-url-input").dispatchEvent("change");
     await expect(page.locator("#search-url-status")).not.toBeEmpty();
     expect(errors).toEqual([]);
+  });
+}
+
+for (const pathname of ["/", "/tools.html"]) {
+  test(`final translation and rich-text module contracts render from ${pathname}`, async ({ page }) => {
+    const errors = []; page.on("pageerror", error => errors.push(error.message));
+    await prepareSearch(page); await page.goto(pathname);
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    await page.locator("#language-select").selectOption("de", { force: true });
+    await expect(page.locator("html")).toHaveAttribute("lang", "de");
+    await page.locator("#language-select").selectOption("fr", { force: true });
+    await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+    const result = await page.evaluate(async () => {
+      const { createApplicationTranslationRenderer } = await import("/js/core/app-i18n.js");
+      const { createRichTextPresentation } = await import("/js/shared/shared-post-rendering.js");
+      let invalid = false; try { createApplicationTranslationRenderer({ bindings: null }); } catch (error) { invalid = error instanceof TypeError; }
+      const host = document.createElement("div"); host.textContent = "literal <img> Word word"; document.body.append(host);
+      const renderer = createRichTextPresentation({ document, nodeFilter: NodeFilter, queryTerms: () => ["word"], escape: value => value });
+      renderer.highlight(host, "word"); renderer.highlight(host, "word");
+      const highlighted = host.querySelectorAll("mark").length, nested = host.querySelectorAll("mark mark").length;
+      renderer.clear(host); const text = host.textContent, remaining = host.querySelectorAll("mark,img").length; host.remove();
+      return { invalid, highlighted, nested, text, remaining };
+    });
+    expect(result).toEqual({ invalid: true, highlighted: 2, nested: 0, text: "literal <img> Word word", remaining: 0 });
+    expect(errors).toEqual([]);
+  });
+}
+
+test("archive export cards fit the entire mobile viewport", async ({ page }) => {
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  await prepareSearch(page); await page.setViewportSize({ width: 390, height: 844 }); await page.goto("/tools.html");
+  await expect(page.locator("#archive-button")).toBeEnabled(); await page.locator("#archive-button").click();
+  const cards = page.locator("#archive-workspace .archive-export-card"); await expect(cards.first()).toBeVisible();
+  for (const card of await cards.all()) {
+    const bounds = await card.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(391);
+  }
+  expect(errors).toEqual([]);
+});
+
+for (const pathname of ["/", "/tools.html"]) {
+  test(`translation markup and post edit controllers have independent DOM contracts on ${pathname}`, async ({page}) => {
+    const errors=[]; page.on("pageerror", error=>errors.push(error.message));
+    await prepareSearch(page); await page.goto(pathname); await expect(page.locator("html")).toHaveAttribute("lang","en");
+    const result=await page.evaluate(async()=>{
+      const {createApplicationTranslationRenderer}=await import("/js/core/app-i18n.js");
+      const {createPostEditCheckController}=await import("/js/tools/archive.js");
+      const {getCurrentPostEditTokenStates}=await import("/js/shared/shared-post-rendering.js");
+      const layout=await import("/js/tools/thread-explorer-layout.js");
+      const {setAttrs}=await import("/js/core/app-utils.js");
+      const item=document.querySelector("#thread-explorer-node-template").content.firstElementChild.cloneNode(true);
+      const emptyNode=document.createElement("div"),children=item.querySelector(":scope > .thread-explorer-children");
+      const child=document.createElement("li");child.className="thread-explorer-node-item";children.append(child,document.createElement("li"));
+      setAttrs(emptyNode,{title:"literal <b>","aria-hidden":false,"data-ignore":null});setAttrs(null,{});
+      const helpers={children:layout.getRenderedThreadExplorerChildItems(item).length,card:Boolean(layout.getRenderedThreadExplorerCard(item)),
+        emptyChildren:layout.getRenderedThreadExplorerChildItems(emptyNode).length,emptyCard:layout.getRenderedThreadExplorerCard(emptyNode),
+        title:emptyNode.title,aria:emptyNode.getAttribute("aria-hidden"),ignored:emptyNode.hasAttribute("data-ignore")};
+      const root=document.createElement("section"); document.body.append(root);
+      const label=document.createElement("span"); label.dataset.i18n="label"; root.append(label);
+      const input=document.createElement("input"); input.dataset.i18nPlaceholder="input"; input.dataset.i18nTitle="title";root.append(input);
+      const image=document.createElement("img");image.dataset.i18nAlt="image";root.append(image);
+      let language="en";
+      const translator=createApplicationTranslationRenderer({document:{documentElement:root,querySelectorAll:selector=>root.querySelectorAll(selector)},translate:key=>language+":"+key,locale:()=>language});
+      translator.render(); const first=label.textContent; language="fr";
+      const extra=document.createElement("span");extra.dataset.i18n="late";root.append(extra);translator.render();
+      const translated={first,second:label.textContent,placeholder:input.placeholder,title:input.title,aria:input.getAttribute("aria-label"),alt:image.alt,late:extra.textContent,language:root.lang};
+      const elements={};for(const key of ["current","status","created","updated","original","result"])elements[key]=document.createElement("div");
+      elements.url=document.createElement("input");elements.dialog=document.createElement("dialog");root.append(elements.dialog);for(const element of Object.values(elements))if(element!==elements.dialog)elements.dialog.append(element);
+      const calls=[];let response={isEdited:true,originalText:"old text",text:"new text",createdAt:"created",updatedAt:"updated"},source="https://example.test/post";
+      const adapters={document,translate:key=>key,timestamp:value=>"date:"+value,compare:getCurrentPostEditTokenStates,
+        request:async(...args)=>{calls.push(args);if(response instanceof Error)throw response;return response;},schedule:callback=>callback(),source:()=>source};
+      let invalid=false;try{createPostEditCheckController(elements,{...adapters,request:null});}catch(error){invalid=error instanceof TypeError;}
+      const controller=createPostEditCheckController(elements,adapters);controller.open();await controller.check();
+      const edited={text:elements.current.textContent,mark:elements.current.querySelector("mark").textContent,created:elements.created.textContent,visible:!elements.result.hidden};
+      controller.reset();const reset=elements.current.childNodes.length===0&&elements.result.hidden;
+      response={isEdited:false};await controller.check();const unchanged=elements.status.classList.contains("is-unedited");
+      response=Error("offline");let failed=false;try{await controller.check();}catch(error){failed=error.message==="offline";}
+      elements.url.value=" ";let empty=false;try{await controller.check();}catch(error){empty=error.message==="postEditCheckInvalidUrl";}
+      source="new source";controller.open();const liveSource=elements.url.value;controller.close();controller.close();
+      const closed=!elements.dialog.open;root.remove();return {translated,edited,invalid,reset,unchanged,failed,empty,liveSource,closed,helpers,calls:calls.map(call=>[call[0],call[1].url,call[2].timeoutMs])};
+    });
+    expect(result.translated).toEqual({first:"en:label",second:"fr:label",placeholder:"fr:input",title:"fr:title",aria:"fr:title",alt:"fr:image",late:"fr:late",language:"fr"});
+    expect(result.edited).toEqual({text:"new text",mark:"new",created:"date:created",visible:true});
+    expect(result.helpers).toEqual({children:1,card:true,emptyChildren:0,emptyCard:null,title:"literal <b>",aria:"false",ignored:false});
+    expect(result).toMatchObject({invalid:true,reset:true,unchanged:true,failed:true,empty:true,liveSource:"new source",closed:true});
+    expect(result.calls).toEqual(Array(3).fill(["CHECK_POST_EDIT","https://example.test/post",120000]));expect(errors).toEqual([]);
+  });
+}
+
+for(const pathname of ["/","/tools.html"]){
+  test(`account context ignores late actor results after a newer account selection on ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);await page.goto(pathname);
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    await page.evaluate(async()=>{
+      const registration=await navigator.serviceWorker.ready,original=registration.active.postMessage;
+      window.__actorRequests=[];
+      registration.active.postMessage=(message,ports)=>{
+        if(message.type==="LOAD_THREAD_EXPLORER_ACTOR_FEED"){window.__actorRequests.push({message,port:ports[0]});return;}
+        original(message,ports);
+      };
+      const input=document.querySelector("#thread-explorer-account-input");input.value="alice.test";input.dispatchEvent(new Event("change"));
+    });
+    await expect.poll(()=>page.evaluate(()=>window.__actorRequests.length)).toBe(1);
+    await page.evaluate(()=>{const input=document.querySelector("#thread-explorer-account-input");input.value="bob.test";input.dispatchEvent(new Event("change"));});
+    await expect.poll(()=>page.evaluate(()=>window.__actorRequests.length)).toBe(2);
+    await page.evaluate(()=>window.__actorRequests[1].port.postMessage({ok:true,result:{items:[window.__searchItem("bob")],cursor:""}}));
+    await expect(page.locator("#thread-explorer-actor-feed-list")).toContainText("word bob");
+    await page.evaluate(()=>window.__actorRequests[0].port.postMessage({ok:true,result:{items:[window.__searchItem("alice")],cursor:""}}));
+    await expect(page.locator("#thread-explorer-actor-feed-list")).toContainText("word bob");
+    await page.evaluate(()=>new Promise(requestAnimationFrame));
+    await expect(page.locator("#thread-explorer-actor-feed-list")).not.toContainText("word alice");
+    await page.evaluate(()=>document.querySelector("#thread-explorer-use-own-account-button").dispatchEvent(new Event("click")));
+    await expect(page.locator("#thread-explorer-account-input")).toHaveValue("search.test");expect(errors).toEqual([]);
+  });
+}
+
+for(const pathname of ["/","/tools.html"]){
+  test(`snapshot native adapters decode, encode and reject unusable images on ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);await page.goto(pathname);
+    await expect(page.locator("html")).toHaveAttribute("lang","en");
+    const result=await page.evaluate(async()=>{
+      const snapshot=await import("/js/tools/thread-explorer-snapshot.js");
+      const rendering=await import("/js/tools/thread-explorer-rendering.js"),models=await import("/js/tools/thread-explorer.js");
+      const host=document.createElement("div"),item=document.querySelector("#thread-explorer-node-template").content.firstElementChild.cloneNode(true);
+      item.dataset.uri="at://card-fixture";const card=item.querySelector(".thread-explorer-post-card");card._threadExplorerPost={uri:"at://card-fixture"};host.append(item);document.body.append(host);
+      let countRenders=0,interactionRenders=0,clicks=0;
+      rendering.refreshLivePostCards("at://card-fixture",{document,counts:()=>countRenders++,searchCounts:()=>countRenders++,interactions:()=>interactionRenders++});
+      rendering.refreshLivePostCard(null,{});rendering.refreshLivePostCards("",{document});
+      const button=rendering.createLivePostActionButton("reply",{onClick:()=>clicks++},{document,translate:key=>key});host.append(button);button.click();
+      const selectedText=document.createElement("span");selectedText.className="thread-explorer-post-text";
+      const ui={countRenders,interactionRenders,clicks,label:button.textContent,native:models.isThreadExplorerInteractiveTarget(button,Element),selectable:models.isThreadExplorerInteractiveTarget(selectedText,Element),background:models.isThreadExplorerInteractiveTarget(host,Element),absent:models.isThreadExplorerInteractiveTarget(null,Element)};host.remove();
+      const canvas=document.createElement("canvas");canvas.width=2;canvas.height=2;canvas.getContext("2d").fillRect(0,0,2,2);
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve)),url=URL.createObjectURL(blob);
+      const loaded=await snapshot.loadSnapshotCanvasImage(url,Image),encoded=snapshot.encodeSnapshotImageElement(loaded,document);
+      const decoded=await snapshot.loadSnapshotCanvasImage(encoded,Image);URL.revokeObjectURL(url);
+      return {ui,size:[loaded.naturalWidth,decoded.naturalHeight],encoded:encoded.startsWith("data:image/png"),
+        passthrough:snapshot.encodeSnapshotImageElement(decoded,document)===encoded,empty:snapshot.encodeSnapshotImageElement(null,document),
+        unloaded:snapshot.encodeSnapshotImageElement({src:"/pending.png",complete:false},document),
+        absent:await snapshot.loadSnapshotCanvasImage("",Image),invalid:await snapshot.loadSnapshotCanvasImage("data:image/png;base64,AAAA",Image)};
+    });
+    expect(result).toEqual({ui:{countRenders:1,interactionRenders:1,clicks:1,label:"reply",native:true,selectable:true,background:false,absent:false},size:[2,2],encoded:true,passthrough:true,empty:"",unloaded:"",absent:null,invalid:null});expect(errors).toEqual([]);
+  });
+}
+
+for(const pathname of ["/","/tools.html"]){
+  test(`link card create and Enter handlers reach the module submission controller on ${pathname}`,async({page})=>{
+    const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);await page.goto(pathname);
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    await page.evaluate(()=>{const input=document.querySelector("#source-text");input.value="Draft text";input.dispatchEvent(new Event("input",{bubbles:true}));});
+    await page.locator(".segment-link-card-manual-button").first().dispatchEvent("click");
+    await expect(page.locator("#link-card-dialog")).toBeVisible();
+    await page.locator("#link-card-url-input").fill("");await page.locator("#link-card-create-button").click();
+    await expect(page.locator("#link-card-status")).toHaveAttribute("data-tone","error");
+    await page.evaluate(()=>{const status=document.querySelector("#link-card-status");status.textContent="";delete status.dataset.tone;});
+    await page.locator("#link-card-url-input").press("Enter");
+    await expect(page.locator("#link-card-status")).toHaveAttribute("data-tone","error");expect(errors).toEqual([]);
   });
 }

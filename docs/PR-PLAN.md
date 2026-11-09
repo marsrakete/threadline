@@ -1,8 +1,8 @@
 # Geplante Pull Requests
 
-Die 79 offenen Punkte aus [TODO.md](../TODO.md) sind hier 45 fachlich abgegrenzten PR-Beschreibungen und gemeinsamen Abnahmekriterien zugeordnet. Die Vorlagen sind Planungen, keine bereits implementierten Änderungen oder bereits angelegten GitHub-Umsetzungs-PRs. Optional formulierte Produktideen behalten ihren Entscheidungsbedarf.
+Die bei Erstellung am 8. November 2026 offenen 79 Punkte aus [TODO.md](../TODO.md) sind hier 45 fachlich abgegrenzten PR-Beschreibungen und gemeinsamen Abnahmekriterien zugeordnet. Die Vorlagen sind Planungen, keine bereits implementierten Änderungen oder bereits angelegten GitHub-Umsetzungs-PRs. Optional formulierte Produktideen behalten ihren Entscheidungsbedarf.
 
-Der gesicherte Modularisierungsstand liegt in [PR #1](https://github.com/marsrakete/threadline/pull/1). Dieser Plan wird in einem separaten Dokumentations-PR gegen dessen Branch vorbereitet. Nach dessen Merge oder Aktualisierung den Basisstand prüfen; Umsetzungsbranches vom passenden integrierten Stand starten. Keine 45 leeren Code-PRs erzeugen. Jede Vorlage enthält Titel, Problem/Ziel, Umfang, konkrete Abnahme, Abhängigkeiten und die ursprünglichen TODO-Texte.
+Der Zähler-Persistenzfehler ist inzwischen mit [PR #3](https://github.com/marsrakete/threadline/pull/3) behoben; die fachliche Modularisierung und ihre Nachprüfung sind mit [PR #4](https://github.com/marsrakete/threadline/pull/4) umgesetzt. Diese historischen Vorlagen öffnen erledigte Aufgaben nicht erneut. Aktueller Bearbeitungsstand: [TODO.md](../TODO.md); aktuelle App-/Cacheversion: [version.json](../version.json). Änderungen aus PR #1 bis #4 werden im Branch `integration/pr-1-4` für die lokale Abnahme zusammengeführt. Neue Umsetzungsbranches vom passenden integrierten Stand starten; keine leeren Code-PRs erzeugen.
 
 ## Empfohlene Reihenfolge
 
@@ -23,7 +23,7 @@ Diese Kriterien decken die TODO-Punkte T002, T003, T055, T056 und T079 ab und ge
 - Neue Modulverträge mit Normal-, Grenz- und Fehlerfällen prüfen; betroffene Seiten im Browser mit pageerror-Erfassung laden. Bei Darstellung Geometrie oder Screenshots prüfen.
 - Syntax, Encoding, Import-/Export-/Cacheverträge und git diff --check passend zum Umfang prüfen. Vollständige Abnahme und gezielte Tests klar unterscheiden.
 - Sichtbare Texte zentralisieren, Übersetzungen und Dokumentation der tatsächlichen Änderung abgleichen. Vor Push experimentelle Funktionen und sensible Datenbereiche prüfen; keine Geheimnisse/Testkontodaten veröffentlichen.
-- Bei Backup-Inhaltsänderungen README und Kompatibilität prüfen. Versions-/Cachebump nur im freigegebenen Abschluss PR-045; bis dahin 0.4.356/v375 erhalten.
+- Bei Backup-Inhaltsänderungen README und Kompatibilität prüfen. Versions-/Cacheänderungen mit dem freigegebenen Abschluss abstimmen; maßgeblich ist `version.json`. `0.4.356`/`v375` war der Basisstand bei Erstellung dieses Plans.
 - Für Publishing-/Löschtests kontrollierte Adapter verwenden. Liveaktionen benötigen einen ausdrücklich vorgesehenen Testablauf; geplante Rücknahme wird nicht ungefragt ausgeführt.
 
 ## Einzelne PR-Vorlagen

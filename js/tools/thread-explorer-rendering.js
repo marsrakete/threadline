@@ -427,3 +427,64 @@ export function renderSavedSearches(options) {
     options.list.appendChild(fragment);
   });
 }
+
+/** Refreshes existing card counts and actions. @param {Element|null} card - Card node. @param {object} options - searchCounts, counts and interactions renderers. @returns {void} Updated card. */
+export function refreshLivePostCard(card = null, options) {
+  if (!card) {
+    return;
+  }
+
+  const post = card._threadExplorerPost || null;
+  const counts = card.querySelector(".thread-explorer-post-counts");
+  const actions = card.querySelector(".thread-explorer-post-actions");
+  const headButtons = card.querySelector(".thread-explorer-post-head-buttons");
+  const viewLink = card.querySelector(".thread-explorer-view-link");
+  if (!post || !counts || !actions || !headButtons || !viewLink) {
+    return;
+  }
+
+  const inSearchResult = Boolean(card.closest(".search-result-item"));
+  if (inSearchResult) {
+    options.searchCounts(post, counts);
+  } else {
+    options.counts(post, counts);
+  }
+  options.interactions(post, actions, headButtons, viewLink, {
+    renderInHeader: inSearchResult,
+  });
+}
+
+/** Refreshes every rendered card for a URI. @param {string} postUri - Target URI. @param {object} options - document, optional selector escape and card renderers. @returns {void} Updated matching cards. */
+export function refreshLivePostCards(postUri = "", options) {
+  const normalizedUri = String(postUri || "").trim();
+  if (!normalizedUri) {
+    return;
+  }
+
+  let selectorValue = normalizedUri.replace(/["\\]/g, "\\$&");
+  if (typeof options.escape === "function") {
+    selectorValue = options.escape(normalizedUri);
+  }
+  options.document.querySelectorAll(`.thread-explorer-node-item[data-uri="${selectorValue}"] .thread-explorer-post-card`).forEach((card) => {
+    refreshLivePostCard(card, options);
+  });
+}
+
+/** Creates one translated post action. @param {string} translationKey - Text key. @param {object} options - Existing action presentation/click options. @param {object} adapters - document and translate adapters. @returns {HTMLButtonElement} Action button. */
+export function createLivePostActionButton(translationKey, options = {}, adapters) {
+  const { document, translate: t } = adapters;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-button thread-explorer-inline-action";
+  button.textContent = t(translationKey);
+  if (options.active === true) {
+    button.classList.add("is-active");
+  }
+  if (options.disabled === true) {
+    button.disabled = true;
+  }
+  if (typeof options.onClick === "function") {
+    button.addEventListener("click", options.onClick);
+  }
+  return button;
+}

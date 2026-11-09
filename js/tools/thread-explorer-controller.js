@@ -140,7 +140,9 @@ export function createThreadExplorerFavoritesController(options) {
     await options.persist();
     return true;
   }
-  return Object.freeze({ save, remove });
+  /** Checks current favorites without copying the persisted collection. @param {string} rootUri - Root URI. @returns {boolean} Saved state. */
+  function has(rootUri) { return Boolean(rootUri && options.getFavorites().some(favorite => favorite.rootUri === rootUri)); }
+  return Object.freeze({ save, remove, has });
 }
 
 /**
@@ -557,6 +559,8 @@ export async function loadThreadExplorerFeedWorkflow(options = {}) {
   options.clearErrors();
   state.loading = true;
   options.render();
+  const contextKey = options.contextKey?.();
+  const isCurrent = () => !options.contextKey || options.contextKey() === contextKey;
   try {
     let result = null;
     if (foreignAccount) {
@@ -574,6 +578,7 @@ export async function loadThreadExplorerFeedWorkflow(options = {}) {
         search: options.savedSearch,
       }, { timeoutMs: 120000 });
     }
+    if (!isCurrent()) { return; }
     state.cursor = String(result?.cursor || "");
     state.hasMore = Boolean(state.cursor);
     if (Array.isArray(result?.items)) {
@@ -589,8 +594,10 @@ export async function loadThreadExplorerFeedWorkflow(options = {}) {
       await options.restoreSelection(options.clearSelection !== true);
     }
   } catch (error) {
+    if (!isCurrent()) { return; }
     options.setError(error?.message || options.feedErrorMessage, foreignAccount);
   } finally {
+    if (!isCurrent()) { return; }
     state.loading = false;
     options.render();
   }
@@ -618,6 +625,8 @@ export async function loadThreadExplorerActorFocusWorkflow(options = {}) {
   state.loading = true;
   state.error = "";
   options.render();
+  const contextKey = options.contextKey?.();
+  const isCurrent = () => !options.contextKey || options.contextKey() === contextKey;
   try {
     const result = await options.request("LOAD_THREAD_EXPLORER_ACTOR_FEED", {
       actor: options.actorId,
@@ -625,6 +634,7 @@ export async function loadThreadExplorerActorFocusWorkflow(options = {}) {
       mode: options.mode,
       limit: 30,
     }, { timeoutMs: 120000 });
+    if (!isCurrent()) { return; }
     state.cursor = String(result?.cursor || "");
     state.hasMore = Boolean(state.cursor);
     if (Array.isArray(result?.items)) {
@@ -636,8 +646,10 @@ export async function loadThreadExplorerActorFocusWorkflow(options = {}) {
       state.items = options.sortItems(state.items);
     }
   } catch (error) {
+    if (!isCurrent()) { return; }
     state.error = error.message || options.errorMessage;
   } finally {
+    if (!isCurrent()) { return; }
     state.loading = false;
     options.render();
   }
@@ -662,16 +674,21 @@ export async function loadThreadExplorerThreadWorkflow(uri, options = {}) {
   options.clearMediaCache();
   options.state.error = "";
   options.render();
+  const contextKey = options.contextKey?.();
+  const isCurrent = () => !options.contextKey || options.contextKey() === contextKey;
   try {
     const result = await options.request("LOAD_THREAD_EXPLORER_THREAD", { uri: selectedUri }, { timeoutMs: 120000 });
+    if (!isCurrent()) { return; }
     options.state.tree = result?.root || null;
     if (options.state.tree && options.isClusterMode()) {
       options.resetClusterState();
       options.expandClusterTree(options.state.tree);
     }
   } catch (error) {
+    if (!isCurrent()) { return; }
     options.state.error = error.message || options.errorMessage;
   } finally {
+    if (!isCurrent()) { return; }
     options.state.loading = false;
     options.render();
     if (options.state.tree) {
@@ -1070,4 +1087,296 @@ export function createThreadExplorerFocusController(options) {
   }
   return Object.freeze({ find: findRenderedThreadExplorerNode, reveal: scrollThreadExplorerNodeIntoView,
     root: scrollThreadExplorerToRoot, focus: focusSelectedThreadExplorerNode });
+}
+
+/** Owns optimistic like/unlike mutations and in-flight request deduplication.
+ * @param {object} options - liked, likeUri, like, unlike, apply, refresh and error callbacks.
+ * @returns {object} Frozen toggle and pending-query API; the pending set stays private.
+ */
+export function createLivePostInteractionController(options) {
+  for (const key of ['liked','likeUri','like','unlike','apply','refresh','error']) {
+    if (typeof options?.[key] !== 'function') { throw new TypeError('Live post interactions require ' + key); }
+  }
+  const pending = new Set();
+  const { liked: isPostLikedByViewer, likeUri: getViewerLikeUri } = options;
+  /** Toggles one valid post, rolling back optimistic state on failure. @param {object} post - Normalized post. @returns {Promise<void>} Settled request. */
+  async function toggleLikeForLivePost(post = {}) {
+    const postUri = String(post?.uri || "").trim();
+    const postCid = String(post?.cid || "").trim();
+    if (!postUri || !postCid) {
+      return;
+    }
+    if (pending.has(postUri)) {
+      return;
+    }
+
+    const wasLiked = isPostLikedByViewer(post);
+    const previousLikeUri = getViewerLikeUri(post);
+    let nextLikeUri = "";
+    let delta = 0;
+
+    if (wasLiked) {
+      delta = -1;
+    } else {
+      delta = 1;
+      nextLikeUri = `pending:${postUri}`;
+    }
+
+    pending.add(postUri);
+    options.apply(postUri, nextLikeUri, delta);
+    options.refresh(postUri);
+
+    try {
+      if (wasLiked) {
+        await options.unlike(previousLikeUri);
+        options.apply(postUri, "", 0);
+      } else {
+        const result = await options.like({
+          uri: postUri,
+          cid: postCid,
+        });
+        options.apply(postUri, String(result?.uri || "").trim(), 0);
+      }
+    } catch (error) {
+      options.apply(postUri, previousLikeUri, delta * -1);
+      options.error(error);
+    } finally {
+      pending.delete(postUri);
+      options.refresh(postUri);
+    }
+  }
+  return Object.freeze({ toggle: toggleLikeForLivePost, pending: uri => pending.has(uri) });
+}
+
+/** Owns account selection and actor-focus context transitions as one domain transaction.
+ * @param {object} state - Live account/feed/focus state and read-only authenticated identity.
+ * @param {object} elements - Account input and account-mode select.
+ * @param {object} models - Explicit pure actor/mode/identity adapters.
+ * @param {object} actions - render, persist, loadActor, loadFeed and loadSources callbacks.
+ * @returns {object} Frozen context operations and identity predicates.
+ */
+export function createThreadExplorerAccountContext(state, elements, models, actions) {
+  for (const key of ['render','persist','loadActor','loadFeed','loadSources']) {
+    if (typeof actions?.[key] !== 'function') { throw new TypeError('Explorer account context requires ' + key); }
+  }
+  for (const key of ["getThreadExplorerOwnActorFromTools","isThreadExplorerForeignAccountModeFromTools","normalizeThreadExplorerActor","isThreadExplorerOwnActorFromTools","isThreadExplorerForeignActorFocusModeFromTools","createThreadExplorerActorStubFromTools","getThreadExplorerActorFocusId","normalizeThreadExplorerAccountMode","normalizeThreadExplorerActorFocusModeFromTools"]) {
+    if (typeof models?.[key] !== 'function') { throw new TypeError('Explorer account context requires model ' + key); }
+  }
+  let revision = 0;
+  /** Invalidates requests from an earlier account, source or focus context. @returns {void} New context generation. */
+  function invalidate() {
+    revision += 1;
+    state.loadingFeed = false;
+    state.actorFocusLoading = false;
+    state.loadingThread = false;
+  }
+  const { getThreadExplorerOwnActorFromTools, isThreadExplorerForeignAccountModeFromTools, normalizeThreadExplorerActor, isThreadExplorerOwnActorFromTools, isThreadExplorerForeignActorFocusModeFromTools, createThreadExplorerActorStubFromTools, getThreadExplorerActorFocusId, normalizeThreadExplorerAccountMode, normalizeThreadExplorerActorFocusModeFromTools } = models;
+
+  /**
+   * Returns the active account label for "Mein Account" actions in the Thread Explorer.
+   * @returns {string} Handle, identifier, DID, or an empty string when unavailable.
+   */
+  function getThreadExplorerOwnActor() {
+    return getThreadExplorerOwnActorFromTools(state.savedAccounts, state.authAccountDid, state.authAccount);
+  }
+
+  /**
+   * Checks whether the Thread Explorer should load posts from a foreign account.
+   * @returns {boolean} True when the account field points to another account.
+   */
+  function isThreadExplorerForeignAccountMode() {
+    return isThreadExplorerForeignAccountModeFromTools(
+      state.accountActor,
+      state.authAccount,
+      state.authAccountDid,
+      normalizeThreadExplorerActor,
+    );
+  }
+
+  /**
+   * Checks whether one actor belongs to the signed-in account.
+   * @param {object|null} actor - Normalized actor object from Thread Explorer data.
+   * @returns {boolean} True when the actor is the signed-in account.
+   */
+  function isThreadExplorerOwnActor(actor = null) {
+    return isThreadExplorerOwnActorFromTools(actor, state.authAccount, state.authAccountDid, normalizeThreadExplorerActor);
+  }
+
+  /**
+   * Checks whether the Thread Explorer currently shows a foreign-account actor focus.
+   * @returns {boolean} True when the top source controls should be hidden.
+   */
+  function isThreadExplorerForeignActorFocusMode() {
+    return isThreadExplorerForeignActorFocusModeFromTools(
+      state.actorFocusActor,
+      state.authAccount,
+      state.authAccountDid,
+      normalizeThreadExplorerActor,
+    );
+  }
+
+  /**
+   * Builds a minimal Thread Explorer actor object from the account field value.
+   * @param {string} actorValue - Normalized handle or DID from the account field.
+   * @returns {object} Actor stub with either handle or DID filled.
+   */
+  function createThreadExplorerActorStub(actorValue = "") {
+    return createThreadExplorerActorStubFromTools(actorValue, normalizeThreadExplorerActor);
+  }
+
+  /**
+   * Opens the Actor-Fokus card for a Thread Explorer actor.
+   * @param {object} actor - Normalized Thread Explorer actor.
+   * @returns {void}
+   */
+  function openThreadExplorerActorFocus(actor = {}) {
+    const actorId = getThreadExplorerActorFocusId(actor);
+    if (!actorId) {
+      return;
+    }
+
+    invalidate();
+    const isOwnActor = isThreadExplorerOwnActor(actor);
+    if (!isOwnActor) {
+      if (!isThreadExplorerForeignActorFocusMode()) {
+        state.accountActorBeforeFocus = normalizeThreadExplorerActor(state.accountActor);
+        state.accountModeBeforeFocus = normalizeThreadExplorerAccountMode(state.accountMode);
+      }
+      state.accountActor = normalizeThreadExplorerActor(actor.handle || actor.did || "");
+      if (elements.account) {
+        elements.account.value = state.accountActor;
+      }
+      state.accountError = "";
+      state.actorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(state.accountMode);
+    }
+    state.actorFocusActor = { ...actor };
+    state.actorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(state.actorFocusMode);
+    state.actorFocusItems = [];
+    state.actorFocusCursor = "";
+    state.actorFocusHasMore = false;
+    state.actorFocusError = "";
+    actions.render();
+    void actions.persist();
+    void actions.loadActor({ append: false });
+  }
+
+  /**
+   * Clears the current Thread Explorer Actor-Fokus card.
+   * @returns {void}
+   */
+  function closeThreadExplorerActorFocus() {
+    invalidate();
+    const shouldRestoreOwnContext = isThreadExplorerForeignActorFocusMode();
+    state.actorFocusActor = null;
+    state.actorFocusItems = [];
+    state.actorFocusCursor = "";
+    state.actorFocusHasMore = false;
+    state.actorFocusLoading = false;
+    state.actorFocusError = "";
+    if (shouldRestoreOwnContext) {
+      state.accountActor = normalizeThreadExplorerActor(state.accountActorBeforeFocus);
+      state.accountMode = normalizeThreadExplorerAccountMode(state.accountModeBeforeFocus);
+      state.accountError = "";
+      if (elements.account) {
+        elements.account.value = state.accountActor;
+      }
+      if (elements.mode) {
+        elements.mode.value = state.accountMode;
+      }
+      state.accountActorBeforeFocus = "";
+      state.accountModeBeforeFocus = "posts";
+      void actions.loadSources();
+    }
+    actions.render();
+    void actions.persist();
+    if (shouldRestoreOwnContext && state.authAccount && !state.loadingFeed) {
+      void actions.loadFeed({ reset: true, clearSelection: true });
+      return;
+    }
+  }
+
+  /**
+   * Applies a confirmed Thread Explorer account-field value to state and optionally reloads the feed.
+   * @param {object} options - Input application options.
+   * @param {boolean} options.loadFeed - True when the committed change should trigger a reload.
+   * @returns {void}
+   */
+  function applyThreadExplorerAccountInput(options = {}) {
+    invalidate();
+    const previousForeignMode = isThreadExplorerForeignAccountMode();
+    state.accountActor = normalizeThreadExplorerActor(elements.account?.value || "");
+    state.accountError = "";
+    const nextForeignMode = isThreadExplorerForeignAccountMode();
+    if (nextForeignMode) {
+      state.actorFocusActor = createThreadExplorerActorStub(state.accountActor);
+      state.actorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(state.accountMode);
+      state.actorFocusItems = [];
+      state.actorFocusCursor = "";
+      state.actorFocusHasMore = false;
+      state.actorFocusLoading = false;
+      state.actorFocusError = "";
+    } else if (state.actorFocusActor && !isThreadExplorerOwnActor(state.actorFocusActor)) {
+      state.actorFocusActor = null;
+      state.actorFocusItems = [];
+      state.actorFocusCursor = "";
+      state.actorFocusHasMore = false;
+      state.actorFocusLoading = false;
+      state.actorFocusError = "";
+    }
+    if (!nextForeignMode) {
+      void actions.loadSources();
+    }
+    actions.render();
+    void actions.persist();
+
+    if (options.loadFeed !== true) {
+      return;
+    }
+    if (!state.authAccount || state.loadingFeed) {
+      return;
+    }
+    if (!state.accountActor && nextForeignMode) {
+      return;
+    }
+    const modeChanged = previousForeignMode !== nextForeignMode;
+    if (nextForeignMode) {
+      void actions.loadActor({ append: false });
+      return;
+    }
+    if (modeChanged || !state.items.length) {
+      void actions.loadFeed({ reset: true, clearSelection: true });
+    }
+  }
+
+  /**
+   * Copies the signed-in account into the Thread Explorer account field and reloads the own feed mode.
+   * @returns {void}
+   */
+  function handleThreadExplorerUseOwnAccountClick() {
+    const ownActor = getThreadExplorerOwnActor();
+    if (elements.account) {
+      elements.account.value = ownActor;
+    }
+    applyThreadExplorerAccountInput({ loadFeed: true });
+  }
+
+  /**
+   * Updates the Thread Explorer account-mode filter and reloads the current foreign-account feed.
+   * @param {Event} event - Change event from the account-mode select.
+   * @returns {void}
+   */
+  function handleThreadExplorerAccountModeChange(event) {
+    if (isThreadExplorerForeignAccountMode()) { invalidate(); }
+    state.accountMode = normalizeThreadExplorerAccountMode(event.currentTarget?.value || "");
+    state.accountError = "";
+    state.actorFocusMode = normalizeThreadExplorerActorFocusModeFromTools(state.accountMode);
+    actions.render();
+    void actions.persist();
+    if (!state.authAccount || state.loadingFeed || !isThreadExplorerForeignAccountMode()) {
+      return;
+    }
+    void actions.loadActor({ append: false });
+  }
+
+  return Object.freeze({ invalidate, contextKey: () => JSON.stringify([revision, state.authAccountDid, state.authAccount]), foreignAccount: isThreadExplorerForeignAccountMode, foreignFocus: isThreadExplorerForeignActorFocusMode, open: openThreadExplorerActorFocus, close: closeThreadExplorerActorFocus, apply: applyThreadExplorerAccountInput, useOwn: handleThreadExplorerUseOwnAccountClick, mode: handleThreadExplorerAccountModeChange });
 }

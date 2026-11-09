@@ -113,3 +113,30 @@ export function createSavedAccountRenderer(elements, options) {
   }
   return { render };
 }
+
+
+
+/** Builds two initials from display name, handle or identifier.
+ * @param {object|null} profile - Profile identity.
+ * @returns {string} Uppercase initials or a question mark.
+ */
+export function getProfileInitials(profile) {
+  const source = String(profile?.displayName || profile?.handle || profile?.identifier || "?").replace(/^@/, "").trim();
+  return source.slice(0, 2).toUpperCase();
+}
+
+/** Combines distinct display name and handle for an account label.
+ * @param {object|null} profile - Profile identity.
+ * @returns {string} Display label, DID fallback or an empty string.
+ */
+export function getProfileLabel(profile) {
+  const name = String(profile?.displayName || profile?.handle || profile?.did || "").trim();
+  const handle = String(profile?.handle || "").trim();
+  if (name && handle && name.toLowerCase() !== handle.toLowerCase()) {
+    return `${name} @${handle}`;
+  }
+  if (handle) {
+    return `@${handle}`;
+  }
+  return name || String(profile?.did || "").trim();
+}

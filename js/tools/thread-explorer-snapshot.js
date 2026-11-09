@@ -1752,3 +1752,103 @@ export function createThreadExplorerSnapshotExportController(elements, options) 
   }
   return { download, cancel };
 }
+
+/**
+ * Creates a safe filename part for Thread Explorer exports.
+ * @param {string} value - Raw filename part.
+ * @returns {string} Filesystem-friendly filename part.
+ */
+export function sanitizeThreadExplorerFileNamePart(value) {
+  const normalized = String(value || "").trim().replace(/^@+/, "");
+  const safe = normalized.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  if (safe) {
+    return safe.slice(0, 80);
+  }
+  return "thread";
+}
+
+/** Encodes a loaded image through an explicitly supplied canvas document.
+ * @param {object} image - Rendered image.
+ * @param {Document} document - Native DOM adapter.
+ * @returns {string} Data URI or empty string for unavailable/tainted images.
+ */
+export function encodeSnapshotImageElement(image, document) {
+  const source = String(image?.currentSrc || image?.src || "").trim();
+  if (!source) {
+    return "";
+  }
+  if (source.startsWith("data:")) {
+    return source;
+  }
+  if (!image.complete || !image.naturalWidth || !image.naturalHeight) {
+    return "";
+  }
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return "";
+  }
+}
+
+/** Collects readable CSS while skipping inaccessible stylesheet rules.
+ * @param {Iterable} styleSheets - Native or supplied stylesheet collection.
+ * @returns {string} Joined CSS rules.
+ */
+export function collectSnapshotStyleRules(styleSheets) {
+  const parts = [];
+  for (const styleSheet of Array.from(styleSheets)) {
+    try {
+      for (const rule of Array.from(styleSheet.cssRules || [])) {
+        parts.push(rule.cssText);
+      }
+    } catch {
+      // Cross-origin stylesheets cannot be read; local app styles are enough for Threadline.
+    }
+  }
+  return parts.join("\n");
+}
+
+/** Checks canvas dimension and pixel-count limits before snapshot allocation.
+ * @param {number} width - Canvas width.
+ * @param {number} height - Canvas height.
+ * @param {number} maxDimension - Per-axis limit.
+ * @param {number} maxPixels - Total pixel limit.
+ * @returns {boolean} Whether tiled rendering is needed.
+ */
+export function shouldTileSnapshotCanvas(width, height, maxDimension, maxPixels) {
+  if (width > maxDimension) {
+    return true;
+  }
+  if (height > maxDimension) {
+    return true;
+  }
+  if ((width * height) > maxPixels) {
+    return true;
+  }
+  return false;
+}
+
+/** Loads one snapshot source using an explicit native image constructor. @param {string} source - Data/blob/local URL. @param {Function} Image - Image constructor. @returns {Promise<object|null>} Decoded image or null. */
+export function loadSnapshotCanvasImage(source, Image) {
+  const normalizedSource = String(source || "").trim();
+  if (!normalizedSource) {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.addEventListener("load", () => {
+      resolve(image);
+    }, { once: true });
+    image.addEventListener("error", () => {
+      resolve(null);
+    }, { once: true });
+    image.src = normalizedSource;
+  });
+}

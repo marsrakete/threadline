@@ -2439,3 +2439,121 @@ test("search UI binds dialog and saved-search controls", async () => {
   savedSearchUrlInput.dispatchEvent(new Event("keydown"));
   assert.equal(calls, 3);
 });
+
+test("optional DM gate owns secret cleanup, session reuse and denied/hash/error transitions", async () => {
+  const { createDmAccessGate } = await importProjectModule("js/tools/dm-archive.js");
+  assert.throws(() => createDmAccessGate(), /href/);
+  for (const mode of ["disabled","valid","invalid","stored","error"]) {
+    const values = new Map(), calls = [], state = { checked:false, unlocked:false };
+    if(mode === "stored") values.set("access","1");
+    let href = "https://example.test/tools.html?keep=1&secret=hello#other=2&key=hidden";
+    const options = { state, enabled: mode !== "disabled", queryKey:"secret",hashKey:"key",sessionKey:"access", secretHash:"ab",
+      href: () => href, replaceUrl: value => {calls.push(["url",value]);href=new URL(value,href).href;}, storage:{getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)},
+      crypto:{subtle:{digest:async()=>{if(mode==="error")throw Error("crypto");return new Uint8Array([mode === "valid" ? 171 : 0]).buffer;}}},
+      setVisible: value=>calls.push(["visible",value]),workspace:()=>"dm",showComposer:()=>calls.push(["composer"]),render:()=>calls.push(["render"]),updateAuth:()=>calls.push(["auth"]),restoreWorkspace:()=>calls.push(["restore"]),report:()=>calls.push(["report"]),lockedMessage:()=>"locked" };
+    const gate = createDmAccessGate(options); assert.equal(gate.secret(),"hello"); await gate.apply();
+    const allowed = ["disabled","valid","stored"].includes(mode);
+    assert.equal(gate.available(),allowed); assert.equal(state.checked,allowed); assert.equal(state.unlocked,allowed);
+    assert.equal(new URL(href).searchParams.get("keep"),"1"); assert.equal(new URL(href).searchParams.has("secret"),false);
+    assert.equal(new URL(href).hash,"#other=2"); assert.equal(gate.secret(),"");
+    if (allowed) gate.assert(); else assert.throws(()=>gate.assert(),/locked/);
+    assert.equal(values.has("access"),allowed && mode!=="disabled");
+    assert.equal(calls.some(call=>call[0]==="composer"),!allowed); assert.equal(calls.some(call=>call[0]==="report"),mode==="error");
+    assert.deepEqual(calls.slice(-3),[["render"],["auth"],["restore"]]);
+  }
+});
+
+test("tree collapse discovery and compact archive dates preserve boundary behavior", async () => {
+  const {collectCollapsibleThreadExplorerUris}=await importProjectModule("js/tools/thread-explorer-layout.js");
+  const found=new Set();
+  collectCollapsibleThreadExplorerUris({post:{uri:"root"},replies:[{post:{uri:"branch"},replies:[{post:{uri:"leaf"},replies:[]}]}]},found);
+  assert.deepEqual([...found],["root","branch"]);
+  collectCollapsibleThreadExplorerUris(null,found);collectCollapsibleThreadExplorerUris({replies:"bad"},found);assert.equal(found.size,2);
+  const {formatCompactArchiveTimestamp}=await importProjectModule("js/tools/archive-workspace-models.js");
+  assert.equal(formatCompactArchiveTimestamp("2026-11-08T12:34:00"),"08.11.2026 12.34");
+  assert.equal(formatCompactArchiveTimestamp("invalid"),"invalid");assert.equal(formatCompactArchiveTimestamp(undefined),"");
+});
+
+/** Builds the account/focus transaction with real actor models and controlled loaders.
+ * @returns {Promise<object>} Context, state, controls and observed domain actions.
+ */
+async function explorerContextFixture() {
+  const module=await importProjectModule("js/tools/thread-explorer-controller.js"),pure=await importProjectModule("js/tools/thread-explorer.js");
+  const models={};for(const name of ["getThreadExplorerOwnActor","isThreadExplorerForeignAccountMode","isThreadExplorerOwnActor","isThreadExplorerForeignActorFocusMode","createThreadExplorerActorStub","normalizeThreadExplorerActorFocusMode"]){models[name+"FromTools"]=pure[name];}
+  for(const name of ["normalizeThreadExplorerActor","getThreadExplorerActorFocusId","normalizeThreadExplorerAccountMode"])models[name]=pure[name];
+  const state={savedAccounts:[{did:"did:own",handle:"own.test"}],authAccountDid:"did:own",authAccount:"own.test",accountActor:"own.test",accountMode:"replies",accountActorBeforeFocus:"",accountModeBeforeFocus:"posts",actorFocusMode:"posts",actorFocusActor:null,actorFocusItems:[],actorFocusCursor:"",actorFocusHasMore:false,actorFocusLoading:false,loadingFeed:false,loadingThread:false,items:[]};
+  const elements={account:{value:"own.test"},mode:{value:"replies"}},calls=[],actions={};
+  for(const key of ["render","persist","loadActor","loadFeed","loadSources"])actions[key]=(...args)=>{calls.push([key,...args]);return Promise.resolve();};
+  return {module,state,elements,models,actions,calls,context:module.createThreadExplorerAccountContext(state,elements,models,actions)};
+}
+
+test("account/focus context restores the original own context after consecutive foreign actors", async()=>{
+  const f=await explorerContextFixture(),key=f.context.contextKey();
+  f.state.loadingFeed=true;f.state.loadingThread=true;f.state.actorFocusLoading=true;
+  f.context.open({did:"did:alice",handle:"alice.test"});
+  assert.notEqual(f.context.contextKey(),key);assert.equal(f.state.accountActorBeforeFocus,"own.test");assert.equal(f.state.accountModeBeforeFocus,"replies");
+  assert.equal(f.state.loadingFeed,false);assert.equal(f.state.loadingThread,false);assert.equal(f.state.actorFocusLoading,false);
+  f.context.open({did:"did:bob",handle:"bob.test"});assert.equal(f.state.accountActorBeforeFocus,"own.test");
+  f.context.close();assert.equal(f.state.accountActor,"own.test");assert.equal(f.state.accountMode,"replies");assert.equal(f.state.actorFocusActor,null);
+  assert.equal(f.elements.account.value,"own.test");assert.equal(f.elements.mode.value,"replies");assert.ok(f.calls.some(call=>call[0]==="loadFeed"));
+  const count=f.calls.length;f.context.open(null);assert.equal(f.calls.length,count);
+});
+
+test("account input, mode and own-account actions reset only the selected context and validate adapters",async()=>{
+  const f=await explorerContextFixture();assert.throws(()=>f.module.createThreadExplorerAccountContext({}, {}, {}, {}),/render/);
+  for(const key of Object.keys(f.models))assert.throws(()=>f.module.createThreadExplorerAccountContext(f.state,f.elements,{...f.models,[key]:null},f.actions),/model/);
+  f.elements.account.value=" @alice.test ";f.context.apply({loadFeed:true});assert.equal(f.state.accountActor,"alice.test");assert.equal(f.context.foreignAccount(),true);assert.ok(f.calls.some(call=>call[0]==="loadActor"));
+  const key=f.context.contextKey();f.context.mode({currentTarget:{value:"all"}});assert.notEqual(f.context.contextKey(),key);assert.equal(f.state.actorFocusMode,"all");
+  f.context.useOwn();assert.equal(f.state.accountActor,"own.test");assert.equal(f.state.actorFocusActor,null);assert.equal(f.context.foreignAccount(),false);
+  f.state.authAccountDid="did:other";assert.notEqual(f.context.contextKey(),key);
+});
+
+test("late feed, actor and thread responses cannot mutate a newer context or clear its loading flag",async()=>{
+  const f=await explorerContextFixture();
+  for(const kind of ["feed","foreignFeed","actor","thread"]){
+    for(const failure of [false,true]){
+      const state={items:["current"],cursor:"",hasMore:true,loading:false,tree:null},calls=[];let settle,revision=0;
+      const options={authAccount:"own",actor:{did:"actor"},actorId:"actor",contextKey:()=>revision,state,append:false,
+        request:()=>new Promise((resolve,reject)=>{settle=()=>failure?reject(Error("old failure")):resolve({items:["old"],cursor:"old",root:{post:{uri:"old"}}});}),
+        render:()=>calls.push("render"),isForeignAccount:()=>kind==="foreignFeed",getRequestedActor:()=>"actor",clearErrors:()=>{},clearSelectionState:()=>{},setError:()=>calls.push("error"),appendItems:()=>[],sortItems:items=>items,restoreSelection:async()=>calls.push("restore"),persistSelection:()=>{},clearMediaCache:()=>{},isClusterMode:()=>false,scheduleFocus:()=>calls.push("focus")};
+      let pending;if(kind==="thread")pending=f.module.loadThreadExplorerThreadWorkflow("at://selected",options);else if(kind==="actor")pending=f.module.loadThreadExplorerActorFocusWorkflow(options);else pending=f.module.loadThreadExplorerFeedWorkflow(options);
+      revision++;state.items=["new"];state.tree={post:{uri:"new"}};state.loading=true;const before=calls.length;
+      settle();await pending;assert.deepEqual(state.items,["new"]);assert.equal(state.tree.post.uri,"new");assert.equal(state.cursor,"");assert.equal(state.loading,true);assert.equal(calls.length,before);
+    }
+  }
+});
+
+test("measured stage boxes, oriented edges and snapshot limits share explicit geometry contracts",async()=>{
+  const layout=await importProjectModule("js/tools/thread-explorer-layout.js"),snapshot=await importProjectModule("js/tools/thread-explorer-snapshot.js");
+  assert.deepEqual(layout.getThreadExplorerMeasuredStageRect({left:30,top:50,width:20,height:40},{left:10,top:10},2),{left:10,top:20,width:10,height:20,right:20,bottom:40,centerX:15,centerY:30});
+  assert.equal(layout.getThreadExplorerMeasuredStageRect(null,{},1),null);
+  assert.equal(layout.getThreadExplorerMeasuredStageRect({left:2,top:4,width:0,height:0},{left:0,top:0},-1).centerX,2);
+  const parent={centerX:10,bottom:20,right:20,centerY:10},child={centerX:50,top:40,left:40,centerY:50};
+  assert.equal(layout.buildThreadExplorerEdgePath(parent,child),"M 10 20 C 10 56, 50 4, 50 40");
+  assert.equal(layout.buildThreadExplorerEdgePath(parent,child,"horizontal"),"M 20 10 C 68 10, -8 50, 40 50");
+  assert.equal(snapshot.shouldTileSnapshotCanvas(10,10,10,100),false);assert.equal(snapshot.shouldTileSnapshotCanvas(11,1,10,100),true);
+  assert.equal(snapshot.shouldTileSnapshotCanvas(1,11,10,100),true);assert.equal(snapshot.shouldTileSnapshotCanvas(10,10,10,99),true);
+  assert.equal(snapshot.collectSnapshotStyleRules([{cssRules:[{cssText:"a {}"}]},{get cssRules(){throw Error("cross origin");}},{cssRules:[{cssText:"b {}"}]}]),"a {}\nb {}");
+  assert.equal(snapshot.collectSnapshotStyleRules([]),"");
+});
+
+test("DM partner controller isolates cached accounts, picker selection and late restores",async()=>{
+  const {createDmPartnerCacheController}=await importProjectModule("js/tools/dm-archive.js");
+  const state={authAccountDid:"own",selectedParticipantDids:["peer","missing"]},input={value:""},calls=[];let resolve;
+  const actions={now:()=>"2026-11-08T12:00:00Z",setInput:(element,value)=>{element.value=value;},render:()=>calls.push("render"),note:value=>calls.push(["note",value]),translate:key=>key,
+    request:async(type,payload)=>{calls.push([type,payload]);if(type==="GET_DM_PARTNER_CACHE")return new Promise(done=>{resolve=done;});return {ok:true};}};
+  assert.throws(()=>createDmPartnerCacheController({},input,{}),/setInput/);
+  const controller=createDmPartnerCacheController(state,input,actions),cache={accountDid:"own",recentContacts:[{did:"peer",handle:"peer.test"}],conversations:[],assets:[],updatedAt:"then"};
+  controller.apply(cache);assert.deepEqual(state.selectedParticipantDids,["peer"]);controller.select({did:"PEER"},"@peer.test");assert.deepEqual(state.selectedParticipantDids,["peer"]);assert.equal(input.value,"@peer.test");
+  controller.select(null,"missing");assert.deepEqual(state.selectedParticipantDids,[]);assert.deepEqual(calls.at(-1),["note","dmContactNotLoadedMatch"]);
+  await controller.save();assert.equal(calls.find(call=>Array.isArray(call)&&call[0]==="SAVE_DM_PARTNER_CACHE")[1].cache.updatedAt,"2026-11-08T12:00:00Z");
+  const pending=controller.restore();state.authAccountDid="new";state.recentContacts=[{did:"new-peer"}];resolve(cache);await pending;assert.deepEqual(state.recentContacts,[{did:"new-peer"}]);
+  controller.apply(cache);assert.deepEqual(state.recentContacts,[]);assert.equal(state.partnerCacheAccountDid,"");
+});
+
+test("cluster expansion, favorite lookup and search result identity remain domain-owned",async()=>{
+  const layout=await importProjectModule("js/tools/thread-explorer-layout.js"),controller=await importProjectModule("js/tools/thread-explorer-controller.js"),search=await importProjectModule("js/tools/search-results.js");
+  const expanded=new Set();layout.expandReplyClusterTree({post:{uri:"root"},replies:[{post:{uri:"child"}}]},expanded);layout.expandReplyClusterTree(null,expanded);assert.deepEqual([...expanded],["root","child"]);
+  const favorites=controller.createThreadExplorerFavoritesController({getFavorites:()=>[{rootUri:"root"}],setFavorites(){},normalize:value=>value,persist:async()=>{}});assert.equal(favorites.has("root"),true);assert.equal(favorites.has("other"),false);assert.equal(favorites.has(null),false);
+  const result={post:{uri:"projected"},requestedUri:"requested"};assert.equal(search.findSearchResultByUri([result],"projected"),result);assert.equal(search.findSearchResultByUri([result],"requested"),null);assert.equal(search.findSearchResultByUri([],"missing"),null);assert.equal(search.findSearchResultByUri([],""),null);
+});

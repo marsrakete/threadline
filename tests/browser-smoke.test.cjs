@@ -116,6 +116,8 @@ test("Thread Explorer keeps identity in the header and interactions above counts
     card.style.position = "fixed";
     card.style.left = "0";
     card.style.top = "0";
+    card.style.background = "#fff";
+    card.style.zIndex = "2147483647";
     card.style.transition = "none";
     card.style.animation = "none";
     card.classList.add("thread-explorer-layout-test-card");

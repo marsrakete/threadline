@@ -161,3 +161,113 @@ export function bindPostEditCheckDialogEvents(elements = {}, actions = {}) {
   bind(elements.dialog, "cancel", actions.cancel);
   return boundCount;
 }
+
+/** Creates the post-edit inspection dialog independently of application globals.
+ * @param {object} elements - Dialog, URL field, status/result and text/date elements.
+ * @param {object} adapters - document, translate, timestamp, compare, request, schedule and source callbacks.
+ * @returns {object} Frozen rendering, reset, dialog and read-only check operations.
+ */
+export function createPostEditCheckController(elements, adapters) {
+  for (const name of ['translate','timestamp','compare','request','schedule','source']) {
+    if (typeof adapters?.[name] !== 'function') { throw new TypeError('Post edit controller requires ' + name); }
+  }
+  const { document, translate: t, timestamp: formatHistoryTimestamp, compare: getCurrentPostEditTokenStates, request: sendToServiceWorker, schedule, source } = adapters;
+  const { current: postEditCheckCurrent, status: postEditCheckStatus, created: postEditCheckCreated, updated: postEditCheckUpdated,
+    original: postEditCheckOriginal, result: postEditCheckResult, url: postEditCheckUrlInput, dialog: postEditCheckDialog } = elements;
+  /** Renders current text with adjacent inserted tokens grouped into marks.
+   * @param {string} originalText - Previous text. @param {string} currentText - Current text. @returns {void} Updated text view. */
+  function renderPostEditCurrentText(originalText, currentText) {
+    postEditCheckCurrent.replaceChildren();
+    const tokenStates = getCurrentPostEditTokenStates(originalText, currentText);
+    let changedRun = null;
+
+    tokenStates.forEach(({ token, changed }) => {
+      if (!changed) {
+        changedRun = null;
+        postEditCheckCurrent.append(document.createTextNode(token));
+        return;
+      }
+      if (!changedRun) {
+        changedRun = document.createElement("mark");
+        changedRun.className = "post-edit-difference";
+        postEditCheckCurrent.appendChild(changedRun);
+      }
+      changedRun.append(document.createTextNode(token));
+    });
+  }
+
+  /** Shows detected edit metadata. @param {object} result - Read-only worker result. @returns {void} Updated dialog. */
+  function renderPostEditCheckResult(result) {
+    postEditCheckStatus.textContent = t("postEditCheckDetected");
+    postEditCheckStatus.classList.add("is-edited");
+    postEditCheckCreated.textContent = formatHistoryTimestamp(result.createdAt);
+    postEditCheckUpdated.textContent = formatHistoryTimestamp(result.updatedAt);
+    postEditCheckOriginal.textContent = result.originalText;
+    renderPostEditCurrentText(result.originalText, result.text);
+    postEditCheckResult.hidden = false;
+  }
+
+  /** Clears all previous metadata and text. @returns {void} Empty result view. */
+  function resetPostEditCheckResult() {
+    postEditCheckStatus.textContent = "";
+    postEditCheckStatus.className = "post-edit-check-status settings-note";
+    postEditCheckResult.hidden = true;
+    postEditCheckCreated.textContent = "";
+    postEditCheckUpdated.textContent = "";
+    postEditCheckOriginal.textContent = "";
+    postEditCheckCurrent.replaceChildren();
+  }
+
+  /** Opens the dialog with the current source URL. @returns {void} Focused input. */
+  function openPostEditCheckDialog() {
+    resetPostEditCheckResult();
+    postEditCheckUrlInput.value = String(source() || "").trim();
+    postEditCheckDialog.showModal();
+    schedule(() => {
+      postEditCheckUrlInput.focus();
+      if (postEditCheckUrlInput.value) {
+        postEditCheckUrlInput.select();
+      }
+    }, 0);
+  }
+
+  /** Closes an open dialog safely. @returns {void} Closed dialog. */
+  function closePostEditCheckDialog() {
+    if (postEditCheckDialog.open) {
+      postEditCheckDialog.close();
+    }
+  }
+
+  /** Reads edit metadata and renders its result. @returns {Promise<void>} Read-only request completion. */
+  async function checkPostEditMetadata() {
+    const url = String(postEditCheckUrlInput.value || "").trim();
+    if (!url) {
+      throw new Error(t("postEditCheckInvalidUrl"));
+    }
+
+    resetPostEditCheckResult();
+    postEditCheckStatus.textContent = t("postEditCheckLoading");
+    const result = await sendToServiceWorker("CHECK_POST_EDIT", { url }, { timeoutMs: 120000 });
+
+    if (!result?.isEdited) {
+      postEditCheckStatus.textContent = t("postEditCheckNotDetected");
+      postEditCheckStatus.classList.add("is-unedited");
+      return;
+    }
+
+    renderPostEditCheckResult(result);
+  }
+  return Object.freeze({ renderCurrent: renderPostEditCurrentText, render: renderPostEditCheckResult, reset: resetPostEditCheckResult,
+    open: openPostEditCheckDialog, close: closePostEditCheckDialog, check: checkPostEditMetadata });
+}
+
+/** Builds an archive filename from account and export date.
+ * @param {object} catalog - Archive manifest.
+ * @param {string} account - Fallback account handle.
+ * @returns {string} Safe archive base name.
+ */
+export function buildArchiveFileBaseName(catalog, account) {
+  const handle = String(catalog?.manifest?.account?.handle || account || "account").replace(/[^\w.-]+/g, "-");
+  const datePart = formatArchiveDatePart(catalog?.manifest?.exportedAt);
+  return `threadline-archive-${handle}-${datePart}`;
+}

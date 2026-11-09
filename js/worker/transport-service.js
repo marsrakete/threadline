@@ -140,3 +140,38 @@ globalThis.createThreadlineTransportService = function createThreadlineTransport
   }
   return Object.freeze({ request: bskyFetch, get: bskyGet, rateLimit: extractRateLimitMeta });
 };
+
+/** Shared batch/concurrency operations used by transport-backed services. */
+globalThis.ThreadlineWorkerCollections = (() => {
+  /** Maps requests with bounded parallelism and preserved input order. @param {Array} items - Inputs. @param {number} concurrency - Worker limit. @param {Function} worker - Async mapper. @returns {Promise<Array>} Ordered results. */
+  async function mapWithConcurrency(items, concurrency, worker) {
+    const values = Array.isArray(items) ? items : [];
+    const limit = Math.max(1, Math.min(Number(concurrency) || 1, values.length || 1));
+    const results = new Array(values.length);
+    let nextIndex = 0;
+
+    async function runWorker() {
+      while (nextIndex < values.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(values[currentIndex], currentIndex);
+      }
+    }
+
+    await Promise.all(Array.from({ length: limit }, () => runWorker()));
+    return results;
+  }
+
+  /** Splits a collection into progressing batches. @param {Array} items - Inputs. @param {number} size - Positive integer batch size. @returns {Array[]} Batches. */
+  function chunkEntries(items, size) {
+    if (!Number.isInteger(size) || size <= 0) { throw new TypeError("Chunk size must be a positive integer"); }
+    const result = [];
+    for (let index = 0; index < items.length; index += size) {
+      result.push(items.slice(index, index + size));
+    }
+    return result;
+  }
+
+
+  return Object.freeze({ mapWithConcurrency, chunkEntries });
+})();

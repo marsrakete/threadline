@@ -275,3 +275,28 @@ export function createHashtagController(elements, options) {
     toggle, remove, openEdit, closeEdit, saveEdit, openSearch, closeSearch,
     handlers: { submit, placementChange, editKeydown, editClosed } };
 }
+
+/** Extracts display and normalized tags using the shared hashtag parser.
+ * @param {string} text - Archive post text.
+ * @returns {object[]} Normalized tags retaining display case.
+ */
+export function extractArchiveHashtagsFromText(text) {
+  const value = String(text || "");
+  const regex = /(?:^|\s)(#[^\d\s]\S*)(?=\s|$)/gu;
+  const matches = [];
+  let match;
+
+  while ((match = regex.exec(value))) {
+    const raw = String(match[1] || "").replace(/\p{P}+$/gu, "");
+    const parsed = parseHashtag(raw);
+    if (!parsed) {
+      continue;
+    }
+    matches.push({
+      normalized: parsed.normalized,
+      value: formatHashtag(parsed.value),
+    });
+  }
+
+  return matches;
+}

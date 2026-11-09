@@ -689,3 +689,556 @@ export {
   isPostLikedByViewer,
   stripPostUrlsFromText,
 };
+
+
+/** Creates text presentation using explicit DOM and query parsing adapters.
+ * @param {object} options - document, nodeFilter, queryTerms and escape callbacks.
+ * @returns {object} utf16/runs/highlight/clear API.
+ */
+export function createRichTextPresentation(options) {
+  if (typeof options?.queryTerms !== "function" || typeof options?.escape !== "function") { throw new TypeError("Rich-text presentation requires query adapters"); }
+  const { document, nodeFilter: NodeFilter, queryTerms: parseSearchQueryTerms, escape: escapeSearchHighlightRegex } = options;
+  /** Converts a UTF-8 byte offset into a UTF-16 index. @param {string} text - Text. @param {number} byteIndex - Byte offset. @returns {number} Character offset. */
+  function utf8IndexToUtf16Index(text, byteIndex) {
+    const value = String(text || "");
+    const bytes = Math.max(0, Number(byteIndex) || 0);
+    let currentBytes = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      const codePoint = value.codePointAt(index);
+      const char = String.fromCodePoint(codePoint);
+      const nextBytes = currentBytes + new TextEncoder().encode(char).length;
+      if (nextBytes > bytes) {
+        return index;
+      }
+      currentBytes = nextBytes;
+      if (codePoint > 0xffff) {
+        index += 1;
+      }
+    }
+    return value.length;
+  }
+
+  /** Builds a facet navigation model. @param {object} feature - Facet feature. @param {string} rawText - Selected text. @returns {object|null} Link model. */
+  function getFacetLinkInfo(feature, rawText = "") {
+    const type = String(feature?.$type || "");
+    if (type.includes("#link") && feature?.uri) {
+      return {
+        kind: "link",
+        url: String(feature.uri),
+      };
+    }
+    if (type.includes("#mention")) {
+      const handle = String(rawText || "").trim().replace(/^@/, "");
+      return {
+        kind: "mention",
+        url: `https://bsky.app/profile/${encodeURIComponent(handle || feature.did || "")}`,
+      };
+    }
+    if (type.includes("#tag")) {
+      const tag = String(feature.tag || rawText || "").trim().replace(/^#/, "");
+      return {
+        kind: "tag",
+        url: `https://bsky.app/hashtag/${encodeURIComponent(tag)}`,
+      };
+    }
+    return null;
+  }
+
+  /** Splits post text into plain/link runs. @param {string} text - Post text. @param {Array} facets - Facets. @returns {Array|null} Runs. */
+  function extractFacetRichTextRuns(text, facets = []) {
+    const value = String(text || "");
+    const facetRanges = [];
+
+    (Array.isArray(facets) ? facets : []).forEach((facet) => {
+      const byteStart = Number(facet?.index?.byteStart);
+      const byteEnd = Number(facet?.index?.byteEnd);
+      if (!Number.isFinite(byteStart) || !Number.isFinite(byteEnd) || byteEnd <= byteStart) {
+        return;
+      }
+      const start = utf8IndexToUtf16Index(value, byteStart);
+      const end = utf8IndexToUtf16Index(value, byteEnd);
+      if (end <= start) {
+        return;
+      }
+      const rawText = value.slice(start, end);
+      const feature = (Array.isArray(facet?.features) ? facet.features : [])
+        .map((entry) => getFacetLinkInfo(entry, rawText))
+        .find(Boolean);
+      if (!feature?.url) {
+        return;
+      }
+      facetRanges.push({
+        start,
+        end,
+        url: feature.url,
+        kind: feature.kind,
+      });
+    });
+
+    facetRanges.sort((left, right) => left.start - right.start || left.end - right.end);
+    const runs = [];
+    let cursor = 0;
+
+    facetRanges.forEach((range) => {
+      if (range.start < cursor) {
+        return;
+      }
+      if (range.start > cursor) {
+        runs.push({ text: value.slice(cursor, range.start) });
+      }
+      runs.push({
+        text: value.slice(range.start, range.end),
+        url: range.url,
+        kind: range.kind,
+      });
+      cursor = range.end;
+    });
+
+    if (cursor < value.length) {
+      runs.push({ text: value.slice(cursor) });
+    }
+
+    return runs.length > 0 ? runs : null;
+  }
+
+  /** Removes only generated highlights. @param {Element} element - Host. @returns {void} Updated DOM. */
+  function clearSearchHighlights(element) {
+    if (!element) {
+      return;
+    }
+
+    element.querySelectorAll("mark[data-search-highlight='true']").forEach((mark) => {
+      const parent = mark.parentNode;
+      if (!parent) {
+        return;
+      }
+      parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
+      parent.normalize();
+    });
+  }
+
+  /** Highlights query matches using text nodes. @param {Element} element - Host. @param {string} query - Query. @returns {void} Updated DOM. */
+  function highlightSearchQueryInElement(element, query = "") {
+    clearSearchHighlights(element);
+    if (!element) {
+      return;
+    }
+
+    const terms = parseSearchQueryTerms(query);
+    if (!terms.length) {
+      return;
+    }
+
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.nodeValue || !node.nodeValue.trim()) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        const parentTag = node.parentElement?.tagName || "";
+        if (parentTag === "MARK" || parentTag === "SCRIPT" || parentTag === "STYLE") {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const textNodes = [];
+    while (walker.nextNode()) {
+      textNodes.push(walker.currentNode);
+    }
+
+    textNodes.forEach((node) => {
+      const source = node.nodeValue || "";
+      const matches = [];
+
+      terms.forEach((term) => {
+        const escapedTerm = escapeSearchHighlightRegex(term);
+        if (!escapedTerm) {
+          return;
+        }
+
+        const matcher = new RegExp(escapedTerm, "giu");
+
+        let match = matcher.exec(source);
+        while (match) {
+          const directMatch = String(match[0] || "");
+          const start = match.index;
+          const end = start + directMatch.length;
+          if (end > start) {
+            matches.push({
+              start,
+              end,
+              length: end - start,
+            });
+          }
+          match = matcher.exec(source);
+        }
+      });
+
+      if (!matches.length) {
+        return;
+      }
+
+      matches.sort((left, right) => {
+        if (left.start !== right.start) {
+          return left.start - right.start;
+        }
+        return right.length - left.length;
+      });
+
+      const filteredMatches = [];
+      let lastEnd = -1;
+      matches.forEach((entry) => {
+        if (entry.start < lastEnd) {
+          return;
+        }
+        filteredMatches.push(entry);
+        lastEnd = entry.end;
+      });
+
+      if (!filteredMatches.length) {
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      let cursor = 0;
+      filteredMatches.forEach((entry) => {
+        if (entry.start > cursor) {
+          fragment.appendChild(document.createTextNode(source.slice(cursor, entry.start)));
+        }
+        const mark = document.createElement("mark");
+        mark.dataset.searchHighlight = "true";
+        mark.textContent = source.slice(entry.start, entry.end);
+        fragment.appendChild(mark);
+        cursor = entry.end;
+      });
+      if (cursor < source.length) {
+        fragment.appendChild(document.createTextNode(source.slice(cursor)));
+      }
+
+      node.parentNode?.replaceChild(fragment, node);
+    });
+  }
+  return { utf16: utf8IndexToUtf16Index, runs: extractFacetRichTextRuns, highlight: highlightSearchQueryInElement, clear: clearSearchHighlights };
+}
+
+/** Escapes text for literal use in a regular expression.
+ * @param {string} value - Literal text.
+ * @returns {string} Escaped pattern.
+ */
+export function escapeThreadExplorerRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Returns a compact display URL for Thread Explorer cards.
+ * @param {string} url - Full target URL.
+ * @returns {string} Short host/path label without tracking query parameters.
+ */
+export function shortenThreadExplorerUrlForDisplay(url) {
+  const value = String(url || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(value);
+    let compact = parsed.hostname;
+    if (parsed.pathname && parsed.pathname !== "/") {
+      compact += parsed.pathname;
+    }
+    if (parsed.hash) {
+      compact += parsed.hash;
+    }
+    if (compact.length > 72) {
+      return `${compact.slice(0, 69)}...`;
+    }
+    return compact;
+  } catch (error) {
+    if (value.length > 72) {
+      return `${value.slice(0, 69)}...`;
+    }
+    return value;
+  }
+}
+
+/**
+ * Removes URL variants for a rendered card from Thread Explorer post text.
+ * @param {string} text - Current display text.
+ * @param {string} url - Card target URL.
+ * @returns {string} Text without duplicate URL fragments.
+ */
+export function removeThreadExplorerCardUrlFromText(text, url) {
+  let nextText = String(text || "");
+  const value = String(url || "").trim();
+  if (!nextText || !value) {
+    return nextText;
+  }
+
+  const variants = new Set([value]);
+  try {
+    const parsed = new URL(value);
+    let hostPath = parsed.hostname;
+    if (parsed.pathname && parsed.pathname !== "/") {
+      hostPath += parsed.pathname;
+    }
+    variants.add(hostPath);
+    if (hostPath.startsWith("www.")) {
+      variants.add(hostPath.slice(4));
+    } else {
+      variants.add(`www.${hostPath}`);
+    }
+  } catch (error) {
+    // Keep exact variant only.
+  }
+
+  variants.forEach((variant) => {
+    if (!variant) {
+      return;
+    }
+    const escaped = escapeThreadExplorerRegExp(variant);
+    const exactPattern = new RegExp(`(^|\\s)(?:https?:\\/\\/)?${escaped}(?:[?#][^\\s]*)?(?:\\.\\.\\.|…)?(?=\\s|$)`, "g");
+    nextText = nextText.replace(exactPattern, "$1");
+  });
+
+  try {
+    const parsed = new URL(value);
+    let hostPattern = escapeThreadExplorerRegExp(parsed.hostname);
+    if (parsed.hostname.startsWith("www.")) {
+      hostPattern = `(?:www\\.)?${escapeThreadExplorerRegExp(parsed.hostname.slice(4))}`;
+    }
+    const linePattern = new RegExp(`(^|\\n)[ \\t]*(?:https?:\\/\\/)?${hostPattern}(?:\\/[^\\n\\s]*)?(?:\\.\\.\\.|…)?[ \\t]*(?=\\n|$)`, "g");
+    nextText = nextText.replace(linePattern, "$1");
+  } catch (error) {
+    // Invalid URLs do not get hostname line cleanup.
+  }
+
+  return nextText;
+}
+
+/**
+ * Computes an engagement score for one Thread Explorer post.
+ * @param {object} post - Normalized Thread Explorer post.
+ * @returns {number} Weighted score from likes, replies, reposts, and quotes.
+ */
+export function getThreadExplorerEngagementScore(post) {
+  const likes = Number(post?.likeCount) || 0;
+  const replies = Number(post?.replyCount) || 0;
+  const reposts = Number(post?.repostCount) || 0;
+  const quotes = Number(post?.quoteCount) || 0;
+  return likes + (replies * 3) + (reposts * 4) + (quotes * 4);
+}
+
+/**
+ * Converts an engagement score into a visual intensity tier.
+ * @param {number} score - Weighted post engagement score.
+ * @returns {string} Engagement tier name for CSS classes.
+ */
+export function getThreadExplorerEngagementTier(score) {
+  const numericScore = Number(score) || 0;
+  if (numericScore >= 1000) {
+    return "viral";
+  }
+  if (numericScore >= 180) {
+    return "hot";
+  }
+  if (numericScore >= 40) {
+    return "warm";
+  }
+  return "quiet";
+}
+
+/** Reads a stored external card only when it has a target URL.
+ * @param {object|null} post - Archived post.
+ * @returns {object|null} Original card or null.
+ */
+export function getArchiveExternalCard(post = {}) {
+  if (post?.externalCard?.url) {
+    return post.externalCard;
+  }
+  return null;
+}
+
+/** Splits edit text into whitespace, word and punctuation runs.
+ * @param {string} text - Original or current post text.
+ * @returns {string[]} Tokens retaining all source characters.
+ */
+export function tokenizePostEditText(text) {
+  return String(text || "").match(/\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]+/gu) || [];
+}
+
+/** Marks inserted current-text tokens using a longest common subsequence.
+ * @param {string} originalText - Previous post text.
+ * @param {string} currentText - Updated post text.
+ * @returns {{token:string,changed:boolean}[]} Current tokens with change flags.
+ */
+export function getCurrentPostEditTokenStates(originalText, currentText) {
+  const originalTokens = tokenizePostEditText(originalText);
+  const currentTokens = tokenizePostEditText(currentText);
+  const rows = originalTokens.length + 1;
+  const columns = currentTokens.length + 1;
+  const matrix = Array.from({ length: rows }, () => new Uint16Array(columns));
+
+  for (let originalIndex = originalTokens.length - 1; originalIndex >= 0; originalIndex -= 1) {
+    for (let currentIndex = currentTokens.length - 1; currentIndex >= 0; currentIndex -= 1) {
+      matrix[originalIndex][currentIndex] = originalTokens[originalIndex] === currentTokens[currentIndex]
+        ? matrix[originalIndex + 1][currentIndex + 1] + 1
+        : Math.max(matrix[originalIndex + 1][currentIndex], matrix[originalIndex][currentIndex + 1]);
+    }
+  }
+
+  const unchangedCurrentIndexes = new Set();
+  let originalIndex = 0;
+  let currentIndex = 0;
+  while (originalIndex < originalTokens.length && currentIndex < currentTokens.length) {
+    if (originalTokens[originalIndex] === currentTokens[currentIndex]) {
+      unchangedCurrentIndexes.add(currentIndex);
+      originalIndex += 1;
+      currentIndex += 1;
+    } else if (matrix[originalIndex + 1][currentIndex] >= matrix[originalIndex][currentIndex + 1]) {
+      originalIndex += 1;
+    } else {
+      currentIndex += 1;
+    }
+  }
+
+  return currentTokens.map((token, index) => ({
+    token,
+    changed: !unchangedCurrentIndexes.has(index),
+  }));
+}
+
+
+/** Applies a like update to cached posts. @param {...*} args - Collection/tree, post URI, like URI and count delta. @returns {void} Mutates matching posts. */
+export function applyLikeStateToItemCollection(items = [], postUri = "", likeUri = "", delta = 0) {
+  if (!Array.isArray(items) || !postUri) {
+    return;
+  }
+
+  items.forEach((item) => {
+    const post = item?.post || null;
+    if (!post || post.uri !== postUri) {
+      return;
+    }
+    applyLikeStateToPost(post, likeUri, delta);
+  });
+}
+
+/** Applies a like update to cached posts. @param {...*} args - Collection/tree, post URI, like URI and count delta. @returns {void} Mutates matching posts. */
+export function applyLikeStateToThreadTree(node = null, postUri = "", likeUri = "", delta = 0) {
+  if (!node || !postUri) {
+    return;
+  }
+
+  if (node.post?.uri === postUri) {
+    applyLikeStateToPost(node.post, likeUri, delta);
+  }
+
+  const replies = Array.isArray(node.replies) ? node.replies : [];
+  replies.forEach((reply) => {
+    applyLikeStateToThreadTree(reply, postUri, likeUri, delta);
+  });
+}
+
+/** Creates provider-aware web links and target labels from explicit service configuration.
+ * @param {object} options - normalizeService callback, frontends mapping and defaultWebApp string.
+ * @returns {object} Frozen target/base/post-URL operations.
+ */
+export function createPostLinkModels(options) {
+  if (typeof options?.normalizeService !== 'function') { throw new TypeError('Post link models require normalizeService'); }
+  const { normalizeService: normalizeServiceUrl, frontends: POST_WEB_FRONTENDS, defaultWebApp: DEFAULT_POST_WEB_APP } = options;
+  function getPostTargetName(webApp) {
+    try {
+      return new URL(normalizeServiceUrl(webApp)).hostname.toLowerCase() === "mu.social"
+        ? "Mu.social"
+        : "Bluesky";
+    } catch {
+      return "Bluesky";
+    }
+  }
+
+  function resolvePostWebBase(serviceUrl) {
+    try {
+      const normalizedService = normalizeServiceUrl(serviceUrl);
+      const host = new URL(normalizedService).hostname.toLowerCase();
+      return POST_WEB_FRONTENDS[host] || DEFAULT_POST_WEB_APP;
+    } catch {
+      return DEFAULT_POST_WEB_APP;
+    }
+  }
+
+  function buildBlueskyPostUrl(handle, uri, serviceUrl) {
+    const parts = String(uri || "").split("/");
+    const recordId = parts[parts.length - 1];
+
+    if (!handle || !recordId) {
+      return "";
+    }
+
+    return `${resolvePostWebBase(serviceUrl)}/profile/${encodeURIComponent(handle)}/post/${encodeURIComponent(recordId)}`;
+  }
+
+
+  return Object.freeze({ getPostTargetName, resolvePostWebBase, buildBlueskyPostUrl });
+}
+
+/** Formats history/export dates while preserving invalid input fallback.
+ * @param {*} value - Date-compatible timestamp.
+ * @param {string} locale - Current language.
+ * @returns {string} Localized timestamp or original value.
+ */
+export function formatApplicationTimestamp(value, locale) {
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+/** Selects a post frontend from author domain or saved favorite metadata.
+ * @param {object} post - Post author and URI.
+ * @param {Array} favorites - Saved posts.
+ * @param {object} presets - Configured service URLs.
+ * @param {string} defaultWebApp - Fallback frontend.
+ * @returns {string} Selected web application.
+ */
+export function selectPostWebApplication(post, favorites, presets, defaultWebApp) {
+  const handle = String(post?.author?.handle || "").toLowerCase();
+  if (handle.endsWith(".eurosky.social") || handle.endsWith(".mu.social")) {
+    return presets["mu.social"];
+  }
+
+  const favorite = favorites.find((entry) => entry.rootUri === post?.uri || entry.selectedUri === post?.uri);
+  if (favorite?.webApp) {
+    return favorite.webApp;
+  }
+
+  return defaultWebApp;
+}
+
+/** Collects visible quote URL variants without duplicates.
+ * @param {object} quote - Quoted post.
+ * @param {Function} postUrl - Builds its primary URL.
+ * @param {Function} recordKey - Reads its URI key.
+ * @param {string} defaultWebApp - Default frontend.
+ * @param {string} alternateWebApp - Alternate frontend.
+ * @returns {string[]} URLs to remove from duplicate display text.
+ */
+export function collectPostQuoteUrls(quote, postUrl, recordKey, defaultWebApp, alternateWebApp) {
+  const quoteUrls = new Set();
+  const quoteUrl = postUrl(quote);
+  if (quoteUrl) {
+    quoteUrls.add(quoteUrl);
+  }
+
+  const quoteHandle = String(quote?.author?.handle || "").trim();
+  const quoteRecordKey = recordKey(quote?.uri);
+  if (quoteHandle && quoteRecordKey) {
+    quoteUrls.add(`${defaultWebApp}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
+    quoteUrls.add(`${alternateWebApp}/profile/${encodeURIComponent(quoteHandle)}/post/${encodeURIComponent(quoteRecordKey)}`);
+  }
+
+  return Array.from(quoteUrls);
+}

@@ -3893,6 +3893,7 @@ body.thread-explorer-fullscreen-active {
 }
 
 .archive-workspace {
+  grid-template-columns: minmax(0, 1fr);
   grid-column: 1 / -1;
   display: grid;
   gap: 24px;
@@ -4212,6 +4213,7 @@ body.thread-explorer-fullscreen-active {
 }
 
 .archive-card {
+  min-width: 0;
   display: grid;
   gap: 14px;
   align-content: start;
@@ -4851,7 +4853,7 @@ body.thread-explorer-fullscreen-active {
 
 .archive-export-card .archive-actions,
 .archive-load-card .archive-actions {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
 }
 
 .hashtags-pane.is-archive-context {
