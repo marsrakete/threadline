@@ -80,6 +80,15 @@ Do not mix these layers unnecessarily.
 - Interaction patterns should remain stable across viewports.
 - Layout should adapt deliberately, not accidentally.
 
+## Delivery Through GitHub Pull Requests
+
+- Implement each cohesive change on its own branch and deliver it as a real GitHub pull request.
+- Use the PR as the implementation and review record: describe the problem, resulting behavior, tests, dependencies and current status there.
+- Existing `TODO.md` entries and `docs/pr-plans/` files are backlog/history context. Updating a checklist is not implementation, and a planning template is not an existing GitHub PR. Do not create empty implementation PRs from the templates.
+- Before starting work, inspect the relevant PRs and use the base branch requested by the user. The current combined local-acceptance branch is `integration/pr-1-4`; use it for this acceptance cycle instead of `main`.
+- Do not commit directly to `main`. Merge PRs or publish a release only when the user has authorized that action. Existing authorization for the current task remains valid.
+- Preserve the user's local changes and do not merge additional unrelated work merely because it appears in the old backlog.
+
 ## Modularization
 
 New functionality must be assigned to a suitable domain module from the beginning. Large entry files such as `app.js` or `main.js` must not grow when a feature clearly belongs to an existing area.

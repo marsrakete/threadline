@@ -2,7 +2,7 @@
 
 Die bei Erstellung am 8. November 2026 offenen 79 Punkte aus [TODO.md](../TODO.md) sind hier 45 fachlich abgegrenzten PR-Beschreibungen und gemeinsamen Abnahmekriterien zugeordnet. Die Vorlagen sind Planungen, keine bereits implementierten Änderungen oder bereits angelegten GitHub-Umsetzungs-PRs. Optional formulierte Produktideen behalten ihren Entscheidungsbedarf.
 
-Der Zähler-Persistenzfehler ist inzwischen mit [PR #3](https://github.com/marsrakete/threadline/pull/3) behoben; die fachliche Modularisierung und ihre Nachprüfung sind mit [PR #4](https://github.com/marsrakete/threadline/pull/4) umgesetzt. Diese historischen Vorlagen öffnen erledigte Aufgaben nicht erneut. Aktueller Bearbeitungsstand: [TODO.md](../TODO.md); aktuelle App-/Cacheversion: [version.json](../version.json). Änderungen aus PR #1 bis #4 werden im Branch `integration/pr-1-4` für die lokale Abnahme zusammengeführt. Neue Umsetzungsbranches vom passenden integrierten Stand starten; keine leeren Code-PRs erzeugen.
+Der Zähler-Persistenzfehler ist inzwischen mit [PR #3](https://github.com/marsrakete/threadline/pull/3) behoben; die fachliche Modularisierung und ihre Nachprüfung sind mit [PR #4](https://github.com/marsrakete/threadline/pull/4) umgesetzt. Diese historischen Vorlagen öffnen erledigte Aufgaben nicht erneut. Aufgabenhintergrund: [TODO.md](../TODO.md); maßgeblicher Umsetzungsstatus: die zugehörigen GitHub-PRs. Aktuelle App-/Cacheversion: [version.json](../version.json). Änderungen aus PR #1 bis #4 werden im Branch `integration/pr-1-4` für die lokale Abnahme zusammengeführt. Neue Umsetzungsbranches vom passenden integrierten Stand starten; keine leeren Code-PRs erzeugen.
 
 ## Empfohlene Reihenfolge
 
