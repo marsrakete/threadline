@@ -3,7 +3,7 @@
 // Development-only inventory. Playwright is already a pinned test dependency.
 const fs = require("node:fs");
 const path = require("node:path");
-const crypto = require("node:crypto");
+const { hashAuditSource } = require("./audit-source.cjs");
 const playwrightRoot = path.dirname(require.resolve("playwright/package.json"));
 const parser = require(path.join(playwrightRoot, "lib/transform/babelBundle.js"));
 
@@ -90,7 +90,7 @@ function inspectEntry(filename) {
     counts[category] += 1;
     if (item.stateWrites.length) { counts.stateWriters += 1; }
   }
-  return { sourceSha256: crypto.createHash("sha256").update(source).digest("hex"), functionCount: functions.length, unresolvedBindings: [...unresolvedBindings], domains, functions };
+  return { sourceSha256: hashAuditSource(source), functionCount: functions.length, unresolvedBindings: [...unresolvedBindings], domains, functions };
 }
 
 const report = {
