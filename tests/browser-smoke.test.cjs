@@ -98,6 +98,8 @@ test("application pages initialize without browser errors", async ({ page }) => 
 });
 
 test("Thread Explorer keeps identity in the header and interactions above counts", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
   await openMobileAppPage(page);
   const layout = await page.evaluate(() => {
     const template = document.querySelector("#thread-explorer-node-template");
@@ -180,4 +182,5 @@ test("Thread Explorer keeps identity in the header and interactions above counts
     maxDiffPixelRatio: 0.03,
     timeout: 10000,
   });
+  expect(errors).toEqual([]);
 });

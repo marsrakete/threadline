@@ -395,12 +395,12 @@ test("package and service-worker versions stay synchronized", () => {
 
 test("responsibility inventory covers every entry function and matches the reviewed source", () => {
   const inventory = JSON.parse(readProjectFile("docs/modularization-inventory.json"));
-  const crypto = require("node:crypto");
+  const { hashAuditSource } = require("../scripts/audit-source.cjs");
   for (const filename of ["app.js", "sw.js"]) {
     const source = readProjectFile(filename), entry = inventory.files[filename];
     const functions = [...source.matchAll(/^(?:async )?function ([A-Za-z_$][\w$]*)\(/gm)].map(match => match[1]).sort();
     assert.deepEqual(entry.functions.map(item => item.name).sort(), functions);
-    assert.equal(entry.sourceSha256, crypto.createHash("sha256").update(source).digest("hex"));
+    assert.equal(entry.sourceSha256, hashAuditSource(source));
     assert.equal(entry.functionCount, functions.length);
     assert.deepEqual(entry.unresolvedBindings, []);
     assert.ok(entry.functions.every(item => item.domain && item.category && Array.isArray(item.stateReads) && Array.isArray(item.stateWrites)));
