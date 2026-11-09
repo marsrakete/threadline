@@ -172,6 +172,11 @@
             </a>
           </div>
         </div>
+        <nav class="legal-links app-legal-footer" aria-label="Rechtliche Hinweise">
+          <a href="./datenschutz.html#en" data-i18n="privacyLink" data-privacy-language-link data-privacy-page-link>Datenschutz</a>
+          <a href="https://github.com/marsrakete/threadline" target="_blank" rel="noreferrer noopener" data-i18n="sourceCodeLink">GitHub</a>
+          <span class="legal-copyright" data-i18n="footerCopyright">© 2026 Millux</span>
+        </nav>
       </aside>
 
       <div
@@ -186,7 +191,7 @@
         <div id="composer-workspace" class="workspace-view workspace-view-active" data-page-scope="composer">
           <div class="composer-column">
             <section class="editor-pane">
-              <div class="section-heading">
+              <div class="section-heading composer-section-heading">
                 <div>
                   <p class="eyebrow" data-i18n="composerEyebrow">Composer</p>
                   <div class="help-heading">
@@ -825,12 +830,6 @@
                     </div>
                   </header>
                   <p class="thread-explorer-post-meta"></p>
-                  <div class="thread-explorer-post-actions" hidden>
-                    <button type="button" class="thread-explorer-edit-button" data-i18n-title="threadExplorerEditDetailsButton" title="Bearbeitungsdetails anzeigen" hidden>
-                      <span aria-hidden="true">✎</span>
-                      <span data-i18n="threadExplorerEditedBadge">Wurde bearbeitet</span>
-                    </button>
-                  </div>
                   <p class="thread-explorer-post-text"></p>
                   <div class="thread-explorer-post-gallery"></div>
                   <a class="thread-explorer-link-card" target="_blank" rel="noreferrer noopener" hidden>
@@ -861,6 +860,12 @@
                     </span>
                     <small class="thread-explorer-quote-card-meta"></small>
                   </a>
+                  <div class="thread-explorer-post-actions" hidden>
+                    <button type="button" class="thread-explorer-edit-button" data-i18n-title="threadExplorerEditDetailsButton" title="Bearbeitungsdetails anzeigen" hidden>
+                      <span aria-hidden="true">✎</span>
+                      <span data-i18n="threadExplorerEditedBadge">Wurde bearbeitet</span>
+                    </button>
+                  </div>
                   <p class="thread-explorer-post-counts"></p>
                 </article>
               </div>
@@ -901,7 +906,7 @@
                 <span class="thread-explorer-favorite-meta saved-search-meta"></span>
                 <span class="thread-explorer-favorite-text saved-search-url"></span>
               </button>
-              <button type="button" class="thread-explorer-favorite-remove saved-search-remove" data-i18n-title="savedSearchRemoveButton" title="Entfernen"></button>
+              <button type="button" class="thread-explorer-favorite-remove saved-search-remove" data-i18n-title="savedSearchRemoveButton" title="Entfernen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path></svg></button>
             </article>
           </template>
 
@@ -1860,6 +1865,10 @@
       </form>
     </dialog>
 
+    <template id="help-topic-template">
+      <p></p>
+      <ul class="help-topic-list"><li></li></ul>
+    </template>
     <dialog id="help-dialog" class="settings-dialog">
       <form method="dialog" class="settings-sheet help-sheet">
         <div class="section-heading settings-heading">
@@ -1895,6 +1904,10 @@
       </form>
     </dialog>
 
+    <template id="post-language-option-template">
+      <label class="post-language-option"><input type="checkbox"><span></span></label>
+    </template>
+    <template id="post-language-empty-template"><p class="settings-note"></p></template>
     <dialog id="post-languages-dialog" class="settings-dialog">
       <form method="dialog" class="settings-sheet post-languages-sheet">
         <div class="section-heading settings-heading">
@@ -2406,6 +2419,34 @@
     <input id="thread-import-input" class="is-hidden" type="file" accept="application/json,application/gzip,.json,.gz,.threadline,.threadline.gz">
     <input id="archive-import-input" class="is-hidden" type="file" accept="application/json,application/gzip,application/zip,.json,.gz,.zip,.threadline-archive">
 
+    <template id="dm-summary-item-template">
+      <div class="archive-summary-item">
+        <span class="archive-summary-label"></span>
+        <strong></strong>
+      </div>
+    </template>
+
+    <template id="dm-contact-item-template">
+      <button type="button" class="hashtag-chip dm-contact-chip">
+        <img class="account-chip-avatar dm-contact-avatar" loading="lazy" alt="">
+        <span class="dm-contact-chip-content">
+          <strong class="dm-contact-chip-name"></strong>
+          <span class="dm-contact-chip-handle"></span>
+        </span>
+      </button>
+    </template>
+
+    <template id="dm-result-item-template">
+      <article class="archive-result-card">
+        <h4></h4>
+        <p class="settings-note"></p>
+      </article>
+    </template>
+
+    <template id="composer-segment-help-template">
+      <button type="button" class="help-trigger segment-image-help-trigger">?</button>
+    </template>
+
     <template id="segment-template">
       <article class="segment-card">
         <div class="segment-header">
@@ -2426,6 +2467,9 @@
       </article>
     </template>
 
+    <template id="link-card-target-empty-template">
+      <p class="settings-note"></p>
+    </template>
     <template id="link-card-target-template">
       <article class="link-card-target-item">
         <div class="link-card-target-body">
@@ -2434,6 +2478,28 @@
         </div>
         <button type="button" class="ghost-button link-card-target-action"></button>
       </article>
+    </template>
+
+    <template id="segment-mention-label-template">
+      <span class="segment-mentions-label"></span>
+    </template>
+    <template id="segment-mention-resolved-template">
+      <span class="segment-mention-chip">
+        <button type="button" class="segment-mention-chip-body-button">
+          <span class="segment-mention-chip-body"><span class="segment-mention-handle"></span><small></small></span>
+        </button>
+        <a class="thread-explorer-view-link segment-mention-open-link" target="_blank" rel="noreferrer noopener">&#8599;</a>
+      </span>
+    </template>
+    <template id="segment-mention-unresolved-template">
+      <button type="button" class="segment-mention-chip segment-mention-chip-warning segment-mention-chip-button">
+        <strong></strong><small></small>
+      </button>
+    </template>
+    <template id="segment-mention-sync-template">
+      <div class="segment-mention-sync">
+        <small></small><button type="button" class="segment-mention-sync-button"></button>
+      </div>
     </template>
 
     <template id="mention-search-result-template">
@@ -2492,16 +2558,115 @@
     </template>
 
     <!-- Account Switcher Item Template -->
+    <template id="network-svg-primitive-template"><svg xmlns="http://www.w3.org/2000/svg"><circle></circle><path></path><line></line><text></text></svg></template>
+    <template id="network-svg-scene-template"><svg xmlns="http://www.w3.org/2000/svg">
+      <defs><radialGradient id="network-stage-glow"><stop offset="0%" stop-color="#58caff" stop-opacity="0.7"></stop><stop offset="55%" stop-color="#58caff" stop-opacity="0.12"></stop><stop offset="100%" stop-color="#58caff" stop-opacity="0"></stop></radialGradient></defs>
+      <g data-network-layer="background"><circle r="110" fill="url(#network-stage-glow)"></circle></g>
+      <g data-network-layer="edges"></g>
+      <g data-network-layer="viewer"><circle r="46" fill="rgba(98, 229, 205, 0.92)" stroke="rgba(255, 255, 255, 0.92)" stroke-width="2"></circle>
+        <text data-network-field="initials" text-anchor="middle" fill="#091320" font-size="20" font-weight="800"></text><text data-network-field="handle" text-anchor="middle" class="network-node-label"></text>
+      </g>
+      <g data-network-layer="nodes"></g>
+    </svg></template>
+    <template id="network-svg-node-template"><svg xmlns="http://www.w3.org/2000/svg"><g class="network-node-button" tabindex="0" role="button">
+      <title></title><circle data-network-field="halo"></circle>
+      <circle data-network-common-ring="10" fill="rgba(92, 231, 207, 0.08)" stroke="rgba(92, 231, 207, 0.34)" stroke-width="6"></circle>
+      <circle data-network-common-ring="7" fill="none" stroke="rgba(255, 255, 255, 0.92)" stroke-width="2.2"></circle>
+      <circle data-network-common-ring="4" fill="none" stroke="rgba(92, 231, 207, 1)" stroke-width="2.8" stroke-dasharray="4 4"></circle>
+      <circle data-network-field="circle"></circle><text data-network-field="initials" text-anchor="middle" fill="#06111f" font-weight="800"></text><text data-network-field="handle" text-anchor="middle" class="network-node-label"></text>
+    </g></svg></template>
+    <template id="network-svg-focus-template"><svg xmlns="http://www.w3.org/2000/svg"><g class="network-focus-island">
+      <circle data-network-focus-ring="shield" r="150" fill="rgba(0, 0, 0, 0.001)"></circle>
+      <circle data-network-focus-ring="background" r="126" fill="rgba(11, 26, 48, 0.4)" stroke="rgba(95, 157, 255, 0.1)" stroke-width="1"></circle>
+      <circle data-network-focus-ring="orbit" r="108" fill="none" stroke="rgba(96, 174, 255, 0.24)" stroke-width="1.6" stroke-dasharray="4 8"></circle>
+      <line data-network-field="bridge" stroke="rgba(98, 229, 205, 0.28)" stroke-width="1.8"></line><text data-network-field="hint" text-anchor="middle" class="network-stage-hint network-stage-hint-focus"></text>
+      <g class="network-node-button network-node-button-focus-center" tabindex="0" role="button"><title></title>
+        <circle r="30" fill="rgba(98, 229, 205, 0.92)" stroke="#ffffff" stroke-width="2.2"></circle><text data-network-field="initials" text-anchor="middle" fill="#091320" font-size="15" font-weight="800"></text><text data-network-field="handle" text-anchor="middle" class="network-node-label"></text>
+      </g><g class="network-common-mutual-layer"></g>
+    </g></svg></template>
+    <template id="network-svg-preview-template"><svg xmlns="http://www.w3.org/2000/svg"><g class="network-node-button network-node-button-preview" tabindex="0" role="button">
+      <line stroke="rgba(152, 196, 255, 0.32)" stroke-width="1.2"></line><circle r="16" stroke="rgba(255, 255, 255, 0.82)" stroke-width="1.4"></circle><text data-network-field="initials" text-anchor="middle" fill="#091320" font-size="10" font-weight="800"></text><title></title>
+    </g></svg></template>
+
+    <template id="network-focus-shell-template">
+      <div class="network-focus-shell"><section class="network-focus-summary">
+        <div class="network-focus-head">
+          <div class="network-avatar-badge"><img alt=""></div>
+          <div class="network-avatar-copy"><strong></strong><span class="network-handle"></span></div>
+        </div>
+        <span class="network-relation-pill"></span>
+        <div class="network-focus-actions">
+          <button type="button" class="ghost-button network-focus-action-button" data-network-focus-action="load"></button>
+          <button type="button" class="ghost-button network-focus-action-button" data-network-focus-action="common"></button>
+        </div>
+        <div class="network-stat-grid"></div>
+      </section></div>
+    </template>
+    <template id="network-focus-stat-template"><div class="network-stat-card"><span></span><strong></strong></div></template>
+    <template id="network-focus-line-template"><p class="network-card-explainer"></p></template>
+    <template id="network-focus-meta-template"><div class="network-relationship-meta"></div></template>
+    <template id="network-focus-description-template"><details class="network-description-disclosure"><summary></summary><p class="network-description"></p></details></template>
+
+    <template id="network-result-intro-template">
+      <article class="network-group-card network-group-card-intro"><strong></strong><p class="network-card-explainer"></p></article>
+    </template>
+    <template id="network-result-group-template">
+      <article class="network-group-card"><strong></strong><p class="network-card-explainer"></p><div class="network-scroll-list"></div></article>
+    </template>
+    <template id="network-result-item-template">
+      <button type="button" class="network-list-button"><strong></strong><span class="network-list-meta"></span></button>
+    </template>
+    <template id="network-result-more-template">
+      <button type="button" class="ghost-button network-more-button"></button><p class="network-card-explainer"></p>
+    </template>
+    <template id="network-result-empty-template"><p class="settings-note"></p></template>
+    <template id="analysis-note-template"><p class="settings-note"></p></template>
+    <template id="analysis-network-summary-template"><article class="analysis-account-card"><strong></strong><p class="settings-note"></p><div class="analysis-result-details"></div></article></template>
+    <template id="analysis-heatmap-template"><div class="analysis-temporal-heatmap"><strong class="analysis-temporal-chart-title"></strong></div></template>
+    <template id="analysis-heatmap-grid-template"><div class="analysis-temporal-heatmap-grid"></div></template>
+    <template id="analysis-axis-template"><span class="analysis-temporal-axis-label"></span></template>
+    <template id="analysis-heatmap-cell-template"><span class="analysis-temporal-heatmap-cell"></span></template>
+    <template id="analysis-timeline-template">
+      <div class="analysis-temporal-timeline"><strong class="analysis-temporal-chart-title"></strong><div class="analysis-temporal-timeline-axis"><span class="analysis-temporal-timeline-date"></span><div class="analysis-temporal-timeline-axis-track"></div></div><div class="analysis-temporal-timeline-rows"></div></div>
+    </template>
+    <template id="analysis-timeline-tick-template"><span class="analysis-temporal-timeline-tick"></span></template>
+    <template id="analysis-timeline-row-template"><div class="analysis-temporal-timeline-row"><span class="analysis-temporal-timeline-date"></span><div class="analysis-temporal-timeline-track"></div></div></template>
+    <template id="analysis-timeline-point-template"><span class="analysis-temporal-timeline-point"></span></template>
+    <template id="analysis-profiles-template"><div class="analysis-profile-list"></div></template>
+    <template id="analysis-profile-template">
+      <article class="analysis-profile-chip"><img class="analysis-profile-chip-avatar" loading="lazy" alt=""><div class="analysis-profile-chip-body"><strong></strong><span class="reply-target-handle"></span><span class="analysis-profile-chip-status"></span><span class="analysis-profile-chip-share"></span></div></article>
+    </template>
+    <template id="analysis-table-template"><table class="analysis-table"><thead></thead><tbody></tbody></table></template>
+    <template id="analysis-temporal-comparison-template"><article class="analysis-account-card analysis-temporal-comparison-card"><strong></strong></article></template>
+    <template id="analysis-span-template"><span></span></template>
+    <template id="analysis-tokens-template"><div class="analysis-token-list"></div></template>
+    <template id="analysis-token-template"><span class="analysis-token-chip"></span></template>
+    <template id="analysis-stats-template"><div class="analysis-stat-list"></div></template>
+    <template id="analysis-stat-template"><div class="analysis-stat-row"><span class="analysis-stat-label"></span><strong class="analysis-stat-value"></strong></div></template>
+    <template id="analysis-bars-template"><div class="analysis-bar-list"></div></template>
+    <template id="analysis-bar-template"><div class="analysis-bar-row"><div class="analysis-bar-head"><span></span><strong></strong></div><div class="analysis-bar-track"><span class="analysis-bar-fill"></span></div></div></template>
+    <template id="analysis-pattern-template"><article class="analysis-pattern-card"><strong></strong></article></template>
+    <template id="analysis-account-template">
+      <article class="analysis-account-card">
+        <div class="analysis-account-card-head"><img class="analysis-account-avatar" alt=""><div class="analysis-account-identity"><p class="eyebrow"></p><strong></strong><span class="reply-target-handle"></span></div></div>
+        <div class="analysis-account-stats"></div><p class="analysis-account-preview"></p>
+      </article>
+    </template>
+    <template id="analysis-result-template">
+      <div>
+        <div class="analysis-result-overall"><p class="eyebrow"></p><div class="analysis-result-head"><strong class="analysis-result-score"></strong><span class="analysis-result-label"></span></div><p class="analysis-result-summary"></p></div>
+        <p class="analysis-result-confidence"></p><p class="analysis-result-section-title"></p><div class="analysis-result-details"></div><p class="settings-note"></p>
+      </div>
+    </template>
+    <template id="network-focus-toggle-template"><svg viewBox="0 0 24 24" aria-hidden="true"><path d=""></path></svg></template>
+
     <template id="account-switcher-item-template">
       <div class="account-chip-wrap">
         <button type="button" class="account-chip">
           <img class="account-chip-avatar" alt="" loading="lazy">
-          <span class="account-chip-copy">
-            <strong class="account-chip-name"></strong>
-            <small class="account-chip-handle"></small>
-          </span>
+          <span class="account-chip-label"></span>
         </button>
-        <button type="button" class="account-chip-toggle" aria-label="">
+        <button type="button" class="account-chip-action" aria-label="">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d=""></path>
           </svg>
@@ -2517,20 +2682,54 @@
     <!-- History Item Template -->
     <template id="history-item-template">
       <article class="history-item">
-        <div class="history-item-header">
-          <span class="history-item-timestamp"></span>
-          <span class="history-item-account"></span>
-        </div>
-        <p class="history-item-preview"></p>
         <div class="history-item-meta">
-          <span class="history-item-count"></span>
-          <span class="history-item-images"></span>
+          <p class="history-item-eyebrow"></p>
+          <p class="history-preview"></p>
+          <div class="history-meta-row">
+            <p class="history-timestamp"></p>
+            <p class="history-meta history-counts"></p>
+            <p class="history-meta history-account"></p>
+          </div>
         </div>
         <div class="history-item-actions">
-          <button type="button" class="ghost-button history-continue-button" data-i18n="threadContinueButton">Thread fortsetzen</button>
-          <button type="button" class="ghost-button history-delete-button" data-i18n="deleteButton">Löschen</button>
+          <a class="ghost-button link-button history-link" target="_blank" rel="noreferrer noopener"></a>
+          <button type="button" class="ghost-button history-link history-explorer-button"></button>
+          <button type="button" class="ghost-button history-link history-continue-button"></button>
+          <button type="button" class="segment-image-tool danger history-delete-button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path></svg>
+          </button>
         </div>
       </article>
+    </template>
+    <template id="history-empty-template"><p class="history-empty"></p></template>
+
+    <template id="composer-link-card-preview-template">
+      <div class="segment-link-card-preview">
+        <img alt="" loading="lazy">
+        <div class="segment-link-card-body"><strong></strong><span></span><small></small></div>
+        <button type="button" class="segment-image-tool danger">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path></svg>
+        </button>
+      </div>
+    </template>
+    <template id="composer-segment-image-template">
+      <div class="segment-image-card" draggable="true">
+        <div class="segment-image-preview" role="button" tabindex="0"><canvas></canvas></div>
+        <div class="segment-image-meta">
+          <span class="segment-image-name"></span>
+          <span class="segment-image-alt-state"></span>
+          <span class="segment-image-original-size"></span>
+          <span class="segment-image-export-size"></span>
+          <span class="segment-image-export-dimensions"></span>
+        </div>
+        <div class="segment-image-tools">
+          <button type="button" class="segment-image-tool" data-image-action="left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6-1.4 1.4L6.2 12l7.4-7.4z"></path></svg></button>
+          <button type="button" class="segment-image-tool" data-image-action="right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l1.4-1.4 7.4 7.4-7.4 7.4L9 18l6-6z"></path></svg></button>
+          <button type="button" class="segment-image-tool" data-image-action="alt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.75V20h3.25L18.4 8.84l-3.24-3.24L4 16.75zm14.71-9.04a1 1 0 0 0 0-1.42l-1-1a1 1 0 0 0-1.42 0l-.88.88 3.24 3.24.06-.06z"></path></svg></button>
+          <button type="button" class="segment-image-tool" data-image-action="edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm2 8 2.5-3 2 2.5 3-4L19 15H7z"></path></svg></button>
+          <button type="button" class="segment-image-tool danger" data-image-action="delete"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path></svg></button>
+        </div>
+      </div>
     </template>
 
     <!-- Generic Icon Button Templates -->
@@ -2541,6 +2740,24 @@
         </svg>
       </button>
     </template>
+
+    <template id="archive-workspace-source-template"><img class="analysis-account-avatar" loading="lazy" alt=""><div class="analysis-account-identity"><p class="eyebrow"></p><strong></strong><span class="reply-target-handle"></span></div></template>
+    <template id="archive-workspace-note-template"><p class="settings-note"></p></template>
+    <template id="archive-workspace-preview-template"><p class="archive-preview-meta" data-slot="meta"></p><img alt=""><p class="archive-preview-text" data-slot="text"></p><p class="archive-preview-meta" data-slot="metric"></p></template>
+    <template id="archive-workspace-spec-template"><p class="settings-note"></p><ol class="archive-spec-list"></ol></template>
+    <template id="archive-workspace-spec-item-template"><li></li></template>
+    <template id="archive-workspace-result-template"><article class="archive-result-card"><strong></strong><p class="settings-note" data-slot="meta"></p><p class="settings-note" data-slot="source"></p><p class="settings-note" data-slot="resume"></p><div class="archive-result-actions"><button type="button" class="ghost-button" data-action="zip"></button><button type="button" class="ghost-button" data-action="html"></button><button type="button" class="ghost-button" data-action="pdf"></button></div></article></template>
+
+    <template id="archive-layout-export-template">
+      <section id="archive-export-card" class="archive-card archive-export-card">
+        <p class="eyebrow" data-i18n="archiveExportEyebrow"></p>
+        <div class="help-heading"><h3 data-i18n="archiveExportTitle"></h3><button type="button" class="help-trigger" data-help-topic="archive_actions">?</button></div>
+        <div class="archive-actions"></div><p class="settings-note" data-i18n="archiveActionsNote"></p>
+      </section>
+    </template>
+    <template id="archive-layout-tools-template"><div id="archive-tools-heading" class="archive-tools-heading"><p class="eyebrow" data-i18n="archiveToolsEyebrow"></p><h3 data-i18n="archiveToolsTitle"></h3></div></template>
+    <template id="archive-layout-content-template"><div class="archive-content-layout"><div class="archive-content-main"></div><div class="archive-content-filters"></div></div></template>
+    <template id="archive-layout-actions-template"><div class="archive-actions"></div></template>
 
     <script src="version.js"></script>
     <script type="module" src="app.js"></script>

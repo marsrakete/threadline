@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "../../translations.js";
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, translations } from "./app-translations.js";
 
 /**
  * Returns the translation table for the requested locale or the default locale fallback.

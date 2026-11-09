@@ -56,3 +56,38 @@ export {
   navigateToThreadlinePage,
   normalizeThreadlinePage,
 };
+
+/**
+ * Preserves intended page navigation across service-worker reloads.
+ * @param {object} options - Session storage, safe access, key and current URL adapters.
+ * @returns {object} Pending navigation lifecycle.
+ */
+export function createPendingNavigationController(options) {
+  /** Reads the pending target safely. @returns {string} Target or empty string. */
+  function read() {
+    try { return options.read(options.storage(), options.key); }
+    catch { return ""; }
+  }
+  /** Saves an intended target. @param {string} url - Absolute destination. @returns {void} */
+  function persist(url) {
+    try { options.write(options.storage(), options.key, url); }
+    catch { /* Session storage is optional in restricted contexts. */ }
+  }
+  /** Removes a pending target before leaving the shell. @returns {void} */
+  function clear() {
+    try { options.remove(options.storage(), options.key); }
+    catch { /* Session storage is optional in restricted contexts. */ }
+  }
+  /** Reads and removes the pending target. @returns {string} Previous destination. */
+  function consume() { const target = read(); clear(); return target; }
+  /** Clears an already reached path regardless of query parameters. @returns {void} */
+  function clearMatching() {
+    const target = read();
+    if (!target) { return; }
+    try {
+      const current = new URL(options.href());
+      if (current.pathname === new URL(target, current).pathname) { clear(); }
+    } catch { /* Malformed targets must not interrupt initialization. */ }
+  }
+  return { read, persist, clear, consume, clearMatching };
+}

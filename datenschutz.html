@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta name="theme-color" content="#0d1321">
+    <meta name="description" content="Datenschutzhinweise für Threadline.">
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <title>Datenschutz | Threadline</title>
+  </head>
+  <body class="privacy-page">
+    <main class="privacy-layout">
+      <header class="privacy-header">
+        <a class="privacy-brand" href="./" aria-label="Zurück zu Threadline">
+          <img src="icons/icon.svg" alt="">
+          <span>Threadline</span>
+        </a>
+        <a class="ghost-button privacy-return-link" href="./">Zur App</a>
+      </header>
+
+      <nav class="privacy-language-nav" aria-label="Sprache auswählen">
+        <a href="#de">Deutsch</a>
+        <a href="#en">English</a>
+        <a href="#fr">Français</a>
+      </nav>
+
+      <section id="de" class="privacy-document" lang="de">
+        <p class="eyebrow">Datenschutz</p>
+        <h1>Technische Datenschutzhinweise</h1>
+        <p class="privacy-lead">Threadline ist eine statische Browser-App. Die App betreibt keinen eigenen Anwendungsserver und enthält keine Analyse- oder Werbetracker.</p>
+        <p class="privacy-updated">Stand: 8. September 2026</p>
+
+        <section>
+          <h2>1. Verantwortliche Stelle</h2>
+          <p>Die Angaben zur verantwortlichen Person und eine Kontaktadresse werden vor der Veröffentlichung ergänzt. Diese Seite beschreibt bereits die technischen Datenflüsse der App.</p>
+        </section>
+
+        <section>
+          <h2>2. Verarbeitung auf deinem Gerät</h2>
+          <p>Threadline speichert Daten im Browser, überwiegend in IndexedDB. Dazu können gehören: angemeldete Konten mit Handle, DID, PDS-Adresse sowie Access- und Refresh-Token; Entwürfe, Thread-Abschnitte, Bilder, ALT-Texte, Link-Cards, Hashtags, Antwortziele und Post-Einstellungen; Suchmasken, Favoriten und Darstellungsoptionen; Archivstände, DM-Partnerdaten sowie Avatar- und Mediencaches.</p>
+          <p>Einige Oberflächenoptionen, etwa Darstellungsmodus, letzte Werkzeugansicht und die ausgewählte Thread-Explorer-Ansicht, liegen zusätzlich in Local Storage. Browser-Caches können geladene externe Medien enthalten.</p>
+        </section>
+
+        <section>
+          <h2>3. Bluesky und AT Protocol</h2>
+          <p>Erst wenn du eine Funktion startest, sendet der Browser Daten direkt an den gewählten Bluesky-PDS oder an AT-Protocol-Dienste. Beim Login sind das Handle oder Kennung und App-Passwort. Threadline verwendet kein Bluesky-Hauptpasswort. Die Antwort enthält unter anderem DID, Handle sowie Access- und Refresh-Token, die lokal gespeichert werden können.</p>
+          <p>Suche, Thread Explorer, Netzwerk, Analyse und Archiv laden abhängig von deiner Auswahl öffentliche Profildaten, Handles, DIDs, Posts, Threads, Follows, Follower, Reaktionen und Medien. Zur Auflösung einer DID kann Threadline <code>plc.directory</code> oder die jeweilige <code>did:web</code>-Domain abrufen.</p>
+          <p>Beim Posten gehen Posttext, Hashtags, Antwort- oder Zitatbezug, Sprach- und Interaktionseinstellungen sowie Bilder einschließlich ALT-Text an den PDS. Like, Unlike, Repost und Antwort werden nur durch den jeweiligen Klick ausgelöst.</p>
+        </section>
+
+        <section>
+          <h2>4. Direct Messages und Archive</h2>
+          <p>Das DM-Archiv lädt erst nach einem ausdrücklichen Start Konversationsmetadaten, Teilnehmerdaten, Nachrichten und optional Avatare über den Bluesky-Chat-Dienst. Diese Daten werden im Browser für die lokale Archiv- und Exportfunktion verarbeitet.</p>
+          <p>Beim Archivieren von Posts lädt Threadline die von dir ausgewählten öffentlichen Beiträge und auf Wunsch deren Medien. ZIP-, HTML- und PDF-Dateien werden lokal im Browser erzeugt und nur durch deine Auswahl heruntergeladen.</p>
+        </section>
+
+        <section>
+          <h2>5. Externe Link-Cards und Medien</h2>
+          <p>Ohne konfigurierten Link-Card-Dienst erstellt Threadline eine einfache Card aus der URL, ohne Metadaten bei einem Dienst abzufragen. Bilder und Medien aus öffentlichen Posts oder Link-Cards können direkt vom jeweiligen Medienhost geladen werden. Dieser erhält dabei technisch bedingt deine IP-Adresse.</p>
+          <p>Bei Microlink wird die eingegebene Ziel-URL an <code>api.microlink.io</code> übermittelt. Microlink ruft die Zielseite ab und liefert Metadaten zurück.</p>
+          <p>Beim optionalen WordPress-Link-Card-Proxy werden Ziel-URL, Origin, Zeitstempel, Nonce und eine HMAC-Signatur an den von dir konfigurierten Proxy gesendet. Das Secret selbst wird nicht übertragen. Der mitgelieferte Proxy ruft die Zielseite serverseitig ab und protokolliert Ziel- und Weiterleitungs-URL, Origin, IP-Adresse, Zeitpunkt, Status, Dauer und Fehler für 30 Tage.</p>
+        </section>
+
+        <section>
+          <h2>6. Hosting und Empfänger</h2>
+          <p>Die veröffentlichte App wird über GitHub Pages ausgeliefert. Dabei verarbeitet der Hosting-Anbieter technisch erforderliche Verbindungsdaten, insbesondere IP-Adresse und Abrufzeit. Für die jeweiligen Dienste gelten zusätzlich deren eigene Datenschutzhinweise: dein Bluesky-PDS, die AT-Protocol-Dienste, externe Medienhosts, Microlink und gegebenenfalls dein WordPress-Proxy.</p>
+        </section>
+      </section>
+
+      <section id="en" class="privacy-document" lang="en">
+        <p class="eyebrow">Privacy</p>
+        <h1>Technical privacy notice</h1>
+        <p class="privacy-lead">Threadline is a static browser app. It does not operate its own application server and contains no analytics or advertising trackers.</p>
+        <p class="privacy-updated">Last updated: 8 September 2026</p>
+
+        <section>
+          <h2>1. Controller</h2>
+          <p>The controller details and a contact address will be added before publication. This page already describes the app's technical data flows.</p>
+        </section>
+
+        <section>
+          <h2>2. Processing on your device</h2>
+          <p>Threadline stores data in the browser, mainly in IndexedDB. This can include signed-in accounts with handle, DID, PDS address, access and refresh tokens; drafts, thread sections, images, ALT text, link cards, hashtags, reply targets and post settings; search forms, favourites and display preferences; archive state, DM partner data, avatar caches and media caches.</p>
+          <p>Some interface preferences, including display mode, the last tools workspace and the selected Thread Explorer view, are also stored in Local Storage. Browser caches can contain loaded external media.</p>
+        </section>
+
+        <section>
+          <h2>3. Bluesky and AT Protocol</h2>
+          <p>Only after you start a feature does the browser send data directly to the selected Bluesky PDS or AT Protocol services. Login sends a handle or identifier and an app password. Threadline does not use a Bluesky main password. The response can include a DID, handle, access token and refresh token, which may be stored locally.</p>
+          <p>Depending on your selection, Search, Thread Explorer, Network, Analysis and Archive load public profile data, handles, DIDs, posts, threads, follows, followers, reactions and media. To resolve a DID, Threadline can request <code>plc.directory</code> or the relevant <code>did:web</code> domain.</p>
+          <p>Publishing sends post text, hashtags, reply or quote references, language and interaction settings, plus images including ALT text to the PDS. Like, unlike, repost and reply are only triggered by the respective action.</p>
+        </section>
+
+        <section>
+          <h2>4. Direct messages and archives</h2>
+          <p>The DM Archive loads conversation metadata, participant data, messages and optional avatars through the Bluesky chat service only after you explicitly start it. The browser processes these data for local archive and export functions.</p>
+          <p>When archiving posts, Threadline loads the public posts you select and, if requested, their media. ZIP, HTML and PDF files are created locally in the browser and downloaded only when you choose to do so.</p>
+        </section>
+
+        <section>
+          <h2>5. External link cards and media</h2>
+          <p>Without a configured link-card service, Threadline creates a basic card from the URL and does not request metadata from a service. Images and media from public posts or link cards may be loaded directly from the relevant media host, which necessarily receives your IP address.</p>
+          <p>When Microlink is selected, the entered target URL is sent to <code>api.microlink.io</code>. Microlink requests the target page and returns metadata.</p>
+          <p>With the optional WordPress link-card proxy, the target URL, origin, timestamp, nonce and an HMAC signature are sent to the proxy you configured. The secret itself is not transmitted. The supplied proxy requests the target page server-side and logs target and redirect URL, origin, IP address, timestamp, status, duration and errors for 30 days.</p>
+        </section>
+
+        <section>
+          <h2>6. Hosting and recipients</h2>
+          <p>The published app is delivered through GitHub Pages. The hosting provider processes technically necessary connection data, including IP address and request time. The privacy notices of your Bluesky PDS, AT Protocol services, external media hosts, Microlink and, where applicable, your WordPress proxy also apply.</p>
+        </section>
+      </section>
+
+      <section id="fr" class="privacy-document" lang="fr">
+        <p class="eyebrow">Confidentialité</p>
+        <h1>Notice technique de confidentialité</h1>
+        <p class="privacy-lead">Threadline est une application statique exécutée dans le navigateur. Elle n'exploite pas son propre serveur applicatif et ne contient ni outil d'analyse ni traceur publicitaire.</p>
+        <p class="privacy-updated">Mise à jour : 8 septembre 2026</p>
+
+        <section>
+          <h2>1. Responsable du traitement</h2>
+          <p>Les coordonnées du responsable et une adresse de contact seront ajoutées avant publication. Cette page décrit déjà les flux de données techniques de l'application.</p>
+        </section>
+
+        <section>
+          <h2>2. Traitement sur votre appareil</h2>
+          <p>Threadline enregistre des données dans le navigateur, principalement dans IndexedDB. Il peut s'agir des comptes connectés avec identifiant, DID, adresse PDS et jetons d'accès et de renouvellement ; des brouillons, sections de fil, images, textes alternatifs, cartes de liens, hashtags, cibles de réponse et réglages de publication ; des recherches enregistrées, favoris et préférences d'affichage ; des états d'archive, données de partenaires de messagerie et caches d'avatars et de médias.</p>
+          <p>Certaines préférences d'interface, notamment le mode d'affichage, le dernier espace d'outils et la vue sélectionnée dans Thread Explorer, sont également enregistrées dans Local Storage. Les caches du navigateur peuvent contenir des médias externes chargés.</p>
+        </section>
+
+        <section>
+          <h2>3. Bluesky et AT Protocol</h2>
+          <p>Le navigateur envoie des données directement au PDS Bluesky sélectionné ou aux services AT Protocol uniquement après le démarrage d'une fonction. La connexion envoie un identifiant ou un handle et un mot de passe d'application. Threadline n'utilise pas le mot de passe principal Bluesky. La réponse peut contenir un DID, un handle, un jeton d'accès et un jeton de renouvellement, qui peuvent être conservés localement.</p>
+          <p>Selon votre sélection, Recherche, Thread Explorer, Réseau, Analyse et Archive chargent des données de profil publiques, handles, DID, posts, fils, abonnements, abonnés, réactions et médias. Pour résoudre un DID, Threadline peut interroger <code>plc.directory</code> ou le domaine <code>did:web</code> concerné.</p>
+          <p>La publication envoie au PDS le texte, les hashtags, les références de réponse ou de citation, les réglages de langue et d'interaction, ainsi que les images avec leurs textes alternatifs. Les actions J'aime, annuler J'aime, repartager et répondre ne sont déclenchées que par l'action correspondante.</p>
+        </section>
+
+        <section>
+          <h2>4. Messages directs et archives</h2>
+          <p>L'archive de messages directs charge les métadonnées des conversations, les données des participants, les messages et, éventuellement, les avatars via le service de discussion Bluesky uniquement après un démarrage explicite. Le navigateur traite ces données pour les fonctions locales d'archive et d'export.</p>
+          <p>Lors de l'archivage de posts, Threadline charge les posts publics que vous sélectionnez et, sur demande, leurs médias. Les fichiers ZIP, HTML et PDF sont créés localement dans le navigateur et téléchargés seulement si vous le choisissez.</p>
+        </section>
+
+        <section>
+          <h2>5. Cartes de liens et médias externes</h2>
+          <p>Sans service de carte de lien configuré, Threadline crée une carte simple à partir de l'URL et ne demande pas de métadonnées à un service. Les images et médias de posts publics ou de cartes de liens peuvent être chargés directement depuis l'hébergeur concerné, qui reçoit alors nécessairement votre adresse IP.</p>
+          <p>Lorsque Microlink est sélectionné, l'URL cible saisie est envoyée à <code>api.microlink.io</code>. Microlink interroge la page cible et renvoie des métadonnées.</p>
+          <p>Avec le proxy WordPress facultatif, l'URL cible, l'origine, l'horodatage, le nonce et une signature HMAC sont envoyés au proxy configuré. Le secret lui-même n'est pas transmis. Le proxy fourni interroge la page cible côté serveur et journalise l'URL cible et de redirection, l'origine, l'adresse IP, l'heure, le statut, la durée et les erreurs pendant 30 jours.</p>
+        </section>
+
+        <section>
+          <h2>6. Hébergement et destinataires</h2>
+          <p>L'application publiée est diffusée via GitHub Pages. L'hébergeur traite les données de connexion techniquement nécessaires, notamment l'adresse IP et l'heure de la requête. Les notices de confidentialité de votre PDS Bluesky, des services AT Protocol, des hébergeurs de médias externes, de Microlink et, le cas échéant, de votre proxy WordPress s'appliquent également.</p>
+        </section>
+      </section>
+
+      <footer class="privacy-footer">
+        <a href="./">Threadline öffnen</a>
+        <a href="https://github.com/marsrakete/threadline" target="_blank" rel="noreferrer noopener">Quellcode auf GitHub</a>
+      </footer>
+    </main>
+  </body>
+</html>

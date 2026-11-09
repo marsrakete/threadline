@@ -1,0 +1,67 @@
+<template id="archive-html-post-template">
+  <article class="archive-html-post" data-archive-post>
+    <div class="archive-html-post-head">
+      <div class="archive-html-author">
+        <div data-slot="identity">
+          <p class="archive-html-kicker"></p>
+          <h2 data-archive-searchable="true"></h2>
+          <p class="archive-html-author-handle" data-archive-searchable="true"></p>
+        </div>
+      </div>
+      <div class="archive-html-post-head-actions"><time></time></div>
+    </div>
+    <div class="archive-html-metrics">
+      <span data-metric="likeCount">Likes </span><span data-metric="replyCount">Replies </span>
+      <span data-metric="repostCount">Reposts </span><span data-metric="quoteCount">Quotes </span>
+    </div>
+    <div class="archive-html-text" data-archive-richtext="true"></div>
+    <div class="archive-html-gallery"></div>
+    <div class="archive-html-footer"><span class="archive-html-uri"></span></div>
+  </article>
+</template>
+<template id="archive-html-avatar-template"><img class="archive-html-avatar" loading="lazy"></template>
+<template id="archive-html-edit-template"><button type="button" class="archive-html-edit-button" data-archive-edit-button></button></template>
+<template id="archive-html-image-template"><figure class="archive-html-image"><img loading="lazy"><figcaption></figcaption></figure></template>
+<template id="archive-html-lazy-image-template">
+  <figure class="archive-html-image archive-html-image-lazy">
+    <div class="archive-html-image-placeholder">
+      <button type="button" class="archive-html-inline-load" data-archive-load-image></button>
+      <a class="archive-html-link" target="_blank" rel="noreferrer noopener"></a>
+    </div><figcaption></figcaption>
+  </figure>
+</template>
+<template id="archive-html-card-template">
+  <a class="archive-html-link-card" target="_blank" rel="noreferrer noopener">
+    <span class="archive-html-link-card-copy"><strong></strong><span data-slot="description"></span><small></small></span>
+  </a>
+</template>
+<template id="archive-html-thumb-template"><img class="archive-html-link-card-thumb" alt=""></template>
+<template id="archive-html-thumb-fallback-template"><span class="archive-html-link-card-thumb archive-html-link-card-thumb-fallback"></span></template>
+<template id="archive-html-thread-template">
+  <details class="archive-html-entry archive-html-thread" data-archive-entry data-is-thread="true" data-entry-kind="thread">
+    <summary><div><strong></strong><span data-slot="dates"></span></div><span data-slot="count"></span></summary>
+    <div class="archive-html-entry-body archive-html-thread-posts"></div>
+  </details>
+</template>
+<template id="archive-html-single-template">
+  <details class="archive-html-entry archive-html-single" data-archive-entry data-is-thread="false" data-entry-kind="single">
+    <summary class="archive-html-entry-head"><strong></strong><span data-slot="dates"></span></summary>
+    <div class="archive-html-entry-body"></div>
+  </details>
+</template>
+<template id="archive-html-links-template">
+  <details class="archive-html-entry archive-html-links"><summary><div><strong></strong></div><span data-slot="count"></span></summary>
+    <div class="archive-html-entry-body"><div class="archive-html-links-list"></div><p class="archive-html-hashtags-empty"></p></div>
+  </details>
+</template>
+<template id="archive-html-link-row-template"><div class="archive-html-links-row"><a class="archive-html-links-target" target="_blank" rel="noreferrer noopener"></a></div></template>
+<template id="archive-html-link-template"><a class="archive-html-link" target="_blank" rel="noreferrer noopener"></a></template>
+<template id="archive-html-passive-link-template"><span class="archive-html-link archive-html-link-passive"></span></template>
+<template id="archive-html-empty-template"><span class="archive-html-empty"></span></template>
+<template id="archive-html-rich-link-template"><a target="_blank" rel="noreferrer noopener"></a></template>
+<template id="archive-html-break-template"><br></template>
+<template id="archive-html-meta-template"><div class="archive-html-meta-item"><span></span><strong></strong></div></template>
+<template id="archive-html-warning-template"><p class="archive-html-warning"></p></template>
+<template id="archive-html-tags-template"><div class="archive-html-hashtags"></div></template>
+<template id="archive-html-tag-template"><button type="button" class="archive-html-hashtag"></button></template>
+<template id="archive-html-no-tags-template"><p class="archive-html-hashtags-empty" data-i18n-key="archiveHtmlHashtagsEmpty"></p></template>
