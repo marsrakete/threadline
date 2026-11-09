@@ -222,6 +222,8 @@ Stand: Fachliche Modularisierung und Verantwortungs-/Zustandspruefung am 2026-11
 
 ## Naechste Arbeiten
 
+Die Vorlagen in [docs/PR-PLAN.md](docs/PR-PLAN.md) dokumentieren den frueheren Planungsstand. Diese Liste dient als Aufgabenhintergrund; Umsetzung, Tests und aktueller Arbeitsstatus werden in den zugehoerigen GitHub-PRs dokumentiert. Bereits umgesetzte Aufgaben werden durch die alten Vorlagen nicht erneut beauftragt.
+
 ### Separate Produktabnahme Und Bestehende Fehler
 
 - [ ] Echte Provider/Konten, Token-Erneuerung und authentifizierte Netzwerkablaeufe mit Live-Daten abnehmen. Kontrollierte Tests ersetzen diese Produktabnahme nicht.
