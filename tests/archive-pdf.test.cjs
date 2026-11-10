@@ -90,7 +90,7 @@ async function exportFixture() {
     page: async (...args) => { events.push(["page", args]); return { width: 1190, height: 1684, bytes: new Uint8Array([1]), annotations: [{ url: "https://example.com" }] }; },
     pdf: (pages, metadata) => { documents.push({ pages, metadata }); return new Blob(["pdf"]); },
     frame: async () => events.push(["frame"]), progress: value => events.push(["progress", value]),
-    ensureAvatars: async () => events.push(["avatars"]), options: () => ({}), groups: posts => [{ posts }],
+    ensureAvatars: async (catalog, settings) => { assert.deepEqual(settings, { downloadMissing: false }); events.push(["avatars"]); }, options: () => ({}), groups: posts => [{ posts }],
     bands: posts => posts.map(post => [post]), baseName: () => "archive", account: () => "fallback.test",
     file: (blob, name) => ({ blob, name }), deliver: async (...args) => events.push(["deliver", ...args]) };
   return { module, dependencies, events, documents, controller: module.createArchivePdfExportController(dependencies) };

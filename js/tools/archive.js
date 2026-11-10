@@ -110,7 +110,7 @@ export function bindArchiveActionEvents(elements = {}, actions = {}) {
   bind(elements.actionsExportHtmlButton, "click", actions.actionsExportHtmlClick);
   bind(elements.actionsExportHtmlCompactButton, "click", actions.actionsExportHtmlCompactClick);
   bind(elements.progressExportHtmlCompactButton, "click", actions.progressExportHtmlCompactClick);
-  bind(elements.actionsExportPdfButton, "click", actions.actionsExportPdfClick);
+  bind(elements.actionsExportPdfButton, "click", actions.exportPdfClick);
   bind(elements.expertModeToggle, "change", actions.expertModeChange);
   bind(elements.expertModeToggle, "change", actions.expertModeChange);
   return boundCount;

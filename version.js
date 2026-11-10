@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.358",
-  cacheVersion: "v377",
-  label: "Explain HTTPS requirement for service workers",
+  appVersion: "0.4.360",
+  cacheVersion: "v379",
+  label: "Keep archive PDF export local and show busy state",
 });

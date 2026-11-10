@@ -312,6 +312,36 @@ async function prepareArchiveApplication(page, mediaFixture = false, avatarFixtu
   }, { mediaFixture, avatarFixture });
 }
 
+test("loaded archive PDF action starts an export and downloads a volume", async ({ page }, testInfo) => {
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await prepareArchiveApplication(page, false, true);
+  await page.goto("/tools.html", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("#archive-button")).toBeEnabled();
+  await page.locator("#archive-button").click();
+  await expect(page.locator("#archive-results")).toContainText("2");
+  const avatarRequests = [];
+  page.on("request", request => {
+    if (request.resourceType() === "fetch" && request.url().includes("fixture-avatar.png")) {
+      avatarRequests.push(request.url());
+    }
+  });
+  await page.evaluate(() => {
+    window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 200);
+  });
+  const pending = page.waitForEvent("download", { timeout: 15000 });
+  await page.locator("#archive-actions-export-pdf-button").click();
+  await expect(page.locator("#archive-actions-export-pdf-button")).toBeDisabled();
+  await expect(page.locator("#archive-actions-export-pdf-button")).toHaveText("Working …");
+  const download = await pending;
+  expect(await download.failure()).toBeNull();
+  expect(download.suggestedFilename()).toMatch(/-band-001\.pdf$/);
+  await download.saveAs(testInfo.outputPath("archive-band.pdf"));
+  await expect(page.locator("#archive-actions-export-pdf-button")).toBeEnabled();
+  expect(avatarRequests).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("HTML archive templates preserve hostile text, edits, card states and empty output", async ({ page, context }, testInfo) => {
   test.setTimeout(60000);
   const errors = [];

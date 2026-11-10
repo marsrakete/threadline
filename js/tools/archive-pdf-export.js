@@ -132,7 +132,7 @@ export function createArchivePdfExportController(dependencies) {
       detail: t("archiveProgressPdfPreparing")
     });
     await waitForUiFrame();
-    await ensureArchiveAvatarAssets(catalog);
+    await ensureArchiveAvatarAssets(catalog, { downloadMissing: false });
     const options = getArchivePdfOptions();
     const orderedPosts = buildArchiveThreadGroups([...catalog.posts].reverse()).flatMap(group => group.posts);
     const bands = splitArchiveIntoBands(orderedPosts, options);

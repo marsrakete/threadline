@@ -8814,7 +8814,7 @@ async function restoreAccountAvatarCache() {
  * @param {object|null} catalog - Mutable catalog.
  * @returns {Promise<object|null>} Catalog with resolved avatar paths.
  */
-async function ensureArchiveAvatarAssets(catalog) { return catalogAvatarAssets.archive(catalog); }
+async function ensureArchiveAvatarAssets(catalog, options = {}) { return catalogAvatarAssets.archive(catalog, options); }
 
 /**
  * Hydrates dm avatar paths through the catalog asset module.
@@ -10087,9 +10087,6 @@ bindArchiveActionEvents({
   progressExportHtmlCompactClick: () => {
     archiveExportHtmlCompactButton?.click();
   },
-  actionsExportPdfClick: () => {
-    archiveExportPdfButton?.click();
-  },
   expertModeChange: async () => {
     archiveExpertMode = archiveExpertModeToggle.checked === true;
     await persistSettings();
@@ -10112,8 +10109,9 @@ bindArchiveActionEvents({
       await exportArchiveHtmlFromCatalog(catalog, { mode: "compact" });
     });
   },
-  exportPdfClick: () => {
-    void runArchiveCatalogExport(archiveExportPdfButton, "archiveExportPdfButton", "archivePdfFailed", async () => {
+  exportPdfClick: (event) => {
+    const button = event?.currentTarget || archiveExportPdfButton;
+    void runArchiveCatalogExport(button, "archiveExportPdfButton", "archivePdfFailed", async () => {
       const catalog = await ensureArchiveCatalogLoaded(false);
       await exportArchivePdfBandsFromCatalog(catalog);
     });

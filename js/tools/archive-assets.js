@@ -16,9 +16,10 @@ export function createArchiveAvatarAssets(dependencies) {
   /**
    * Adds missing post avatar assets, reusing URLs within one hydration pass.
    * @param {object|null} catalog - Mutable archive posts and assets.
+   * @param {object} settings - Set downloadMissing to false for exports that only use archived assets.
    * @returns {Promise<object|null>} Same catalog; failed downloads leave an empty avatar path.
    */
-  async function ensureArchiveAvatarAssets(catalog) {
+  async function ensureArchiveAvatarAssets(catalog, settings = {}) {
     if (!catalog) {
       return catalog;
     }
@@ -37,7 +38,7 @@ export function createArchiveAvatarAssets(dependencies) {
         post.authorAvatarPath = pathByUrl.get(post.authorAvatar) || "";
         continue;
       }
-      if (post.authorAvatarPath || !post.authorAvatar) {
+      if (post.authorAvatarPath || !post.authorAvatar || settings.downloadMissing === false) {
         continue;
       }
       try {
