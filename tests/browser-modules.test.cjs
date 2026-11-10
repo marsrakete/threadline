@@ -2423,11 +2423,14 @@ test("browser-bound shared modules create safe avatar and version behavior", asy
     const bootstrap = await import("/js/core/app-bootstrap.js");
     const image = document.createElement("img");
     accounts.setAvatarImage(image, "", "Alice");
+    const objectAvatarImage = document.createElement("img");
+    accounts.setAvatarImage(objectAvatarImage, { ref: { $link: "blob-cid" } }, "Object avatar");
     const version = await bootstrap.fetchVersionInfo();
 
     return {
       avatarAlt: image.alt,
       hasFallbackAvatar: image.src.startsWith("data:image/svg+xml"),
+      objectAvatarUsesFallback: objectAvatarImage.src.startsWith("data:image/svg+xml"),
       versionSignature: bootstrap.versionSignature(version),
       versionMatchesPreload: version.appVersion === bootstrap.CURRENT_VERSION_INFO.appVersion,
     };
@@ -2435,6 +2438,7 @@ test("browser-bound shared modules create safe avatar and version behavior", asy
 
   expect(result.avatarAlt).toBe("Alice");
   expect(result.hasFallbackAvatar).toBe(true);
+  expect(result.objectAvatarUsesFallback).toBe(true);
   expect(result.versionSignature).toContain("|");
   expect(result.versionMatchesPreload).toBe(true);
 });

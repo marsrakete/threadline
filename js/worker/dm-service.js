@@ -442,11 +442,17 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
     try {
       let blob;
       try {
-        blob = await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
+        const providedAvatarCid = getBlobCidFromRef(contact.avatar);
+        if (providedAvatarCid) {
+          blob = await downloadBlobForDid(auth, contact.did, providedAvatarCid, pdsServiceCache);
+        } else if (typeof contact.avatar === "string" && contact.avatar.trim()) {
+          blob = await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
+        } else {
+          throw new Error("Avatar reference is not a URL or blob CID.");
+        }
       } catch (staleAvatarError) {
-        const failedAvatarCid = typeof globalThis.parseBlobUrlInfo === "function"
-          ? globalThis.parseBlobUrlInfo(contact.avatar)?.cid || ""
-          : "";
+        const failedAvatarCid = getBlobCidFromRef(contact.avatar)
+          || (typeof globalThis.parseBlobUrlInfo === "function" ? globalThis.parseBlobUrlInfo(contact.avatar)?.cid || "" : "");
         const profile = typeof options.profileRecord === "function"
           ? await options.profileRecord(contact.did, auth, pdsServiceCache).catch(() => null)
           : null;

@@ -93,6 +93,17 @@ test("DM avatar hydration reads migrated profile blobs from the actor's current 
   assert.equal(f.calls.some((call) => call[0] === "asset" && call[1].includes("fail-old-avatar")), true);
 });
 
+test("DM avatar hydration loads blob-reference avatars directly without stringifying them", async () => {
+  const f = dmServiceFixture();
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", avatar: { ref: { $link: "profile-blob-cid" } } }],
+    conversations: [],
+  });
+  assert.equal(result.recentContacts[0].avatarPath, "dm-avatars/peer.png");
+  assert.equal(f.calls.some((call) => call[0] === "asset"), false);
+  assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "profile-blob-cid"]);
+});
+
 test("failed migrated avatar blobs do not become object-string image URLs", async () => {
   const f = dmServiceFixture({
     assetError: true,

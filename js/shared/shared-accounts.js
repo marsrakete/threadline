@@ -41,7 +41,7 @@ function setAvatarImage(image, avatarUrl, altText) {
     return;
   }
 
-  const normalizedUrl = String(avatarUrl || "").trim();
+  const normalizedUrl = typeof avatarUrl === "string" ? avatarUrl.trim() : "";
   image.alt = String(altText || "").trim();
   image.onerror = () => {
     image.onerror = null;

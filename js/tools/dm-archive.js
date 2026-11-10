@@ -483,7 +483,7 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
           avatarUri = contactAssetUris.get(contact.avatarPath) || "";
         }
         if (!avatarUri) {
-          avatarUri = String(contact?.avatar || "").trim();
+          avatarUri = typeof contact?.avatar === "string" ? contact.avatar.trim() : "";
         }
         actions.setAvatarImage(avatar, avatarUri, contact?.displayName || contact?.handle || did || "DM contact");
         const fullName = String(contact?.displayName || "").trim();
