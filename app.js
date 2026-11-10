@@ -8276,10 +8276,11 @@ function closeLinkCardDialog() {
 }
 
 /**
- * Creates, refreshes, or moves the currently pending segment link card.
- * @returns {Promise<void>}
+ * Normalizes publication metadata synchronously for rendering and worker persistence.
+ * @param {object|null} value - Raw Standard.site metadata.
+ * @returns {object|null} Cloneable publication metadata or null.
  */
-async function normalizeStandardSiteMetadata(value = null) { return normalizeSharedStandardSiteMetadata(value, t); }
+function normalizeStandardSiteMetadata(value = null) { return normalizeSharedStandardSiteMetadata(value, t); }
 
 /**
  * Returns the footer label for a card that carries Standard.site publication metadata.
