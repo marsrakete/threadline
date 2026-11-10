@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "1.0.0",
+  appVersion: "1.0.2",
   cacheVersion: "v402",
-  label: "Threadline 1.0: DM app-password error guidance",
+  label: "Threadline 1.0.2: DM app-password error guidance",
 });
