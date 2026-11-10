@@ -2349,6 +2349,7 @@ body.thread-explorer-fullscreen-active {
 }
 
 .search-result-thread-explorer-button {
+  padding: 0;
   font-size: 0.82rem;
 }
 
