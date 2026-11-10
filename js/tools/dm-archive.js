@@ -482,9 +482,6 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
         if (contact?.avatarPath) {
           avatarUri = contactAssetUris.get(contact.avatarPath) || "";
         }
-        if (!avatarUri) {
-          avatarUri = String(contact?.avatar || "").trim();
-        }
         actions.setAvatarImage(avatar, avatarUri, contact?.displayName || contact?.handle || did || "DM contact");
         const fullName = String(contact?.displayName || "").trim();
         const fullHandle = contact?.handle ? `@${contact.handle}` : "";

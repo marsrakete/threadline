@@ -71,6 +71,26 @@ test("DM partner listing downloads assets once per path and keeps failed contact
   assert.equal(f.progress.at(-1).percent, 100);
 });
 
+test("DM avatar hydration reads migrated profile blobs from the actor's current PDS", async () => {
+  const f = dmServiceFixture({
+    profileRecords: {
+      peer: {
+        handle: "peer.eurosky.social",
+        displayName: "Eurosky Peer",
+        avatar: { ref: { $link: "eurosky-avatar-cid" } },
+      },
+    },
+  });
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", handle: "old.test", displayName: "Old name", avatar: "https://cdn.bsky.app/old-avatar" }],
+    conversations: [],
+  }, f.notify);
+  assert.equal(result.recentContacts[0].handle, "peer.eurosky.social");
+  assert.equal(result.recentContacts[0].displayName, "Eurosky Peer");
+  assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "eurosky-avatar-cid"]);
+  assert.equal(f.calls.some((call) => call[0] === "asset"), false);
+});
+
 test("DM avatar hydration copies inputs and batches missing profiles with authenticated transport", async () => {
   const contacts = Array.from({ length: 26 }, (_, index) => ({ did: "peer" + index }));
   const conversations = [{ id: "one", members: [{ did: "peer0" }] }];

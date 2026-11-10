@@ -29,6 +29,10 @@ function dmServiceFixture(data = {}) {
       if (data.profileError) { throw Error("profiles failed"); }
       return { profiles: data.profiles || params.actors.map(did => ({ did, handle: did + ".test", displayName: "Profile " + did, avatar: "avatar-" + did })) };
     },
+    profileRecord: async (did) => {
+      calls.push(["profileRecord", did]);
+      return data.profileRecords?.[did] || null;
+    },
     base: () => "https://fixture.test/xrpc",
     accountAvatar: async (did) => { calls.push(["accountAvatar", did]); return data.accountAvatar || ""; },
     remoteAsset: async (account, url, did, cache) => {

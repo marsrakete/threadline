@@ -333,7 +333,8 @@ const dmModels = globalThis.createThreadlineDmModels({ randomUUID: () => crypto.
 const { normalizeDmDateFilterValue, normalizeDmFilters, normalizeDmConversationEntity, collectDmEmbeds, collectDmFacets, extractDmExternalCardFromEmbedSw, normalizeDmMessageEntity } = dmModels;
 const dmService = globalThis.createThreadlineDmService({
   models: dmModels, session: ensureSession, chat: chatBskyGet, request: bskyGet, base: authXrpcBase,
-  accountAvatar: fetchAccountAvatar, remoteAsset: downloadRemoteAssetViaBlob, blob: downloadBlobForDid,
+  accountAvatar: fetchAccountAvatar, profileRecord: fetchProfileRecordForDid,
+  remoteAsset: downloadRemoteAssetViaBlob, blob: downloadBlobForDid,
   cid: getBlobCidFromRef, extension: getAssetExtensionFromMimeType,
   now: () => new Date().toISOString(), randomUUID: () => crypto.randomUUID(), appVersion: APP_VERSION,
   text: globalThis.formatThreadlineDmMessage,

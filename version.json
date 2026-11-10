@@ -1,5 +1,5 @@
 {
   "appVersion": "1.0.2",
-  "cacheVersion": "v391",
-  "label": "Threadline 1.0.2: avoid repeated failed avatar requests"
+  "cacheVersion": "v393",
+  "label": "Threadline 1.0.2: load migrated DM avatars from current PDS"
 }

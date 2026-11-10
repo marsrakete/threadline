@@ -10,7 +10,7 @@
  * @returns {{exportArchive: Function, checkAccess: Function, listPartners: Function, hydrateAvatars: Function}} Frozen service API.
  */
 globalThis.createThreadlineDmService = function createThreadlineDmService(options) {
-  for (const name of ["session", "chat", "request", "base", "accountAvatar", "remoteAsset", "blob", "cid", "extension", "now", "randomUUID", "text"]) {
+  for (const name of ["session", "chat", "request", "base", "accountAvatar", "profileRecord", "remoteAsset", "blob", "cid", "extension", "now", "randomUUID", "text"]) {
     if (typeof options?.[name] !== "function") {
       throw new TypeError("DM service requires " + name);
     }
@@ -440,7 +440,22 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
    */
   async function attachPartnerAvatar(auth, contact, conversations, assets, seenAssetPaths, pdsServiceCache) {
     try {
-      const blob = await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
+      const profile = typeof options.profileRecord === "function"
+        ? await options.profileRecord(contact.did, auth, pdsServiceCache).catch(() => null)
+        : null;
+      const currentAvatarCid = getBlobCidFromRef(profile?.avatar);
+      if (profile) {
+        contact.handle = String(profile.handle || contact.handle || "").trim();
+        contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
+        if (!currentAvatarCid) {
+          contact.avatar = "";
+          contact.avatarPath = "";
+          return;
+        }
+      }
+      const blob = currentAvatarCid
+        ? await downloadBlobForDid(auth, contact.did, currentAvatarCid, pdsServiceCache)
+        : await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
       const extension = getAssetExtensionFromMimeType(blob.type);
       const slug = String(contact.handle || contact.did || "partner").replace(/[^\w.-]+/g, "-").slice(0, 60) || "partner";
       const path = `dm-avatars/${slug}.${extension}`;

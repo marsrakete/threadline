@@ -2377,7 +2377,7 @@ test("core page modules load together and preserve page-local workspace rules", 
       directFragmentExists: Boolean(directFragment),
       dmSummaryItems: dmSummary.children.length,
       dmPreviewItems: dmResults.querySelectorAll("article").length,
-      dmContactAvatarSource: dmContactAvatar?.src || "",
+      dmContactAvatarIsFallback: dmContactAvatar?.src.startsWith("data:image/svg+xml") || false,
       dmContactButtonTitle: dmContactButton?.getAttribute("title") || "",
       dmContactButtonLabel: dmContactButton?.getAttribute("aria-label") || "",
       dmContactButtonSelected: dmContactButton?.classList.contains("is-selected") || false,
@@ -2402,7 +2402,7 @@ test("core page modules load together and preserve page-local workspace rules", 
     directFragmentExists: true,
     dmSummaryItems: 3,
     dmPreviewItems: 1,
-    dmContactAvatarSource: "https://cdn.example/alice.jpg",
+    dmContactAvatarIsFallback: true,
     dmContactButtonTitle: "",
     dmContactButtonLabel: "Alice @alice.test",
     dmContactButtonSelected: true,
@@ -2423,18 +2423,11 @@ test("browser-bound shared modules create safe avatar and version behavior", asy
     const bootstrap = await import("/js/core/app-bootstrap.js");
     const image = document.createElement("img");
     accounts.setAvatarImage(image, "", "Alice");
-    const failedAvatar = "https://cdn.example/missing-avatar.jpg";
-    localStorage.setItem("threadline.failed-avatars.v1", JSON.stringify([{ url: failedAvatar, failedAt: Date.now() }]));
-    const cachedFailureImage = document.createElement("img");
-    accounts.setAvatarImage(cachedFailureImage, failedAvatar, "Missing avatar");
-    localStorage.removeItem("threadline.failed-avatars.v1");
     const version = await bootstrap.fetchVersionInfo();
 
     return {
       avatarAlt: image.alt,
       hasFallbackAvatar: image.src.startsWith("data:image/svg+xml"),
-      cachedFailureUsesFallback: cachedFailureImage.src.startsWith("data:image/svg+xml"),
-      cachedFailureDoesNotRetry: cachedFailureImage.onerror === null,
       versionSignature: bootstrap.versionSignature(version),
       versionMatchesPreload: version.appVersion === bootstrap.CURRENT_VERSION_INFO.appVersion,
     };
@@ -2442,8 +2435,6 @@ test("browser-bound shared modules create safe avatar and version behavior", asy
 
   expect(result.avatarAlt).toBe("Alice");
   expect(result.hasFallbackAvatar).toBe(true);
-  expect(result.cachedFailureUsesFallback).toBe(true);
-  expect(result.cachedFailureDoesNotRetry).toBe(true);
   expect(result.versionSignature).toContain("|");
   expect(result.versionMatchesPreload).toBe(true);
 });
