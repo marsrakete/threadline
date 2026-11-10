@@ -418,6 +418,14 @@ function api_asset(): never
 
     $mime = asset_mime_type($path);
     header('Content-Type: ' . $mime);
+    header('X-Content-Type-Options: nosniff');
+    header('Cross-Origin-Resource-Policy: same-origin');
+    if ($mime === 'image/svg+xml') {
+        // Keep SVG visuals, but make direct navigation a sandboxed opaque-origin document.
+        header("Content-Security-Policy: default-src 'none'; sandbox; img-src data:; style-src 'unsafe-inline'");
+    } elseif ($mime === 'application/octet-stream') {
+        header('Content-Disposition: attachment; filename="archive-asset.bin"');
+    }
     header('Cache-Control: public, max-age=3600');
     header('Content-Length: ' . filesize($path));
     readfile($path);
@@ -426,14 +434,23 @@ function api_asset(): never
 
 function asset_mime_type(string $path): string
 {
+    $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
     if (function_exists('mime_content_type')) {
         $detected = mime_content_type($path);
-        if (is_string($detected) && $detected !== '') {
-            return $detected;
+        if (is_string($detected) && stripos($detected, 'svg') !== false) {
+            return 'image/svg+xml';
+        }
+        if (is_string($detected) && in_array(strtolower($detected), [
+            'image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/webp',
+            'video/mp4', 'video/webm', 'video/quicktime', 'audio/mpeg', 'audio/mp4', 'audio/ogg',
+        ], true)) {
+            return strtolower($detected);
         }
     }
 
-    $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    if ($extension === 'svg' || $extension === 'svgz') {
+        return 'image/svg+xml';
+    }
     return match ($extension) {
         'avif' => 'image/avif',
         'gif' => 'image/gif',
@@ -445,7 +462,8 @@ function asset_mime_type(string $path): string
     };
 }
 
-$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$path = (string)($_GET['route'] ?? $requestPath);
 try {
     if ($path === '/api/summary') {
         api_summary();
@@ -471,7 +489,7 @@ try {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Threadline Viewer</title>
-  <link rel="stylesheet" href="/viewer.css">
+  <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
   <div class="app-shell">
@@ -516,6 +534,6 @@ try {
       </section>
     </main>
   </div>
-  <script src="/viewer.js"></script>
+  <script src="viewer.js"></script>
 </body>
 </html>

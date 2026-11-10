@@ -22,6 +22,30 @@ export function createArchiveCatalogService(dependencies) {
     }
   }
 
+  const SAFE_SVG_PLACEHOLDER = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAGAAAABICAYAAAAJZ/BjAAAAvUlEQVR4nO3XMRUCQRAFwVWEHNwgBj/EKLn8yJDA3NIVdD7vVzTr/bydmmtNH1DvC3AeL/0wAADaAQDQDgCAdgAAtAMAoB0AAO0AAGgHoAbwuK+tAgAAAAAAAAAAAAAAAAAAAAAAAABgWwABuFQAALQDAKAdAADtAPwLwPTHOh0AAPMjAAgHAMD8CADCAQAwPwKAcADqAAKwZQAAtAMAoB0AAO0AAGgHAEA7AADaAQDQDgCAdgCuBqCZAAz3AYEOqDkEidkXAAAAAElFTkSuQmCC"), character => character.charCodeAt(0));
+
+  /** Detects SVG assets using their declared type, path, or leading markup. @param {object} asset - Imported asset. @param {Uint8Array} bytes - Asset bytes. @returns {boolean} Whether the asset is active SVG content. */
+  function isSvgAsset(asset, bytes) {
+    if (/svg/i.test(String(asset?.type || "")) || /\.svgz?$/i.test(String(asset?.path || ""))) {
+      return true;
+    }
+    const prefix = new TextDecoder().decode(bytes.subarray(0, 2048));
+    return /<svg(?:\s|>)/i.test(prefix);
+  }
+
+  /** Picks a new non-SVG path for placeholder bytes without colliding with archive assets. @param {string} path - Existing path. @param {Set<string>} usedPaths - Paths already assigned. @returns {string} Safe PNG path. */
+  function safeSvgPath(path, usedPaths) {
+    const stem = String(path || "archive-asset").replace(/\.[^./\\]*$/, "") || "archive-asset";
+    let candidate = `${stem}-safe.png`;
+    let suffix = 2;
+    while (usedPaths.has(candidate)) {
+      candidate = `${stem}-safe-${suffix}.png`;
+      suffix += 1;
+    }
+    usedPaths.add(candidate);
+    return candidate;
+  }
+
   /**
    * Normalizes imported records and image bytes without changing the input posts.
    * @param {object} rawCatalog - Manifest, posts and optional assets.
@@ -32,22 +56,36 @@ export function createArchiveCatalogService(dependencies) {
       throw new Error(dependencies.t("archiveImportInvalid"));
     }
     let assets = [];
+    const safePathByOriginal = new Map();
+    const usedPaths = new Set((Array.isArray(rawCatalog.assets) ? rawCatalog.assets : []).map(asset => String(asset?.path || "")));
     if (Array.isArray(rawCatalog.assets)) {
       assets = rawCatalog.assets.map((asset) => {
         let bytes = asset.bytes;
         if (!(bytes instanceof Uint8Array)) {
           bytes = new Uint8Array(bytes || []);
         }
+        const originalPath = String(asset.path || "");
+        if (isSvgAsset(asset, bytes)) {
+          const safePath = safeSvgPath(originalPath, usedPaths);
+          safePathByOriginal.set(originalPath, safePath);
+          return { path: safePath, type: "image/png", sizeBytes: SAFE_SVG_PLACEHOLDER.length,
+            bytes: new Uint8Array(SAFE_SVG_PLACEHOLDER) };
+        }
         return { path: asset.path, type: asset.type || "application/octet-stream",
           sizeBytes: Math.max(0, Number(asset.sizeBytes) || 0), bytes };
       });
     }
+    const remapPath = value => safePathByOriginal.get(String(value || "")) || value;
     const posts = rawCatalog.posts.map((post) => {
       let images = [];
       if (Array.isArray(post.images)) {
-        images = post.images;
+        images = post.images.map(image => {
+          const path = remapPath(image.path);
+          return { ...image, path, ...(path !== image.path ? { mimeType: "image/png" } : {}) };
+        });
       }
-      return { ...post, images, counts: {
+      const externalCard = post.externalCard ? { ...post.externalCard, thumbPath: remapPath(post.externalCard.thumbPath) } : post.externalCard;
+      return { ...post, authorAvatarPath: remapPath(post.authorAvatarPath), externalCard, images, counts: {
         likeCount: Number(post.counts?.likeCount) || 0,
         replyCount: Number(post.counts?.replyCount) || 0,
         repostCount: Number(post.counts?.repostCount) || 0,
@@ -58,7 +96,11 @@ export function createArchiveCatalogService(dependencies) {
     for (const post of posts) {
       post.threadDepth = depths.get(post.uri) || 0;
     }
-    return { manifest: rawCatalog.manifest || {}, posts, assets, summary: {
+    const manifest = rawCatalog.manifest ? { ...rawCatalog.manifest } : {};
+    if (manifest.account) {
+      manifest.account = { ...manifest.account, avatarPath: remapPath(manifest.account.avatarPath) };
+    }
+    return { manifest, posts, assets, summary: {
       imageCount: assets.length,
       skippedImageCount: Math.max(0, Number(rawCatalog.manifest?.skippedImageCount) || 0),
       from: posts[posts.length - 1]?.createdAt || "",
