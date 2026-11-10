@@ -82,6 +82,10 @@ export function createApplicationBootstrap(options) {
   }
   /** Registers the worker and starts state, session and update handling in order. @returns {Promise<void>} Completion or reported failure. */
   async function start() {
+    if (options.isSecureContext?.() === false) {
+      options.setStatus(options.translate("statusHttpsRequired"), "error");
+      return;
+    }
     if (!options.isSupported()) { options.setStatus(options.translate("statusNoSupport")); return; }
     try {
       options.bindControllerChange(controllerChange);

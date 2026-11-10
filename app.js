@@ -11429,6 +11429,7 @@ const applicationHydration = createApplicationHydrationController({
   report: (error) => console.error(error), setStatus,
 });
 const applicationBootstrap = createApplicationBootstrap({
+  isSecureContext: () => window.isSecureContext,
   isSupported: () => "serviceWorker" in navigator, translate: t, setStatus,
   isPrivacyNavigation: () => privacyPageNavigationInProgress,
   consumeNavigation: consumePendingPageSwitchUrl, getHref: () => window.location.href,
