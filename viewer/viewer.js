@@ -32,7 +32,8 @@ const els = {
 let activeEditDialog = null;
 
 function api(path, params = {}) {
-  const url = new URL(path, window.location.origin);
+  const url = new URL("index.php", new URL(".", window.location.href));
+  url.searchParams.set("route", path.startsWith("/") ? path : `/${path}`);
   Object.entries(params).forEach(([key, value]) => {
     if (value !== "" && value !== null && value !== undefined) {
       url.searchParams.set(key, value);
@@ -77,7 +78,10 @@ function assetUrl(path) {
   if (!path) {
     return "";
   }
-  return `/asset?path=${encodeURIComponent(path)}`;
+  const url = new URL("index.php", new URL(".", window.location.href));
+  url.searchParams.set("route", "/asset");
+  url.searchParams.set("path", path);
+  return url.toString();
 }
 
 function childCount(post) {

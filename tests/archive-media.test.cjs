@@ -56,6 +56,28 @@ test("archive catalog normalization handles empty records and reuses cycle-safe 
   for (const invalid of [null, {}, { posts: {} }]) assert.throws(() => service.normalize(invalid), /archiveImportInvalid/);
 });
 
+test("archive catalog replaces active SVG imports and remaps every viewer path to inert PNG bytes", async () => {
+  const { service } = await catalogFixture();
+  const activeSvg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>parent.document.body.dataset.pwned="1"</script></svg>');
+  const result = service.normalize({ manifest: { account: { avatarPath: "avatars/profile.svg" } }, posts: [{
+    uri: "post", authorAvatarPath: "avatars/profile.svg", images: [{ path: "images/payload.svg", mimeType: "image/svg+xml" }],
+    externalCard: { thumbPath: "cards/card" },
+  }], assets: [
+    { path: "avatars/profile.svg", type: "application/octet-stream", bytes: activeSvg },
+    { path: "images/payload.svg", type: "image/svg+xml", bytes: activeSvg },
+    { path: "cards/card", type: "image/png", bytes: new Uint8Array([1]) },
+  ] });
+
+  assert.deepEqual(result.assets.map(asset => asset.path), ["avatars/profile-safe.png", "images/payload-safe.png", "cards/card"]);
+  assert.ok(result.assets.slice(0, 2).every(asset => asset.type === "image/png" && asset.bytes[0] === 0x89));
+  assert.equal(result.posts[0].authorAvatarPath, "avatars/profile-safe.png");
+  assert.equal(result.posts[0].images[0].path, "images/payload-safe.png");
+  assert.equal(result.posts[0].images[0].mimeType, "image/png");
+  assert.equal(result.manifest.account.avatarPath, "avatars/profile-safe.png");
+  assert.equal(result.posts[0].externalCard.thumbPath, "cards/card");
+  assert.ok(!result.assets.some(asset => new TextDecoder().decode(asset.bytes).includes("<script>")));
+});
+
 test("archive ZIP export strips raw records and retains the established manifest/posts/asset format", async () => {
   const { service, zip, events } = await catalogFixture();
   const catalog = service.normalize({ manifest: { account: { handle: "fixture.test" } }, posts: [{ uri: "post", rawRecord: { private: true }, images: [{ path: "image", remoteUrl: "https://example.com", alt: "ALT" }] }], assets: [{ path: "image", bytes: [1, 2] }] });

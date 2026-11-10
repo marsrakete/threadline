@@ -40,6 +40,7 @@
         <section>
           <h2>2. Verarbeitung auf deinem Gerät</h2>
           <p>Threadline speichert Daten im Browser, überwiegend in IndexedDB. Dazu können gehören: angemeldete Konten mit Handle, DID, PDS-Adresse sowie Access- und Refresh-Token; Entwürfe, Thread-Abschnitte, Bilder, ALT-Texte, Link-Cards, Hashtags, Antwortziele und Post-Einstellungen; Suchmasken, Favoriten und Darstellungsoptionen; Archivstände, DM-Partnerdaten sowie Avatar- und Mediencaches.</p>
+          <p>Das App-Passwort und die Session-Token werden vor dem Speichern mit AES-GCM verschlüsselt. Der Schlüssel ist ein nicht exportierbarer Web-Crypto-Schlüssel im Browser. Das schützt einen isolierten Abzug der IndexedDB-Datensätze, aber nicht vor aktivem XSS, bösartigen Erweiterungen oder einem kompromittierten Gerät, die im angemeldeten Browser auf Daten zugreifen können.</p>
           <p>Einige Oberflächenoptionen, etwa Darstellungsmodus, letzte Werkzeugansicht und die ausgewählte Thread-Explorer-Ansicht, liegen zusätzlich in Local Storage. Browser-Caches können geladene externe Medien enthalten.</p>
         </section>
 
@@ -54,6 +55,7 @@
           <h2>4. Direct Messages und Archive</h2>
           <p>Das DM-Archiv lädt erst nach einem ausdrücklichen Start Konversationsmetadaten, Teilnehmerdaten, Nachrichten und optional Avatare über den Bluesky-Chat-Dienst. Diese Daten werden im Browser für die lokale Archiv- und Exportfunktion verarbeitet.</p>
           <p>Beim Archivieren von Posts lädt Threadline die von dir ausgewählten öffentlichen Beiträge und auf Wunsch deren Medien. ZIP-, HTML- und PDF-Dateien werden lokal im Browser erzeugt und nur durch deine Auswahl heruntergeladen.</p>
+          <p>Aktive SVG-Dateien aus importierten Archiven werden vor der Anzeige durch ein PNG-Platzhalterbild ersetzt.</p>
         </section>
 
         <section>
@@ -83,6 +85,7 @@
         <section>
           <h2>2. Processing on your device</h2>
           <p>Threadline stores data in the browser, mainly in IndexedDB. This can include signed-in accounts with handle, DID, PDS address, access and refresh tokens; drafts, thread sections, images, ALT text, link cards, hashtags, reply targets and post settings; search forms, favourites and display preferences; archive state, DM partner data, avatar caches and media caches.</p>
+          <p>The app password and session tokens are encrypted with AES-GCM before storage. The key is a non-exportable Web Crypto key held by the browser. This protects an isolated copy of the IndexedDB records, but not active XSS, malicious extensions or a compromised device that can access data in the signed-in browser.</p>
           <p>Some interface preferences, including display mode, the last tools workspace and the selected Thread Explorer view, are also stored in Local Storage. Browser caches can contain loaded external media.</p>
         </section>
 
@@ -97,6 +100,7 @@
           <h2>4. Direct messages and archives</h2>
           <p>The DM Archive loads conversation metadata, participant data, messages and optional avatars through the Bluesky chat service only after you explicitly start it. The browser processes these data for local archive and export functions.</p>
           <p>When archiving posts, Threadline loads the public posts you select and, if requested, their media. ZIP, HTML and PDF files are created locally in the browser and downloaded only when you choose to do so.</p>
+          <p>Active SVG files from imported archives are replaced with a PNG placeholder before display.</p>
         </section>
 
         <section>
@@ -126,6 +130,7 @@
         <section>
           <h2>2. Traitement sur votre appareil</h2>
           <p>Threadline enregistre des données dans le navigateur, principalement dans IndexedDB. Il peut s'agir des comptes connectés avec identifiant, DID, adresse PDS et jetons d'accès et de renouvellement ; des brouillons, sections de fil, images, textes alternatifs, cartes de liens, hashtags, cibles de réponse et réglages de publication ; des recherches enregistrées, favoris et préférences d'affichage ; des états d'archive, données de partenaires de messagerie et caches d'avatars et de médias.</p>
+          <p>Le mot de passe d'application et les jetons de session sont chiffrés avec AES-GCM avant leur stockage. La clé est une clé Web Crypto non exportable conservée par le navigateur. Cela protège une copie isolée des données IndexedDB, mais pas contre un XSS actif, des extensions malveillantes ou un appareil compromis pouvant accéder aux données dans le navigateur connecté.</p>
           <p>Certaines préférences d'interface, notamment le mode d'affichage, le dernier espace d'outils et la vue sélectionnée dans Thread Explorer, sont également enregistrées dans Local Storage. Les caches du navigateur peuvent contenir des médias externes chargés.</p>
         </section>
 
@@ -140,6 +145,7 @@
           <h2>4. Messages directs et archives</h2>
           <p>L'archive de messages directs charge les métadonnées des conversations, les données des participants, les messages et, éventuellement, les avatars via le service de discussion Bluesky uniquement après un démarrage explicite. Le navigateur traite ces données pour les fonctions locales d'archive et d'export.</p>
           <p>Lors de l'archivage de posts, Threadline charge les posts publics que vous sélectionnez et, sur demande, leurs médias. Les fichiers ZIP, HTML et PDF sont créés localement dans le navigateur et téléchargés seulement si vous le choisissez.</p>
+          <p>Les fichiers SVG actifs des archives importées sont remplacés par une image PNG de remplacement avant leur affichage.</p>
         </section>
 
         <section>
