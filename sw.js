@@ -236,7 +236,7 @@ const MENTION_SEARCH_HANDLE_SUFFIXES = [
 ];
 
 importScripts("./js/shared/profile-metadata.js");
-importScripts("./js/worker/account-avatar-cache.js", "./js/worker/record-models.js", "./js/worker/adapter-messages.js", "./js/worker/transport-service.js", "./js/worker/auth-models.js", "./js/worker/storage-service.js", "./js/worker/identity-service.js", "./js/worker/session-service.js", "./js/worker/account-service.js", "./js/worker/network-data-service.js", "./js/worker/network-workspace-service.js", "./js/worker/composer-image-store.js", "./js/worker/composer-image-models.js", "./js/worker/explorer-models.js", "./js/worker/explorer-feed-models.js", "./js/worker/explorer-load-service.js", "./js/worker/explorer-hydration-service.js", "./js/worker/explorer-reaction-service.js", "./js/worker/media-export-models.js", "./js/worker/media-export-service.js", "./js/worker/richtext-models.js", "./js/worker/richtext-service.js", "./js/worker/settings-models.js", "./js/worker/settings-service.js", "./js/worker/reply-models.js", "./js/worker/post-check-service.js", "./js/worker/interaction-service.js", "./js/worker/publish-service.js", "./js/worker/archive-wave-controller.js", "./js/atproto/atproto-worker.js", "./js/worker/search-queries.js", "./js/worker/search-filters.js", "./js/worker/search-service.js", "./js/worker/dm-models.js", "./js/worker/dm-messages.js", "./js/worker/dm-service.js", "./js/worker/archive-run-messages.js", "./js/worker/archive-run-control.js", "./js/worker/archive-models.js", "./js/worker/archive-thread-service.js", "./js/worker/archive-source-service.js", "./js/worker/archive-wave-service.js", "./js/worker/archive-asset-service.js", "./js/worker/archive-import-service.js", "./js/worker/analysis-models.js", "./js/worker/analysis-messages.js", "./js/worker/analysis-service.js");
+importScripts("./js/worker/account-avatar-cache.js", "./js/worker/record-models.js", "./js/worker/adapter-messages.js", "./js/worker/transport-service.js", "./js/worker/auth-models.js", "./js/worker/storage-service.js", "./js/worker/identity-service.js", "./js/worker/session-service.js", "./js/worker/account-service.js", "./js/worker/network-data-service.js", "./js/worker/network-workspace-service.js", "./js/worker/composer-image-store.js", "./js/worker/composer-image-models.js", "./js/worker/explorer-models.js", "./js/worker/explorer-feed-models.js", "./js/worker/explorer-load-service.js", "./js/worker/explorer-hydration-service.js", "./js/worker/explorer-reaction-service.js", "./js/worker/media-export-models.js", "./js/worker/media-export-service.js", "./js/worker/richtext-models.js", "./js/worker/richtext-service.js", "./js/worker/settings-models.js", "./js/worker/settings-service.js", "./js/worker/reply-models.js", "./js/worker/post-check-service.js", "./js/worker/interaction-service.js", "./js/worker/publish-service.js", "./js/worker/archive-wave-controller.js", "./js/atproto/atproto-client.js", "./js/atproto/atproto-session.js", "./js/worker/search-queries.js", "./js/worker/search-filters.js", "./js/worker/search-service.js", "./js/worker/dm-models.js", "./js/worker/dm-messages.js", "./js/worker/dm-service.js", "./js/worker/archive-run-messages.js", "./js/worker/archive-run-control.js", "./js/worker/archive-models.js", "./js/worker/archive-thread-service.js", "./js/worker/archive-source-service.js", "./js/worker/archive-wave-service.js", "./js/worker/archive-asset-service.js", "./js/worker/archive-import-service.js", "./js/worker/analysis-models.js", "./js/worker/analysis-messages.js", "./js/worker/analysis-service.js");
 const {
   normalizeSearchWorkspaceMode,
   normalizeSearchWorkspaceSort,
@@ -279,6 +279,7 @@ const { edit: normalizeImageEdit, image: normalizeThreadImage, segments: normali
   metadata: stripThreadImageData, metadataSegments: normalizeSegmentImageMetadata } = workerComposerImageModels;
 const workerStorage = globalThis.createThreadlineStorageService({ indexedDB: () => indexedDB,
   databaseName: DB_NAME, databaseVersion: DB_VERSION, storeName: STORE_NAME, imageStoreName: COMPOSER_IMAGE_STORE_NAME, authKey: AUTH_KEY,
+  authEncryptionKey: "auth-encryption-key", webCrypto: () => crypto,
   normalizeAuth: (value) => normalizeAuthState(value), messages: globalThis.ThreadlineAdapterMessages,
 });
 const archiveModels = globalThis.createThreadlineArchiveModels({
@@ -332,7 +333,8 @@ const dmModels = globalThis.createThreadlineDmModels({ randomUUID: () => crypto.
 const { normalizeDmDateFilterValue, normalizeDmFilters, normalizeDmConversationEntity, collectDmEmbeds, collectDmFacets, extractDmExternalCardFromEmbedSw, normalizeDmMessageEntity } = dmModels;
 const dmService = globalThis.createThreadlineDmService({
   models: dmModels, session: ensureSession, chat: chatBskyGet, request: bskyGet, base: authXrpcBase,
-  accountAvatar: fetchAccountAvatar, remoteAsset: downloadRemoteAssetViaBlob, blob: downloadBlobForDid,
+  accountAvatar: fetchAccountAvatar, profileRecord: fetchProfileRecordForDid,
+  remoteAsset: downloadRemoteAssetViaBlob, blob: downloadBlobForDid,
   cid: getBlobCidFromRef, extension: getAssetExtensionFromMimeType,
   now: () => new Date().toISOString(), randomUUID: () => crypto.randomUUID(), appVersion: APP_VERSION,
   text: globalThis.formatThreadlineDmMessage,

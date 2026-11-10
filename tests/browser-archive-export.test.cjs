@@ -165,7 +165,7 @@ test("archive PDF modules render linked pages with media and localized labels", 
         const preview = document.createElement("img"); preview.src = imageUrl; preview.id = `pdf-${locale}-${index}`;
         preview.style.width = "595px";
         document.body.append(preview); await preview.decode();
-        results.push({ locale, page: index, width: rendered.width, height: rendered.height,
+        results.push({ locale, page: index, pageCount: pages.length, postUris: pagePosts.map(post => post.uri), width: rendered.width, height: rendered.height,
           annotations: rendered.annotations, labels: [...labels], opened, closed, jpeg: [...rendered.bytes.slice(0, 2)] });
       }
       const invalid = new Map([["bad", { bytes: new Uint8Array([0]), type: "image/png" }]]);
@@ -173,7 +173,11 @@ test("archive PDF modules render linked pages with media and localized labels", 
       try {
         await renderer.post(canvas().getContext("2d"), invalid, { ...posts[0], authorAvatarPath: "bad" }, 0, 0, 500, options, 1, 1190, 1684);
       } catch { invalidImageRejected = true; }
-      results.at(-1).invalidImageRejected = invalidImageRejected;
+      for (const result of results) {
+        if (result.locale === locale) {
+          result.invalidImageRejected = invalidImageRejected;
+        }
+      }
     }
     return results;
   });
@@ -182,7 +186,7 @@ test("archive PDF modules render linked pages with media and localized labels", 
     expect(result.jpeg).toEqual([255, 216]);
     expect(result.opened).toBe(result.closed);
     expect(result.labels).toContain("Article");
-    expect(result.annotations.some(annotation => annotation.url === "https://example.com/article")).toBe(true);
+    expect(result.annotations.some(annotation => annotation.url === "https://example.com/article")).toBe(result.postUris.includes("root"));
     for (const annotation of result.annotations) {
       expect(annotation.rect.every(Number.isFinite)).toBe(true);
       expect(annotation.rect[0]).toBeGreaterThanOrEqual(0);
@@ -191,9 +195,10 @@ test("archive PDF modules render linked pages with media and localized labels", 
       expect(annotation.rect[3]).toBeLessThanOrEqual(842);
     }
     expect(result.invalidImageRejected).toBe(true);
-    if (result.locale === "de") { expect(result.labels).toContain("Band 1/1"); expect(result.labels).toContain("Seite 1/1"); }
-    if (result.locale === "en") { expect(result.labels).toContain("Volume 1/1"); expect(result.labels).toContain("Page 1/1"); }
-    if (result.locale === "fr") { expect(result.labels).toContain("Volume 1/1"); expect(result.labels).toContain("Page 1/1"); }
+    const pageLabel = `${result.page + 1}/${result.pageCount}`;
+    if (result.locale === "de") { expect(result.labels).toContain("Band 1/1"); expect(result.labels).toContain(`Seite ${pageLabel}`); }
+    if (result.locale === "en") { expect(result.labels).toContain("Volume 1/1"); expect(result.labels).toContain(`Page ${pageLabel}`); }
+    if (result.locale === "fr") { expect(result.labels).toContain("Volume 1/1"); expect(result.labels).toContain(`Page ${pageLabel}`); }
   }
   await page.locator("#pdf-en-0").screenshot({ path: testInfo.outputPath("archive-pdf-page.png") });
   expect(errors).toEqual([]);
@@ -592,6 +597,8 @@ for (const pathname of ["/", "/tools.html"]) {
     await expect(page.locator("#dm-export-html-button")).toBeEnabled();
     const dmDownload = page.waitForEvent("download");
     await page.locator("#dm-export-html-button").click();
+    await expect(page.locator("#confirm-dialog")).toBeVisible();
+    await page.locator("#confirm-dialog-confirm-button").click();
     const dmHtmlDownload = await dmDownload;
     const dmHtml = await fs.readFile(await dmHtmlDownload.path(), "utf8");
     await dmHtmlDownload.saveAs(testInfo.outputPath("dm-avatars.html"));
@@ -613,6 +620,8 @@ for (const pathname of ["/", "/tools.html"]) {
     await exported.close();
     const pendingPdf = page.waitForEvent("download");
     await page.locator("#dm-export-pdf-button").click();
+    await expect(page.locator("#confirm-dialog")).toBeVisible();
+    await page.locator("#confirm-dialog-confirm-button").click();
     const pdf = await pendingPdf;
     expect(await pdf.failure()).toBeNull();
     await pdf.saveAs(testInfo.outputPath("dm-avatars.pdf"));

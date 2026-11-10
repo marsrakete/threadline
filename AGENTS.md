@@ -89,6 +89,13 @@ Do not mix these layers unnecessarily.
 - Do not commit directly to `main`. Merge PRs or publish a release only when the user has authorized that action. Existing authorization for the current task remains valid.
 - Preserve the user's local changes and do not merge additional unrelated work merely because it appears in the old backlog.
 
+## Local XAMPP Environment
+
+- Do not change the local XAMPP installation or its server configuration unless the user explicitly requests that change.
+- This includes Apache and PHP configuration, virtual hosts, loaded modules, Windows services and other machine-level XAMPP settings.
+- Read-only inspection and testing through the existing XAMPP server are allowed.
+- Keep project changes in the repository; do not make local XAMPP changes as an implicit part of implementing or testing them.
+
 ## Modularization
 
 New functionality must be assigned to a suitable domain module from the beginning. Large entry files such as `app.js` or `main.js` must not grow when a feature clearly belongs to an existing area.

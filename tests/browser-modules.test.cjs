@@ -4,6 +4,34 @@ const { expect, test } = require("@playwright/test");
 
 test.describe("Composer image editor application integration", () => {
   test.use({ serviceWorkers: "block" });
+  for (const pathname of ["/", "/tools.html"]) {
+    test(`fresh environment defers backup reminder until the first interval on ${pathname}`, async ({ page }) => {
+      const errors = [];
+      page.on("pageerror", error => errors.push(error.message));
+      await blockExternalRequests(page);
+      await page.addInitScript(() => {
+        const registration = { update: async () => {}, active: { postMessage(message, ports) {
+          const result = message.type === "GET_APP_STATE" ? { localePreference: "en", locale: "en", desktopLayoutVersion: 2 } : null;
+          ports[0].postMessage({ ok: true, result });
+        } } };
+        Object.defineProperty(navigator.serviceWorker, "register", { value: async () => registration });
+        Object.defineProperty(navigator.serviceWorker, "ready", { value: Promise.resolve(registration) });
+      });
+      await page.goto(pathname);
+      const firstUseKey = "threadline:settings-backup-first-use-at";
+      await expect.poll(() => page.evaluate(key => localStorage.getItem(key), firstUseKey)).not.toBeNull();
+      const firstUse = await page.evaluate(key => localStorage.getItem(key), firstUseKey);
+      await expect(page.locator("#backup-reminder-dialog")).not.toBeVisible();
+      await page.reload();
+      await expect(page.locator("#language-select")).toHaveValue("en");
+      expect(await page.evaluate(key => localStorage.getItem(key), firstUseKey)).toBe(firstUse);
+      await expect(page.locator("#backup-reminder-dialog")).not.toBeVisible();
+      await page.evaluate(key => localStorage.setItem(key, String(Date.now() - 30 * 24 * 60 * 60 * 1000 - 1000)), firstUseKey);
+      await page.reload();
+      await expect(page.locator("#backup-reminder-dialog")).toBeVisible();
+      expect(errors).toEqual([]);
+    });
+  }
   test("analysis templates render safe summary, result and list components on both pages", async ({ page }) => {
     const errors = []; page.on("pageerror", (error) => errors.push(error.message));
     await blockExternalRequests(page); await page.setViewportSize({ width: 390, height: 900 });
@@ -1002,9 +1030,10 @@ test.describe("Composer image editor application integration", () => {
       await page.evaluate(async () => {
         const { createSettingsBackupReminder } = await import("/js/core/app-backup.js");
         localStorage.removeItem("test:export"); localStorage.removeItem("test:dismiss");
+        localStorage.setItem("test:firstUse", "9000");
         const reminder = createSettingsBackupReminder({ status: document.querySelector("#backup-status"),
           dialog: document.querySelector("#backup-reminder-dialog"), message: document.querySelector("#backup-reminder-message") }, {
-          storage: localStorage, exportKey: "test:export", dismissKey: "test:dismiss", now: () => 10000,
+          storage: localStorage, exportKey: "test:export", dismissKey: "test:dismiss", firstUseKey: "test:firstUse", now: () => 10000,
           intervalMs: 1000, snoozeMs: 100, hasOpenDialog: () => Boolean(document.querySelector("dialog[open]")),
           translate: (key) => key, clearTimer: clearTimeout, setTimer: setTimeout, warn() {}, report() {}, exportFile: async () => {},
         });
@@ -2254,6 +2283,7 @@ test("core page modules load together and preserve page-local workspace rules", 
     const fragment = utils.cloneTemplate("segment-template");
     const directFragment = templates.cloneTemplateContent(document.querySelector("#segment-template"));
     let selectedParticipantDids = [];
+    let dmAvatarSetCount = 0;
     const dmContactList = document.createElement("div");
     const dmSelectionNote = document.createElement("p");
     const dmSummary = document.createElement("div");
@@ -2306,6 +2336,7 @@ test("core page modules load together and preserve page-local workspace rules", 
         return "";
       },
       setAvatarImage(image, source, fallback) {
+        dmAvatarSetCount += 1;
         image.alt = fallback;
         image.src = source;
       },
@@ -2328,7 +2359,7 @@ test("core page modules load together and preserve page-local workspace rules", 
     dmRenderer.renderWorkspace();
     const dmContactAvatar = dmContactList.querySelector(".dm-contact-avatar");
     const dmContactButton = dmContactList.querySelector(".dm-contact-chip");
-    dmContactList.querySelector("button").click();
+    dmContactButton.click();
     const calls = [];
     const opened = toolsPage.openToolsWorkspace("search", {
       search() { calls.push("search"); },
@@ -2349,6 +2380,9 @@ test("core page modules load together and preserve page-local workspace rules", 
       dmContactAvatarSource: dmContactAvatar?.src || "",
       dmContactButtonTitle: dmContactButton?.getAttribute("title") || "",
       dmContactButtonLabel: dmContactButton?.getAttribute("aria-label") || "",
+      dmContactButtonSelected: dmContactButton?.classList.contains("is-selected") || false,
+      dmContactAvatarPreserved: dmContactAvatar === dmContactList.querySelector(".dm-contact-avatar"),
+      dmAvatarSetCount,
       dmSelectedParticipantDids: selectedParticipantDids,
       opened,
       calls,
@@ -2371,6 +2405,9 @@ test("core page modules load together and preserve page-local workspace rules", 
     dmContactAvatarSource: "https://cdn.example/alice.jpg",
     dmContactButtonTitle: "",
     dmContactButtonLabel: "Alice @alice.test",
+    dmContactButtonSelected: true,
+    dmContactAvatarPreserved: true,
+    dmAvatarSetCount: 1,
     dmSelectedParticipantDids: ["did:plc:alice"],
     opened: true,
     calls: ["search"],
@@ -2386,11 +2423,14 @@ test("browser-bound shared modules create safe avatar and version behavior", asy
     const bootstrap = await import("/js/core/app-bootstrap.js");
     const image = document.createElement("img");
     accounts.setAvatarImage(image, "", "Alice");
+    const objectAvatarImage = document.createElement("img");
+    accounts.setAvatarImage(objectAvatarImage, { ref: { $link: "blob-cid" } }, "Object avatar");
     const version = await bootstrap.fetchVersionInfo();
 
     return {
       avatarAlt: image.alt,
       hasFallbackAvatar: image.src.startsWith("data:image/svg+xml"),
+      objectAvatarUsesFallback: objectAvatarImage.src.startsWith("data:image/svg+xml"),
       versionSignature: bootstrap.versionSignature(version),
       versionMatchesPreload: version.appVersion === bootstrap.CURRENT_VERSION_INFO.appVersion,
     };
@@ -2398,6 +2438,7 @@ test("browser-bound shared modules create safe avatar and version behavior", asy
 
   expect(result.avatarAlt).toBe("Alice");
   expect(result.hasFallbackAvatar).toBe(true);
+  expect(result.objectAvatarUsesFallback).toBe(true);
   expect(result.versionSignature).toContain("|");
   expect(result.versionMatchesPreload).toBe(true);
 });

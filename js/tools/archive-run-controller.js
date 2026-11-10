@@ -288,11 +288,30 @@ export function createArchiveRunController(dependencies) {
         })
       });
     } catch (error) {
+      const errorMessage = String(error?.message || "");
+      const timedOut = /timeout|timed out/i.test(errorMessage) || error?.details?.code === "REQUEST_TIMEOUT";
       dependencies.setState({
-        runState: "idle",
+        runState: timedOut ? "paused" : "idle",
         runId: null
       });
+      if (timedOut) {
+        const previous = dependencies.state().session;
+        const checkpointSession = {
+          ...(previous || {}), filterKey, filters, status: "paused",
+          nextCursor: previous?.nextCursor || cursor || "",
+          exportedPosts: Number(previous?.exportedPosts) || resumeCatalog?.posts?.length || 0,
+          exportedImages: Number(previous?.exportedImages) || resumeCatalog?.summary?.imageCount || 0,
+          errorMessage: errorMessage || t("archiveTimeoutResumeHint"), updatedAt: dependencies.now().toISOString(),
+        };
+        dependencies.setState({ session: checkpointSession, runState: "paused" });
+        await saveArchiveSession(checkpointSession).catch(storageError => dependencies.warn("Archivcheckpoint konnte nach Timeout nicht gespeichert werden.", storageError));
+        if (resumeCatalog) { await saveArchiveCatalogState(resumeCatalog); }
+        setArchiveProgress({ title: t("archiveProgressPausedTitle"), step: t("archiveWavePausedStep"), percent: 100,
+          detail: t("archiveTimeoutResumeHint") });
+      }
       updateArchiveRunControls();
+      renderArchiveStartHint();
+      renderArchiveStatusLine();
       throw error;
     }
     dependencies.setState({

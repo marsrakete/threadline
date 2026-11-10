@@ -2,7 +2,7 @@
 
 Diese Liste ist nach Arbeitsstand sortiert. Erledigte Punkte bleiben sichtbar, offene Punkte stehen nach Themen gebuendelt darunter.
 
-Stand: Fachliche Modularisierung und Verantwortungs-/Zustandspruefung am 2026-11-08 abgeschlossen. App `0.4.357`, Cache `v376`. 881 Unit-/Vertragstests und alle 158 Browsertests bestanden. Verbleibende Einstiegsadapter und ihre begruendeten Rollen stehen in [docs/MODULARIZATION-AUDIT.md](docs/MODULARIZATION-AUDIT.md). Fruehere Testzahlen dokumentieren die jeweiligen Auslagerungen.
+Stand: Abgleich mit dem veroeffentlichten Stand **1.0.2 / v386** (PR #13, 10. November 2026). Die Modulliste und Tests sind seit dem Modularisierungsabschluss erweitert; dessen historische Testzahlen stehen in [docs/MODULARIZATION-AUDIT.md](docs/MODULARIZATION-AUDIT.md). Nachweislich erledigte Aufgaben aus diesem TODO sind unten abgehakt. Produktabnahmen an echten Konten/Geraeten und optionale Ideen bleiben offen.
 
 ## Erledigt
 
@@ -228,22 +228,22 @@ Die Vorlagen in [docs/PR-PLAN.md](docs/PR-PLAN.md) dokumentieren den frueheren P
 
 - [ ] Echte Provider/Konten, Token-Erneuerung und authentifizierte Netzwerkablaeufe mit Live-Daten abnehmen. Kontrollierte Tests ersetzen diese Produktabnahme nicht.
 - [ ] Bestandsdatenmigration und Quota-/Speicherfehler auf echten Geraeten pruefen.
-- [ ] Bestehende Archiv-PDF-Layoutkanten korrigieren: Thread-Hintergrund kann Band-/Hinweistext im Kopf ueberdecken; bei fehlgeschlagenem Vorschaubild beruecksichtigt die Kartenhoehe den Thumbnail-Platzhalter nicht vollstaendig.
+- [x] Archiv-PDF-Layoutkanten: Thread-Hintergruende werden unterhalb von Band-/Hinweistext gezeichnet; fehlgeschlagene Vorschaubilder behalten ihren Platz in der Kartenhoehe. Abgedeckt in `js/tools/archive-pdf-rendering.js`, `js/tools/archive-pdf-layout.js` und `tests/archive-pdf.test.cjs`.
 - [ ] Visuelle PDF-Abnahme fuer weitere echte Accounts, lange Namen, viele Bilder und die unterstuetzten Sprachen ergaenzen.
 
 ### Sicherheit / OWASP
 
-- [ ] `P1` Zugangsdaten-Haertung: Bluesky-App-Passwort, Access-JWT und Refresh-JWT liegen derzeit unverschluesselt im Browser-Storage beziehungsweise IndexedDB. Bei XSS, boesartigen Browser-Erweiterungen oder lokalem Geraetezugriff waere eine Konto-Uebernahme realistisch.
-- [ ] `P1` Archiv-Asset-Haertung: Der Viewer liefert archivierte Dateien direkt unter derselben Origin aus, inklusive `svg`. Ein boesartiges SVG aus einem Archiv oder einer externen Card koennte bei direktem Oeffnen aktiven Inhalt ausfuehren und lokale Archivdaten auslesen.
+- [x] `P1` Zugangsdaten-Haertung: App-Passwort sowie Access-/Refresh-JWT werden vor der Speicherung mit AES-GCM verschluesselt; der nicht exportierbare Web-Crypto-Schluessel bleibt browsergebunden in IndexedDB. Vorhandene Klartext-Eintraege migrieren beim Lesen. Das erschwert isolierte Datenbankkopien, schuetzt aber nicht gegen aktives XSS, boesartige Erweiterungen oder ein kompromittiertes Geraet.
+- [x] `P1` Archiv-Asset-Haertung: `viewer/index.php` liefert SVG-Antworten mit Sandbox-CSP ohne Scriptfreigabe und `nosniff`; unbekannte beziehungsweise aktive Nichtbilddateien werden als Download statt als HTML ausgeliefert. Importierte SVGs im App-Archiv werden vor Anzeige und Export durch PNG-Platzhalter ersetzt.
 - [ ] `P2` Proxy-SSRF-Haertung: Das WordPress-Plugin prueft Hosts per DNS vor dem eigentlichen `wp_remote_get`, verbindet danach aber erneut ueber den Hostnamen. Gegen DNS-Rebinding oder andere TOCTOU-Faelle ist das noch nicht hart genug.
 - [x] `P3` Viewer nur lokal absichern: viewer/.htaccess erlaubt ausschliesslich die Loopback-Adressen 127.0.0.1 und ::1 und deaktiviert Verzeichnislisten.
 
 ### Backup Und Lokale Daten
 
-- [ ] Einstellungen-Backup mit lokal gespeicherten Thread-Explorer-Favoriten testen.
-- [ ] Restore testen: Favoriten, Account-Avatare, Hashtags, History und Workspace-Status muessen nach Import wieder verfuegbar sein.
-- [ ] Backup-Erinnerung testen: kein Backup, Backup juenger als 30 Tage, Backup aelter als 30 Tage, `Spaeter`.
-- [ ] README bei Aenderungen am Backup-Inhalt immer mitziehen.
+- [x] Einstellungen-Backup mit lokal gespeicherten Thread-Explorer-Favoriten testen. Export-/Import-Whitelist und Backup-Roundtrip sind in `js/core/app-backup.js` sowie `tests/app-backup.test.cjs` abgedeckt.
+- [ ] Restore auf echten Geraeten pruefen: Favoriten, Account-Avatare, Hashtags, History und Workspace-Status muessen nach Import wieder verfuegbar sein. Kontrollierter Import ist automatisiert getestet; reale Browser-/Bestandsdatenabnahme bleibt offen.
+- [x] Backup-Erinnerung testen: kein Backup, Backup juenger als 30 Tage, Backup aelter als 30 Tage, `Spaeter`. Grenzfaelle und Aufschub sind in `tests/app-backup.test.cjs` getestet; der erstmalige Start ohne Erinnerung ist in `tests/browser-modules.test.cjs` und auf Live 1.0.2 geprueft.
+- [x] README bei Aenderungen am Backup-Inhalt immer mitziehen. README und technische Dokumentation beschreiben Backup-Umfang und ausgeschlossene Sitzungsdaten.
 
 ### Netzwerk Und Analyse
 
@@ -261,7 +261,8 @@ Die Vorlagen in [docs/PR-PLAN.md](docs/PR-PLAN.md) dokumentieren den frueheren P
 - [ ] Archivlauf transparenter machen: Filter klarer erklaeren.
 - [ ] Archivlauf transparenter machen: bessere Hinweise bei sehr grossen Accounts.
 - [ ] Archivlauf optional mit kleiner Abschluss-Zusammenfassung nach jedem Lauf beenden.
-- [ ] Robustere Resume-Strategien bei langen Archivlaeufen pruefen.
+- [x] Archiv-Request-Timeouts als pausierten, sichtbaren Lauf behandeln und vorhandenen Katalog/Cursor als Resume-Checkpoint sichern. `tests/archive-workspace.test.cjs` deckt Speicherung und Statusanzeige ab.
+- [ ] Robustere Resume-Strategien bei langen Archivlaeufen ueber mehrere Folge-Wellen und echte Session-Neustarts weiter pruefen.
 - [ ] Mehr Schutz vor missverstaendlichen Haengern in einzelnen Archivphasen einbauen.
 - [ ] Optional sichtbare Archiv-Schalter pruefen: Avatare mitsichern, Link-Card-Bilder mitsichern, Medien nur referenzieren statt einbetten.
 - [ ] Archiv-Statistik am Ende ausbauen: Posts, Threads, Bilder, Karten, Replies und Zeitraum.
@@ -269,9 +270,9 @@ Die Vorlagen in [docs/PR-PLAN.md](docs/PR-PLAN.md) dokumentieren den frueheren P
 
 ### DM-Archiv
 
-- [ ] Klaeren, was vom DM-Archiv oeffentlich dokumentiert werden soll und was bewusst intern bleibt.
-- [ ] Warn- und Datenschutztexte fuer DM-Archiv weiter schaerfen.
-- [ ] Pruefen, ob sensible DM-Exporte zusaetzliche Schutzschritte brauchen.
+- [x] Klaeren, was vom DM-Archiv oeffentlich dokumentiert werden soll und was bewusst intern bleibt. README beschreibt den lokalen Ablauf und TECHNICAL dokumentiert die Datenverarbeitung.
+- [x] Warn- und Datenschutztexte fuer DM-Archiv weiter schaerfen. Die UI warnt vor sensiblen DMs und empfiehlt ein vertrautes Geraet (`dmPrivacyWarning` in `js/core/app-translations.js`).
+- [x] Sensible DM-Exporte vor JSON-, HTML- und PDF-Dateierzeugung mit einer ausdruecklichen Bestaetigung absichern; Abbruch erzeugt keine Datei (`js/tools/dm-archive.js`, `tests/tools-modules.test.cjs`).
 - [ ] Optional sichtbarer Hinweis: DM-Daten bleiben lokal und sollten besonders vertraulich behandelt werden.
 
 ### Composer
@@ -304,6 +305,7 @@ Die Vorlagen in [docs/PR-PLAN.md](docs/PR-PLAN.md) dokumentieren den frueheren P
 ### Tests Und Pruefungen
 
 - [ ] Browser-Smoke-Test fuer Thread Explorer: Feed laden, Post anklicken, Root laden, Fold/Open, Zoom, Drag, Orientierung wechseln.
+- [x] Automatisierte Explorer-Interaktionen fuer Fokus, Falten, Pan/Zoom und Orientierung sind in `tests/browser-modules.test.cjs` und `tests/browser-smoke.test.cjs` vorhanden; dieser abgedeckte Teil des Smoke-Tests ist erledigt.
 - [ ] Testdaten fuer breite Threads, tiefe Threads, Quotes, Link-Cards, fehlende Avatare und Medienposts sammeln.
 - [ ] Dokumentierte Standardchecks auf aktuelle Pfade und Befehle abgleichen: `npm run check`, `npm run test:unit`, `npm run test:browser`, `npm run check:encoding` und `git diff --check`.
 - [ ] Optional: bestehenden Encoding-Check um einen gezielten i18n-title-Scan ergaenzen.
@@ -337,4 +339,4 @@ Die Vorlagen in [docs/PR-PLAN.md](docs/PR-PLAN.md) dokumentieren den frueheren P
 - [ ] Moegliche Sicherheitsalternative pruefen: App-Passwort nicht dauerhaft speichern.
 - [ ] Moegliche Sicherheitsalternative pruefen: nur Session speichern.
 - [ ] Moegliche Sicherheitsalternative pruefen: optionalen Sicherheitsmodus ohne gespeichertes App-Passwort anbieten.
-- [ ] Vor oeffentlichem Push immer pruefen: experimentelle Features, sensible Datenbereiche, README-Stand und Uebersetzungen.
+- [ ] Vor oeffentlichem Push manuell pruefen: experimentelle Features, sensible Datenbereiche und README-Stand. Secret- und Uebersetzungspruefungen laufen automatisch im PR-/Push-Workflow.

@@ -34,6 +34,33 @@ async function buildPublicBlobUrlForDid(auth, did, cid, serviceCache = null) {
   return `${xrpcBaseForService(serviceUrl)}/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
 }
 
+/** Reads the authoritative self profile record from the actor's current PDS.
+ * @param {string} did - Profile owner DID.
+ * @param {object} auth - Auth context used only as PDS fallback.
+ * @param {Map<string, string>|null} serviceCache - Optional DID-to-PDS cache.
+ * @returns {Promise<object|null>} Current profile record value, or null when unavailable.
+ */
+async function fetchProfileRecordForDid(did, auth, serviceCache = null) {
+  const serviceUrl = await resolvePdsForDid(did, auth?.pdsUrl || auth?.service, serviceCache);
+  try {
+    const response = await bskyGet("com.atproto.repo.getRecord", {
+      repo: did,
+      collection: "app.bsky.actor.profile",
+      rkey: "self",
+    }, { base: xrpcBaseForService(serviceUrl) });
+    if (response?.value && typeof response.value === "object") {
+      return response.value;
+    }
+  } catch {
+    // A PDS may deny browser-origin reads; the public AppView can still resolve the migrated profile.
+  }
+  try {
+    return await bskyGet("app.bsky.actor.getProfile", { actor: did }, { base: API_BASE });
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Chooses the matching web frontend for a Bluesky-compatible service.
  * @param {string} serviceUrl - Login service or PDS URL.

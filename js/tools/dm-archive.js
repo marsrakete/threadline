@@ -214,6 +214,14 @@ export function createDmArchiveController(actions) {
     if (!actions.getAuthAccount()) {
       throw new Error(actions.translate("dmLoadRequiresLogin"));
     }
+    const cachedState = actions.getState();
+    const currentAccountDid = actions.getAuthAccountDid();
+    const reusableContacts = cachedState.partnerCacheAccountDid === currentAccountDid
+      ? cachedState.recentContacts
+      : [];
+    const reusableAssets = cachedState.partnerCacheAccountDid === currentAccountDid
+      ? cachedState.recentContactAssets
+      : [];
     actions.setProgress({
       title: actions.translate("dmPartnersLoadingTitle"),
       step: actions.translate("dmPartnersLoadingStep"),
@@ -232,18 +240,6 @@ export function createDmArchiveController(actions) {
     if (Array.isArray(result?.conversations)) {
       recentConversations = result.conversations;
     }
-    const state = actions.getState();
-    actions.setState({
-      accessChecked: true,
-      recentContacts,
-      recentConversations,
-      recentContactAssets: [],
-      partnerCacheAccountDid: actions.getAuthAccountDid(),
-      partnerCacheUpdatedAt: "",
-      selectedParticipantDids: retainDmSelectedParticipants(state.selectedParticipantDids, recentContacts),
-    });
-    actions.renderWorkspace();
-    await actions.savePartnerCache();
     actions.setProgress({
       title: actions.translate("dmPartnersLoadingTitle"),
       step: "Partnerliste geladen",
@@ -253,6 +249,8 @@ export function createDmArchiveController(actions) {
     const hydrated = await sendDmRequest("HYDRATE_DM_PARTNER_AVATARS", {
       recentContacts,
       conversations: recentConversations,
+      cachedRecentContacts: reusableContacts,
+      cachedAssets: reusableAssets,
     }, {
       timeoutMs: 600000,
       onProgress: createProgressHandler("dmPartnersLoadingTitle"),
@@ -269,9 +267,12 @@ export function createDmArchiveController(actions) {
     }
     const hydratedState = actions.getState();
     actions.setState({
+      accessChecked: true,
       recentContacts,
       recentConversations,
       recentContactAssets,
+      partnerCacheAccountDid: currentAccountDid,
+      partnerCacheUpdatedAt: "",
       selectedParticipantDids: retainDmSelectedParticipants(hydratedState.selectedParticipantDids, recentContacts),
     });
     actions.renderWorkspace();
@@ -501,7 +502,8 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
           avatarUri = contactAssetUris.get(contact.avatarPath) || "";
         }
         if (!avatarUri) {
-          avatarUri = String(contact?.avatar || "").trim();
+          const candidate = typeof contact?.avatar === "string" ? contact.avatar.trim() : "";
+          avatarUri = /^\[object(?:\s+[^\]]+)?\]$/i.test(candidate) ? "" : candidate;
         }
         actions.setAvatarImage(avatar, avatarUri, contact?.displayName || contact?.handle || did || "DM contact");
         const fullName = String(contact?.displayName || "").trim();
@@ -513,8 +515,20 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
         name.textContent = contact?.displayName || `@${contact?.handle || did}`;
         handle.textContent = `@${contact?.handle || did}`;
         button.addEventListener("click", () => {
-          actions.setSelectedParticipantDids(toggleDmSelectedParticipant(selectedParticipantDids, did));
-          actions.renderWorkspace();
+          const currentSelection = actions.getState().selectedParticipantDids;
+          const nextSelection = toggleDmSelectedParticipant(Array.isArray(currentSelection) ? currentSelection : [], did);
+          actions.setSelectedParticipantDids(nextSelection);
+          button.classList.toggle("is-selected", nextSelection.includes(did));
+          if (nextSelection.length > 0) {
+            elements.contactSelectionNote.textContent = actions.translate("dmContactSelectionOne");
+          } else if (contacts.length > 0) {
+            elements.contactSelectionNote.textContent = actions.translate("dmContactSelectionAll");
+          } else {
+            elements.contactSelectionNote.textContent = actions.translate("dmContactSelectionEmpty");
+          }
+          if (elements.loadButton) {
+            elements.loadButton.disabled = nextSelection.length !== 1;
+          }
         });
         elements.contactList.appendChild(fragment);
       });
@@ -611,6 +625,7 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
  * Creates the Direct Message archive export controller.
  * @param {object} actions - App-specific rendering and browser export adapters.
  * @param {() => void} actions.assertAccess - Throws when DM access is unavailable.
+ * @param {() => Promise<boolean>} actions.confirmExport - Confirms the sensitive export handoff.
  * @param {(key: string, values?: object) => string} actions.translate - Translation callback.
  * @param {(progress: object) => void} actions.setProgress - Updates visible DM export progress.
  * @param {(parts: BlobPart[], name: string, type: string) => File} actions.createFile - Creates a browser file for download.
@@ -639,6 +654,10 @@ export function createDmArchiveExportController(actions) {
     return catalog;
   }
 
+  async function confirmSensitiveExport() {
+    return Boolean(await actions.confirmExport());
+  }
+
   /**
    * Updates the progress panel after an export completed.
    * @param {string} detailKey - Translation key for the completion detail.
@@ -660,6 +679,7 @@ export function createDmArchiveExportController(actions) {
    */
   async function exportJson(catalog) {
     const validCatalog = requireCatalog(catalog);
+    if (!await confirmSensitiveExport()) { return; }
     actions.setProgress({
       title: actions.translate("dmProgressExportTitle"),
       step: actions.translate("dmProgressExportStep"),
@@ -680,6 +700,7 @@ export function createDmArchiveExportController(actions) {
    */
   async function exportHtml(catalog) {
     const validCatalog = requireCatalog(catalog);
+    if (!await confirmSensitiveExport()) { return; }
     await actions.ensureAvatarAssets(validCatalog);
     actions.setProgress({
       title: actions.translate("dmProgressHtmlTitle"),
@@ -701,6 +722,7 @@ export function createDmArchiveExportController(actions) {
    */
   async function exportPdf(catalog) {
     const validCatalog = requireCatalog(catalog);
+    if (!await confirmSensitiveExport()) { return; }
     await actions.ensureAvatarAssets(validCatalog);
     const messages = actions.collectMessages(validCatalog);
     const assetMap = new Map();
