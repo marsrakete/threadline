@@ -135,6 +135,24 @@ export function retainDmSelectedParticipants(selectedParticipantDids, contacts) 
  * @returns {{checkAccess: () => Promise<void>, loadPartners: () => Promise<void>, loadArchive: (checkAccess: () => Promise<void>) => Promise<void>}} DM loading operations.
  */
 export function createDmArchiveController(actions) {
+  /** Sends one DM request and replaces auth-method errors with a useful explanation.
+   * @param {string} type - Service-worker request type.
+   * @param {object} payload - Request payload.
+   * @param {object} options - Service-worker request options.
+   * @returns {Promise<object>} Request result.
+   */
+  async function sendDmRequest(type, payload, options) {
+    try {
+      return await actions.sendRequest(type, payload, options);
+    } catch (error) {
+      const message = String(error?.message || error || "");
+      if (/\bBad token (?:method|scope)\b/i.test(message)) {
+        throw new Error(actions.translate("dmAppPasswordNeedsDmAccess"), { cause: error });
+      }
+      throw error;
+    }
+  }
+
   /**
    * Builds one progress callback using localized fallbacks for a request phase.
    * @param {string} titleKey - Translation key for the default progress title.
@@ -176,7 +194,7 @@ export function createDmArchiveController(actions) {
       percent: 10,
       detail: "",
     });
-    const result = await actions.sendRequest("CHECK_DM_ACCESS", {}, { timeoutMs: 120000 });
+    const result = await sendDmRequest("CHECK_DM_ACCESS", {}, { timeoutMs: 120000 });
     actions.setState({ accessChecked: result?.ok === true });
     actions.renderWorkspace();
     actions.setProgress({
@@ -202,7 +220,7 @@ export function createDmArchiveController(actions) {
       percent: 12,
       detail: "",
     });
-    const result = await actions.sendRequest("LIST_DM_PARTNERS", { downloadAssets: false }, {
+    const result = await sendDmRequest("LIST_DM_PARTNERS", { downloadAssets: false }, {
       timeoutMs: 600000,
       onProgress: createProgressHandler("dmPartnersLoadingTitle"),
     });
@@ -232,7 +250,7 @@ export function createDmArchiveController(actions) {
       percent: 55,
       detail: `${recentContacts.length} DM-Partner werden angezeigt. Avatar-Bilder werden jetzt gesichert …`,
     });
-    const hydrated = await actions.sendRequest("HYDRATE_DM_PARTNER_AVATARS", {
+    const hydrated = await sendDmRequest("HYDRATE_DM_PARTNER_AVATARS", {
       recentContacts,
       conversations: recentConversations,
     }, {
@@ -291,7 +309,7 @@ export function createDmArchiveController(actions) {
       percent: 4,
       detail: "",
     });
-    const catalog = await actions.sendRequest("EXPORT_DM_ARCHIVE", {
+    const catalog = await sendDmRequest("EXPORT_DM_ARCHIVE", {
       filters,
       partnerCache: {
         recentContacts: Array.isArray(latestState.recentContacts) ? latestState.recentContacts : [],

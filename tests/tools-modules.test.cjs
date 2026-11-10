@@ -863,6 +863,27 @@ test("DM archive helpers keep contact filtering, selection and loading contracts
   assert.deepEqual(state.recentContactAssets, [{ path: "dm-avatars/anna.png" }]);
 });
 
+test("DM archive explains app-password permission errors and preserves unrelated failures", async () => {
+  const dmArchive = await importProjectModule("js/tools/dm-archive.js");
+  const makeController = (message, translated = "dmAppPasswordNeedsDmAccess") => dmArchive.createDmArchiveController({
+    getState: () => ({ accessChecked: false }),
+    setState() {},
+    translate: key => key === "dmAppPasswordNeedsDmAccess" ? translated : key,
+    assertAccess() {},
+    getAuthAccount: () => ({ did: "did:plc:self" }),
+    getAuthAccountDid: () => "did:plc:self",
+    async sendRequest() { throw message; },
+    setProgress() {},
+    renderWorkspace() {},
+    async savePartnerCache() {},
+  });
+  await assert.rejects(makeController(new Error("Bad token method"), "Enable DM access in a new app password.").checkAccess(), /Enable DM access in a new app password\./);
+  await assert.rejects(makeController(new Error("Bad token scope")).checkAccess(), /dmAppPasswordNeedsDmAccess/);
+
+  const networkError = new Error("Network unavailable");
+  await assert.rejects(makeController(networkError).checkAccess(), error => error === networkError);
+});
+
 test("DM archive UI binds workspace controls through explicit callbacks", async () => {
   const dmArchive = await importProjectModule("js/tools/dm-archive.js");
   const controls = Array.from({ length: 9 }, () => new EventTarget());
