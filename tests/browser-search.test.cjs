@@ -1651,6 +1651,7 @@ async function prepareSearch(page) {
       createdAt: "2026-10-18T12:00:00Z", images: [], facets: [], counts: { likeCount: 1 },
     } });
     const registration = { update: async () => {}, active: { postMessage(message, ports) {
+      message = structuredClone(message);
       state.calls.push(message);
       let result = null;
       if (message.type === "GET_APP_STATE") {
@@ -2040,6 +2041,32 @@ for(const pathname of ["/","/tools.html"]){
 }
 
 for(const pathname of ["/","/tools.html"]){
+  test(`link card settings and drafts cross the real clone boundary on ${pathname}`, async ({ page }) => {
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") { errors.push(message.text()); } });
+    await prepareSearch(page);
+    await page.goto(pathname);
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    await page.evaluate(() => {
+      const input = document.querySelector("#source-text");
+      input.value = "A draft with a link card";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.locator(".segment-link-card-manual-button").first().dispatchEvent("click");
+    await page.locator("#link-card-url-input").fill("https://example.com/");
+    await page.locator("#link-card-create-button").click();
+    await expect(page.locator("#link-card-dialog")).not.toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.__search.calls.filter(message =>
+      ["SAVE_SETTINGS", "SAVE_DRAFT"].includes(message.type) && message.payload?.segmentLinkCards?.[0]?.url === "https://example.com/"
+    ).map(message => message.type).sort())).toEqual(["SAVE_DRAFT", "SAVE_SETTINGS"]);
+    const cards = await page.evaluate(() => window.__search.calls.filter(message =>
+      ["SAVE_SETTINGS", "SAVE_DRAFT"].includes(message.type) && message.payload?.segmentLinkCards?.[0]?.url === "https://example.com/"
+    ).map(message => message.payload.segmentLinkCards[0]));
+    expect(cards.every(card => card.standardSite === null)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
   test(`link card create and Enter handlers reach the module submission controller on ${pathname}`,async({page})=>{
     const errors=[];page.on("pageerror",error=>errors.push(error.message));await prepareSearch(page);await page.goto(pathname);
     await expect(page.locator("#language-select")).toHaveValue("en");
