@@ -795,9 +795,10 @@ test("DM archive helpers keep contact filtering, selection and loading contracts
     catalog: null,
     from: "2026-01-01",
     to: "2026-01-31",
-    recentContacts: [],
+    recentContacts: [{ did: "did:plc:anna", avatar: "https://cdn.example/anna.png", avatarPath: "dm-avatars/anna.png" }],
     recentConversations: [],
-    recentContactAssets: [],
+    recentContactAssets: [{ path: "dm-avatars/anna.png", type: "image/png", bytes: new Uint8Array([1]) }],
+    partnerCacheAccountDid: "did:plc:self",
     selectedParticipantDids: [],
   };
   const loadingRequests = [];
@@ -819,15 +820,17 @@ test("DM archive helpers keep contact filtering, selection and loading contracts
     getAuthAccountDid() {
       return "did:plc:self";
     },
-    async sendRequest(type) {
+    async sendRequest(type, payload) {
       loadingRequests.push(type);
       if (type === "LIST_DM_PARTNERS") {
         return {
-          recentContacts: [{ did: "did:plc:anna", handle: "anna.test" }],
+          recentContacts: [{ did: "did:plc:anna", handle: "anna.test", avatar: "https://cdn.example/anna.png" }],
           conversations: [{ id: "conversation-one" }],
         };
       }
       if (type === "HYDRATE_DM_PARTNER_AVATARS") {
+        assert.equal(payload.cachedRecentContacts[0].avatarPath, "dm-avatars/anna.png");
+        assert.equal(payload.cachedAssets[0].path, "dm-avatars/anna.png");
         return {
           recentContacts: [{ did: "did:plc:anna", handle: "anna.test", avatarPath: "dm-avatars/anna.png" }],
           conversations: [{ id: "conversation-one" }],
@@ -853,7 +856,7 @@ test("DM archive helpers keep contact filtering, selection and loading contracts
   await loadingController.loadPartners();
   assert.deepEqual(loadingRequests, ["LIST_DM_PARTNERS", "HYDRATE_DM_PARTNER_AVATARS"]);
   assert.equal(state.recentContactAssets.length, 1);
-  assert.equal(cacheSaves, 2);
+  assert.equal(cacheSaves, 1);
   state.selectedParticipantDids = ["did:plc:anna"];
   await loadingController.loadArchive(async () => {
     throw new Error("The already checked access must not be checked again.");

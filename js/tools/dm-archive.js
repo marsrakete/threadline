@@ -196,6 +196,14 @@ export function createDmArchiveController(actions) {
     if (!actions.getAuthAccount()) {
       throw new Error(actions.translate("dmLoadRequiresLogin"));
     }
+    const cachedState = actions.getState();
+    const currentAccountDid = actions.getAuthAccountDid();
+    const reusableContacts = cachedState.partnerCacheAccountDid === currentAccountDid
+      ? cachedState.recentContacts
+      : [];
+    const reusableAssets = cachedState.partnerCacheAccountDid === currentAccountDid
+      ? cachedState.recentContactAssets
+      : [];
     actions.setProgress({
       title: actions.translate("dmPartnersLoadingTitle"),
       step: actions.translate("dmPartnersLoadingStep"),
@@ -214,18 +222,6 @@ export function createDmArchiveController(actions) {
     if (Array.isArray(result?.conversations)) {
       recentConversations = result.conversations;
     }
-    const state = actions.getState();
-    actions.setState({
-      accessChecked: true,
-      recentContacts,
-      recentConversations,
-      recentContactAssets: [],
-      partnerCacheAccountDid: actions.getAuthAccountDid(),
-      partnerCacheUpdatedAt: "",
-      selectedParticipantDids: retainDmSelectedParticipants(state.selectedParticipantDids, recentContacts),
-    });
-    actions.renderWorkspace();
-    await actions.savePartnerCache();
     actions.setProgress({
       title: actions.translate("dmPartnersLoadingTitle"),
       step: "Partnerliste geladen",
@@ -235,6 +231,8 @@ export function createDmArchiveController(actions) {
     const hydrated = await actions.sendRequest("HYDRATE_DM_PARTNER_AVATARS", {
       recentContacts,
       conversations: recentConversations,
+      cachedRecentContacts: reusableContacts,
+      cachedAssets: reusableAssets,
     }, {
       timeoutMs: 600000,
       onProgress: createProgressHandler("dmPartnersLoadingTitle"),
@@ -251,9 +249,12 @@ export function createDmArchiveController(actions) {
     }
     const hydratedState = actions.getState();
     actions.setState({
+      accessChecked: true,
       recentContacts,
       recentConversations,
       recentContactAssets,
+      partnerCacheAccountDid: currentAccountDid,
+      partnerCacheUpdatedAt: "",
       selectedParticipantDids: retainDmSelectedParticipants(hydratedState.selectedParticipantDids, recentContacts),
     });
     actions.renderWorkspace();

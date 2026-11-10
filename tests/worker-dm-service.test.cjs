@@ -104,6 +104,21 @@ test("DM avatar hydration loads blob-reference avatars directly without stringif
   assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "profile-blob-cid"]);
 });
 
+test("DM avatar hydration reuses matching cached blobs without network downloads", async () => {
+  const cachedAsset = { path: "dm-avatars/peer.png", type: "image/png", sizeBytes: 3, bytes: new Uint8Array([1, 2, 3]) };
+  const f = dmServiceFixture();
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", avatar: "https://cdn.example/peer.png" }],
+    conversations: [{ id: "one", members: [{ did: "peer" }] }],
+    cachedRecentContacts: [{ did: "peer", avatar: "https://cdn.example/peer.png", avatarPath: cachedAsset.path }],
+    cachedAssets: [cachedAsset],
+  });
+  assert.equal(result.recentContacts[0].avatarPath, cachedAsset.path);
+  assert.deepEqual([...result.assets[0].bytes], [1, 2, 3]);
+  assert.equal(result.conversations[0].members[0].avatarPath, cachedAsset.path);
+  assert.equal(f.calls.some((call) => ["blob", "asset", "profileRecord"].includes(call[0])), false);
+});
+
 test("DM avatar hydration repairs a cached object-string URL using the current blob", async () => {
   const f = dmServiceFixture({
     profileError: true,

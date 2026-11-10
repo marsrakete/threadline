@@ -41,6 +41,17 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
     const url = value.trim();
     return /^\[object(?:\s+[^\]]+)?\]$/i.test(url) ? "" : url;
   }
+  /** Identifies one avatar version across CDN URLs and AT blob references. */
+  function getAvatarIdentity(contact) {
+    const did = String(contact?.did || "").trim();
+    const url = normalizeAvatarUrl(contact?.avatar);
+    const cid = getBlobCidFromRef(contact?.avatar)
+      || (typeof globalThis.parseBlobUrlInfo === "function" ? globalThis.parseBlobUrlInfo(url)?.cid || "" : "");
+    if (cid) {
+      return `${did}|${cid}`;
+    }
+    return url ? `${did}|${url}` : "";
+  }
   /** Calculates the existing avatar progress percentage, including an empty-list fallback.
    * @param {number} index - Zero-based avatar index. @param {number} count - Avatar count.
    * @returns {number} Existing 58 through 98 progress value.
@@ -535,7 +546,37 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
     const seenAssetPaths = new Set();
     const pdsServiceCache = new Map();
     await hydrateMissingDmPartnerProfiles(auth, contacts);
-    const avatarContacts = contacts.filter((contact) => contact.avatar);
+    const cachedContacts = new Map(arrayOrEmpty(payload.cachedRecentContacts)
+      .filter((contact) => contact?.did)
+      .map((contact) => [contact.did, contact]));
+    const cachedAssets = new Map(arrayOrEmpty(payload.cachedAssets)
+      .filter((asset) => asset?.path)
+      .map((asset) => [asset.path, asset]));
+    contacts.forEach((contact) => {
+      const cached = cachedContacts.get(contact.did);
+      const identity = getAvatarIdentity(contact);
+      if (!cached || !identity || identity !== getAvatarIdentity(cached) || !cached.avatarPath) {
+        return;
+      }
+      const asset = cachedAssets.get(cached.avatarPath);
+      if (!asset) {
+        return;
+      }
+      contact.avatarPath = cached.avatarPath;
+      if (!seenAssetPaths.has(asset.path)) {
+        seenAssetPaths.add(asset.path);
+        assets.push(asset);
+      }
+      conversations.forEach((convo) => {
+        (convo.members || []).forEach((member) => {
+          if (member.did === contact.did) {
+            member.avatarPath = cached.avatarPath;
+          }
+        });
+      });
+    });
+    const avatarContacts = contacts.filter((contact) => !contact.avatarPath
+      && (contact.avatar || getBlobCidFromRef(contact.avatar) || normalizeAvatarUrl(contact.avatar)));
 
     let detail = "";
     if (avatarContacts.length > 0) {
@@ -579,7 +620,7 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
    */
   async function hydrateMissingDmPartnerProfiles(auth, contacts = []) {
     const pending = contacts.filter((contact) => {
-      return contact?.did && !getBlobCidFromRef(contact.avatar) && !normalizeAvatarUrl(contact.avatar);
+      return contact?.did && !contact.avatar && !getBlobCidFromRef(contact.avatar) && !normalizeAvatarUrl(contact.avatar);
     });
     if (!pending.length || !auth?.session?.accessJwt) {
       return contacts;
