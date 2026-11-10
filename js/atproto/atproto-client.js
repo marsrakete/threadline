@@ -42,12 +42,23 @@ async function buildPublicBlobUrlForDid(auth, did, cid, serviceCache = null) {
  */
 async function fetchProfileRecordForDid(did, auth, serviceCache = null) {
   const serviceUrl = await resolvePdsForDid(did, auth?.pdsUrl || auth?.service, serviceCache);
-  const response = await bskyGet("com.atproto.repo.getRecord", {
-    repo: did,
-    collection: "app.bsky.actor.profile",
-    rkey: "self",
-  }, { base: xrpcBaseForService(serviceUrl) });
-  return response?.value && typeof response.value === "object" ? response.value : null;
+  try {
+    const response = await bskyGet("com.atproto.repo.getRecord", {
+      repo: did,
+      collection: "app.bsky.actor.profile",
+      rkey: "self",
+    }, { base: xrpcBaseForService(serviceUrl) });
+    if (response?.value && typeof response.value === "object") {
+      return response.value;
+    }
+  } catch {
+    // A PDS may deny browser-origin reads; the public AppView can still resolve the migrated profile.
+  }
+  try {
+    return await bskyGet("app.bsky.actor.getProfile", { actor: did }, { base: API_BASE });
+  } catch {
+    return null;
+  }
 }
 
 /**

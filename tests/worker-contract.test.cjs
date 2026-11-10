@@ -120,3 +120,24 @@ test("current actor profile record is requested from the DID document PDS", asyn
   });
   assert.equal(requests[0].options.base, "https://eurosky.social/xrpc");
 });
+
+test("profile lookup falls back to the public AppView when the current PDS record is unavailable", async () => {
+  const { context } = loadAtprotoWorkerContext();
+  const requests = [];
+  context.assertSecureServiceUrl = url => assert.match(url, /^https:\/\//);
+  context.normalizeServiceUrl = url => url;
+  context.resolvePdsForDid = async () => "https://eurosky.social";
+  context.createThreadlineTransportService = () => ({
+    get: async (endpoint, params, options) => {
+      requests.push({ endpoint, params, options });
+      if (endpoint === "com.atproto.repo.getRecord") { throw new Error("PDS CORS/read unavailable"); }
+      return { did: "did:plc:peer", handle: "peer.eurosky.social", avatar: "https://cdn.bsky.app/img/avatar/plain/did:plc:peer/current-cid@jpeg" };
+    },
+    request: async () => ({}),
+  });
+  const profile = await context.fetchProfileRecordForDid("did:plc:peer", { service: "https://bsky.social" }, new Map());
+  assert.equal(profile.handle, "peer.eurosky.social");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].endpoint, "app.bsky.actor.getProfile");
+  assert.equal(requests[1].options.base, context.API_BASE);
+});

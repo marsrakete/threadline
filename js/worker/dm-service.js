@@ -443,10 +443,17 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
       const profile = typeof options.profileRecord === "function"
         ? await options.profileRecord(contact.did, auth, pdsServiceCache).catch(() => null)
         : null;
-      const currentAvatarCid = getBlobCidFromRef(profile?.avatar);
+      const profileAvatarUrl = String(profile?.avatar || "").trim();
+      const profileAvatarCid = typeof globalThis.parseBlobUrlInfo === "function"
+        ? globalThis.parseBlobUrlInfo(profileAvatarUrl)?.cid || ""
+        : "";
+      const currentAvatarCid = getBlobCidFromRef(profile?.avatar) || profileAvatarCid;
       if (profile) {
         contact.handle = String(profile.handle || contact.handle || "").trim();
         contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
+        if (profileAvatarUrl) {
+          contact.avatar = profileAvatarUrl;
+        }
         if (!currentAvatarCid) {
           contact.avatar = "";
           contact.avatarPath = "";
