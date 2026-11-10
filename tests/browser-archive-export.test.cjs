@@ -315,6 +315,7 @@ async function prepareArchiveApplication(page, mediaFixture = false, avatarFixtu
 test("loaded archive PDF action starts an export and downloads a volume", async ({ page }, testInfo) => {
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
+  await page.setViewportSize({ width: 390, height: 844 });
   await prepareArchiveApplication(page, false, true);
   await page.goto("/tools.html", { waitUntil: "domcontentloaded" });
   await expect(page.locator("#archive-button")).toBeEnabled();
@@ -333,11 +334,21 @@ test("loaded archive PDF action starts an export and downloads a volume", async 
   await page.locator("#archive-actions-export-pdf-button").click();
   await expect(page.locator("#archive-actions-export-pdf-button")).toBeDisabled();
   await expect(page.locator("#archive-actions-export-pdf-button")).toHaveText("Working …");
+  const progress = page.locator(".archive-export-progress");
+  await expect(progress).toBeVisible();
+  await expect(progress).toHaveClass(/is-running/);
+  await expect(progress.locator("progress")).toHaveAttribute("value", "3");
+  await progress.screenshot({ path: testInfo.outputPath("pdf-progress-mobile.png"), animations: "disabled" });
   const download = await pending;
   expect(await download.failure()).toBeNull();
   expect(download.suggestedFilename()).toMatch(/-band-001\.pdf$/);
   await download.saveAs(testInfo.outputPath("archive-band.pdf"));
   await expect(page.locator("#archive-actions-export-pdf-button")).toBeEnabled();
+  await expect(progress.locator("progress")).toHaveAttribute("value", "100");
+  await expect(progress).not.toHaveClass(/is-running/);
+  const bounds = await progress.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
   expect(avatarRequests).toEqual([]);
   expect(errors).toEqual([]);
 });

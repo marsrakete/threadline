@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.360",
-  cacheVersion: "v379",
-  label: "Keep archive PDF export local and show busy state",
+  appVersion: "0.4.361",
+  cacheVersion: "v380",
+  label: "Show PDF progress beside archive export actions",
 });

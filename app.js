@@ -7844,8 +7844,8 @@ function updateArchiveScopeFields() {
 }
 
 /** Updates archive progress state and draws its presentation. @param {object} progress - Title, step, percent and detail. @returns {void} */
-function setArchiveProgress({ title, step, percent = 0, detail = "" } = {}) {
-  archiveJobState = { title, step, percent, detail };
+function setArchiveProgress({ title, step, percent = 0, detail = "", operation = "" } = {}) {
+  archiveJobState = { title, step, percent, detail, operation };
   if (title || step || detail || Number(percent) > 0) { archiveLastProgressAt = new Date().toISOString(); }
   archiveWorkspaceRenderer.progress(archiveJobState);
 }
@@ -11192,6 +11192,7 @@ function applyArchiveRunPatch(patch) {
 }
 const archiveWorkspaceModels = createArchiveWorkspaceModels({ t, locale: () => currentLocale });
 const archiveWorkspaceRenderer = createArchiveWorkspaceRenderer({
+  exportPdf: archiveActionsExportPdfButton,
   sourceStatus: archiveSourceStatus,
   sourcePreview: archiveSourcePreview,
   progressTitle: archiveProgressTitle,
