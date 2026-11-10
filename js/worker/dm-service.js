@@ -33,6 +33,14 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
     }
     return [];
   }
+  /** Rejects object-coercion strings left by earlier avatar handling. */
+  function normalizeAvatarUrl(value) {
+    if (typeof value !== "string") {
+      return "";
+    }
+    const url = value.trim();
+    return /^\[object(?:\s+[^\]]+)?\]$/i.test(url) ? "" : url;
+  }
   /** Calculates the existing avatar progress percentage, including an empty-list fallback.
    * @param {number} index - Zero-based avatar index. @param {number} count - Avatar count.
    * @returns {number} Existing 58 through 98 progress value.
@@ -370,7 +378,9 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
               did: member.did,
               handle: member.handle || "",
               displayName: member.displayName || member.handle || "",
-              avatar: member.avatar || "",
+              avatar: typeof member.avatar === "string" && normalizeAvatarUrl(member.avatar)
+                ? normalizeAvatarUrl(member.avatar)
+                : member.avatar || "",
               lastMessageAt: normalizedConvo.lastMessageAt || normalizedConvo.updatedAt || "",
               conversationId: normalizedConvo.id,
             });
@@ -440,13 +450,17 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
    */
   async function attachPartnerAvatar(auth, contact, conversations, assets, seenAssetPaths, pdsServiceCache) {
     try {
+      const avatarUrl = normalizeAvatarUrl(contact.avatar);
+      if (typeof contact.avatar === "string") {
+        contact.avatar = avatarUrl;
+      }
       let blob;
       try {
         const providedAvatarCid = getBlobCidFromRef(contact.avatar);
         if (providedAvatarCid) {
           blob = await downloadBlobForDid(auth, contact.did, providedAvatarCid, pdsServiceCache);
-        } else if (typeof contact.avatar === "string" && contact.avatar.trim()) {
-          blob = await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
+        } else if (avatarUrl) {
+          blob = await downloadRemoteAssetViaBlob(auth, avatarUrl, contact.did, pdsServiceCache);
         } else {
           throw new Error("Avatar reference is not a URL or blob CID.");
         }
@@ -456,7 +470,7 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
         const profile = typeof options.profileRecord === "function"
           ? await options.profileRecord(contact.did, auth, pdsServiceCache).catch(() => null)
           : null;
-        const profileAvatarUrl = typeof profile?.avatar === "string" ? profile.avatar.trim() : "";
+        const profileAvatarUrl = normalizeAvatarUrl(profile?.avatar);
         const profileAvatarCid = typeof globalThis.parseBlobUrlInfo === "function"
           ? globalThis.parseBlobUrlInfo(profileAvatarUrl)?.cid || ""
           : "";
@@ -565,7 +579,7 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
    */
   async function hydrateMissingDmPartnerProfiles(auth, contacts = []) {
     const pending = contacts.filter((contact) => {
-      return contact?.did && !String(contact.avatar || "").trim();
+      return contact?.did && !getBlobCidFromRef(contact.avatar) && !normalizeAvatarUrl(contact.avatar);
     });
     if (!pending.length || !auth?.session?.accessJwt) {
       return contacts;
@@ -587,7 +601,11 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
           contact.handle = String(profile.handle || contact.handle || "").trim();
           contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
           const profileAvatar = typeof profile.avatar === "string" ? profile.avatar.trim() : "";
-          contact.avatar = profileAvatar || String(contact.avatar || "").trim();
+          if (profileAvatar) {
+            contact.avatar = profileAvatar;
+          } else if (!normalizeAvatarUrl(contact.avatar)) {
+            contact.avatar = "";
+          }
         });
       } catch (error) {
         // The contact remains usable without an avatar when profile lookup fails.

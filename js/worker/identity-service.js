@@ -130,7 +130,8 @@ globalThis.createThreadlineIdentityService = function createThreadlineIdentitySe
         headers,
         base: xrpcBaseForService(auth?.pdsUrl || auth?.service || DEFAULT_LOGIN_SERVICE),
       });
-      return String(profile?.avatar || "").trim();
+      const avatar = typeof profile?.avatar === "string" ? profile.avatar.trim() : "";
+      return /^\[object(?:\s+[^\]]+)?\]$/i.test(avatar) ? "" : avatar;
     } catch {
       return "";
     }

@@ -1225,6 +1225,8 @@ test("rich-text presentation preserves Unicode facet boundaries and rejects unus
 
 test("shared profile, URL, engagement and edit models preserve domain semantics at their new owners", async () => {
   const profiles = await importProjectModule("js/shared/shared-accounts.js");
+  assert.equal(profiles.resolveStoredAccountAvatar({ avatar: { ref: { $link: "blob-cid" } } }, [], () => ""), "");
+  assert.equal(profiles.resolveStoredAccountAvatar({ avatar: "[object Object]" }, [], () => ""), "");
   assert.equal(profiles.getProfileInitials({ displayName: " Berta " }), "BE");
   assert.equal(profiles.getProfileInitials(null), "?");
   assert.equal(profiles.getProfileLabel({ displayName: "Berta", handle: "berta.test" }), "Berta @berta.test");

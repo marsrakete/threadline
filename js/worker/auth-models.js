@@ -82,7 +82,7 @@ globalThis.createThreadlineAuthModels = function createThreadlineAuthModels(opti
       service,
       pdsUrl: normalizeServiceUrl(entry.pdsUrl || entry.service || DEFAULT_LOGIN_SERVICE),
       webApp: inferAccountWebApp(entry, service, handle),
-      avatar: String(entry.avatar || ""),
+      avatar: typeof entry.avatar === "string" && !/^\[object(?:\s+[^\]]+)?\]$/i.test(entry.avatar.trim()) ? entry.avatar.trim() : "",
       ...globalThis.ThreadlineProfileMetadata.normalize(entry),
       avatarPath: String(entry.avatarPath || ""),
       appPassword,

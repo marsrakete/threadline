@@ -104,6 +104,20 @@ test("DM avatar hydration loads blob-reference avatars directly without stringif
   assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "profile-blob-cid"]);
 });
 
+test("DM avatar hydration repairs a cached object-string URL using the current blob", async () => {
+  const f = dmServiceFixture({
+    profileError: true,
+    profileRecords: { peer: { avatar: { ref: { $link: "eurosky-current-cid" } } } },
+  });
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", avatar: "[object Object]" }],
+    conversations: [],
+  });
+  assert.equal(result.recentContacts[0].avatar, "");
+  assert.equal(result.recentContacts[0].avatarPath, "dm-avatars/peer.png");
+  assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "eurosky-current-cid"]);
+});
+
 test("failed migrated avatar blobs do not become object-string image URLs", async () => {
   const f = dmServiceFixture({
     assetError: true,

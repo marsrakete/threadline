@@ -20,13 +20,15 @@ export function resolveStoredAccountAvatar(account = {}, assets = [], dataUri) {
       return dataUri(asset);
     }
   }
+  const avatarCandidate = typeof account?.avatar === "string" ? account.avatar.trim() : "";
+  const avatarUrl = /^\[object(?:\s+[^\]]+)?\]$/i.test(avatarCandidate) ? "" : avatarCandidate;
   const fallbackAsset = source.find((entry) =>
-    (account?.did && entry.did === account.did) || (account?.avatar && entry.url === account.avatar));
+    (account?.did && entry.did === account.did) || (avatarUrl && entry.url === avatarUrl));
   if (fallbackAsset) {
     account.avatarPath = fallbackAsset.path;
     return dataUri(fallbackAsset);
   }
-  return String(account?.avatar || "").trim();
+  return avatarUrl;
 }
 
 /**
@@ -41,7 +43,8 @@ function setAvatarImage(image, avatarUrl, altText) {
     return;
   }
 
-  const normalizedUrl = typeof avatarUrl === "string" ? avatarUrl.trim() : "";
+  const avatarCandidate = typeof avatarUrl === "string" ? avatarUrl.trim() : "";
+  const normalizedUrl = /^\[object(?:\s+[^\]]+)?\]$/i.test(avatarCandidate) ? "" : avatarCandidate;
   image.alt = String(altText || "").trim();
   image.onerror = () => {
     image.onerror = null;

@@ -35,7 +35,8 @@ globalThis.createThreadlineAccountAvatarCache = function createThreadlineAccount
   /** Reuses or downloads the current account avatar. @param {object} account - Account metadata. @param {Array} assets - Existing assets. @param {object|null} serviceCache - Native service cache. @returns {Promise<object>} Updated account and cache assets. */
   async function cacheStoredAccountAvatar(account = {}, assets = null, serviceCache = null) {
     const did = String(account?.did || "").trim();
-    const avatarUrl = String(account?.avatar || "").trim();
+    const avatarCandidate = typeof account?.avatar === "string" ? account.avatar.trim() : "";
+    const avatarUrl = /^\[object(?:\s+[^\]]+)?\]$/i.test(avatarCandidate) ? "" : avatarCandidate;
     if (!did || !avatarUrl) {
       return {
         account: {
