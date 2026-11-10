@@ -593,6 +593,7 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
  * Creates the Direct Message archive export controller.
  * @param {object} actions - App-specific rendering and browser export adapters.
  * @param {() => void} actions.assertAccess - Throws when DM access is unavailable.
+ * @param {() => Promise<boolean>} actions.confirmExport - Confirms the sensitive export handoff.
  * @param {(key: string, values?: object) => string} actions.translate - Translation callback.
  * @param {(progress: object) => void} actions.setProgress - Updates visible DM export progress.
  * @param {(parts: BlobPart[], name: string, type: string) => File} actions.createFile - Creates a browser file for download.
@@ -621,6 +622,10 @@ export function createDmArchiveExportController(actions) {
     return catalog;
   }
 
+  async function confirmSensitiveExport() {
+    return Boolean(await actions.confirmExport());
+  }
+
   /**
    * Updates the progress panel after an export completed.
    * @param {string} detailKey - Translation key for the completion detail.
@@ -642,6 +647,7 @@ export function createDmArchiveExportController(actions) {
    */
   async function exportJson(catalog) {
     const validCatalog = requireCatalog(catalog);
+    if (!await confirmSensitiveExport()) { return; }
     actions.setProgress({
       title: actions.translate("dmProgressExportTitle"),
       step: actions.translate("dmProgressExportStep"),
@@ -662,6 +668,7 @@ export function createDmArchiveExportController(actions) {
    */
   async function exportHtml(catalog) {
     const validCatalog = requireCatalog(catalog);
+    if (!await confirmSensitiveExport()) { return; }
     await actions.ensureAvatarAssets(validCatalog);
     actions.setProgress({
       title: actions.translate("dmProgressHtmlTitle"),
@@ -683,6 +690,7 @@ export function createDmArchiveExportController(actions) {
    */
   async function exportPdf(catalog) {
     const validCatalog = requireCatalog(catalog);
+    if (!await confirmSensitiveExport()) { return; }
     await actions.ensureAvatarAssets(validCatalog);
     const messages = actions.collectMessages(validCatalog);
     const assetMap = new Map();

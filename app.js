@@ -2253,6 +2253,8 @@ const dmArchiveWorkspaceRenderer = createDmArchiveWorkspaceRenderer({
 });
 const dmArchiveExportController = createDmArchiveExportController({
   assertAccess: assertDmAccessUnlocked,
+  confirmExport: () => openConfirmDialog({ title: t("dmExportConfirmTitle"), message: t("dmExportConfirmText"),
+    confirmLabel: t("confirmYes"), cancelLabel: t("confirmNo") }),
   translate: t,
   setProgress: setDmProgress,
   createFile(parts, name, type) {

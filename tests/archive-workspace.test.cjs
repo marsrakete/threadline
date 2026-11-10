@@ -146,6 +146,25 @@ test("archive run worker failures reset active controls without writing a comple
   assert.equal(fixture.state.job.percent, 3);
 });
 
+test("archive request timeout preserves a resumable checkpoint and labels the paused run", async () => {
+  const fixture = await runFixture();
+  fixture.state.catalog = { posts: [{ uri: "saved" }], summary: { imageCount: 3 } };
+  fixture.state.session = { filterKey: JSON.stringify({ scope: "range" }), nextCursor: "saved-cursor", exportedPosts: 1,
+    exportedImages: 3, status: "paused" };
+  fixture.hooks.request = async (type, payload, options) => {
+    if (type === "EXPORT_ACCOUNT_ARCHIVE_WAVE") { options.onProgress({ checkpoint: "Page 40 gespeichert" }); throw Error("Request timed out"); }
+    return null;
+  };
+  await assert.rejects(() => fixture.controller.ensure(true), /timed out/);
+  assert.equal(fixture.state.runState, "paused");
+  assert.equal(fixture.state.session.nextCursor, "saved-cursor");
+  assert.equal(fixture.state.session.exportedPosts, 1);
+  assert.equal(fixture.state.checkpoint, "Page 40 gespeichert");
+  assert.ok(fixture.calls.some(call => call.type === "SAVE_ARCHIVE_SESSION" && call.payload.session.status === "paused"));
+  assert.ok(fixture.calls.some(call => call.type === "SAVE_ARCHIVE_CATALOG"));
+  assert.equal(fixture.state.job.detail, "archiveTimeoutResumeHint:{}");
+});
+
 test("archive control sends pause/resume/cancel and restarts saved paused sessions without a run ID", async () => {
   const fixture = await runFixture();
   await fixture.controller.control("pause"); assert.equal(fixture.calls.length, 0);

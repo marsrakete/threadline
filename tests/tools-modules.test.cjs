@@ -904,8 +904,11 @@ test("DM archive export controller builds JSON, HTML and PDF downloads", async (
   const dmArchive = await importProjectModule("js/tools/dm-archive.js");
   const createdFiles = [];
   const sharedFiles = [];
+  let allowSensitiveExport = true;
+  const confirmationCalls = [];
   const exportController = dmArchive.createDmArchiveExportController({
     assertAccess() {},
+    async confirmExport() { confirmationCalls.push("confirm"); return allowSensitiveExport; },
     translate(key) {
       return key;
     },
@@ -956,6 +959,11 @@ test("DM archive export controller builds JSON, HTML and PDF downloads", async (
   assert.equal(createdFiles[1].name, "threadline-dm-self-partner-2026-09-10.html");
   assert.equal(createdFiles[2].type, "application/pdf");
   assert.equal(sharedFiles.length, 3);
+  assert.equal(confirmationCalls.length, 3);
+  allowSensitiveExport = false;
+  await exportController.exportJson(catalog);
+  assert.equal(createdFiles.length, 3);
+  assert.equal(confirmationCalls.length, 4);
 });
 
 test("Thread Explorer helpers normalize actors, feeds, records and public links", async () => {
