@@ -1636,3 +1636,9 @@ These original sources are the most useful follow-up references:
 - [AT Protocol Specification](https://atproto.com/specs/atp)
 - [Lexicon Specification](https://atproto.com/specs/lexicon)
 - [AT Protocol XRPC API Reference](https://docs.bsky.app/docs/api/at-protocol-xrpc-api)
+
+## Public profile metadata
+
+Threadline supports `pronouns`, ordered `links` from `profileViewDetailed`, and the deprecated `website` fallback defined by the [Bluesky actor lexicon](https://github.com/bluesky-social/atproto/blob/main/packages/api/lexicons/app/bsky/actor/defs.json). `js/shared/profile-metadata.js` is the shared page/classic-worker boundary. Missing fields stay absent so partial actor views do not clear detailed cached metadata; explicit empty values remain available for clearing. Link record URI/CID, labels and icon metadata are retained; destination icons are not downloaded.
+
+Pronouns are plain text in shared post identities, Actor Focus and network profile cards. HTTP(S) profile destinations are rendered as links in profile views and HTML archives; unsafe schemes and credential-bearing destinations are omitted. Archive manifests and author metadata retain the profile fields through ZIP roundtrips and resumed waves; analysis persistence also retains them. The first PDF volume receives paginated profile metadata pages with clickable link annotations when the archive account has these fields. Existing archives without the optional fields remain supported. Own-account archive source resolution refreshes public profile metadata and falls back to local metadata on failure. Profile editing is outside this feature.

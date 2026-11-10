@@ -31,12 +31,12 @@ test("archive source constructor validates adapters and exposes a frozen resolve
   assert.equal(Object.isFrozen(f.source), true); assert.deepEqual(Object.keys(f.source), ["resolve"]);
 });
 
-test("archive source fallback uses existing account fields without profile requests", async () => {
+test("archive source refreshes own profile metadata while retaining local fallback fields", async () => {
   const f = sourceFixture();
   for (const filters of [undefined, null, {}, { sourceDid: " ", sourceActor: " " }]) {
     assert.deepEqual(plain(await f.source.resolve(f.auth, filters)), { did: "did:own", handle: "Own.Test", displayName: "Own.Test", avatar: "own-avatar", isOwnAccount: true });
   }
-  assert.equal(f.calls.length, 0);
+  assert.equal(f.calls.length, 4);
   assert.equal((await f.source.resolve({ session: f.auth.session })).avatar, "");
 });
 
@@ -48,6 +48,28 @@ test("archive source profile lookup prioritizes DID, keeps auth and normalizes p
   f.responses.push(null); assert.deepEqual(plain(await f.source.resolve(f.auth, { sourceActor: " Other.Test " })),
     { did: "", handle: "Other.Test", displayName: "Other.Test", avatar: "", isOwnAccount: false });
   f.responses.push({ did: "did:other" }); assert.equal((await f.source.resolve(f.auth, { sourceDid: "did:other" })).handle, "did:other");
+});
+
+test("own archive profiles retain fresh pronouns and links in the manifest", async () => {
+  const f = sourceFixture();
+  f.responses.push({ did: "did:own", pronouns: "sie/ihr", links: [{ url: "https://example.test/profile", title: "Homepage" }] });
+  const profile = await f.source.resolve(f.auth);
+  assert.equal(profile.pronouns, "sie/ihr");
+  const state = waveState(); state.sourceProfile = profile;
+  const result = f.models.wave.result(state);
+  assert.equal(result.manifest.account.pronouns, "sie/ihr");
+  assert.equal(result.manifest.account.links[0].title, "Homepage");
+});
+
+test("archive author profile metadata survives wave restore and partial enrichment", () => {
+  const { models } = archiveModelsFixture();
+  const profile = { pronouns: "they/them", links: [{ url: "https://example.test/", title: "Site" }] };
+  const post = models.posts.build({ uri: uri(), record: { text: "Post" }, authorProfile: profile });
+  const restored = models.wave.restore({ existingCatalog: { posts: [post] }, maxPosts: 25 });
+  assert.equal(restored.records[0].authorProfile.pronouns, "they/them");
+  models.posts.merge(post, { authorProfile: { pronouns: "" } });
+  assert.equal(post.authorProfile.pronouns, "");
+  assert.equal(post.authorProfile.links[0].title, "Site");
 });
 
 test("archive source failures propagate unchanged and invalid account input rejects", async () => {

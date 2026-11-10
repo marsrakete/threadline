@@ -206,7 +206,7 @@ test("archive PDF modules render linked pages with media and localized labels", 
  * @param {boolean} avatarFixture - Supplies cached account/DM avatars and a remote archive avatar.
  * @returns {Promise<void>} Resolves when request routing and the worker fixture are installed.
  */
-async function prepareArchiveApplication(page, mediaFixture = false, avatarFixture = false) {
+async function prepareArchiveApplication(page, mediaFixture = false, avatarFixture = false, profileFixture = false) {
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.hostname === "127.0.0.1") {
@@ -215,10 +215,15 @@ async function prepareArchiveApplication(page, mediaFixture = false, avatarFixtu
     }
     await route.abort();
   });
-  await page.addInitScript(({ mediaFixture, avatarFixture }) => {
+  await page.addInitScript(({ mediaFixture, avatarFixture, profileFixture }) => {
     localStorage.setItem("threadline:settings-backup-reminder-dismissed-at", String(Date.now()));
     const rootUri = "at://did:example:archive/app.bsky.feed.post/root";
     const account = { did: "did:example:archive", handle: "archive.test", identifier: "archive.test", service: "https://bsky.social" };
+    if (profileFixture) {
+      account.pronouns = "they/them <b>literal</b>";
+      account.links = [{ uri: "at://did:example:archive/app.bsky.actor.link/one", cid: "one", url: "https://profile.test/one", title: "<b>Support</b>" },
+        { url: "https://profile.test/two", title: "Website" }, { url: "javascript:alert(1)" }];
+    }
     if (avatarFixture) {
       account.avatar = new URL("/fixture-avatar.png", location.href).href;
     }
@@ -312,7 +317,57 @@ async function prepareArchiveApplication(page, mediaFixture = false, avatarFixtu
     } } };
     Object.defineProperty(navigator.serviceWorker, "register", { value: async () => registration });
     Object.defineProperty(navigator.serviceWorker, "ready", { value: Promise.resolve(registration) });
-  }, { mediaFixture, avatarFixture });
+  }, { mediaFixture, avatarFixture, profileFixture });
+}
+
+for (const pathname of ["/", "/tools.html"]) {
+  test(`profile metadata survives HTML, ZIP roundtrip and PDF from ${pathname}`, async ({ page }, testInfo) => {
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await prepareArchiveApplication(page, false, false, true);
+    await page.goto(pathname, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#language-select")).toHaveValue("en");
+    if (pathname === "/") {
+      await page.locator('[data-page-target="tools"]').click();
+    }
+    await expect(page.locator("#archive-button")).toBeEnabled();
+    await page.locator("#archive-button").click();
+    await expect(page.locator("#archive-results")).toContainText("2");
+    const zipPending = page.waitForEvent("download");
+    await page.locator("#archive-export-zip-button").click();
+    const zip = await zipPending;
+    await page.locator("#archive-import-input").setInputFiles({ name: zip.suggestedFilename(), mimeType: "application/zip", buffer: await fs.readFile(await zip.path()) });
+    await expect(page.locator("#archive-progress-step")).toHaveText("Archive loaded.");
+    const htmlPending = page.waitForEvent("download");
+    await page.locator("#archive-actions-export-html-compact-button").click();
+    const html = await fs.readFile(await (await htmlPending).path(), "utf8");
+    const metadata = await page.evaluate(source => {
+      const doc = new DOMParser().parseFromString(source, "text/html");
+      return { text: doc.body.textContent, links: [...doc.querySelectorAll('a[href^="https://profile.test/"]')].map(a => ({ url: a.href, title: a.textContent })),
+        unsafeLinks: doc.querySelectorAll('a[href^="javascript:"]').length };
+    }, html);
+    expect(metadata.text).toContain("they/them <b>literal</b>");
+    expect(metadata.links).toEqual([{ url: "https://profile.test/one", title: "<b>Support</b>" }, { url: "https://profile.test/two", title: "Website" }]);
+    expect(metadata.unsafeLinks).toBe(0);
+    await page.evaluate(() => {
+      const original = HTMLCanvasElement.prototype.toBlob;
+      window.__profilePreviews = [];
+      HTMLCanvasElement.prototype.toBlob = function (...args) {
+        if (this.width === 1190 && this.height === 1684) { window.__profilePreviews.push(this.toDataURL("image/png")); }
+        return original.apply(this, args);
+      };
+    });
+    const pdfPending = page.waitForEvent("download");
+    await page.locator("#archive-actions-export-pdf-button").click();
+    const pdf = await pdfPending;
+    const bytes = await fs.readFile(await pdf.path());
+    expect(bytes.subarray(0, 8).toString()).toBe("%PDF-1.4");
+    expect(bytes.includes(Buffer.from("https://profile.test/one"))).toBe(true);
+    await pdf.saveAs(testInfo.outputPath("profile-metadata.pdf"));
+    const preview = await page.evaluate(() => window.__profilePreviews[0]);
+    await fs.writeFile(testInfo.outputPath("profile-overview.png"), Buffer.from(preview.split(",")[1], "base64"));
+    expect(errors).toEqual([]);
+  });
 }
 
 test("loaded archive PDF action starts an export and downloads a volume", async ({ page }, testInfo) => {

@@ -229,7 +229,9 @@ export function createArchivePdfRenderer(dependencies) {
     context.fillText(pdfAuthorTitle, cardContentX, cursorY);
     context.fillStyle = "#577194";
     context.font = `${9.5 * scale}px "Segoe UI", Aptos, sans-serif`;
-    context.fillText(`@${post.authorHandle || dependencies.account() || "bluesky"}`, cardContentX, cursorY + 16 * scale);
+    let authorHandle = `@${post.authorHandle || dependencies.account() || "bluesky"}`;
+    if (post.authorProfile?.pronouns) { authorHandle += ` · ${post.authorProfile.pronouns}`; }
+    context.fillText(authorHandle, cardContentX, cursorY + 16 * scale);
     const dateText = formatHistoryTimestamp(post.createdAt);
     const dateWidth = context.measureText(dateText).width;
     context.fillText(dateText, x + width - innerPadding - dateWidth, cursorY + 2 * scale);
@@ -499,7 +501,55 @@ export function createArchivePdfRenderer(dependencies) {
       annotations
     };
   }
+  /** Renders paginated public profile metadata for the archive account. @param {object} catalog - Archive manifest and account. @returns {Promise<object[]>} PDF page images with clickable profile links. */
+  async function profilePages(catalog) {
+    const profile = catalog?.manifest?.account || catalog?.account || {};
+    const links = dependencies.profileLinks?.(profile) || [];
+    if (!profile.pronouns && !links.length) { return []; }
+    const rows = [{ text: profile.displayName || profile.handle || "" }];
+    if (profile.pronouns) { rows.push({ text: `${t("profilePronounsLabel")}: ${profile.pronouns}` }); }
+    if (links.length) { rows.push({ text: t("profileLinksLabel") }); }
+    for (const link of links) {
+      let text = link.url;
+      if (link.title) { text = `${link.title}\n${link.url}`; }
+      rows.push({ text, url: link.url });
+    }
+    const pages = [];
+    let canvas;
+    let context;
+    let annotations;
+    let y;
+    function beginPage() {
+      canvas = dependencies.canvas();
+      canvas.width = 1190; canvas.height = 1684;
+      context = canvas.getContext("2d");
+      context.fillStyle = "#ffffff"; context.fillRect(0, 0, canvas.width, canvas.height);
+      context.font = '24px "Segoe UI", Aptos, sans-serif';
+      context.fillStyle = "#10233e"; context.textBaseline = "top";
+      annotations = []; y = 64;
+    }
+    async function finishPage() {
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+      pages.push({ width: canvas.width, height: canvas.height, bytes: new Uint8Array(await blob.arrayBuffer()), annotations });
+    }
+    beginPage();
+    for (const row of rows) {
+      const lines = buildWrappedPdfLines(context, row.text, 1062);
+      for (const line of lines) {
+        if (y + 34 > 1620) { await finishPage(); beginPage(); }
+        drawArchivePdfTextBlock(context, [line], 64, y, 34);
+        if (row.url) {
+          annotations.push({ url: row.url, rect: canvasRectToPdfRect({ x: 64, y, width: 1062, height: 34 }, canvas.width, canvas.height) });
+        }
+        y += 34;
+      }
+      y += 20;
+    }
+    await finishPage();
+    return pages;
+  }
   return {
+    profilePages,
     post: drawArchivePdfPostCard,
     page: renderArchivePdfCanvasPage
   };

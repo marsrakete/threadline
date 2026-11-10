@@ -356,6 +356,7 @@ globalThis.createThreadlineAnalysisService = function createThreadlineAnalysisSe
         handle: String(profile?.handle || requestedActor).trim(),
         displayName: String(profile?.displayName || profile?.handle || requestedActor).trim(),
         avatar: String(profile?.avatar || "").trim(),
+        ...globalThis.ThreadlineProfileMetadata.normalize(profile),
         postsCount: Number(profile?.postsCount) || 0,
         followersCount: Number(profile?.followersCount) || 0,
         followsCount: Number(profile?.followsCount) || 0,

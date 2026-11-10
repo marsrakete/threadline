@@ -211,6 +211,7 @@ globalThis.createThreadlineArchiveWaveController = function createThreadlineArch
           authorDisplayName: entry.authorDisplayName || sourceProfile.displayName || sourceProfile.handle || "",
           authorDid: entry.authorDid || sourceDid,
           authorAvatar: entry.authorAvatar || sourceProfile.avatar || "",
+          authorProfile: entry.authorProfile || sourceProfile,
           counts: entry.counts || null,
         }),
         entry.value,
@@ -323,6 +324,7 @@ globalThis.createThreadlineArchiveWaveController = function createThreadlineArch
               authorDisplayName: postView.author?.displayName || postView.author?.handle || "",
               authorDid: postView.author?.did || "",
               authorAvatar: postView.author?.avatar || "",
+              authorProfile: postView.author,
               counts: {
                 likeCount: Number(postView.likeCount) || 0,
                 replyCount: Number(postView.replyCount) || 0,

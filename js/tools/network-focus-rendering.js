@@ -88,6 +88,9 @@ export function buildNetworkFocusCardModel(state, options) {
     ] });
   }
   if (active.description) { sections.push({ kind: "description", text: active.description }); }
+  if (active.pronouns) { sections.push({ kind: "line", text: options.t("profilePronounsValue", { pronouns: active.pronouns }) }); }
+  const links = options.profileLinks?.(active) || [];
+  if (links.length) { sections.push({ kind: "links", links }); }
   if (state.focusLoadingDid && node?.did === state.focusLoadingDid) { sections.push({ kind: "note", text: options.t("networkFocusLoading") }); }
   if (detail && node) { sections.push({ kind: "line", text: options.t("networkStagePreviewMeta", {
     followers: options.formatCount(detail.followersPreview?.length || 0), following: options.formatCount(detail.followsPreview?.length || 0) }) }); }
@@ -139,6 +142,19 @@ export function createNetworkFocusCardRenderer(elements, options) {
       if (section.kind === "group") {
         const group = clone("meta"); const container = group.querySelector("div");
         for (const item of section.lines) { container.append(line(item)); } summary.append(group);
+      } else if (section.kind === "links") {
+        const group = clone("meta");
+        const container = group.querySelector("div");
+        container.classList.add("profile-links");
+        for (const link of section.links) {
+          const anchor = container.ownerDocument.createElement("a");
+          anchor.href = link.url;
+          anchor.textContent = link.title || link.url;
+          anchor.target = "_blank";
+          anchor.rel = "noopener noreferrer";
+          container.append(anchor);
+        }
+        summary.append(group);
       } else if (section.kind === "description") {
         const description = clone("description"); description.querySelector("summary").textContent = options.t("networkDescriptionButton");
         description.querySelector("p").textContent = section.text; summary.append(description);

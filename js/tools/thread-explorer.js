@@ -1452,6 +1452,19 @@ export function renderThreadExplorerActorFocusPanel(options = {}) {
   }
 
   panel.hidden = false;
+  if (options.links) {
+    const links = options.profileLinks?.(actor) || [];
+    options.links.replaceChildren();
+    options.links.hidden = links.length === 0;
+    for (const link of links) {
+      const anchor = options.links.ownerDocument.createElement("a");
+      anchor.href = link.url;
+      anchor.textContent = link.title || link.url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      options.links.append(anchor);
+    }
+  }
   let label = "";
   if (typeof options.getLabel === "function") {
     label = options.getLabel(actor);
@@ -1465,6 +1478,7 @@ export function renderThreadExplorerActorFocusPanel(options = {}) {
   if (options.handle) {
     if (actor.handle) {
       options.handle.textContent = `@${actor.handle}`;
+      if (actor.pronouns) { options.handle.append(document.createTextNode(` · ${actor.pronouns}`)); }
     } else {
       options.handle.textContent = actor.did || "";
     }

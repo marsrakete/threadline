@@ -59,9 +59,13 @@ function getPostHandleLabel(actor) {
  * @returns {{authorLabel: string, handleLabel: string}} Visible author fields.
  */
 function getPostAuthorFields(actor, fallbackLabel) {
+  let handleLabel = getPostHandleLabel(actor);
+  if (typeof actor?.pronouns === "string" && actor.pronouns.trim()) {
+    handleLabel += ` · ${actor.pronouns.trim()}`;
+  }
   return {
     authorLabel: getPostActorLabel(actor, fallbackLabel),
-    handleLabel: getPostHandleLabel(actor),
+    handleLabel,
   };
 }
 

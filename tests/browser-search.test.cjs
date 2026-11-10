@@ -637,7 +637,8 @@ for (const pathname of ["/", "/tools.html"]) {
     }));
     expect(result.error).toBeUndefined(); expect(result.wired).toBe(true); expect(result.cached).toBe(true); expect(result.frozen).toBe(true);
     expect(result.own).toMatchObject({did:"did:example:own",isOwnAccount:true}); expect(result.other).toMatchObject({handle:"other.test",displayName:"<b>Other</b>",avatar:"avatar",isOwnAccount:false});
-    expect(result.sourceCalls).toHaveLength(1); expect(result.sourceCalls[0].params.actor).toBe("did:example:other");
+    expect(result.sourceCalls).toHaveLength(2); expect(result.sourceCalls[0].params.actor).toBe("did:example:own");
+    expect(result.sourceCalls[1].params.actor).toBe("did:example:other");
     expect(result.sourceCalls[0].transport.headers.authorization).toBe("Bearer fixture"); expect(result.resumeRefs).toEqual({copied:true,raw:true,images:true});
     expect(result.completed.manifest).toMatchObject({postCount:1,pageCount:7,appVersion:cacheVersion,imageCount:0,phase:"assets"});
     expect(result.completed.posts[0]).toMatchObject({text:"<b>Literal saved</b>",counts:{likeCount:4}}); expect(result.completed.assets).toEqual([]);
@@ -1083,7 +1084,13 @@ for (const pathname of ["/", "/tools.html"]) {
     await page.locator("#search-query-input").fill("word");
     await page.locator("#search-run-button").click();
     await expect.poll(() => page.evaluate(() => window.__search.pending.length)).toBe(1);
-    await page.evaluate(() => window.__finishSearch(0, { items: [window.__searchItem("alignment")] }));
+    await page.evaluate(() => {
+      const item = window.__searchItem("alignment");
+      item.post.author.pronouns = "they/them <b>literal</b>";
+      window.__finishSearch(0, { items: [item] });
+    });
+    await expect(page.locator(".search-result-item .thread-explorer-post-handle")).toContainText("they/them <b>literal</b>");
+    await expect(page.locator(".search-result-item .thread-explorer-post-handle b")).toHaveCount(0);
     const button = page.locator(".search-result-thread-explorer-button");
     await expect(button).toBeVisible();
     for (const width of [390, 1280]) {

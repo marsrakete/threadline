@@ -1,4 +1,6 @@
 const ARCHIVE_HTML_I18N_KEYS = [
+    "profilePronounsLabel",
+    "profileLinksLabel",
     "archiveHeaderEyebrow",
     "archiveHtmlTitle",
     "archiveHtmlGenerated",
