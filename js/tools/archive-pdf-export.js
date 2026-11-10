@@ -123,6 +123,7 @@ export function createArchivePdfExportController(dependencies) {
       throw new Error(t("archiveNeedArchive"));
     }
     setArchiveProgress({
+      operation: "pdf",
       title: t("archiveProgressPdfTitle"),
       step: t("archiveProgressPdfStep", {
         index: 1,
@@ -132,13 +133,14 @@ export function createArchivePdfExportController(dependencies) {
       detail: t("archiveProgressPdfPreparing")
     });
     await waitForUiFrame();
-    await ensureArchiveAvatarAssets(catalog);
+    await ensureArchiveAvatarAssets(catalog, { downloadMissing: false });
     const options = getArchivePdfOptions();
     const orderedPosts = buildArchiveThreadGroups([...catalog.posts].reverse()).flatMap(group => group.posts);
     const bands = splitArchiveIntoBands(orderedPosts, options);
     const baseName = makeArchiveFileBaseName(catalog);
     for (const [bandIndex, posts] of bands.entries()) {
       setArchiveProgress({
+        operation: "pdf",
         title: t("archiveProgressPdfTitle"),
         step: t("archiveProgressPdfStep", {
           index: bandIndex + 1,
@@ -163,6 +165,7 @@ export function createArchivePdfExportController(dependencies) {
         }
         const percent = Math.min(99, Math.round((bandBase + pageShare / Math.max(1, bands.length)) * 100));
         setArchiveProgress({
+          operation: "pdf",
           title: t("archiveProgressPdfTitle"),
           step: t("archiveProgressPdfStep", {
             index: bandIndex + 1,
@@ -183,6 +186,7 @@ export function createArchivePdfExportController(dependencies) {
       });
     }
     setArchiveProgress({
+      operation: "pdf",
       title: t("archiveProgressDoneTitle"),
       step: t("archiveProgressDoneStep"),
       percent: 100,

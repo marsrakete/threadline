@@ -87,6 +87,15 @@ export function createArchiveWorkspaceRenderer(elements, dependencies) {
     elements.progressStep.textContent = job.step || t("archiveProgressIdleStep");
     elements.progressDetail.textContent = job.detail || "";
     elements.progressFill.style.width = `${Math.max(0, Math.min(100, Number(job.percent) || 0))}%`;
+    const exportProgress = elements.exportPdf?.closest(".archive-card")?.querySelector(".archive-export-progress");
+    if (exportProgress) {
+      exportProgress.hidden = job.operation !== "pdf";
+      const percent = Math.max(0, Math.min(100, Number(job.percent) || 0));
+      exportProgress.classList.toggle("is-running", job.operation === "pdf" && percent < 100);
+      exportProgress.querySelector("strong").textContent = job.step || job.title || "";
+      exportProgress.querySelector("progress").value = percent;
+      exportProgress.querySelector('[data-slot="detail"]').textContent = job.detail || "";
+    }
     heartbeat();
     status();
   }

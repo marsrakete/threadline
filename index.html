@@ -2747,6 +2747,11 @@
         <p class="eyebrow" data-i18n="archiveExportEyebrow"></p>
         <div class="help-heading"><h3 data-i18n="archiveExportTitle"></h3><button type="button" class="help-trigger" data-help-topic="archive_actions">?</button></div>
         <div class="archive-actions"></div><p class="settings-note" data-i18n="archiveActionsNote"></p>
+        <div class="archive-export-progress" hidden role="status" aria-live="polite">
+          <strong id="archive-export-progress-title"></strong>
+          <progress max="100" value="0" aria-labelledby="archive-export-progress-title"></progress>
+          <p class="settings-note" data-slot="detail"></p>
+        </div>
       </section>
     </template>
     <template id="archive-layout-tools-template"><div id="archive-tools-heading" class="archive-tools-heading"><p class="eyebrow" data-i18n="archiveToolsEyebrow"></p><h3 data-i18n="archiveToolsTitle"></h3></div></template>

@@ -126,6 +126,16 @@ test("archive avatar failures remain optional and existing filename collisions k
   assert.deepEqual(failures, ["missing"]);
 });
 
+test("local-only avatar preparation retains embedded assets without requesting remote avatars", async () => {
+  const { assets, calls } = await avatarFixture();
+  const catalog = { posts: [{ authorDid: "self" }, { authorAvatar: "https://example.test/missing" },
+    { authorAvatarPath: "avatars/existing.png" }], assets: [{ path: "avatars/existing.png", bytes: new Uint8Array([1]) }] };
+  await assets.archive(catalog, { downloadMissing: false });
+  assert.deepEqual(calls, []);
+  assert.equal(catalog.posts[2].authorAvatarPath, "avatars/existing.png");
+  assert.equal(catalog.assets.length, 1);
+});
+
 test("DM avatar hydration propagates cached self, primary-partner and member paths without downloading", async () => {
   const { assets, calls } = await avatarFixture();
   const catalog = { manifest: { account: { did: "self", avatarPath: "self.png" } }, partner: { did: "partner" },

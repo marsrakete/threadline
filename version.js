@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.359",
-  cacheVersion: "v378",
-  label: "Load archive avatars through public PDS blobs",
+  appVersion: "0.4.362",
+  cacheVersion: "v381",
+  label: "Integrate archive avatar and PDF export fixes",
 });
