@@ -69,6 +69,82 @@ test("DM partner listing downloads assets once per path and keeps failed contact
   assert.equal(result.conversations[0].members[0].avatarPath, result.assets[0].path);
   assert.equal(result.assets[0].bytes.length, result.assets[0].sizeBytes);
   assert.equal(f.progress.at(-1).percent, 100);
+  assert.deepEqual(f.calls.filter((call) => call[0] === "profileRecord").map((call) => call[1]), ["fail"]);
+});
+
+test("DM avatar hydration reads migrated profile blobs from the actor's current PDS", async () => {
+  const f = dmServiceFixture({
+    profileRecords: {
+      peer: {
+        handle: "peer.eurosky.social",
+        displayName: "Eurosky Peer",
+        avatar: { ref: { $link: "eurosky-avatar-cid" } },
+      },
+    },
+  });
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", handle: "old.test", displayName: "Old name", avatar: "https://cdn.bsky.app/fail-old-avatar" }],
+    conversations: [],
+  }, f.notify);
+  assert.equal(result.recentContacts[0].handle, "peer.eurosky.social");
+  assert.equal(result.recentContacts[0].displayName, "Eurosky Peer");
+  assert.notEqual(result.recentContacts[0].avatar, "[object Object]");
+  assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "eurosky-avatar-cid"]);
+  assert.equal(f.calls.some((call) => call[0] === "asset" && call[1].includes("fail-old-avatar")), true);
+});
+
+test("DM avatar hydration loads blob-reference avatars directly without stringifying them", async () => {
+  const f = dmServiceFixture();
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", avatar: { ref: { $link: "profile-blob-cid" } } }],
+    conversations: [],
+  });
+  assert.equal(result.recentContacts[0].avatarPath, "dm-avatars/peer.png");
+  assert.equal(f.calls.some((call) => call[0] === "asset"), false);
+  assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "profile-blob-cid"]);
+});
+
+test("DM avatar hydration reuses matching cached blobs without network downloads", async () => {
+  const cachedAsset = { path: "dm-avatars/peer.png", type: "image/png", sizeBytes: 3, bytes: new Uint8Array([1, 2, 3]) };
+  const f = dmServiceFixture();
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", avatar: "https://cdn.example/peer.png" }],
+    conversations: [{ id: "one", members: [{ did: "peer" }] }],
+    cachedRecentContacts: [{ did: "peer", avatar: "https://cdn.example/peer.png", avatarPath: cachedAsset.path }],
+    cachedAssets: [cachedAsset],
+  });
+  assert.equal(result.recentContacts[0].avatarPath, cachedAsset.path);
+  assert.deepEqual([...result.assets[0].bytes], [1, 2, 3]);
+  assert.equal(result.conversations[0].members[0].avatarPath, cachedAsset.path);
+  assert.equal(f.calls.some((call) => ["blob", "asset", "profileRecord"].includes(call[0])), false);
+});
+
+test("DM avatar hydration repairs a cached object-string URL using the current blob", async () => {
+  const f = dmServiceFixture({
+    profileError: true,
+    profileRecords: { peer: { avatar: { ref: { $link: "eurosky-current-cid" } } } },
+  });
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", avatar: "[object Object]" }],
+    conversations: [],
+  });
+  assert.equal(result.recentContacts[0].avatar, "");
+  assert.equal(result.recentContacts[0].avatarPath, "dm-avatars/peer.png");
+  assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "eurosky-current-cid"]);
+});
+
+test("failed migrated avatar blobs do not become object-string image URLs", async () => {
+  const f = dmServiceFixture({
+    assetError: true,
+    profileRecords: { peer: { avatar: { ref: { $link: "current-avatar-cid" } } } },
+  });
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", avatar: "https://cdn.bsky.app/fail-old-avatar" }],
+    conversations: [],
+  });
+  assert.equal(result.recentContacts[0].avatarPath, "");
+  assert.equal(result.recentContacts[0].avatar, "");
+  assert.equal(result.assets.length, 0);
 });
 
 test("DM avatar hydration copies inputs and batches missing profiles with authenticated transport", async () => {

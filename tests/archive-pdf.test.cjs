@@ -47,7 +47,8 @@ test("archive PDF card layout measures previews, failures, edits, metrics and in
   assert.equal(preview.thumbFailed, true);
   assert.equal(preview.hasThumb, false);
   assert.equal(preview.failedLines.length, 1);
-  assert.ok(preview.height > 0);
+  assert.ok(preview.height >= preview.thumbHeight + preview.cardPadding * 2);
+  assert.ok(preview.height >= 116 * 0.3 * 0.74 + preview.cardPadding * 2);
   const post = { text: "Text", threadDepth: 20 };
   assert.deepEqual(layout.frame(20, 400, post, { indentThreads: true }, 1), { depth: 4, indent: 72, x: 92, width: 328 });
   assert.equal(layout.frame(20, 400, post, {}, 1).depth, 0);

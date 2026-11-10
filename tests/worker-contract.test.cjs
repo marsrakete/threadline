@@ -89,3 +89,55 @@ test("public archive avatar download resolves CDN DID/CID through the owner PDS 
   assert.equal(target.searchParams.get("did"), "did:plc:nex3m33ljbp7casi4wx3tqja");
   assert.equal(requests[0].options.headers, undefined);
 });
+
+test("current actor profile record is requested from the DID document PDS", async () => {
+  const { context } = loadAtprotoWorkerContext();
+  const requests = [];
+  context.assertSecureServiceUrl = url => assert.match(url, /^https:\/\//);
+  context.normalizeServiceUrl = url => url;
+  context.resolvePdsForDid = async (did, fallback, cache) => {
+    assert.equal(did, "did:plc:peer");
+    assert.equal(fallback, "https://bsky.social");
+    assert.equal(cache instanceof Map, true);
+    return "https://eurosky.social";
+  };
+  context.createThreadlineTransportService = () => ({
+    get: async (endpoint, params, options) => {
+      requests.push({ endpoint, params, options });
+      return { value: { handle: "peer.eurosky.social", avatar: { ref: { $link: "current-cid" } } } };
+    },
+    request: async () => ({}),
+  });
+  const cache = new Map();
+  const profile = await context.fetchProfileRecordForDid("did:plc:peer", { service: "https://bsky.social" }, cache);
+  assert.equal(profile.handle, "peer.eurosky.social");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].endpoint, "com.atproto.repo.getRecord");
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0].params)), {
+    repo: "did:plc:peer",
+    collection: "app.bsky.actor.profile",
+    rkey: "self",
+  });
+  assert.equal(requests[0].options.base, "https://eurosky.social/xrpc");
+});
+
+test("profile lookup falls back to the public AppView when the current PDS record is unavailable", async () => {
+  const { context } = loadAtprotoWorkerContext();
+  const requests = [];
+  context.assertSecureServiceUrl = url => assert.match(url, /^https:\/\//);
+  context.normalizeServiceUrl = url => url;
+  context.resolvePdsForDid = async () => "https://eurosky.social";
+  context.createThreadlineTransportService = () => ({
+    get: async (endpoint, params, options) => {
+      requests.push({ endpoint, params, options });
+      if (endpoint === "com.atproto.repo.getRecord") { throw new Error("PDS CORS/read unavailable"); }
+      return { did: "did:plc:peer", handle: "peer.eurosky.social", avatar: "https://cdn.bsky.app/img/avatar/plain/did:plc:peer/current-cid@jpeg" };
+    },
+    request: async () => ({}),
+  });
+  const profile = await context.fetchProfileRecordForDid("did:plc:peer", { service: "https://bsky.social" }, new Map());
+  assert.equal(profile.handle, "peer.eurosky.social");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].endpoint, "app.bsky.actor.getProfile");
+  assert.equal(requests[1].options.base, context.API_BASE);
+});

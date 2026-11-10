@@ -1,7 +1,6 @@
 const DEFAULT_AVATAR_SVG = '<svg width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="none" xmlns="http://www.w3.org/2000/svg" data-testid="userAvatarFallback"><circle cx="12" cy="12" r="12" fill="#0070ff"></circle><circle cx="12" cy="9.5" r="3.5" fill="#fff"></circle><path stroke-linecap="round" stroke-linejoin="round" fill="#fff" d="M 12.058 22.784 C 9.422 22.784 7.007 21.836 5.137 20.262 C 5.667 17.988 8.534 16.25 11.99 16.25 C 15.494 16.25 18.391 18.036 18.864 20.357 C 17.01 21.874 14.64 22.784 12.058 22.784 Z"></path></svg>';
 
 const DEFAULT_AVATAR_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(DEFAULT_AVATAR_SVG)}`;
-
 /**
  * Resolves a saved account avatar by stored path, DID, original URL or remote fallback.
  * @param {object} account - Account identity, remote URL and optional stored avatar path.
@@ -21,13 +20,15 @@ export function resolveStoredAccountAvatar(account = {}, assets = [], dataUri) {
       return dataUri(asset);
     }
   }
+  const avatarCandidate = typeof account?.avatar === "string" ? account.avatar.trim() : "";
+  const avatarUrl = /^\[object(?:\s+[^\]]+)?\]$/i.test(avatarCandidate) ? "" : avatarCandidate;
   const fallbackAsset = source.find((entry) =>
-    (account?.did && entry.did === account.did) || (account?.avatar && entry.url === account.avatar));
+    (account?.did && entry.did === account.did) || (avatarUrl && entry.url === avatarUrl));
   if (fallbackAsset) {
     account.avatarPath = fallbackAsset.path;
     return dataUri(fallbackAsset);
   }
-  return String(account?.avatar || "").trim();
+  return avatarUrl;
 }
 
 /**
@@ -42,7 +43,8 @@ function setAvatarImage(image, avatarUrl, altText) {
     return;
   }
 
-  const normalizedUrl = String(avatarUrl || "").trim();
+  const avatarCandidate = typeof avatarUrl === "string" ? avatarUrl.trim() : "";
+  const normalizedUrl = /^\[object(?:\s+[^\]]+)?\]$/i.test(avatarCandidate) ? "" : avatarCandidate;
   image.alt = String(altText || "").trim();
   image.onerror = () => {
     image.onerror = null;

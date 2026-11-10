@@ -435,6 +435,7 @@ export function createArchivePdfRenderer(dependencies) {
         skipped: skippedImageCount
       }), margin + 18 * scale, margin + 48 * scale);
     }
+    const threadBackgroundStartY = cursorY;
     const baseCardX = margin + 18 * scale;
     const baseCardWidth = pageWidth - 36 * scale;
     const laidOutPosts = [];
@@ -474,9 +475,12 @@ export function createArchivePdfRenderer(dependencies) {
       const groupY = first.y - 10 * scale;
       const groupWidth = baseCardWidth + 12 * scale;
       const groupHeight = last.y + last.cardHeight - first.y + 20 * scale;
-      fillRoundedRect(context, groupX, groupY, groupWidth, groupHeight, 22 * scale, "rgba(255,255,255,0.72)");
-      strokeRoundedRect(context, groupX, groupY, groupWidth, groupHeight, 22 * scale, "#d7e3f5", 1 * scale);
-      fillRoundedRect(context, groupX + 10 * scale, groupY + 14 * scale, 4 * scale, groupHeight - 28 * scale, 3 * scale, "#d95f4b");
+      const clippedGroupY = Math.max(groupY, threadBackgroundStartY);
+      const clippedGroupHeight = Math.max(0, groupY + groupHeight - clippedGroupY);
+      if (clippedGroupHeight === 0) { return; }
+      fillRoundedRect(context, groupX, clippedGroupY, groupWidth, clippedGroupHeight, 22 * scale, "rgba(255,255,255,0.72)");
+      strokeRoundedRect(context, groupX, clippedGroupY, groupWidth, clippedGroupHeight, 22 * scale, "#d7e3f5", 1 * scale);
+      fillRoundedRect(context, groupX + 10 * scale, clippedGroupY + 14 * scale, 4 * scale, Math.max(0, clippedGroupHeight - 28 * scale), 3 * scale, "#d95f4b");
     });
     for (const entry of laidOutPosts) {
       const inThreadGroup = (entry.depth || 0) > 0 || pageGroups.some(group => group.groupKey === entry.groupKey && group.entries.length > 1);

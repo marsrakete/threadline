@@ -2283,6 +2283,7 @@ test("core page modules load together and preserve page-local workspace rules", 
     const fragment = utils.cloneTemplate("segment-template");
     const directFragment = templates.cloneTemplateContent(document.querySelector("#segment-template"));
     let selectedParticipantDids = [];
+    let dmAvatarSetCount = 0;
     const dmContactList = document.createElement("div");
     const dmSelectionNote = document.createElement("p");
     const dmSummary = document.createElement("div");
@@ -2335,6 +2336,7 @@ test("core page modules load together and preserve page-local workspace rules", 
         return "";
       },
       setAvatarImage(image, source, fallback) {
+        dmAvatarSetCount += 1;
         image.alt = fallback;
         image.src = source;
       },
@@ -2357,7 +2359,7 @@ test("core page modules load together and preserve page-local workspace rules", 
     dmRenderer.renderWorkspace();
     const dmContactAvatar = dmContactList.querySelector(".dm-contact-avatar");
     const dmContactButton = dmContactList.querySelector(".dm-contact-chip");
-    dmContactList.querySelector("button").click();
+    dmContactButton.click();
     const calls = [];
     const opened = toolsPage.openToolsWorkspace("search", {
       search() { calls.push("search"); },
@@ -2378,6 +2380,9 @@ test("core page modules load together and preserve page-local workspace rules", 
       dmContactAvatarSource: dmContactAvatar?.src || "",
       dmContactButtonTitle: dmContactButton?.getAttribute("title") || "",
       dmContactButtonLabel: dmContactButton?.getAttribute("aria-label") || "",
+      dmContactButtonSelected: dmContactButton?.classList.contains("is-selected") || false,
+      dmContactAvatarPreserved: dmContactAvatar === dmContactList.querySelector(".dm-contact-avatar"),
+      dmAvatarSetCount,
       dmSelectedParticipantDids: selectedParticipantDids,
       opened,
       calls,
@@ -2400,6 +2405,9 @@ test("core page modules load together and preserve page-local workspace rules", 
     dmContactAvatarSource: "https://cdn.example/alice.jpg",
     dmContactButtonTitle: "",
     dmContactButtonLabel: "Alice @alice.test",
+    dmContactButtonSelected: true,
+    dmContactAvatarPreserved: true,
+    dmAvatarSetCount: 1,
     dmSelectedParticipantDids: ["did:plc:alice"],
     opened: true,
     calls: ["search"],
@@ -2415,11 +2423,14 @@ test("browser-bound shared modules create safe avatar and version behavior", asy
     const bootstrap = await import("/js/core/app-bootstrap.js");
     const image = document.createElement("img");
     accounts.setAvatarImage(image, "", "Alice");
+    const objectAvatarImage = document.createElement("img");
+    accounts.setAvatarImage(objectAvatarImage, { ref: { $link: "blob-cid" } }, "Object avatar");
     const version = await bootstrap.fetchVersionInfo();
 
     return {
       avatarAlt: image.alt,
       hasFallbackAvatar: image.src.startsWith("data:image/svg+xml"),
+      objectAvatarUsesFallback: objectAvatarImage.src.startsWith("data:image/svg+xml"),
       versionSignature: bootstrap.versionSignature(version),
       versionMatchesPreload: version.appVersion === bootstrap.CURRENT_VERSION_INFO.appVersion,
     };
@@ -2427,6 +2438,7 @@ test("browser-bound shared modules create safe avatar and version behavior", asy
 
   expect(result.avatarAlt).toBe("Alice");
   expect(result.hasFallbackAvatar).toBe(true);
+  expect(result.objectAvatarUsesFallback).toBe(true);
   expect(result.versionSignature).toContain("|");
   expect(result.versionMatchesPreload).toBe(true);
 });

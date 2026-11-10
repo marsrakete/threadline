@@ -256,7 +256,7 @@ export function createArchivePdfLayout(dependencies) {
     }
     const textHeight = titleHeight + descriptionSpace + urlSpace;
     let thumbnailHeight;
-    if (hasThumb) {
+    if (hasThumbSlot) {
       thumbnailHeight = thumbHeight;
     } else {
       thumbnailHeight = 0;

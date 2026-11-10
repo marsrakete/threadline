@@ -10,7 +10,7 @@
  * @returns {{exportArchive: Function, checkAccess: Function, listPartners: Function, hydrateAvatars: Function}} Frozen service API.
  */
 globalThis.createThreadlineDmService = function createThreadlineDmService(options) {
-  for (const name of ["session", "chat", "request", "base", "accountAvatar", "remoteAsset", "blob", "cid", "extension", "now", "randomUUID", "text"]) {
+  for (const name of ["session", "chat", "request", "base", "accountAvatar", "profileRecord", "remoteAsset", "blob", "cid", "extension", "now", "randomUUID", "text"]) {
     if (typeof options?.[name] !== "function") {
       throw new TypeError("DM service requires " + name);
     }
@@ -32,6 +32,25 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
       return value;
     }
     return [];
+  }
+  /** Rejects object-coercion strings left by earlier avatar handling. */
+  function normalizeAvatarUrl(value) {
+    if (typeof value !== "string") {
+      return "";
+    }
+    const url = value.trim();
+    return /^\[object(?:\s+[^\]]+)?\]$/i.test(url) ? "" : url;
+  }
+  /** Identifies one avatar version across CDN URLs and AT blob references. */
+  function getAvatarIdentity(contact) {
+    const did = String(contact?.did || "").trim();
+    const url = normalizeAvatarUrl(contact?.avatar);
+    const cid = getBlobCidFromRef(contact?.avatar)
+      || (typeof globalThis.parseBlobUrlInfo === "function" ? globalThis.parseBlobUrlInfo(url)?.cid || "" : "");
+    if (cid) {
+      return `${did}|${cid}`;
+    }
+    return url ? `${did}|${url}` : "";
   }
   /** Calculates the existing avatar progress percentage, including an empty-list fallback.
    * @param {number} index - Zero-based avatar index. @param {number} count - Avatar count.
@@ -370,7 +389,9 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
               did: member.did,
               handle: member.handle || "",
               displayName: member.displayName || member.handle || "",
-              avatar: member.avatar || "",
+              avatar: typeof member.avatar === "string" && normalizeAvatarUrl(member.avatar)
+                ? normalizeAvatarUrl(member.avatar)
+                : member.avatar || "",
               lastMessageAt: normalizedConvo.lastMessageAt || normalizedConvo.updatedAt || "",
               conversationId: normalizedConvo.id,
             });
@@ -440,7 +461,50 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
    */
   async function attachPartnerAvatar(auth, contact, conversations, assets, seenAssetPaths, pdsServiceCache) {
     try {
-      const blob = await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
+      const avatarUrl = normalizeAvatarUrl(contact.avatar);
+      if (typeof contact.avatar === "string") {
+        contact.avatar = avatarUrl;
+      }
+      let blob;
+      try {
+        const providedAvatarCid = getBlobCidFromRef(contact.avatar);
+        if (providedAvatarCid) {
+          blob = await downloadBlobForDid(auth, contact.did, providedAvatarCid, pdsServiceCache);
+        } else if (avatarUrl) {
+          blob = await downloadRemoteAssetViaBlob(auth, avatarUrl, contact.did, pdsServiceCache);
+        } else {
+          throw new Error("Avatar reference is not a URL or blob CID.");
+        }
+      } catch (staleAvatarError) {
+        const failedAvatarCid = getBlobCidFromRef(contact.avatar)
+          || (typeof globalThis.parseBlobUrlInfo === "function" ? globalThis.parseBlobUrlInfo(contact.avatar)?.cid || "" : "");
+        const profile = typeof options.profileRecord === "function"
+          ? await options.profileRecord(contact.did, auth, pdsServiceCache).catch(() => null)
+          : null;
+        const profileAvatarUrl = normalizeAvatarUrl(profile?.avatar);
+        const profileAvatarCid = typeof globalThis.parseBlobUrlInfo === "function"
+          ? globalThis.parseBlobUrlInfo(profileAvatarUrl)?.cid || ""
+          : "";
+        const currentAvatarCid = getBlobCidFromRef(profile?.avatar) || profileAvatarCid;
+        if (profile) {
+          contact.handle = String(profile.handle || contact.handle || "").trim();
+          contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
+          if (profileAvatarUrl) {
+            contact.avatar = profileAvatarUrl;
+          } else if (currentAvatarCid) {
+            contact.avatar = "";
+          }
+          if (!currentAvatarCid) {
+            contact.avatar = "";
+            contact.avatarPath = "";
+            return;
+          }
+        }
+        if (!currentAvatarCid || currentAvatarCid === failedAvatarCid) {
+          throw staleAvatarError;
+        }
+        blob = await downloadBlobForDid(auth, contact.did, currentAvatarCid, pdsServiceCache);
+      }
       const extension = getAssetExtensionFromMimeType(blob.type);
       const slug = String(contact.handle || contact.did || "partner").replace(/[^\w.-]+/g, "-").slice(0, 60) || "partner";
       const path = `dm-avatars/${slug}.${extension}`;
@@ -482,7 +546,37 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
     const seenAssetPaths = new Set();
     const pdsServiceCache = new Map();
     await hydrateMissingDmPartnerProfiles(auth, contacts);
-    const avatarContacts = contacts.filter((contact) => contact.avatar);
+    const cachedContacts = new Map(arrayOrEmpty(payload.cachedRecentContacts)
+      .filter((contact) => contact?.did)
+      .map((contact) => [contact.did, contact]));
+    const cachedAssets = new Map(arrayOrEmpty(payload.cachedAssets)
+      .filter((asset) => asset?.path)
+      .map((asset) => [asset.path, asset]));
+    contacts.forEach((contact) => {
+      const cached = cachedContacts.get(contact.did);
+      const identity = getAvatarIdentity(contact);
+      if (!cached || !identity || identity !== getAvatarIdentity(cached) || !cached.avatarPath) {
+        return;
+      }
+      const asset = cachedAssets.get(cached.avatarPath);
+      if (!asset) {
+        return;
+      }
+      contact.avatarPath = cached.avatarPath;
+      if (!seenAssetPaths.has(asset.path)) {
+        seenAssetPaths.add(asset.path);
+        assets.push(asset);
+      }
+      conversations.forEach((convo) => {
+        (convo.members || []).forEach((member) => {
+          if (member.did === contact.did) {
+            member.avatarPath = cached.avatarPath;
+          }
+        });
+      });
+    });
+    const avatarContacts = contacts.filter((contact) => !contact.avatarPath
+      && (contact.avatar || getBlobCidFromRef(contact.avatar) || normalizeAvatarUrl(contact.avatar)));
 
     let detail = "";
     if (avatarContacts.length > 0) {
@@ -526,7 +620,7 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
    */
   async function hydrateMissingDmPartnerProfiles(auth, contacts = []) {
     const pending = contacts.filter((contact) => {
-      return contact?.did && !String(contact.avatar || "").trim();
+      return contact?.did && !contact.avatar && !getBlobCidFromRef(contact.avatar) && !normalizeAvatarUrl(contact.avatar);
     });
     if (!pending.length || !auth?.session?.accessJwt) {
       return contacts;
@@ -547,7 +641,12 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
           }
           contact.handle = String(profile.handle || contact.handle || "").trim();
           contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
-          contact.avatar = String(profile.avatar || contact.avatar || "").trim();
+          const profileAvatar = typeof profile.avatar === "string" ? profile.avatar.trim() : "";
+          if (profileAvatar) {
+            contact.avatar = profileAvatar;
+          } else if (!normalizeAvatarUrl(contact.avatar)) {
+            contact.avatar = "";
+          }
         });
       } catch (error) {
         // The contact remains usable without an avatar when profile lookup fails.
