@@ -495,8 +495,20 @@ export function createDmArchiveWorkspaceRenderer(elements, actions) {
         name.textContent = contact?.displayName || `@${contact?.handle || did}`;
         handle.textContent = `@${contact?.handle || did}`;
         button.addEventListener("click", () => {
-          actions.setSelectedParticipantDids(toggleDmSelectedParticipant(selectedParticipantDids, did));
-          actions.renderWorkspace();
+          const currentSelection = actions.getState().selectedParticipantDids;
+          const nextSelection = toggleDmSelectedParticipant(Array.isArray(currentSelection) ? currentSelection : [], did);
+          actions.setSelectedParticipantDids(nextSelection);
+          button.classList.toggle("is-selected", nextSelection.includes(did));
+          if (nextSelection.length > 0) {
+            elements.contactSelectionNote.textContent = actions.translate("dmContactSelectionOne");
+          } else if (contacts.length > 0) {
+            elements.contactSelectionNote.textContent = actions.translate("dmContactSelectionAll");
+          } else {
+            elements.contactSelectionNote.textContent = actions.translate("dmContactSelectionEmpty");
+          }
+          if (elements.loadButton) {
+            elements.loadButton.disabled = nextSelection.length !== 1;
+          }
         });
         elements.contactList.appendChild(fragment);
       });
