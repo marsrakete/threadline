@@ -462,7 +462,8 @@ function asset_mime_type(string $path): string
     };
 }
 
-$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$path = (string)($_GET['route'] ?? $requestPath);
 try {
     if ($path === '/api/summary') {
         api_summary();
@@ -488,7 +489,7 @@ try {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Threadline Viewer</title>
-  <link rel="stylesheet" href="/viewer.css">
+  <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
   <div class="app-shell">
@@ -533,6 +534,6 @@ try {
       </section>
     </main>
   </div>
-  <script src="/viewer.js"></script>
+  <script src="viewer.js"></script>
 </body>
 </html>

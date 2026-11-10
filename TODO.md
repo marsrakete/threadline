@@ -236,7 +236,7 @@ Die Vorlagen in [docs/PR-PLAN.md](docs/PR-PLAN.md) dokumentieren den frueheren P
 - [x] `P1` Zugangsdaten-Haertung: App-Passwort sowie Access-/Refresh-JWT werden vor der Speicherung mit AES-GCM verschluesselt; der nicht exportierbare Web-Crypto-Schluessel bleibt browsergebunden in IndexedDB. Vorhandene Klartext-Eintraege migrieren beim Lesen. Das erschwert isolierte Datenbankkopien, schuetzt aber nicht gegen aktives XSS, boesartige Erweiterungen oder ein kompromittiertes Geraet.
 - [x] `P1` Archiv-Asset-Haertung: `viewer/index.php` liefert SVG-Antworten mit Sandbox-CSP ohne Scriptfreigabe und `nosniff`; unbekannte beziehungsweise aktive Nichtbilddateien werden als Download statt als HTML ausgeliefert. Importierte SVGs im App-Archiv werden vor Anzeige und Export durch PNG-Platzhalter ersetzt.
 - [ ] `P2` Proxy-SSRF-Haertung: Das WordPress-Plugin prueft Hosts per DNS vor dem eigentlichen `wp_remote_get`, verbindet danach aber erneut ueber den Hostnamen. Gegen DNS-Rebinding oder andere TOCTOU-Faelle ist das noch nicht hart genug.
-- [ ] `P3` Viewer nur lokal absichern: Die aktuellen Startskripte binden absichtlich nur an `localhost` beziehungsweise `127.0.0.1`. Wenn `viewer/index.php` spaeter auf einem normalen Webserver landet, fehlen Schutzschritte gegen unbefugten Zugriff auf Archivdaten komplett.
+- [x] `P3` Viewer nur lokal absichern: viewer/.htaccess erlaubt ausschliesslich die Loopback-Adressen 127.0.0.1 und ::1 und deaktiviert Verzeichnislisten.
 
 ### Backup Und Lokale Daten
 

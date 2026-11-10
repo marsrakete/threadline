@@ -4,6 +4,34 @@ const { expect, test } = require("@playwright/test");
 
 test.describe("Composer image editor application integration", () => {
   test.use({ serviceWorkers: "block" });
+  for (const pathname of ["/", "/tools.html"]) {
+    test(`fresh environment defers backup reminder until the first interval on ${pathname}`, async ({ page }) => {
+      const errors = [];
+      page.on("pageerror", error => errors.push(error.message));
+      await blockExternalRequests(page);
+      await page.addInitScript(() => {
+        const registration = { update: async () => {}, active: { postMessage(message, ports) {
+          const result = message.type === "GET_APP_STATE" ? { localePreference: "en", locale: "en", desktopLayoutVersion: 2 } : null;
+          ports[0].postMessage({ ok: true, result });
+        } } };
+        Object.defineProperty(navigator.serviceWorker, "register", { value: async () => registration });
+        Object.defineProperty(navigator.serviceWorker, "ready", { value: Promise.resolve(registration) });
+      });
+      await page.goto(pathname);
+      const firstUseKey = "threadline:settings-backup-first-use-at";
+      await expect.poll(() => page.evaluate(key => localStorage.getItem(key), firstUseKey)).not.toBeNull();
+      const firstUse = await page.evaluate(key => localStorage.getItem(key), firstUseKey);
+      await expect(page.locator("#backup-reminder-dialog")).not.toBeVisible();
+      await page.reload();
+      await expect(page.locator("#language-select")).toHaveValue("en");
+      expect(await page.evaluate(key => localStorage.getItem(key), firstUseKey)).toBe(firstUse);
+      await expect(page.locator("#backup-reminder-dialog")).not.toBeVisible();
+      await page.evaluate(key => localStorage.setItem(key, String(Date.now() - 30 * 24 * 60 * 60 * 1000 - 1000)), firstUseKey);
+      await page.reload();
+      await expect(page.locator("#backup-reminder-dialog")).toBeVisible();
+      expect(errors).toEqual([]);
+    });
+  }
   test("analysis templates render safe summary, result and list components on both pages", async ({ page }) => {
     const errors = []; page.on("pageerror", (error) => errors.push(error.message));
     await blockExternalRequests(page); await page.setViewportSize({ width: 390, height: 900 });
@@ -1002,9 +1030,10 @@ test.describe("Composer image editor application integration", () => {
       await page.evaluate(async () => {
         const { createSettingsBackupReminder } = await import("/js/core/app-backup.js");
         localStorage.removeItem("test:export"); localStorage.removeItem("test:dismiss");
+        localStorage.setItem("test:firstUse", "9000");
         const reminder = createSettingsBackupReminder({ status: document.querySelector("#backup-status"),
           dialog: document.querySelector("#backup-reminder-dialog"), message: document.querySelector("#backup-reminder-message") }, {
-          storage: localStorage, exportKey: "test:export", dismissKey: "test:dismiss", now: () => 10000,
+          storage: localStorage, exportKey: "test:export", dismissKey: "test:dismiss", firstUseKey: "test:firstUse", now: () => 10000,
           intervalMs: 1000, snoozeMs: 100, hasOpenDialog: () => Boolean(document.querySelector("dialog[open]")),
           translate: (key) => key, clearTimer: clearTimeout, setTimer: setTimeout, warn() {}, report() {}, exportFile: async () => {},
         });

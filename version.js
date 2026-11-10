@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "1.0.0",
+  appVersion: "1.0.2",
   cacheVersion: "v387",
-  label: "Threadline 1.0: security storage and archive hardening",
+  label: "Threadline 1.0.2: security storage and archive hardening",
 });

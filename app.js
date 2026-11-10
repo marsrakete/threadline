@@ -850,6 +850,7 @@ const THREAD_EXPLORER_SELECTION_STORAGE_KEY = "threadline:thread-explorer-select
 const THREAD_EXPLORER_ORIENTATION_STORAGE_KEY = "threadline:thread-explorer-orientation";
 const THREAD_EXPLORER_VIEW_MODE_STORAGE_KEY = "threadline:thread-explorer-view-mode";
 const SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY = "threadline:last-settings-backup-export";
+const SETTINGS_BACKUP_FIRST_USE_STORAGE_KEY = "threadline:settings-backup-first-use-at";
 const SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY = "threadline:settings-backup-reminder-dismissed-at";
 const SETTINGS_BACKUP_REMINDER_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 const SETTINGS_BACKUP_REMINDER_SNOOZE_MS = 24 * 60 * 60 * 1000;
@@ -1688,6 +1689,7 @@ const settingsBackupReminder = createSettingsBackupReminder({
   clearTimer: (timer) => window.clearTimeout(timer), setTimer: (callback, delay) => window.setTimeout(callback, delay),
   warn: (...args) => console.warn(...args), report: (error) => console.error(error), exportFile: exportSettingsBackup,
   exportKey: SETTINGS_BACKUP_EXPORTED_AT_STORAGE_KEY, dismissKey: SETTINGS_BACKUP_REMINDER_DISMISSED_AT_STORAGE_KEY,
+  firstUseKey: SETTINGS_BACKUP_FIRST_USE_STORAGE_KEY,
   intervalMs: SETTINGS_BACKUP_REMINDER_INTERVAL_MS, snoozeMs: SETTINGS_BACKUP_REMINDER_SNOOZE_MS,
 });
 const settingsBackup = createSettingsBackupController({
@@ -8276,10 +8278,11 @@ function closeLinkCardDialog() {
 }
 
 /**
- * Creates, refreshes, or moves the currently pending segment link card.
- * @returns {Promise<void>}
+ * Normalizes publication metadata synchronously for rendering and worker persistence.
+ * @param {object|null} value - Raw Standard.site metadata.
+ * @returns {object|null} Cloneable publication metadata or null.
  */
-async function normalizeStandardSiteMetadata(value = null) { return normalizeSharedStandardSiteMetadata(value, t); }
+function normalizeStandardSiteMetadata(value = null) { return normalizeSharedStandardSiteMetadata(value, t); }
 
 /**
  * Returns the footer label for a card that carries Standard.site publication metadata.
