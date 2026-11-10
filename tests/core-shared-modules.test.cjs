@@ -593,7 +593,7 @@ test("hydration handles locale and stored reply fallbacks without unnecessary mi
 test("bootstrap orders worker, hydration, session and updates and guards reload navigation", async () => {
   const module = await importProjectModule("js/core/app-bootstrap.js");
   const calls = []; let privacy = true;
-  const options = { isSupported: () => true, translate: (key) => key, setStatus: (message) => calls.push(message),
+  const options = { isSecureContext: () => true, isSupported: () => true, translate: (key) => key, setStatus: (message) => calls.push(message),
     isPrivacyNavigation: () => privacy, consumeNavigation: () => "/tools.html", getHref: () => "https://example.com/",
     now: () => 123, navigate: (href) => calls.push(href), bindControllerChange: () => calls.push("bind"),
     register: async () => { calls.push("register"); return "registration"; }, setRegistration: (value) => calls.push(value),
@@ -610,6 +610,12 @@ test("bootstrap orders worker, hydration, session and updates and guards reload 
   calls.length = 0;
   await module.createApplicationBootstrap({ ...options, isSupported: () => false }).start();
   assert.deepEqual(calls, ["statusNoSupport"]);
+  calls.length = 0;
+  await module.createApplicationBootstrap({ ...options, isSecureContext: () => false, isSupported: () => false }).start();
+  assert.deepEqual(calls, ["statusHttpsRequired"]);
+  calls.length = 0;
+  await module.createApplicationBootstrap({ ...options, isSecureContext: () => false }).start();
+  assert.deepEqual(calls, ["statusHttpsRequired"]);
   calls.length = 0;
   await module.createApplicationBootstrap({ ...options, register: async () => { throw new Error("registration failed"); } }).start();
   assert.deepEqual(calls, ["bind", "registration failed", "statusSwRegisterFailed"]);
