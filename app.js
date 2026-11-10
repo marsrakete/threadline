@@ -11169,7 +11169,9 @@ const archiveMediaExport = createArchiveMediaExportController({
 
 const catalogAvatarAssets = createArchiveAvatarAssets({
   state: () => ({ accounts: savedAccounts, did: authAccountDid, handle: authAccount }),
-  partner: getDmPrimaryPartner, download: assetService.download, extension: getAssetExtensionFromMimeType,
+  partner: getDmPrimaryPartner,
+  download: (url) => sendToServiceWorker("DOWNLOAD_ARCHIVE_AVATAR", { url }, { timeoutMs: 45000 }),
+  extension: getAssetExtensionFromMimeType,
 });
 
 /** Reads archive state for domain controllers and presentation. @returns {object} Current state and selected form values. */

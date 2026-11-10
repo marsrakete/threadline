@@ -77,12 +77,14 @@ export function createArchiveHtmlExportController(options) {
     if (!catalog) {
       throw new Error(t("archiveNeedArchive"));
     }
-    await options.ensureAvatars(catalog);
+    const compact = settings.mode === "compact";
+    if (!compact) {
+      await options.ensureAvatars(catalog);
+    }
     let assets = [];
     if (Array.isArray(catalog.assets)) {
       assets = catalog.assets;
     }
-    const compact = settings.mode === "compact";
     const effectiveCompact = compact || options.shouldCompact(assets);
     const assetUris = new Map();
     let detail = t("archiveProgressHtmlDetail", { count: assets.length });

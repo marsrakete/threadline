@@ -147,6 +147,7 @@ test("HTML export skips image encoding for requested and size-triggered compact 
     if (explicit) { settings = { mode: "compact" }; }
     await fixture.controller.export({ assets: [{ path: "image" }] }, settings);
     assert.equal(encoded, false);
+    assert.equal(fixture.calls.some(call => call[0] === "avatars"), !explicit);
     assert.deepEqual(fixture.calls.find((call) => call[0] === "build")[2], { embedPostImages: false, mode: "compact" });
     assert.equal(fixture.calls.find((call) => call[0] === "deliver")[2], "archive-compact.html");
   }
