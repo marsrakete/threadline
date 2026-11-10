@@ -179,7 +179,16 @@ export function createSettingsBackupReminder(elements, options) {
     if (!elements.dialog || elements.dialog.open || options.hasOpenDialog()) { return false; }
     const dismissed = read(options.dismissKey); const now = options.now();
     if (dismissed > 0 && now - dismissed < options.snoozeMs) { return false; }
-    const exported = read(options.exportKey); return exported <= 0 || now - exported >= options.intervalMs;
+    const exported = read(options.exportKey);
+    let reference = exported;
+    if (exported <= 0) {
+      reference = read(options.firstUseKey);
+      if (reference <= 0) {
+        write(options.firstUseKey, now);
+        return false;
+      }
+    }
+    return now - reference >= options.intervalMs;
   }
   /** Reads localized text for unknown/old exports. @returns {string} Reminder message. */
   function message() {
