@@ -92,6 +92,8 @@ globalThis.ThreadlineAdapterMessages = Object.freeze({
   "read": "Gespeicherte Daten konnten nicht gelesen werden.",
   "write": "Gespeicherte Daten konnten nicht geschrieben werden.",
   "remove": "Gespeicherte Daten konnten nicht geloescht werden.",
+  "authEncryptionUnavailable": "Der Browser kann gespeicherte Zugangsdaten nicht sicher verschluesseln. Bitte aktualisiere den Browser.",
+  "authEncryptionFailed": "Verschluesselte Zugangsdaten konnten nicht sicher gelesen werden. Bitte melde dich erneut an.",
   "didMissing": "DID fehlt.",
   "didFailed": "DID-Dokument konnte nicht geladen werden ({status}).",
   "didUnsupported": "Nicht unterstuetztes DID-Format: {did}",
