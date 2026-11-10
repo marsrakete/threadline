@@ -80,8 +80,77 @@ function validateLinkCardTargetUrl(rawUrl, translate) {
   };
 }
 
+/**
+ * Builds a metadata-free link card from URL fields without making a request.
+ * @param {string} url - Target URL passed to the supplied normalizer.
+ * @param {Function} normalizeCard - Domain-specific card normalizer.
+ * @returns {object|null} Normalized basic card.
+ */
+export function buildBasicLinkCard(url, normalizeCard) {
+  let title = url;
+  let description = "";
+  try {
+    const parsed = new URL(url);
+    title = parsed.hostname || url;
+    description = parsed.toString();
+  } catch {
+    title = url;
+  }
+  return normalizeCard({ url, title, description });
+}
+
 export {
   getFirstHttpUrl,
   normalizeLinkCardTargetUrl,
   validateLinkCardTargetUrl,
 };
+/**
+ * Creates, refreshes, or moves the currently pending segment link card.
+ * @param {Function} translate - Translation callback.
+ * @returns {Promise<void>}
+ */
+async function createLinkCardForPendingSegment() {
+  await composerLinkCardSubmission.submit();
+}
+
+/**
+ * Normalizes Standard.site publication metadata attached to a link card.
+ * @param {object|null} value - Raw metadata from the proxy, archive, or Bluesky view.
+ * @param {Function} translate - Translation callback.
+ * @returns {object|null} Compact Standard.site metadata, or null when absent.
+ */
+export function normalizeStandardSiteMetadata(value = null, translate) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const documentUri = String(value.documentUri || value.document || "").trim();
+  const publicationUri = String(value.publicationUri || value.publication || "").trim();
+  const publicationUrl = String(value.publicationUrl || value.url || "").trim();
+  const publicationName = String(value.publicationName || value.name || "").trim().slice(0, 160);
+  if (!documentUri && !publicationUri && !publicationUrl && !publicationName) {
+    return null;
+  }
+
+  return {
+    documentUri,
+    publicationUri,
+    publicationUrl,
+    publicationName,
+    publicationVerified: value.publicationVerified === true,
+    ctaLabel: String(value.ctaLabel || translate("publicationCardCta")).trim().slice(0, 80),
+  };
+}
+/**
+ * Returns the footer label for a card that carries Standard.site publication metadata.
+ * @param {object|null} standardSite - Normalized Standard.site metadata.
+ * @param {Function} translate - Translation callback.
+ * @returns {string} Localized footer suffix, or an empty string for normal link cards.
+ */
+export function getPublicationCardFooterLabel(standardSite, translate) {
+  if (!standardSite) {
+    return "";
+  }
+
+  return translate("publicationMetadataDetected");
+}

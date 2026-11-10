@@ -22,7 +22,7 @@ function getRootDir() {
  * @returns {Promise<object>} Parsed config object.
  */
 async function readConfig(rootDir) {
-  const configPath = path.join(rootDir, "og-image.config.json");
+  const configPath = path.join(rootDir, "config", "og-image.config.json");
   const rawConfig = await fs.readFile(configPath, "utf8");
   return JSON.parse(rawConfig);
 }

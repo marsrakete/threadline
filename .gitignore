@@ -6,5 +6,6 @@ tmp-og-render/
 .tmp-viewer-archive/
 .agents/
 .codex/
-
+test-results/
+playwright-report/
 

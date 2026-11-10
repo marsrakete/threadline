@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.273",
-  cacheVersion: "v292",
-  label: "Fix Thread Explorer reply handoff to composer",
+  appVersion: "1.0.0",
+  cacheVersion: "v384",
+  label: "Threadline 1.0: profile pronouns and links",
 });

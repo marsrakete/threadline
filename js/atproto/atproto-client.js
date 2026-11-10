@@ -1,3 +1,16 @@
+let atprotoTransportInstance = null;
+/** Lazily wires the classic client to its explicit shared transport dependencies. @returns {object} Cached transport API. */
+function getAtprotoTransport() {
+  if (!atprotoTransportInstance) {
+    atprotoTransportInstance = globalThis.createThreadlineTransportService({
+      apiBase: API_BASE, fetch: (...args) => fetch(...args), getRequest: (...args) => bskyFetch(...args),
+      searchParams: () => new URLSearchParams(), error: (...args) => createServiceWorkerError(...args),
+      now: () => Date.now(), messages: globalThis.ThreadlineAdapterMessages,
+    });
+  }
+  return atprotoTransportInstance;
+}
+
 /**
  * Builds the XRPC base URL for a service or PDS.
  * @param {string} service - Service or PDS base URL.
@@ -56,60 +69,7 @@ function buildPostWebUrl(handle, recordKey, serviceUrl = DEFAULT_LOGIN_SERVICE) 
  * @param {object} options - Fetch options plus optional `base` and `returnMeta`.
  * @returns {Promise<object>} Parsed JSON payload or payload plus metadata.
  */
-async function bskyFetch(endpoint, options = {}) {
-  const base = options.base || API_BASE;
-  const response = await fetch(`${base}/${endpoint}`, {
-    ...options,
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-
-  const text = await response.text();
-  let data = {};
-
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { message: text };
-    }
-  }
-
-  if (!response.ok) {
-    const rateLimit = extractRateLimitMeta(response);
-    const retryAfterRaw = response.headers.get("retry-after") || "";
-    let retryAfterMs = 0;
-    if (/^\d+$/.test(retryAfterRaw.trim())) {
-      retryAfterMs = Math.max(0, Number.parseInt(retryAfterRaw.trim(), 10) * 1000);
-    } else if (retryAfterRaw.trim()) {
-      const retryAt = Date.parse(retryAfterRaw.trim());
-      if (Number.isFinite(retryAt)) {
-        retryAfterMs = Math.max(0, retryAt - Date.now());
-      }
-    }
-    const code = response.status === 401
-      ? "AUTH_INVALID_CREDENTIALS"
-      : "BSKY_REQUEST_FAILED";
-    throw createServiceWorkerError(
-      data.message || data.error || `Bluesky request failed (${response.status}).`,
-      code,
-      { status: response.status, retryAfterMs, rateLimit },
-    );
-  }
-
-  if (options.returnMeta) {
-    return {
-      data,
-      meta: {
-        rateLimit: extractRateLimitMeta(response),
-      },
-    };
-  }
-
-  return data;
-}
+async function bskyFetch(endpoint, options = {}) { return getAtprotoTransport().request(endpoint, options); }
 
 /**
  * Executes a GET XRPC request with query parameters.
@@ -118,26 +78,7 @@ async function bskyFetch(endpoint, options = {}) {
  * @param {object} options - Optional request headers, base URL, and abort signal.
  * @returns {Promise<object>} Parsed JSON payload.
  */
-async function bskyGet(endpoint, query = {}, options = {}) {
-  const search = new URLSearchParams();
-  Object.entries(query || {}).forEach(([key, value]) => {
-    if (Array.isArray(value)) {
-      value.filter(Boolean).forEach((entry) => search.append(key, entry));
-      return;
-    }
-    if (value !== undefined && value !== null && value !== "") {
-      search.set(key, value);
-    }
-  });
-
-  const suffix = search.toString() ? `?${search.toString()}` : "";
-  return bskyFetch(`${endpoint}${suffix}`, {
-    method: "GET",
-    headers: options.headers || {},
-    base: options.base,
-    signal: options.signal,
-  });
-}
+async function bskyGet(endpoint, query = {}, options = {}) { return getAtprotoTransport().get(endpoint, query, options); }
 
 /**
  * Resolves the authenticated XRPC base for a stored account.
@@ -236,27 +177,7 @@ async function downloadBlob(auth, did, cid) {
  * @param {Map<string, string>|null} cache - Optional DID-to-PDS cache.
  * @returns {Promise<string>} Normalized PDS service URL.
  */
-async function resolvePdsForDid(did, fallbackService = DEFAULT_LOGIN_SERVICE, cache = null) {
-  const key = String(did || "").trim();
-  if (!key) {
-    return normalizeServiceUrl(fallbackService || DEFAULT_LOGIN_SERVICE);
-  }
-
-  if (cache?.has(key)) {
-    return cache.get(key);
-  }
-
-  let serviceUrl = normalizeServiceUrl(fallbackService || DEFAULT_LOGIN_SERVICE);
-  try {
-    const didDocument = await fetchDidDocument(key);
-    serviceUrl = extractPdsServiceFromDidDocument(didDocument, serviceUrl);
-  } catch {
-    serviceUrl = normalizeServiceUrl(fallbackService || DEFAULT_LOGIN_SERVICE);
-  }
-
-  cache?.set(key, serviceUrl);
-  return serviceUrl;
-}
+async function resolvePdsForDid(did, fallbackService = DEFAULT_LOGIN_SERVICE, cache = null) { return getAtprotoIdentity().pds(did, fallbackService, cache); }
 
 /**
  * Builds a cache key for archive blob downloads.

@@ -80,6 +80,62 @@ Do not mix these layers unnecessarily.
 - Interaction patterns should remain stable across viewports.
 - Layout should adapt deliberately, not accidentally.
 
+## Delivery Through GitHub Pull Requests
+
+- Implement each cohesive change on its own branch and deliver it as a real GitHub pull request.
+- Use the PR as the implementation and review record: describe the problem, resulting behavior, tests, dependencies and current status there.
+- Existing `TODO.md` entries and `docs/pr-plans/` files are backlog/history context. Updating a checklist is not implementation, and a planning template is not an existing GitHub PR. Do not create empty implementation PRs from the templates.
+- Before starting work, inspect the relevant PRs and use the base branch requested by the user. The current combined local-acceptance branch is `integration/pr-1-4`; use it for this acceptance cycle instead of `main`.
+- Do not commit directly to `main`. Merge PRs or publish a release only when the user has authorized that action. Existing authorization for the current task remains valid.
+- Preserve the user's local changes and do not merge additional unrelated work merely because it appears in the old backlog.
+
+## Modularization
+
+New functionality must be assigned to a suitable domain module from the beginning. Large entry files such as `app.js` or `main.js` must not grow when a feature clearly belongs to an existing area.
+
+### Module boundaries
+
+- Put reusable functionality in `shared/`.
+- Put external interfaces and data access in dedicated adapter or service modules.
+- Put page and workspace behavior in the module for that page or workspace.
+- Keep rendering, state management, and data access separate.
+- Give each module one clearly recognizable responsibility.
+- Extend an existing module before creating a parallel implementation.
+- Extract code according to a stable domain boundary, not only because a function is long.
+- Keep global state and DOM wiring in the page entry point where practical. Move normalization, calculations, and reusable rendering logic into modules.
+
+### Exports and dependencies
+
+- Each module must expose a small, documented public API.
+- Every exported function needs JSDoc describing its purpose, parameters, and return value.
+- Export event handlers and controller helpers when they are needed by tests or other modules.
+- Create factories only after all required dependencies have been initialized.
+- Avoid circular dependencies.
+- Pass dependencies through parameters or controller configuration instead of relying on hidden globals.
+- Do not keep a second local implementation of functionality that has already been extracted.
+
+### HTML and rendering
+
+- Define recurring DOM structures with `<template>` elements.
+- Pass DOM elements or template content into modules through parameters.
+- Avoid large HTML strings in JavaScript.
+- Keep structure, presentation, and behavior separate.
+- Obtain visible text through the translation or content layer.
+
+### Tests
+
+- Add a contract test whenever a new module is created.
+- Test each central exported helper with a normal case, a boundary case, and invalid input where applicable.
+- Test DOM and rendering modules with browser- or DOM-based tests.
+- Load each affected page at least once in a browser test.
+- Browser tests must collect `pageerror` events so initialization failures cannot go unnoticed.
+- Protect visual functionality with geometry assertions or screenshots where appropriate.
+- After each extraction, check module syntax, import/export contracts, existing callers, browser initialization, and version/cache consistency.
+
+### Definition of done for modularization
+
+Modularization is complete only when the old implementation has been removed, no duplicate logic remains, dependencies are explicit, the module has a contract test, the affected page loads without browser errors, and unit, browser, syntax, and documentation checks pass.
+
 ## Review checklist
 
 Before merging or shipping a change, ask:

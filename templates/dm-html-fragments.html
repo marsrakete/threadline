@@ -1,0 +1,38 @@
+<template id="dm-html-body-template">
+  <main class="dm-html-shell">
+    <section class="dm-html-hero">
+      <p class="dm-html-kicker" data-slot="eyebrow"></p>
+      <h1 data-slot="title"></h1>
+      <p data-slot="generated"></p>
+      <div class="dm-html-partner"><p data-slot="partner"></p></div>
+      <p data-slot="range"></p>
+      <div class="dm-html-meta"></div>
+    </section>
+    <section class="dm-html-toolbar">
+      <div class="dm-html-toolbar-row">
+        <div class="dm-html-field"><label for="dm-search" data-slot="search"></label><input id="dm-search" type="search"></div>
+        <button type="button" id="dm-reset"></button>
+      </div>
+      <p class="dm-html-status" id="dm-status"></p>
+    </section>
+    <section class="dm-html-feed" id="dm-feed"></section>
+    <template id="dm-html-highlight-template"><mark data-dm-highlight="true"></mark></template>
+  </main>
+</template>
+<template id="dm-html-message-template">
+  <article class="dm-html-message" data-dm-message>
+    <div class="dm-html-message-head">
+      <div class="dm-html-message-author"><div data-slot="author"><strong data-dm-searchable="true"></strong></div></div>
+      <time></time>
+    </div>
+  </article>
+</template>
+<template id="dm-html-avatar-template"><img loading="lazy"></template>
+<template id="dm-html-handle-template"><span class="dm-html-handle" data-dm-searchable="true"></span></template>
+<template id="dm-html-text-template"><div class="dm-html-text" data-dm-richtext="true"></div></template>
+<template id="dm-html-empty-template"><span class="archive-html-empty"></span></template>
+<template id="dm-html-card-template"><a class="dm-html-link-card" target="_blank" rel="noreferrer noopener"><span class="dm-html-link-card-copy"><strong></strong><small></small></span></a></template>
+<template id="dm-html-description-template"><span></span></template>
+<template id="dm-html-metric-template"><div><span></span><strong></strong></div></template>
+<template id="dm-html-link-template"><a target="_blank" rel="noreferrer noopener"></a></template>
+<template id="dm-html-break-template"><br></template>

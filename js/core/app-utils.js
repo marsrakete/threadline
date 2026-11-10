@@ -10,21 +10,6 @@ function clamp(value, min, max) {
 }
 
 /**
- * Clones a template by ID and returns its content as a document fragment.
- * @param {string} templateId - DOM ID of the template element.
- * @returns {DocumentFragment|null} Cloned template content or `null` when the template is missing.
- */
-function cloneTemplate(templateId) {
-  const template = document.getElementById(templateId);
-  if (!template) {
-    console.warn(`Template not found: ${templateId}`);
-    return null;
-  }
-
-  return template.content.cloneNode(true);
-}
-
-/**
  * Writes plain text into one element.
  * @param {HTMLElement|null} element - Target element.
  * @param {string} text - Plain text value.
@@ -69,8 +54,24 @@ function setAttr(element, name, value) {
 
 export {
   clamp,
-  cloneTemplate,
   setAttr,
   setSafeHtml,
   setSafeText,
 };
+
+export { cloneTemplate } from "../shared/shared-templates.js";
+
+/**
+ * Sets multiple attributes on an element.
+ * @param {HTMLElement} element - The target element.
+ * @param {Object} attrs - Object with attribute name-value pairs.
+ * @returns {void}
+ */
+export function setAttrs(element, attrs) {
+  if (!element) return;
+  for (const [name, value] of Object.entries(attrs)) {
+    if (value !== undefined && value !== null) {
+      element.setAttribute(name, String(value));
+    }
+  }
+}
