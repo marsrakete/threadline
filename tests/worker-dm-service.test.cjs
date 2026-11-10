@@ -69,6 +69,7 @@ test("DM partner listing downloads assets once per path and keeps failed contact
   assert.equal(result.conversations[0].members[0].avatarPath, result.assets[0].path);
   assert.equal(result.assets[0].bytes.length, result.assets[0].sizeBytes);
   assert.equal(f.progress.at(-1).percent, 100);
+  assert.deepEqual(f.calls.filter((call) => call[0] === "profileRecord").map((call) => call[1]), ["fail"]);
 });
 
 test("DM avatar hydration reads migrated profile blobs from the actor's current PDS", async () => {
@@ -82,13 +83,13 @@ test("DM avatar hydration reads migrated profile blobs from the actor's current 
     },
   });
   const result = await f.service.hydrateAvatars({
-    recentContacts: [{ did: "peer", handle: "old.test", displayName: "Old name", avatar: "https://cdn.bsky.app/old-avatar" }],
+    recentContacts: [{ did: "peer", handle: "old.test", displayName: "Old name", avatar: "https://cdn.bsky.app/fail-old-avatar" }],
     conversations: [],
   }, f.notify);
   assert.equal(result.recentContacts[0].handle, "peer.eurosky.social");
   assert.equal(result.recentContacts[0].displayName, "Eurosky Peer");
   assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "eurosky-avatar-cid"]);
-  assert.equal(f.calls.some((call) => call[0] === "asset"), false);
+  assert.equal(f.calls.some((call) => call[0] === "asset" && call[1].includes("fail-old-avatar")), true);
 });
 
 test("DM avatar hydration copies inputs and batches missing profiles with authenticated transport", async () => {

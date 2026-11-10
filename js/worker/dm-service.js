@@ -440,29 +440,38 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
    */
   async function attachPartnerAvatar(auth, contact, conversations, assets, seenAssetPaths, pdsServiceCache) {
     try {
-      const profile = typeof options.profileRecord === "function"
-        ? await options.profileRecord(contact.did, auth, pdsServiceCache).catch(() => null)
-        : null;
-      const profileAvatarUrl = String(profile?.avatar || "").trim();
-      const profileAvatarCid = typeof globalThis.parseBlobUrlInfo === "function"
-        ? globalThis.parseBlobUrlInfo(profileAvatarUrl)?.cid || ""
-        : "";
-      const currentAvatarCid = getBlobCidFromRef(profile?.avatar) || profileAvatarCid;
-      if (profile) {
-        contact.handle = String(profile.handle || contact.handle || "").trim();
-        contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
-        if (profileAvatarUrl) {
-          contact.avatar = profileAvatarUrl;
+      let blob;
+      try {
+        blob = await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
+      } catch (staleAvatarError) {
+        const failedAvatarCid = typeof globalThis.parseBlobUrlInfo === "function"
+          ? globalThis.parseBlobUrlInfo(contact.avatar)?.cid || ""
+          : "";
+        const profile = typeof options.profileRecord === "function"
+          ? await options.profileRecord(contact.did, auth, pdsServiceCache).catch(() => null)
+          : null;
+        const profileAvatarUrl = String(profile?.avatar || "").trim();
+        const profileAvatarCid = typeof globalThis.parseBlobUrlInfo === "function"
+          ? globalThis.parseBlobUrlInfo(profileAvatarUrl)?.cid || ""
+          : "";
+        const currentAvatarCid = getBlobCidFromRef(profile?.avatar) || profileAvatarCid;
+        if (profile) {
+          contact.handle = String(profile.handle || contact.handle || "").trim();
+          contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
+          if (profileAvatarUrl) {
+            contact.avatar = profileAvatarUrl;
+          }
+          if (!currentAvatarCid) {
+            contact.avatar = "";
+            contact.avatarPath = "";
+            return;
+          }
         }
-        if (!currentAvatarCid) {
-          contact.avatar = "";
-          contact.avatarPath = "";
-          return;
+        if (!currentAvatarCid || currentAvatarCid === failedAvatarCid) {
+          throw staleAvatarError;
         }
+        blob = await downloadBlobForDid(auth, contact.did, currentAvatarCid, pdsServiceCache);
       }
-      const blob = currentAvatarCid
-        ? await downloadBlobForDid(auth, contact.did, currentAvatarCid, pdsServiceCache)
-        : await downloadRemoteAssetViaBlob(auth, contact.avatar, contact.did, pdsServiceCache);
       const extension = getAssetExtensionFromMimeType(blob.type);
       const slug = String(contact.handle || contact.did || "partner").replace(/[^\w.-]+/g, "-").slice(0, 60) || "partner";
       const path = `dm-avatars/${slug}.${extension}`;
