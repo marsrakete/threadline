@@ -84,6 +84,30 @@ Prerequisite:
 - install the official SQLite command-line tools
 - the script expects `sqlite3.exe` either in `PATH` or at the configured `sqliteExePath`
 
+## Open a SQLite Archive in the Viewer
+
+The SQLite archiver writes `threadline-archive.sqlite` to its configured output directory. The separate PHP viewer needs that archive directory, which also contains the manifest and asset folders. It does not automatically look for the database in the repository.
+
+From the repository directory, start the viewer with the archiver's output directory:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-threadline-viewer.ps1 `
+  -ArchiveDirectory "C:\Path\to\archive" `
+  -PhpExePath "C:\xampp\php\php.exe" `
+  -OpenBrowser
+```
+
+Replace `C:\Path\to\archive` with the `outputDirectory` value from the archiver config. You can also pass the database file directly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-threadline-viewer.ps1 `
+  -DatabasePath "C:\Path\to\archive\threadline-archive.sqlite" `
+  -PhpExePath "C:\xampp\php\php.exe" `
+  -OpenBrowser
+```
+
+The launcher checks the file, sets the archive paths for the PHP process, and starts the viewer at `http://127.0.0.1:8787/`. It does not change XAMPP or Apache configuration. Without `-ArchiveDirectory` or `-DatabasePath`, PHP uses its current working directory; if `threadline-archive.sqlite` is not there, the viewer reports that error.
+
 ## Update Mode
 
 The SQLite archiver can refresh an existing archive in place:
