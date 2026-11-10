@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.363",
-  cacheVersion: "v382",
-  label: "Center search result Thread Explorer icon",
+  appVersion: "1.0.0",
+  cacheVersion: "v383",
+  label: "Threadline 1.0",
 });
