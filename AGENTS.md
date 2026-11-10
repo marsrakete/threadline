@@ -82,10 +82,12 @@ Do not mix these layers unnecessarily.
 
 ## Delivery Through GitHub Pull Requests
 
-- Implement each cohesive change on its own branch and deliver it as a real GitHub pull request.
-- Use the PR as the implementation and review record: describe the problem, resulting behavior, tests, dependencies and current status there.
+- Work in coherent, reviewable blocks. Group related small fixes, cleanup and documentation when they serve the same goal and can be reviewed and tested together; do not create a branch or PR for every small edit.
+- Use one branch and one PR for each meaningful work block. Add follow-up commits to that branch while the same block is in progress. Split work only when parts have independent goals, release timing, risk or review needs.
+- Open the PR when the block is ready for review and its checks are complete. Use the PR as the implementation and review record: describe the problem, resulting behavior, tests, dependencies and current status.
+- Before starting work, inspect the current branches and relevant PRs. Continue an existing branch/PR when it already covers the same work block instead of creating a duplicate.
 - Existing `TODO.md` entries and `docs/pr-plans/` files are backlog/history context. Updating a checklist is not implementation, and a planning template is not an existing GitHub PR. Do not create empty implementation PRs from the templates.
-- Before starting work, inspect the relevant PRs and use the base branch requested by the user. The current combined local-acceptance branch is `integration/pr-1-4`; use it for this acceptance cycle instead of `main`.
+- Use `main` as the default base unless the user requests another target or an active work block explicitly depends on another branch. Integration branches are temporary: after merging them into their target, remove them when no open PR depends on them.
 - Do not commit directly to `main`. Merge PRs or publish a release only when the user has authorized that action. Existing authorization for the current task remains valid.
 - Preserve the user's local changes and do not merge additional unrelated work merely because it appears in the old backlog.
 
