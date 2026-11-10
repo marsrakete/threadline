@@ -116,12 +116,14 @@ test("archive avatar failures remain optional and existing filename collisions k
   assert.equal(calls.length, 2);
   assert.deepEqual(catalog.assets, [original]);
   assert.equal(catalog.posts[1].authorAvatarPath, original.path);
-  dependencies.download = async () => { throw new Error("offline"); };
-  const failed = { posts: [{ authorAvatar: "missing" }, { authorHandle: "no-avatar" }] };
+  const failures = [];
+  dependencies.download = async url => { failures.push(url); throw new Error("offline"); };
+  const failed = { posts: [{ authorAvatar: "missing" }, { authorHandle: "no-avatar" }, { authorAvatar: "missing" }] };
   await module.createArchiveAvatarAssets(dependencies).archive(failed);
   assert.equal(failed.posts[0].authorAvatarPath, "");
   assert.equal(failed.posts[1].authorAvatarPath, undefined);
   assert.deepEqual(failed.assets, []);
+  assert.deepEqual(failures, ["missing"]);
 });
 
 test("local-only avatar preparation retains embedded assets without requesting remote avatars", async () => {

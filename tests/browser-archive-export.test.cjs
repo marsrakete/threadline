@@ -296,6 +296,9 @@ async function prepareArchiveApplication(page, mediaFixture = false, avatarFixtu
         result = { manifest: { account }, posts: catalog.posts,
           media: Array.from({ length: 251 }, (_, index) => ({ id: String(index), kind: "image", postUri: rootUri,
             pathStem: `images/${index}.png`, createdAt: "2026-10-16T12:00:00Z" })) };
+      } else if (avatarFixture && message.type === "DOWNLOAD_ARCHIVE_AVATAR") {
+        window.__avatarFixture.requests.push(message.payload.url);
+        result = { type: "image/png", bytes: imageBytes };
       } else if (mediaFixture && message.type === "DOWNLOAD_ACCOUNT_MEDIA_ASSET") {
         mediaState.downloads += 1;
         const item = message.payload.item;
@@ -507,7 +510,25 @@ for (const pathname of ["/", "/tools.html"]) {
     const archiveHtml = await fs.readFile(await (await archiveDownload).path(), "utf8");
     const avatarCount = await page.evaluate(html => new DOMParser().parseFromString(html, "text/html").querySelectorAll("img.archive-html-avatar[src^='data:image/png']").length, archiveHtml);
     expect(avatarCount).toBe(2);
-    expect(avatarRequests).toEqual(["GET"]);
+    expect(avatarRequests).toEqual([]);
+    expect(await page.evaluate(() => window.__avatarFixture.requests)).toHaveLength(1);
+    const compactDownload = page.waitForEvent("download");
+    await page.locator("#archive-actions-export-html-compact-button").click();
+    const compactHtml = await fs.readFile(await (await compactDownload).path(), "utf8");
+    const compactPage = await context.newPage();
+    compactPage.on("pageerror", error => errors.push(error.message));
+    await compactPage.route("**/*", route => {
+      if (new URL(route.request().url()).pathname === "/compact-avatar-export.html") {
+        return route.fulfill({ contentType: "text/html; charset=utf-8", body: compactHtml });
+      }
+      return route.abort();
+    });
+    await compactPage.goto(new URL("/compact-avatar-export.html", page.url()).href);
+    await expect(compactPage.locator("img.archive-html-avatar")).toHaveCount(2);
+    await expect(compactPage.locator("img.archive-html-avatar").first()).toHaveAttribute("src", /fixture-avatar\.png$/);
+    expect(await page.evaluate(() => window.__avatarFixture.requests)).toHaveLength(1);
+    await compactPage.close();
+    expect(avatarRequests).toEqual([]);
     await page.locator("#dm-button").click();
     await page.locator("#dm-load-partners-button").click();
     await expect(page.locator("#dm-contact-list .dm-contact-chip")).toHaveCount(1);
@@ -541,7 +562,7 @@ for (const pathname of ["/", "/tools.html"]) {
     expect(await pdf.failure()).toBeNull();
     await pdf.saveAs(testInfo.outputPath("dm-avatars.pdf"));
     expect((await fs.readFile(await pdf.path())).subarray(0, 8).toString()).toBe("%PDF-1.4");
-    expect(avatarRequests).toEqual(["GET"]);
+    expect(avatarRequests).toEqual([]);
     expect(errors).toEqual([]);
   });
 

@@ -58,6 +58,7 @@ export function createArchiveAvatarAssets(dependencies) {
           });
         }
       } catch {
+        pathByUrl.set(post.authorAvatar, "");
         post.authorAvatarPath = "";
       }
     }

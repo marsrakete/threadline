@@ -62,3 +62,30 @@ test("AT Protocol worker imports client before session and exposes their contrac
     cid: "bafycid",
   });
 });
+
+test("public archive avatar download resolves CDN DID/CID through the owner PDS without a session", async () => {
+  const { context } = loadAtprotoWorkerContext();
+  const requests = [];
+  context.assertSecureServiceUrl = url => assert.match(url, /^https:\/\//);
+  context.normalizeServiceUrl = url => url;
+  context.resolvePdsForDid = async did => {
+    assert.equal(did, "did:plc:nex3m33ljbp7casi4wx3tqja");
+    return "https://owner-pds.test";
+  };
+  context.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return { ok: true, headers: { get: () => "image/jpeg" }, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
+  };
+  const cid = "bafkreihy4tfl5mkkpil33hw4ppwu4ldgs4t54j3mjwewbtrn5mte4hkixi";
+  const result = await context.downloadRemoteAssetViaBlob({ service: "https://bsky.social" },
+    `https://cdn.bsky.app/img/avatar/plain/did:plc:nex3m33ljbp7casi4wx3tqja/${cid}`);
+  assert.equal(result.type, "image/jpeg");
+  assert.deepEqual([...result.bytes], [1, 2, 3]);
+  assert.equal(requests.length, 1);
+  const target = new URL(requests[0].url);
+  assert.equal(target.origin, "https://owner-pds.test");
+  assert.equal(target.pathname, "/xrpc/com.atproto.sync.getBlob");
+  assert.equal(target.searchParams.get("cid"), cid);
+  assert.equal(target.searchParams.get("did"), "did:plc:nex3m33ljbp7casi4wx3tqja");
+  assert.equal(requests[0].options.headers, undefined);
+});
