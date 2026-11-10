@@ -655,6 +655,9 @@ async function handleMessage(message, port) {
       return scanAccountMediaExport(message.payload, (progress) => port.postMessage({ progress }));
     case "DOWNLOAD_ACCOUNT_MEDIA_ASSET":
       return downloadAccountMediaAsset(message.payload, (progress) => port.postMessage({ progress }));
+    case "DOWNLOAD_ARCHIVE_AVATAR":
+      // Public avatar blobs remain downloadable when exporting an imported archive without a session.
+      return downloadRemoteAssetViaBlob({ service: DEFAULT_LOGIN_SERVICE }, message.payload.url, "", new Map(), { timeoutMs: 30000 });
     case "LIST_DM_PARTNERS":
       return listDmPartners(message.payload, (progress) => port.postMessage({ progress }));
     case "HYDRATE_DM_PARTNER_AVATARS":

@@ -1,5 +1,5 @@
 globalThis.APP_VERSION_INFO = Object.freeze({
-  appVersion: "0.4.358",
-  cacheVersion: "v377",
-  label: "Explain HTTPS requirement for service workers",
+  appVersion: "0.4.359",
+  cacheVersion: "v378",
+  label: "Load archive avatars through public PDS blobs",
 });
