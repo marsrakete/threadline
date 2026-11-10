@@ -1,0 +1,6 @@
+# Archive files in this directory are private to the local machine.
+<RequireAny>
+    Require ip 127.0.0.1
+    Require ip ::1
+</RequireAny>
+Options -Indexes
