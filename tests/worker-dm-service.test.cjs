@@ -88,8 +88,23 @@ test("DM avatar hydration reads migrated profile blobs from the actor's current 
   }, f.notify);
   assert.equal(result.recentContacts[0].handle, "peer.eurosky.social");
   assert.equal(result.recentContacts[0].displayName, "Eurosky Peer");
+  assert.notEqual(result.recentContacts[0].avatar, "[object Object]");
   assert.deepEqual(f.calls.find((call) => call[0] === "blob").slice(1), ["peer", "eurosky-avatar-cid"]);
   assert.equal(f.calls.some((call) => call[0] === "asset" && call[1].includes("fail-old-avatar")), true);
+});
+
+test("failed migrated avatar blobs do not become object-string image URLs", async () => {
+  const f = dmServiceFixture({
+    assetError: true,
+    profileRecords: { peer: { avatar: { ref: { $link: "current-avatar-cid" } } } },
+  });
+  const result = await f.service.hydrateAvatars({
+    recentContacts: [{ did: "peer", avatar: "https://cdn.bsky.app/fail-old-avatar" }],
+    conversations: [],
+  });
+  assert.equal(result.recentContacts[0].avatarPath, "");
+  assert.equal(result.recentContacts[0].avatar, "");
+  assert.equal(result.assets.length, 0);
 });
 
 test("DM avatar hydration copies inputs and batches missing profiles with authenticated transport", async () => {

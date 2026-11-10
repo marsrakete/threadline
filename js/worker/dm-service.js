@@ -450,7 +450,7 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
         const profile = typeof options.profileRecord === "function"
           ? await options.profileRecord(contact.did, auth, pdsServiceCache).catch(() => null)
           : null;
-        const profileAvatarUrl = String(profile?.avatar || "").trim();
+        const profileAvatarUrl = typeof profile?.avatar === "string" ? profile.avatar.trim() : "";
         const profileAvatarCid = typeof globalThis.parseBlobUrlInfo === "function"
           ? globalThis.parseBlobUrlInfo(profileAvatarUrl)?.cid || ""
           : "";
@@ -460,6 +460,8 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
           contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
           if (profileAvatarUrl) {
             contact.avatar = profileAvatarUrl;
+          } else if (currentAvatarCid) {
+            contact.avatar = "";
           }
           if (!currentAvatarCid) {
             contact.avatar = "";
@@ -578,7 +580,8 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
           }
           contact.handle = String(profile.handle || contact.handle || "").trim();
           contact.displayName = String(profile.displayName || contact.displayName || contact.handle || "").trim();
-          contact.avatar = String(profile.avatar || contact.avatar || "").trim();
+          const profileAvatar = typeof profile.avatar === "string" ? profile.avatar.trim() : "";
+          contact.avatar = profileAvatar || String(contact.avatar || "").trim();
         });
       } catch (error) {
         // The contact remains usable without an avatar when profile lookup fails.
