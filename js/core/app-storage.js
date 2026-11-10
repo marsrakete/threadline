@@ -170,6 +170,8 @@ export function createWorkerRequestClient(adapters) {
 
         const errorCode = String(event.data?.details?.code || "");
         const localizedServiceWorkerErrors = {
+          AUTH_STORAGE_ENCRYPTION_UNAVAILABLE: "authStorageEncryptionUnavailable",
+          AUTH_STORAGE_DECRYPT_FAILED: "authStorageDecryptFailed",
           ANALYSIS_ACCOUNT_MISSING: "analysisAccountMissingGeneric",
           ANALYSIS_ACCOUNT_NOT_FOUND: "analysisAccountNotFound",
           ANALYSIS_ACCOUNT_CHECK_FAILED: "analysisAccountCheckFailed",

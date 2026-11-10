@@ -393,6 +393,27 @@ test("package and service-worker versions stay synchronized", () => {
   assert.match(versionScript, new RegExp(`cacheVersion: "${versionInfo.cacheVersion}"`));
 });
 
+test("archive viewer isolates SVG documents and prevents active fallback content", () => {
+  const viewer = readProjectFile("viewer/index.php");
+  assert.match(viewer, /X-Content-Type-Options: nosniff/);
+  assert.match(viewer, /Content-Security-Policy: default-src 'none'; sandbox;/);
+  assert.match(viewer, /Content-Disposition: attachment/);
+  assert.match(viewer, /application\/octet-stream/);
+  assert.doesNotMatch(viewer, /return \$detected;/);
+});
+
+test("credential storage errors and privacy changes cover all supported languages", () => {
+  const translations = readProjectFile("js/core/app-translations.js");
+  const privacy = readProjectFile("datenschutz.html");
+  for (const key of ["authStorageEncryptionUnavailable", "authStorageDecryptFailed"]) {
+    assert.equal((translations.match(new RegExp(`^\\s+${key}:`, "gm")) || []).length, 3, `${key} must be translated in every locale`);
+  }
+  assert.equal((privacy.match(/AES-GCM/g) || []).length, 3, "privacy disclosure must cover all languages");
+  for (const phrase of ["Aktive SVG-Dateien", "Active SVG files", "fichiers SVG actifs"]) {
+    assert.ok(privacy.includes(phrase), `privacy page must cover ${phrase}`);
+  }
+});
+
 test("responsibility inventory covers every entry function and matches the reviewed source", () => {
   const inventory = JSON.parse(readProjectFile("docs/modularization-inventory.json"));
   const { hashAuditSource } = require("../scripts/audit-source.cjs");

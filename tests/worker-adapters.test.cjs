@@ -130,6 +130,7 @@ function storageFixture() {
   const options = { indexedDB: () => ({ open: (name, version) => { calls.push(["open", name, version]); const request = {}; queueMicrotask(() => {
     if (settings.openError) { request.error = settings.openError; request.onerror(); return; } request.result = database; request.onupgradeneeded(); request.onsuccess();
   }); return request; } }), databaseName: "fixture", databaseVersion: 2, storeName: "values", imageStoreName: "images", authKey: "auth",
+    authEncryptionKey: "auth-key", webCrypto: () => globalThis.crypto,
     normalizeAuth: value => { normalized.push(value); if (settings.normalizeError) { throw settings.normalizeError; } return { normalized: value }; }, messages: f.context.ThreadlineAdapterMessages };
   const factory = f.context.createThreadlineStorageService;
   return { ...f, factory, options, service: factory(options), calls, values, settings, normalized };
@@ -147,11 +148,23 @@ test("storage read/write preserve falsy values, identities and request-success c
   assert.ok(f.calls.some(call => call[0] === "transaction" && call[2] === "readonly")); assert.ok(f.calls.some(call => call[0] === "transaction" && call[2] === "readwrite"));
 });
 
-test("auth storage opens before normalization, keeps separate normalization rules and deletes only auth", async () => {
+test("auth storage encrypts credentials, migrates legacy plaintext and removes the key on sign-out", async () => {
   const f = storageFixture(), raw = { id: 1 }; const normalized = await f.service.writeAuth(raw);
-  assert.equal(f.normalized[0], raw); assert.equal(f.values.get("auth"), normalized); assert.equal(f.calls[0][0], "open");
+  assert.equal(f.normalized[0], raw); assert.equal(f.values.get("auth").format, "threadline-auth-v1");
+  assert.ok(f.values.get("auth-key").extractable === false); assert.equal(f.calls[0][0], "open");
+  assert.doesNotMatch(new TextDecoder().decode(f.values.get("auth").ciphertext), /normalized|id/);
+  assert.equal(JSON.stringify(await f.service.readAuth()), JSON.stringify(normalized));
+  f.values.set("auth", { id: "legacy", appPassword: "plaintext-secret" });
+  assert.equal(JSON.stringify(await f.service.readAuth()), JSON.stringify({ normalized: { id: "legacy", appPassword: "plaintext-secret" } }));
+  assert.equal(f.values.get("auth").format, "threadline-auth-v1");
   f.values.set("auth", 0); assert.equal((await f.service.readAuth()).normalized, null); f.values.set("other", "keep");
-  assert.equal(await f.service.clearAuth(), undefined); assert.equal(f.values.has("auth"), false); assert.equal(f.values.get("other"), "keep");
+  assert.equal(await f.service.clearAuth(), undefined); assert.equal(f.values.has("auth"), false); assert.equal(f.values.has("auth-key"), false); assert.equal(f.values.get("other"), "keep");
+});
+
+test("auth storage rejects plaintext fallback when Web Crypto is unavailable", async () => {
+  const f = storageFixture(); f.options.webCrypto = () => null;
+  const service = f.factory(f.options);
+  await assert.rejects(service.writeAuth({ appPassword: "secret" }), error => error.details?.code === "AUTH_STORAGE_ENCRYPTION_UNAVAILABLE");
 });
 
 test("storage propagates open, transaction, request and normalization failures", async () => {

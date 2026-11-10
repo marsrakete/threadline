@@ -279,6 +279,7 @@ const { edit: normalizeImageEdit, image: normalizeThreadImage, segments: normali
   metadata: stripThreadImageData, metadataSegments: normalizeSegmentImageMetadata } = workerComposerImageModels;
 const workerStorage = globalThis.createThreadlineStorageService({ indexedDB: () => indexedDB,
   databaseName: DB_NAME, databaseVersion: DB_VERSION, storeName: STORE_NAME, imageStoreName: COMPOSER_IMAGE_STORE_NAME, authKey: AUTH_KEY,
+  authEncryptionKey: "auth-encryption-key", webCrypto: () => crypto,
   normalizeAuth: (value) => normalizeAuthState(value), messages: globalThis.ThreadlineAdapterMessages,
 });
 const archiveModels = globalThis.createThreadlineArchiveModels({
