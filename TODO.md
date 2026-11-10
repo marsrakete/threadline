@@ -337,4 +337,4 @@ Die Vorlagen in [docs/PR-PLAN.md](docs/PR-PLAN.md) dokumentieren den frueheren P
 - [ ] Moegliche Sicherheitsalternative pruefen: App-Passwort nicht dauerhaft speichern.
 - [ ] Moegliche Sicherheitsalternative pruefen: nur Session speichern.
 - [ ] Moegliche Sicherheitsalternative pruefen: optionalen Sicherheitsmodus ohne gespeichertes App-Passwort anbieten.
-- [ ] Vor oeffentlichem Push immer pruefen: experimentelle Features, sensible Datenbereiche, README-Stand und Uebersetzungen.
+- [ ] Vor oeffentlichem Push manuell pruefen: experimentelle Features, sensible Datenbereiche und README-Stand. Secret- und Uebersetzungspruefungen laufen automatisch im PR-/Push-Workflow.
