@@ -105,10 +105,13 @@ test("backup reminder handles exact due/snooze boundaries, open dialogs and succ
   const module = await importProjectModule("js/core/app-backup.js"); const storage = createMemoryStorage();
   let now = 10000; let otherDialog = false;
   const elements = { status: { dataset: {} }, message: {}, dialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } } };
-  const reminder = module.createSettingsBackupReminder(elements, { storage, now: () => now, exportKey: "export", dismissKey: "dismiss",
+  const reminder = module.createSettingsBackupReminder(elements, { storage, now: () => now, exportKey: "export", dismissKey: "dismiss", firstUseKey: "firstUse",
     intervalMs: 1000, snoozeMs: 100, hasOpenDialog: () => otherDialog, translate: (key) => key, warn() {}, report() {},
     clearTimer() {}, setTimer() {}, exportFile: async () => reminder.markExported() });
-  assert.equal(reminder.isDue(), true); assert.equal(reminder.message(), "backupReminderUnknownMessage");
+  assert.equal(reminder.isDue(), false);
+  assert.equal(storage.getItem("firstUse"), "10000");
+  now += 999; assert.equal(reminder.isDue(), false);
+  now += 1; assert.equal(reminder.isDue(), true); assert.equal(reminder.message(), "backupReminderUnknownMessage");
   reminder.show(); assert.equal(elements.dialog.open, true); assert.equal(reminder.isDue(), false);
   reminder.close(true); now += 99; assert.equal(reminder.isDue(), false); now += 1; assert.equal(reminder.isDue(), true);
   reminder.markExported(); now += 999; assert.equal(reminder.isDue(), false); now += 1; assert.equal(reminder.isDue(), true);
@@ -131,4 +134,24 @@ test("backup reminder handles unavailable storage, export failure and transient 
   reminder.status("new"); assert.equal(cleared.at(-1), 1); assert.equal(timers.at(-1)[1], 5000);
   timers.at(-1)[0](); assert.equal(elements.status.hidden, true); assert.equal(elements.status.dataset.tone, undefined);
   reminder.close(true); assert.equal(elements.dialog.open, false); assert.ok(warnings.length >= 5);
+});
+
+test("first-use grace survives reload and existing export dates keep their schedule", async () => {
+  const module = await importProjectModule("js/core/app-backup.js");
+  const storage = createMemoryStorage();
+  let now = 10000;
+  const elements = { dialog: { open: false } };
+  const options = { storage, now: () => now, exportKey: "export", dismissKey: "dismiss", firstUseKey: "firstUse",
+    intervalMs: 1000, snoozeMs: 100, hasOpenDialog: () => false, warn() {} };
+  assert.equal(module.createSettingsBackupReminder(elements, options).isDue(), false);
+  now += 999;
+  assert.equal(module.createSettingsBackupReminder(elements, options).isDue(), false);
+  assert.equal(storage.getItem("firstUse"), "10000");
+  now += 1;
+  assert.equal(module.createSettingsBackupReminder(elements, options).isDue(), true);
+  storage.setItem("export", String(now));
+  storage.setItem("firstUse", "1");
+  assert.equal(module.createSettingsBackupReminder(elements, options).isDue(), false);
+  storage.setItem("export", String(now - 1000));
+  assert.equal(module.createSettingsBackupReminder(elements, options).isDue(), true);
 });

@@ -5,7 +5,7 @@
   "method": "AST inventory of every top-level named function, not a function-length filter. Category is structural evidence, not a completion verdict. Shared-state reads/writes include nested callbacks; property mutation requires the manual review described in MODULARIZATION-AUDIT.md.",
   "files": {
     "app.js": {
-      "sourceSha256": "e0a0c8de620fa2b531ef55609741b680778687d0b1e3287e65ddf6d2352ebc0f",
+      "sourceSha256": "8417e9af285f720ed1fe1c4dce469d02c6acb52cb49bcbd7bfe82ba94a15c4ec",
       "functionCount": 661,
       "unresolvedBindings": [],
       "domains": {
