@@ -1075,6 +1075,37 @@ for (const pathname of ["/", "/tools.html"]) {
     await page.evaluate(()=>window.__replyFixture.empty());await expect(items).toHaveCount(0);await expect(page.locator("#thread-explorer-replies-status")).not.toBeEmpty();
     await dialog.press("Escape");expect(errors).toEqual([]);
   });
+  test(`search Explorer icon stays centered from ${pathname}`, async ({ page }, testInfo) => {
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await prepareSearch(page);
+    await openSearch(page, pathname);
+    await page.locator("#search-query-input").fill("word");
+    await page.locator("#search-run-button").click();
+    await expect.poll(() => page.evaluate(() => window.__search.pending.length)).toBe(1);
+    await page.evaluate(() => window.__finishSearch(0, { items: [window.__searchItem("alignment")] }));
+    const button = page.locator(".search-result-thread-explorer-button");
+    await expect(button).toBeVisible();
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 844 });
+      for (const compact of [false, true]) {
+        await page.evaluate(value => document.body.classList.toggle("ui-density-compact", value), compact);
+        const geometry = await button.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          const icon = range.getBoundingClientRect();
+          return { horizontal: Math.abs(icon.x + icon.width / 2 - box.x - box.width / 2),
+            vertical: Math.abs(icon.y + icon.height / 2 - box.y - box.height / 2) };
+        });
+        expect(geometry.horizontal).toBeLessThan(3);
+        expect(geometry.vertical).toBeLessThan(3);
+      }
+    }
+    await page.locator(".search-result-item").screenshot({ path: testInfo.outputPath("search-icon-alignment.png") });
+    expect(errors).toEqual([]);
+  });
+
   test(`explorer favorites save from search, survive reload and remove through the dialog from ${pathname}`,async({page})=>{
     const errors=[];page.on("pageerror",error=>errors.push(error.message));await page.setViewportSize({width:390,height:844});
     await prepareSearch(page);await openSearch(page,pathname);
