@@ -2353,6 +2353,18 @@ body.thread-explorer-fullscreen-active {
   font-size: 0.82rem;
 }
 
+.profile-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profile-links a {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .thread-explorer-edit-button,
 .archive-html-edit-button,
 .archive-viewer-edit-button {

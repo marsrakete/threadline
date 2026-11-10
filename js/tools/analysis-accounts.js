@@ -29,8 +29,12 @@ function markerData(markers = {}) {
 function profileData(profile = {}, fallback = false) {
   let name = profile.displayName;
   if (fallback) { name = name || profile.handle || profile.did; }
-  return { did: text(profile.did), handle: text(profile.handle), displayName: text(name), avatar: text(profile.avatar),
+  const result = { did: text(profile.did), handle: text(profile.handle), displayName: text(name), avatar: text(profile.avatar),
     postsCount: Number(profile.postsCount) || 0, followersCount: Number(profile.followersCount) || 0, followsCount: Number(profile.followsCount) || 0 };
+  for (const key of ["pronouns", "website", "links"]) {
+    if (Object.hasOwn(profile, key)) { result[key] = profile[key]; }
+  }
+  return result;
 }
 
 /** Projects account filters. @param {object} filters - Raw options. @param {number} limit - Default limit. @returns {object} Normalized options. */

@@ -136,6 +136,7 @@ globalThis.createThreadlineArchiveWaveService = function createThreadlineArchive
           authorDisplayName: String(postView.author?.displayName || postView.author?.handle || "").trim(),
           authorDid: String(postView.author?.did || "").trim(),
           authorAvatar: String(postView.author?.avatar || "").trim(),
+          authorProfile: globalThis.ThreadlineProfileMetadata.normalize(postView.author),
           counts: {
             likeCount: Number(postView.likeCount) || 0,
             replyCount: Number(postView.replyCount) || 0,

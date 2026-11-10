@@ -7,6 +7,7 @@ const test = require("node:test");
 const { projectRoot } = require("./module-test-helpers.cjs");
 
 const MODULE_TESTS = {
+  "js/shared/profile-metadata.js": "tests/worker-adapters.test.cjs",
   "js/worker/account-avatar-cache.js": "tests/worker-adapters.test.cjs",
   "js/worker/record-models.js": "tests/worker-adapters.test.cjs",
   "js/worker/archive-wave-controller.js": "tests/worker-archive-controller.test.cjs",

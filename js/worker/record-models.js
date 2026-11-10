@@ -208,6 +208,7 @@ function normalizeNetworkProfile(profile = {}, source = "") {
       displayName: String(profile.displayName || profile.handle || "").trim(),
       avatar: String(profile.avatar || "").trim(),
       description: String(profile.description || "").trim().slice(0, 280),
+      ...globalThis.ThreadlineProfileMetadata.normalize(profile),
       followersCount: Number(profile.followersCount) || 0,
       followsCount: Number(profile.followsCount) || 0,
       postsCount: Number(profile.postsCount) || 0,

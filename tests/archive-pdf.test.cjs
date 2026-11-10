@@ -141,7 +141,10 @@ test("archive PDF renderer validates dependencies and delegates Canvas behavior 
   const names = ["images", "externalCard", "height", "groupKey", "frame", "fill", "stroke", "circle", "image", "bitmap", "metrics", "wrap", "text", "rectangle", "timestamp", "t", "canvas", "account"];
   const dependencies = Object.fromEntries(names.map(name => [name, () => {}]));
   for (const name of names) assert.throws(() => module.createArchivePdfRenderer({ ...dependencies, [name]: null }), TypeError, name);
-  assert.deepEqual(Object.keys(module.createArchivePdfRenderer(dependencies)), ["post", "page"]);
+  const renderer = module.createArchivePdfRenderer(dependencies);
+  assert.deepEqual(Object.keys(renderer), ["profilePages", "post", "page"]);
+  assert.deepEqual(await renderer.profilePages({}), []);
+  assert.deepEqual(await renderer.profilePages(null), []);
 });
 
 test("archive PDF module imports, cache entries and removed implementations remain consistent", () => {

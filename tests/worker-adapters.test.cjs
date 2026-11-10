@@ -2,6 +2,32 @@
 const test = require("node:test"), assert = require("node:assert/strict"), vm = require("node:vm");
 const { archiveModelsFixture, plain } = require("./worker-archive-models-fixtures.cjs");
 
+test("profile metadata preserves ordered links, provenance, labels and pronouns without interpreting markup", () => {
+  const metadata = archiveModelsFixture().context.ThreadlineProfileMetadata;
+  const profile = { pronouns: " they/them <b>literal</b> ", website: "https://old.example",
+    links: [{ uri: "at://did:own/app.bsky.actor.link/one", cid: "cid", url: "https://example.test/a", title: " <b>Support</b> ", labels: [{ val: "test" }] },
+      { url: "https://example.test/b", title: "Website" }] };
+  const result = plain(metadata.normalize(profile));
+  assert.equal(result.pronouns, "they/them <b>literal</b>");
+  assert.deepEqual(result.links.map(link => link.url), ["https://example.test/a", "https://example.test/b"]);
+  assert.equal(result.links[0].uri, profile.links[0].uri);
+  assert.deepEqual(result.links[0].labels, [{ val: "test" }]);
+  assert.equal(result.links[0].title, "<b>Support</b>");
+  assert.equal(profile.links[0].title, " <b>Support</b> ");
+  assert.deepEqual(plain(metadata.links(profile)), result.links);
+});
+
+test("profile metadata handles legacy websites, absent/cleared fields and invalid URLs", () => {
+  const metadata = archiveModelsFixture().context.ThreadlineProfileMetadata;
+  for (const value of [null, undefined, 42, {}]) { assert.deepEqual(plain(metadata.normalize(value)), {}); }
+  assert.deepEqual(plain(metadata.normalize({ pronouns: "", links: [] })), { pronouns: "", links: [] });
+  assert.deepEqual(plain(metadata.links({ website: "https://old.example" })), [{ url: "https://old.example/", title: "" }]);
+  const result = metadata.normalize({ links: [null, {}, { url: "javascript:alert(1)" }, { url: "data:text/html,bad" },
+    { url: "https://user:password@example.test/" }, { url: "not a URL" }], website: "javascript:bad" });
+  assert.deepEqual(plain(result), { website: "", links: [] });
+  assert.equal(Object.isFrozen(metadata), true);
+});
+
 /** Creates deterministic shared transport adapters and a response queue.
  * @returns {object} Factory, API, options, calls, GET traces and responses.
  */

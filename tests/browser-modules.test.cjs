@@ -323,7 +323,8 @@ test.describe("Composer image editor application integration", () => {
         const card = document.createElement("div"); card.className = "network-focus-card";
         Object.assign(card.style, { position: "fixed", top: "0", left: "0", width: "260px", zIndex: "99999" }); document.body.append(card);
         const calls = []; let own = true;
-        const profile = { did: "a", handle: "alpha.test", displayName: "<img src=x onerror=window.focusUnsafe=1>", description: "<script>plain description</script>" };
+        const profile = { did: "a", handle: "alpha.test", displayName: "<img src=x onerror=window.focusUnsafe=1>", description: "<script>plain description</script>",
+          pronouns: "they/them <b>literal</b>", links: [{ url: "https://example.test/", title: "<b>Support</b>" }, { url: "javascript:alert(1)" }] };
         const state = { selectedDid: "a", nodes: new Map([["a", profile]]), details: new Map([["a", { profile,
           relationshipDates: { youFollowSince: "2026-10-10T12:00:00Z", followsYouSince: "2026-10-12T12:00:00Z" },
           activityStats: { latestPostAt: "2026-10-13T12:00:00Z", windows: { 14: { postsCount: 2, likesReceivedCount: 5 } } },
@@ -333,10 +334,12 @@ test.describe("Composer image editor application integration", () => {
         templates.empty = document.querySelector("#network-result-empty-template");
         const renderer = createNetworkFocusCardRenderer({ card, templates }, { getState: () => state, cloneTemplate: cloneTemplateContent, setAvatar: setAvatarImage, t,
           model: (value) => buildNetworkFocusCardModel(value, { known: () => profile, ownNetwork: () => own, avatar: () => "", relation: () => "mutual",
-            score: () => 120, breakdown: () => ({ total: 120, relationScore: 120, followersScore: 0, postsScore: 0 }), centerLabel: () => "viewer", locale: "en", formatCount: (number) => String(Number(number) || 0), t }),
+            score: () => 120, breakdown: () => ({ total: 120, relationScore: 120, followersScore: 0, postsScore: 0 }), centerLabel: () => "viewer", locale: "en", formatCount: (number) => String(Number(number) || 0), t,
+            profileLinks: globalThis.ThreadlineProfileMetadata.links }),
           setActorInput: (value) => calls.push(["input", value]), load: (value) => calls.push(["load", value]), loadCommon: (did) => calls.push(["common", did]),
           clearCommon: () => { calls.push(["clear"]); state.commonTargetDid = ""; }, renderWorkspace: () => calls.push(["workspace"]) });
         renderer.render(); const name = card.querySelector(".network-avatar-copy strong").textContent;
+        const profileLinks = [...card.querySelectorAll(".profile-links a")].map(link => ({ url: link.href, title: link.textContent, rel: link.rel }));
         const description = card.querySelector("details p").textContent;
         const safe = card.querySelectorAll("img").length === 1 && card.querySelectorAll("script").length === 0 && !window.focusUnsafe;
         const counts = [...card.querySelectorAll(".network-stat-card strong")].map((node) => node.textContent);
@@ -347,10 +350,11 @@ test.describe("Composer image editor application integration", () => {
         state.commonTargetDid = "a"; state.commonDids = new Set(["p"]); renderer.render(); card.querySelector('[data-network-focus-action="common"]').click();
         own = false; renderer.render(); const foreignText = card.textContent;
         state.selectedDid = ""; renderer.render(); const empty = card.textContent; card.remove();
-        return { name, description, safe, counts, fits, ownText, foreignText, empty, calls };
+        return { name, description, safe, counts, fits, ownText, foreignText, empty, calls, profileLinks };
       });
       expect(focus.name).toBe("<img src=x onerror=window.focusUnsafe=1>"); expect(focus.description).toBe("<script>plain description</script>");
       expect(focus.safe).toBe(true); expect(focus.counts).toEqual(["0", "0", "0", "120"]); expect(focus.fits).toBe(true);
+      expect(focus.profileLinks).toEqual([{ url: "https://example.test/", title: "<b>Support</b>", rel: "noopener noreferrer" }]);
       expect(focus.ownText).toContain("networkMutualSince"); expect(focus.ownText).toContain("networkMutualLikesTotal");
       expect(focus.foreignText).not.toContain("networkMutualSince"); expect(focus.foreignText).not.toContain("networkMutualLikesTotal");
       expect(focus.calls.filter((call) => call[0] === "load")).toEqual([["load", { actor: "a", append: false, silentErrors: false }], ["load", { actor: "a", append: false, silentErrors: false }]]);

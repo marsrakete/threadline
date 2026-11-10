@@ -20,9 +20,19 @@ globalThis.createThreadlineArchiveSourceService = function createThreadlineArchi
     const sourceActor = String(filters?.sourceActor || "").trim();
     const actor = sourceDid || sourceActor;
     if (!actor) {
+      let metadata = globalThis.ThreadlineProfileMetadata.normalize(auth);
+      try {
+        const profile = await options.request("app.bsky.actor.getProfile", { actor: auth.session.did }, {
+          headers: { authorization: `Bearer ${auth.session.accessJwt}` }, base: options.base(auth),
+        });
+        if (profile) { metadata = globalThis.ThreadlineProfileMetadata.normalize(profile); }
+      } catch {
+        // Existing local profile data remains usable for offline archive work.
+      }
       return {
         did: auth.session.did, handle: auth.session.handle, displayName: auth.session.handle,
         avatar: auth.avatar || "", isOwnAccount: true,
+        ...metadata,
       };
     }
     const profile = await options.request("app.bsky.actor.getProfile", { actor }, {
@@ -33,6 +43,7 @@ globalThis.createThreadlineArchiveSourceService = function createThreadlineArchi
       did, handle: String(profile?.handle || sourceActor || sourceDid).trim(),
       displayName: String(profile?.displayName || profile?.handle || sourceActor || sourceDid).trim(),
       avatar: String(profile?.avatar || "").trim(), isOwnAccount: did === auth.session.did,
+      ...globalThis.ThreadlineProfileMetadata.normalize(profile),
     };
   }
   return Object.freeze({ resolve });

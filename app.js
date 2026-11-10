@@ -5242,6 +5242,8 @@ function renderThreadExplorerActorFocus() {
     avatar: threadExplorerActorFocusAvatar,
     title: threadExplorerActorFocusTitle,
     handle: threadExplorerActorFocusHandle,
+    links: threadExplorerActorFocus?.querySelector("[data-actor-profile-links]"),
+    profileLinks: globalThis.ThreadlineProfileMetadata.links,
     modeSelect: threadExplorerActorModeSelect,
     status: threadExplorerActorFocusStatus,
     actor: threadExplorerActorFocusActor,
@@ -10973,6 +10975,7 @@ const networkFocusCardRenderer = createNetworkFocusCardRenderer({
     known: getKnownNetworkProfile, ownNetwork: isViewingOwnNetwork, avatar: getStoredAccountAvatarUri,
     relation: getNetworkRelationLabel, score: getNetworkNodeScore, breakdown: getNetworkScoreBreakdown,
     centerLabel: getNetworkCenterLabel, locale: currentLocale, formatCount, t,
+    profileLinks: globalThis.ThreadlineProfileMetadata.links,
   }),
   cloneTemplate: cloneTemplateContent, setAvatar: setAvatarImage, t,
   setActorInput: (actor) => { if (networkAccountInput) { networkAccountInput.value = actor; } },
@@ -11117,6 +11120,7 @@ const archiveHtmlModels = createArchiveHtmlModels({
   normalizeStandardSite: normalizeStandardSiteMetadata, publicationFooter: getPublicationCardFooterLabel,
 });
 const archiveHtmlRenderer = createArchiveHtmlRenderer({
+  profileLinks: globalThis.ThreadlineProfileMetadata.links,
   models: archiveHtmlModels, loadTemplates: loadArchiveHtmlTemplates,
   parse: (html) => new DOMParser().parseFromString(html, "text/html"),
   t, timestamp: formatHistoryTimestamp, linkRuns: extractPdfLinkRuns,
@@ -11135,12 +11139,14 @@ const archivePdfLayout = createArchivePdfLayout({
   t, groups: buildArchiveThreadGroups, canvas: () => document.createElement("canvas"), maxImages: MAX_IMAGES_PER_SEGMENT,
 });
 const archivePdfRenderer = createArchivePdfRenderer({
+  profileLinks: globalThis.ThreadlineProfileMetadata.links,
   ...archivePdfLayout, fill: fillRoundedRect, stroke: strokeRoundedRect, circle: drawCircularImageCover,
   image: drawRoundedImageContain, bitmap: loadArchiveAssetBitmap, metrics: buildPostMetricLabels, wrap: buildWrappedPdfLines,
   text: drawArchivePdfTextBlock, rectangle: canvasRectToPdfRect, timestamp: formatHistoryTimestamp, t,
   canvas: () => document.createElement("canvas"), account: () => authAccount,
 });
 const archivePdfExport = createArchivePdfExportController({
+  profilePages: archivePdfRenderer.profilePages,
   paginate: archivePdfLayout.paginate, page: archivePdfRenderer.page, pdf: buildPdfFile, frame: waitForUiFrame,
   t, progress: setArchiveProgress, ensureAvatars: ensureArchiveAvatarAssets, options: getArchivePdfOptions,
   groups: buildArchiveThreadGroups, bands: archivePdfLayout.bands, baseName: makeArchiveFileBaseName,

@@ -347,7 +347,7 @@ globalThis.createThreadlineArchiveModels = function createThreadlineArchiveModel
   /** Builds the existing archive post schema from a record and author metadata.
    * @param {object} input - URI/CID, raw record, author fields and optional counts. @returns {object} Archive post retaining raw record/array references.
    */
-  function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", authorDid = "", authorDisplayName = "", authorAvatar = "", counts = null }) {
+  function buildArchivePostEntity({ uri, cid, record = {}, authorHandle = "", authorDid = "", authorDisplayName = "", authorAvatar = "", authorProfile, counts = null }) {
     const parsed = parseAtUri(uri);
     let permalink = "";
     if (parsed.rkey) {
@@ -375,6 +375,7 @@ globalThis.createThreadlineArchiveModels = function createThreadlineArchiveModel
       },
       permalink,
       authorHandle,
+      ...(authorProfile ? { authorProfile: globalThis.ThreadlineProfileMetadata.normalize(authorProfile) } : {}),
       authorDisplayName,
       authorDid,
       authorAvatar,
@@ -409,6 +410,9 @@ globalThis.createThreadlineArchiveModels = function createThreadlineArchiveModel
     existing.permalink = incoming.permalink || existing.permalink;
     existing.authorHandle = incoming.authorHandle || existing.authorHandle;
     existing.authorDisplayName = incoming.authorDisplayName || existing.authorDisplayName;
+    if (incoming.authorProfile) {
+      existing.authorProfile = { ...existing.authorProfile, ...incoming.authorProfile };
+    }
     existing.authorDid = incoming.authorDid || existing.authorDid;
     existing.authorAvatar = incoming.authorAvatar || existing.authorAvatar;
     existing.authorAvatarPath = incoming.authorAvatarPath || existing.authorAvatarPath;
@@ -514,7 +518,7 @@ globalThis.createThreadlineArchiveModels = function createThreadlineArchiveModel
       };
       rawRecordsByUri.set(post.uri, rawRecord);
       records.push({ uri: post.uri, cid: post.cid || "", value: rawRecord, authorHandle: post.authorHandle || "",
-        authorDisplayName: post.authorDisplayName || "", authorDid: post.authorDid || "", authorAvatar: post.authorAvatar || "", counts: post.counts || null });
+        authorDisplayName: post.authorDisplayName || "", authorDid: post.authorDid || "", authorAvatar: post.authorAvatar || "", authorProfile: post.authorProfile, counts: post.counts || null });
     });
     return { records, rawRecordsByUri, postsByUri, cursor, pageCount, pageSize };
   }
@@ -529,7 +533,8 @@ globalThis.createThreadlineArchiveModels = function createThreadlineArchiveModel
     return {
       manifest: {
         schemaVersion: 1, exportedAt: state.exportedAt, appVersion: state.appVersion,
-        account: { handle: state.sourceProfile.handle, did: state.sourceDid, displayName: state.sourceProfile.displayName, avatar: state.sourceProfile.avatar },
+        account: { handle: state.sourceProfile.handle, did: state.sourceDid, displayName: state.sourceProfile.displayName, avatar: state.sourceProfile.avatar,
+          ...globalThis.ThreadlineProfileMetadata.normalize(state.sourceProfile) },
         filters: state.normalizedFilters, postCount: state.orderedPosts.length, imageCount: state.imageCount,
         skippedImageCount: state.skippedImageCount, hashtagFilteredOutCount: state.hashtagFilteredOutCount,
         pageCount: state.pageCount, phase: state.currentPhase, errorMessage,

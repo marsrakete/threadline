@@ -1575,3 +1575,9 @@ Für tieferes Nachlesen sind diese Originalquellen besonders hilfreich:
 - [AT Protocol Specification](https://atproto.com/specs/atp)
 - [Lexicon Specification](https://atproto.com/specs/lexicon)
 - [AT Protocol XRPC API Reference](https://docs.bsky.app/docs/api/at-protocol-xrpc-api)
+
+## Öffentliche Profilangaben
+
+Threadline unterstützt `pronouns`, geordnete `links` aus `profileViewDetailed` und das veraltete `website`-Fallback aus dem [Bluesky-Actor-Lexikon](https://github.com/bluesky-social/atproto/blob/main/packages/api/lexicons/app/bsky/actor/defs.json). Die gemeinsame Grenze für Seite und klassischen Worker liegt in `js/shared/profile-metadata.js`. Fehlende Felder bleiben abwesend, damit Teilprofile keine bereits geladenen Angaben löschen; explizit leere Werte werden zum Entfernen berücksichtigt. Record-URI/CID, Labels und Icon-Metadaten bleiben erhalten; Icons der Linkziele werden nicht heruntergeladen.
+
+Pronomen erscheinen als Text in Posting-Identitäten, Actor-Fokus und Netzwerk-Profilkarten. HTTP(S)-Profilziele werden in Profilansichten und HTML-Archiven verlinkt; ausführbare Schemes und Ziele mit eingebetteten Zugangsdaten werden ausgelassen. Archiv-Manifeste und Autor-Metadaten erhalten die Angaben über ZIP-Roundtrips und fortgesetzte Wellen; auch die Analyse-Persistenz erhält sie. Der erste PDF-Band bekommt bei vorhandenen Angaben zum Archiv-Account paginierte Profilseiten mit klickbaren Link-Annotationen. Alte Archive ohne diese optionalen Felder bleiben unterstützt. Beim eigenen Archiv-Account werden öffentliche Profilangaben aktualisiert; bei einem Fehler bleiben lokale Angaben verwendbar. Profilbearbeitung gehört nicht zu dieser Erweiterung.

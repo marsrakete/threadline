@@ -25,6 +25,7 @@ globalThis.createThreadlineExplorerModels = function createThreadlineExplorerMod
       handle: String(actor?.handle || "").trim(),
       displayName: String(actor?.displayName || actor?.handle || "").trim(),
       avatar: String(actor?.avatar || "").trim(),
+      ...globalThis.ThreadlineProfileMetadata.normalize(actor),
       followingViewer: Boolean(viewer.following),
       followedByViewer: Boolean(viewer.followedBy),
     };

@@ -237,6 +237,9 @@ export function createArchiveHtmlRenderer(options) {
     node.querySelector(".archive-html-kicker").textContent = kicker;
     node.querySelector("h2").textContent = display || `@${post.authorHandle || model.handle}`;
     node.querySelector(".archive-html-author-handle").textContent = `@${post.authorHandle || model.handle}`;
+    if (post.authorProfile?.pronouns) {
+      node.querySelector(".archive-html-author-handle").append(document.createTextNode(` · ${post.authorProfile.pronouns}`));
+    }
     const time = node.querySelector("time");
     time.setAttribute("datetime", post.createdAt || "");
     time.textContent = options.timestamp(post.createdAt);
@@ -384,6 +387,22 @@ export function createArchiveHtmlRenderer(options) {
     }
     const groups = model.groups.map((group, index) => renderGroup(group, index, model, assets, settings));
     const items = [meta("archiveSummaryPosts", catalog.posts.length), meta("archiveSummaryImages", catalog.summary?.imageCount || 0)];
+    const profile = catalog.manifest?.account || catalog.account || {};
+    if (profile.pronouns) { items.push(meta("profilePronounsLabel", profile.pronouns)); }
+    const profileLinks = options.profileLinks?.(profile) || [];
+    if (profileLinks.length) {
+      const item = meta("profileLinksLabel", "");
+      const container = item.querySelector("strong");
+      for (const link of profileLinks) {
+        const anchor = container.ownerDocument.createElement("a");
+        anchor.href = link.url;
+        anchor.textContent = link.title || link.url;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        container.append(anchor, container.ownerDocument.createTextNode(" "));
+      }
+      items.push(item);
+    }
     if (model.skippedImageCount > 0) {
       items.push(meta("archiveSkippedImagesLabel", model.skippedImageCount));
     }

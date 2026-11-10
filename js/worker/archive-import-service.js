@@ -185,6 +185,7 @@ globalThis.createThreadlineArchiveImportService = function createThreadlineArchi
         authorDisplayName: postView.author?.displayName || postView.author?.handle || "",
         authorDid: postView.author?.did || "",
         authorAvatar: postView.author?.avatar || "",
+        authorProfile: postView.author,
         counts: {
           likeCount: Number(postView.likeCount) || 0,
           replyCount: Number(postView.replyCount) || 0,

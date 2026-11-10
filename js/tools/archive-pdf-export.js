@@ -88,6 +88,14 @@ export function createArchivePdfExportController(dependencies) {
   async function buildArchivePdfBand(catalog, posts, bandIndex, bandCount, options, progressCallback = null) {
     const pagePosts = paginateArchivePdfPosts(posts, options);
     const pages = [];
+    if (bandIndex === 0 && dependencies.profilePages) {
+      const profilePages = await dependencies.profilePages(catalog);
+      for (const page of profilePages) {
+        const name = `ProfileImage${pages.length + 1}`;
+        pages.push({ content: `q 595 0 0 842 0 0 cm /${name} Do Q`,
+          images: [{ name, width: page.width, height: page.height, bytes: page.bytes }], annotations: page.annotations });
+      }
+    }
     for (const [pageIndex, page] of pagePosts.entries()) {
       if (typeof progressCallback === "function") {
         progressCallback({

@@ -4,6 +4,18 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { importProjectModule } = require("./module-test-helpers.cjs");
 
+test("analysis profile metadata survives normalization and persistence", async () => {
+  const module = await importProjectModule("js/tools/analysis-accounts.js");
+  const profile = { did: "did:example:profile", pronouns: "they/them", website: "https://old.example/",
+    links: [{ url: "https://example.test/", title: "Site" }] };
+  const normalizer = module.createAnalysisAccountNormalizer({ corpus: () => ({}), temporal: () => ({}) });
+  const account = normalizer.normalize({ profile, posts: [] });
+  const stored = module.getPersistableAnalysisAccount(account);
+  assert.equal(stored.profile.pronouns, profile.pronouns);
+  assert.deepEqual(stored.profile.links, profile.links);
+  assert.equal(stored.profile.website, profile.website);
+});
+
 test("analysis event handlers select own actors and invalidate only the edited validation slot", async () => {
   const { controller, state, elements, calls } = await controllerFixture(); const h = controller.handlers;
   h.accountAOwn(); h.accountBOwn(); assert.equal(elements.inputA.value, "viewer.test"); assert.equal(elements.inputB.value, "viewer.test");
