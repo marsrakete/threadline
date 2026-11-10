@@ -1,5 +1,5 @@
 {
   "appVersion": "1.0.2",
-  "cacheVersion": "v390",
-  "label": "Threadline 1.0.2: DM avatar refresh fix"
+  "cacheVersion": "v391",
+  "label": "Threadline 1.0.2: avoid repeated failed avatar requests"
 }
