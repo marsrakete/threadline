@@ -63,6 +63,16 @@ test("AT Protocol worker imports client before session and exposes their contrac
   });
 });
 
+test("service worker imports AT Protocol dependencies directly before DM service setup", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "sw.js"), "utf8");
+  const importListIndex = source.indexOf('importScripts("./js/worker/account-avatar-cache.js"');
+  const clientIndex = source.indexOf('"./js/atproto/atproto-client.js"', importListIndex);
+  const sessionIndex = source.indexOf('"./js/atproto/atproto-session.js"', importListIndex);
+  const dmServiceIndex = source.indexOf('"./js/worker/dm-service.js"', importListIndex);
+  assert.ok(clientIndex >= 0 && sessionIndex > clientIndex && dmServiceIndex > sessionIndex);
+  assert.equal(source.includes('"./js/atproto/atproto-worker.js", "./js/worker/search-queries.js"'), false);
+});
+
 test("public archive avatar download resolves CDN DID/CID through the owner PDS without a session", async () => {
   const { context } = loadAtprotoWorkerContext();
   const requests = [];
