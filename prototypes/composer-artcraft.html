@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f3ef">
+    <title>Threadline – Composer-Prototyp</title>
+    <link rel="stylesheet" href="composer-artcraft.css">
+  </head>
+  <body data-design="artcraft" data-color-scheme="artcraft">
+    <div class="prototype-shell">
+      <header class="site-header">
+        <a class="brand" href="#composer" aria-label="Threadline Start">
+          <img src="../icons/icon.svg" alt="">
+          <span>THREADLINE</span>
+        </a>
+
+        <nav class="main-nav" aria-label="Hauptnavigation">
+          <a class="is-current" href="#composer" aria-current="page">SCHREIBEN</a>
+          <a href="#entwurf">ENTWÜRFE</a>
+          <a href="#einstellungen">EINSTELLUNGEN</a>
+        </nav>
+
+        <div class="header-tools">
+          <button id="design-toggle" class="scheme-toggle" type="button" aria-label="Design wechseln" aria-pressed="false">
+            ALTES DESIGN
+          </button>
+          <button id="color-scheme-toggle" class="scheme-toggle" type="button" aria-label="Farbschema wechseln" aria-pressed="false">
+            THREADLINE-FARBEN
+          </button>
+          <div class="account-mark" aria-label="Angemeldet als Markus">MI</div>
+        </div>
+      </header>
+
+      <main id="composer">
+        <section class="intro-section" aria-labelledby="page-title">
+          <div class="section-bar">
+            <span>01&nbsp; / &nbsp;COMPOSER</span>
+            <span>BLUESKY&nbsp; · &nbsp;POST ERSTELLEN</span>
+          </div>
+
+          <div class="intro-copy">
+            <p class="eyebrow">DEIN NÄCHSTER GEDANKE</p>
+            <h1 id="page-title">
+              <span class="artcraft-title">Schreib mit <em>Haltung.</em></span>
+              <span class="threadline-title">Text eingeben</span>
+            </h1>
+            <p class="intro-description">
+              <span class="artcraft-description">Ein guter Post beginnt mit einem klaren Gedanken.</span>
+              <span class="threadline-description">Schreibe deinen Beitrag und prüfe die Aufteilung vor dem Veröffentlichen.</span>
+            </p>
+          </div>
+        </section>
+
+        <section class="composer-layout" aria-label="Beitragseditor und Vorschau">
+          <div class="compose-panel">
+            <div class="section-bar panel-bar">
+              <span>02&nbsp; / &nbsp;TEXT</span>
+              <span>DEUTSCH</span>
+            </div>
+
+            <label class="field-label" for="post-text">DEIN POST</label>
+            <textarea id="post-text" rows="8" aria-describedby="editor-meta">Manchmal beginnt ein langer Thread mit einem einzigen Satz.
+
+Hier ist Platz für den Gedanken, den du teilen möchtest. Threadline hilft dir, daraus bei Bedarf mehrere gut lesbare Abschnitte zu machen.</textarea>
+
+            <div id="editor-meta" class="editor-meta">
+              <span id="paragraph-count">2 ABSÄTZE</span>
+              <span id="character-count">0 ZEICHEN</span>
+            </div>
+
+            <div class="tool-row" aria-label="Composer-Werkzeuge">
+              <button type="button" class="tool-button" aria-label="Bild hinzufügen">＋&nbsp; BILD</button>
+              <button type="button" class="tool-button" aria-label="Hashtag hinzufügen">#&nbsp; HASHTAG</button>
+              <button type="button" class="tool-button" aria-label="Umfrage hinzufügen">↗&nbsp; LINK</button>
+              <span class="tool-spacer"></span>
+              <button type="button" class="text-button">ENTWURF SPEICHERN</button>
+            </div>
+
+            <div class="tag-row" aria-label="Ausgewählte Hashtags">
+              <span class="tag-label">HASHTAGS</span>
+              <span class="tag">#Threadline</span>
+              <span class="tag">#Bluesky</span>
+            </div>
+
+            <div class="publish-row">
+              <span class="preview-note"><span class="status-dot"></span> VORSCHAU · NICHT VERÖFFENTLICHT</span>
+              <button type="button" class="publish-button" disabled>POST VORBEREITEN&nbsp; ↗</button>
+            </div>
+          </div>
+
+          <aside class="preview-panel" aria-labelledby="preview-title">
+            <div class="section-bar panel-bar">
+              <span>03&nbsp; / &nbsp;VORSCHAU</span>
+              <span>POST&nbsp; 01</span>
+            </div>
+
+            <div class="preview-heading">
+              <h2 id="preview-title">
+                <span class="artcraft-title">So erscheint dein Post.</span>
+                <span class="threadline-title">Thread-Anzeige</span>
+              </h2>
+              <p>
+                <span class="artcraft-description">Eine Vorschau für Bluesky, bevor du veröffentlichst.</span>
+                <span class="threadline-description">So sieht dein Beitrag in der Bluesky-App aus.</span>
+              </p>
+            </div>
+
+            <article class="post-preview">
+              <div class="post-author">
+                <div class="avatar">MI</div>
+                <div>
+                  <strong>Markus</strong>
+                  <span>@markus.bsky.social</span>
+                </div>
+                <span class="post-menu" aria-hidden="true">···</span>
+              </div>
+              <div id="post-preview-copy" class="post-copy" aria-live="polite"></div>
+              <div class="post-tags">#Threadline&nbsp;&nbsp; #Bluesky</div>
+              <div class="post-actions" aria-hidden="true">
+                <span>♡ &nbsp; 12</span><span>↻ &nbsp; 3</span><span>💬 &nbsp; 4</span><span>↗</span>
+              </div>
+            </article>
+
+            <div class="preview-footnote">
+              <span>1 POST</span>
+              <span>TEXT PASST IN EINEN ABSCHNITT</span>
+            </div>
+          </aside>
+        </section>
+
+        <footer class="page-footer">
+          <span>THREADLINE&nbsp; / &nbsp;COMPOSER</span>
+          <span>VISUELLE PROBE&nbsp; · &nbsp;KEINE FUNKTIONALE VERÖFFENTLICHUNG</span>
+        </footer>
+      </main>
+    </div>
+    <script type="module" src="composer-artcraft.js"></script>
+  </body>
+</html>
