@@ -34,11 +34,16 @@ globalThis.createThreadlineOAuthService = function createThreadlineOAuthService(
         runtimeImplementation: {
           createKey: (algs) => sdk.WebcryptoKey.generate(algs),
           getRandomValues: (size) => crypto.getRandomValues(new Uint8Array(size)),
-          digest: (data, { name }) => crypto.subtle.digest(name.toUpperCase().replace("SHA", "SHA-"), data),
+          digest,
           requestLock: lock,
         },
       }),
     };
+  }
+
+  /** Returns the digest bytes required by the SDK's PKCE and DPoP encoders. @param {Uint8Array} data - Input bytes. @param {object} algorithm - SDK digest name. @returns {Promise<Uint8Array>} Hash bytes. */
+  async function digest(data, { name }) {
+    return new Uint8Array(await crypto.subtle.digest(name.toUpperCase().replace("SHA", "SHA-"), data));
   }
 
   /** Caps discovery and token responses before SDK schema validation. @param {Request|string|URL} input - SDK request. @param {RequestInit} init - Fetch options. @returns {Promise<Response>} Bounded or normal XRPC response. */

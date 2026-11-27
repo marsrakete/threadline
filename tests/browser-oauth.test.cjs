@@ -2,6 +2,7 @@
 
 const { test, expect, chromium } = require("@playwright/test");
 const { execFileSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const fs = require("node:fs/promises");
 const https = require("node:https");
 const path = require("node:path");
@@ -85,14 +86,21 @@ async function routeProvider(context) {
     } else if (url.origin === provider && url.pathname === "/oauth/par") {
       calls.auth = new URLSearchParams(request.postData());
       expect(calls.auth.get("code_challenge_method")).toBe("S256");
+      expect(calls.auth.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect(request.headers().dpop).toBeTruthy();
+      const proof = JSON.parse(Buffer.from(request.headers().dpop.split(".")[1], "base64url"));
+      if (!proof.nonce) {
+        await route.fulfill({ status: 400, headers, json: { error: "use_dpop_nonce" } });
+        return;
+      }
       await route.fulfill({ status: 201, headers, json: { request_uri: "urn:ietf:params:oauth:request_uri:fixture", expires_in: 60 } });
     } else if (url.origin === provider && url.pathname === "/oauth/authorize") {
       const fragment = new URLSearchParams({ state: calls.auth.get("state"), code: "fixture-code", iss: provider });
       await route.fulfill({ status: 302, headers: { location: base + "oauth-callback.html#" + fragment } });
     } else if (url.origin === provider && url.pathname === "/oauth/token") {
       calls.tokenExchanges += 1;
-      expect(new URLSearchParams(request.postData()).get("code_verifier")).toBeTruthy();
+      const verifier = new URLSearchParams(request.postData()).get("code_verifier");
+      expect(createHash("sha256").update(verifier).digest("base64url")).toBe(calls.auth.get("code_challenge"));
       expect(request.headers().dpop).toBeTruthy();
       await route.fulfill({ headers, json: { sub: did, token_type: "DPoP", access_token: "access-fixture",
         refresh_token: "oauth-refresh-fixture", scope: calls.auth.get("scope"), expires_in: 3600 } });

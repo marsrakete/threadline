@@ -886,7 +886,7 @@ for (const pathname of ["/", "/tools.html"]) {
               calls.push({ method, params, transport });
               return { profiles: [{did:"peer",handle:"peer.test",displayName:"<b>Partner</b>",avatar:"peer-avatar"}] };
             },
-            base: () => "https://fixture.test/xrpc", accountAvatar: async () => "",
+            base: () => "https://fixture.test/xrpc", accountAvatar: async () => "", profileRecord: async () => null,
             remoteAsset: async (account, url, did) => { calls.push({asset:url,did});return {type:"image/png",bytes:new Uint8Array([1,2,3])}; },
             blob: async () => { throw Error("unexpected blob"); }, cid: () => "", extension: () => "png",
           });
