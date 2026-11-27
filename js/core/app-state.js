@@ -101,7 +101,8 @@ export function createApplicationHydrationController(elements, options) {
       options.setState({ savedSearches: options.normalize.searches(state.savedSearches),
         archiveSession: bundle.archiveSession || null,
         archiveCatalog: options.normalizeArchiveCatalog(bundle.archiveCatalog), currentLocale,
-        savedAccounts: options.normalizeAccounts(state.accounts), ...identity });
+        savedAccounts: options.normalizeAccounts(state.accounts),
+        accountStorageUnreadable: state.accountStorageUnreadable === true, ...identity });
       options.applyAvatarCache(bundle.accountAvatarCache || { assets: state.accountAvatarAssets || [] });
       elements.identifier.value = state.identifier || "";
       elements.source.value = state.draft || "";

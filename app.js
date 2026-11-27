@@ -1448,6 +1448,7 @@ let activeSegments = [];
 let currentLocale = DEFAULT_LOCALE;
 let localePreference = "auto";
 let authAccount = null;
+let accountStorageUnreadable = false;
 let authAccountService = "https://bsky.social";
 let authAccountWebApp = DEFAULT_POST_WEB_APP;
 let authAccountDid = "";
@@ -8961,6 +8962,7 @@ async function checkForUpdates(options = {}) { await applicationUpdates.check(op
 /** Schedules a throttled silent update check. @returns {void} */
 function scheduleSilentUpdateCheck() { applicationUpdates.schedule(); }
 
+/** Refreshes account controls and displays the current connection or account storage status. @returns {void} */
 function updateStatusForAuth() {
   updateAuthButtons();
   ensureNetworkStateForAccount();
@@ -8986,6 +8988,10 @@ function updateStatusForAuth() {
     return;
   }
 
+  if (accountStorageUnreadable) {
+    setStatus(t("statusAccountStorageUnreadable"), "error");
+    return;
+  }
   setStatus(t("statusNoAuth"));
 }
 
@@ -10645,6 +10651,7 @@ function applyHydratedApplicationState(patch) {
   if ("archiveCatalog" in patch) { archiveCatalog = patch.archiveCatalog; }
   if ("currentLocale" in patch) { currentLocale = patch.currentLocale; }
   if ("savedAccounts" in patch) { savedAccounts = patch.savedAccounts; }
+  if ("accountStorageUnreadable" in patch) { accountStorageUnreadable = patch.accountStorageUnreadable; }
   if ("authAccount" in patch) { authAccount = patch.authAccount; }
   if ("authAccountDid" in patch) { authAccountDid = patch.authAccountDid; }
   if ("authAccountService" in patch) { authAccountService = patch.authAccountService; }
@@ -10819,6 +10826,7 @@ const applicationUpdates = createApplicationUpdateController({
 /** Applies an authentication result to application state. @param {object} identity - Account, DID, service and web app. @returns {void} */
 function applyAuthenticationIdentity(identity) {
   const changedAccount = authAccountDid !== identity.did;
+  accountStorageUnreadable = false;
   authAccount = identity.account;
   authAccountDid = identity.did;
   authAccountService = identity.service;

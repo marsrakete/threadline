@@ -13,6 +13,31 @@ test("search/override models retain references, row limit and empty/null distinc
 test("history/reply/explorer models preserve sorting, deduplication and flags",()=>{const m=fixture().models;const history=m.history([{url:" x ",createdAt:"2026-01-01"},{url:"x",createdAt:"2026-01-01"},{url:"y",createdAt:"2026-02-01",threadCount:0}]);assert.equal(history.length,2);assert.equal(history[0].url,"y");assert.equal(history[0].threadCount,1);assert.equal(m.reply(null),null);assert.equal(m.reply({mode:"bad",sourceUrl:3,extra:true}).mode,"post");assert.deepEqual(plain(m.explorer({actor:" @@own.test ",accountMode:" all "})),{actor:"own.test",accountMode:"all"});assert.deepEqual(plain(m.explorer(null)),{actor:"",accountMode:"posts"});assert.equal(m.resize("fit"),"fit");assert.equal(m.resize("bad"),"off");assert.equal(m.expert(1),false);assert.equal(m.expert(true),true);});
 test("load retains legacy draft/locale fallbacks and image source precedence",async()=>{const f=fixture();f.data.values={draft:"legacy text",locale:"de",settings:{segmentImages:[],segmentLinkCards:[],desktopLayoutVersion:null,postLanguages:"de-DE"}};const result=await f.service.load({browserLocale:"en"});assert.equal(result.draft,"legacy text");assert.equal(result.locale,"de");assert.equal(result.desktopLayoutVersion,0);assert.deepEqual(plain(result.postLanguages),["de"]);assert.equal(result.authenticated,false);assert.equal(f.calls.find(c=>c[0]==="hydrate")[1],f.data.values.settings.segmentImages);});
 test("draft save stores image metadata then prunes after write",async()=>{const f=fixture();const image={id:"one",dataUrl:"data:image/png;base64,AA=="};await f.service.draft({draft:"text",segmentImages:[[image]],segmentOverrides:["keep"],replyTarget:{mode:"thread",sourceUrl:"url"}});assert.deepEqual(f.calls.map(c=>c[0]),["storeImages","write","prune"]);assert.equal(f.data.values.draft.segmentImages[0][0].dataUrl,undefined);assert.equal(f.data.values.draft.replyTarget.mode,"thread");});
+
+test("unreadable encrypted accounts do not block loading drafts and settings", async () => {
+  const f = fixture();
+  f.data.values = {
+    draft: { sourceText: "saved draft" },
+    settings: { themeMode: "dark", threadExplorerFavorites: [{ uri: "at://saved-post" }] },
+  };
+  for (const code of ["AUTH_STORAGE_DECRYPT_FAILED", "AUTH_STORAGE_ENCRYPTION_UNAVAILABLE"]) {
+    const error = Object.assign(new Error("Unreadable accounts"), { details: { code } });
+    const service = f.factory({ ...f.options, readAuth: async () => { throw error; } });
+    const result = await service.load();
+    assert.equal(result.accountStorageUnreadable, true);
+    assert.equal(result.authenticated, false);
+    assert.equal(result.accounts.length, 0);
+    assert.equal(result.draft, "saved draft");
+    assert.equal(result.themeMode, "dark");
+    assert.deepEqual(plain(result.threadExplorerFavorites), f.data.values.settings.threadExplorerFavorites);
+    assert.equal(f.calls.some(([operation]) => operation === "write"), false);
+  }
+  assert.equal((await f.service.load()).accountStorageUnreadable, false);
+
+  const error = new Error("Unexpected database error");
+  const service = f.factory({ ...f.options, readAuth: async () => { throw error; } });
+  await assert.rejects(service.load(), error);
+});
 test("settings save preserves per-field patch/reset rules and legacy language values",async()=>{const f=fixture();f.data.values.settings={themeMode:"dark",compactMode:true,tipsVisible:false,altTextRequired:false,sidebarCollapsedDesktop:true,appendThreadIntro:true,postLanguages:"de-DE",desktopLayoutVersion:4,unknown:"retained"};await f.service.settings({compactMode:false,desktopLayoutVersion:null});const saved=f.data.values.settings;assert.equal(saved.themeMode,"dark");assert.equal(saved.compactMode,true);assert.equal(saved.tipsVisible,false);assert.equal(saved.altTextRequired,true);assert.equal(saved.sidebarCollapsedDesktop,false);assert.equal(saved.appendThreadIntro,false);assert.equal(saved.desktopLayoutVersion,0);assert.deepEqual(plain(saved.postLanguages),["de"]);assert.equal(saved.unknown,"retained");assert.deepEqual(f.calls.filter(c=>c[0]==="write").map(c=>c[1]),["settings","locale"]);assert.equal(f.calls.at(-1)[0],"prune");});
 test("settings preserve metadata when no image payload is supplied",async()=>{const f=fixture();f.data.values.settings={segmentImages:[[{id:"stored"}]],savedSearches:[{id:"search"}],archivePreferences:{scope:"all"}};await f.service.settings({tipsVisible:null});assert.equal(f.calls.some(c=>c[0]==="storeImages"),false);assert.equal(f.data.values.settings.segmentImages[0][0].id,"stored");assert.equal(f.data.values.settings.tipsVisible,null);assert.equal(f.data.values.settings.savedSearches[0].id,"search");});
 test("storage failure retains write ordering and skips prune",async()=>{for(const failure of ["draft","settings","locale"]){const f=fixture();f.data.fail=failure;await assert.rejects(failure==="draft"?f.service.draft({}):f.service.settings({}),/write/);assert.equal(f.calls.some(c=>c[0]==="prune"),false);}});
