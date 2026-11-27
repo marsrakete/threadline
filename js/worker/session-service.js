@@ -112,35 +112,52 @@ globalThis.createThreadlineSessionService = function createThreadlineSessionServ
         },
       });
     }
-    const nextState = upsertAccount(await readStoredAuth(), {
-      did: session.did,
-      identifier,
-      handle: session.handle,
-      service: normalizedService,
-      pdsUrl,
-      webApp: requestedWebApp,
-      avatar,
-      avatarPath: cachedAvatar?.account?.avatarPath || "",
-      appPassword,
-      session,
-      updatedAt: now(),
+    const storedState = await updateAuth((currentState) => {
+      const existing = currentState.accounts.find((entry) => entry.did === session.did);
+      const nextState = upsertAccount(currentState, {
+        ...existing,
+        did: session.did,
+        identifier,
+        handle: session.handle,
+        service: normalizedService,
+        pdsUrl,
+        webApp: requestedWebApp,
+        avatar,
+        avatarPath: cachedAvatar?.account?.avatarPath || "",
+        appPassword,
+        session,
+        authMethod: "password",
+        updatedAt: now(),
+      });
+      nextState.activeDid = session.did;
+      return nextState;
     });
-    nextState.activeDid = session.did;
-    const storedState = await writeStoredAuth(nextState);
     return buildAuthResponse(storedState, storedState.accounts.find((entry) => entry.did === session.did));
+  }
+
+  /** Reads fresh account state immediately before writing. @param {Function} update - Account state mutation. @returns {Promise<object>} Saved account state. */
+  async function updateAuth(update) {
+    if (options.updateAuth) { return options.updateAuth(update); }
+    return writeStoredAuth(update(await readStoredAuth()));
   }
 
   /** Returns a valid stored session, refreshes it or falls back to app-password login.
    * @param {string|null} targetDid - Explicit account or active DID.
+   * @param {string} method - Explicit OAuth or app-password selection, if requested.
    * @returns {Promise<object>} Stored auth entry; previous failure policy remains.
    */
-  async function ensureSession(targetDid = null) {
+  async function ensureSession(targetDid = null, method) {
     const state = await readStoredAuth();
     const desiredDid = targetDid || state.activeDid;
     const auth = state.accounts.find((entry) => entry.did && entry.did === desiredDid);
 
     if (!auth?.did) {
       throw new Error(messages.noSession);
+    }
+
+    if (method === "oauth" || (!method && auth.authMethod === "oauth")) {
+      if (!auth.oauth) { throw createServiceWorkerError("Reconnect OAuth", "OAUTH_SESSION_REQUIRED"); }
+      return options.ensureOAuth(auth);
     }
 
     if (auth.session?.accessJwt && isJwtValid(auth.session.accessJwt)) {
@@ -180,15 +197,20 @@ globalThis.createThreadlineSessionService = function createThreadlineSessionServ
             },
           });
         }
-        const nextState = upsertAccount(state, {
-          ...auth,
-          session: refreshedSession,
-          avatar,
-          avatarPath: cachedAvatar?.account?.avatarPath || auth.avatarPath || "",
-          updatedAt: now(),
+        const storedState = await updateAuth((currentState) => {
+          const current = currentState.accounts.find((entry) => entry.did === auth.did);
+          if (!current?.session) { throw new Error(messages.noSession); }
+          if (current.session.refreshJwt !== auth.session.refreshJwt) { return currentState; }
+          const nextState = upsertAccount(currentState, {
+            ...current,
+            session: refreshedSession,
+            avatar,
+            avatarPath: cachedAvatar?.account?.avatarPath || auth.avatarPath || "",
+            updatedAt: now(),
+          });
+          if (!currentState.activeDid) { nextState.activeDid = auth.did; }
+          return nextState;
         });
-        nextState.activeDid = auth.did;
-        const storedState = await writeStoredAuth(nextState);
         return storedState.accounts.find((entry) => entry.did === auth.did);
       } catch (error) {
         warn(messages.refreshWarning, error);
@@ -223,7 +245,12 @@ globalThis.createThreadlineSessionService = function createThreadlineSessionServ
       return auth;
     }
 
-    const freshAuth = await ensureReference(auth.did);
+    let freshAuth;
+    if (auth.oauthRequest) {
+      freshAuth = await ensureReference(auth.did, "oauth");
+    } else {
+      freshAuth = await ensureReference(auth.did, "password");
+    }
     if (!freshAuth) {
       return auth;
     }

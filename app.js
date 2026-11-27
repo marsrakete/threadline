@@ -20,6 +20,7 @@ import { buildThreadExplorerEdgePath, getThreadExplorerMeasuredStageRect } from 
 import { encodeSnapshotImageElement, collectSnapshotStyleRules, shouldTileSnapshotCanvas, loadSnapshotCanvasImage } from "./js/tools/thread-explorer-snapshot.js";
 import { createThreadExplorerAccountContext } from "./js/tools/thread-explorer-controller.js";
 import { detectApplicationLocale, translateApplicationValue, applyApplicationTranslatedTitle } from "./js/core/app-i18n.js";
+import { createOAuthLoginController } from "./js/core/app-oauth.js";
 import {
   createLivePostInteractionController,
   createThreadExplorerViewPreference,
@@ -10824,12 +10825,23 @@ function applyAuthenticationIdentity(identity) {
   authAccountWebApp = identity.webApp;
   if (changedAccount) { getThreadExplorerAccountContext().invalidate(); }
 }
+const oauthLogin = createOAuthLoginController({
+  form: document.querySelector("#oauth-login-form"), handle: document.querySelector("#oauth-handle"),
+  dm: document.querySelector("#oauth-dm-read"), button: document.querySelector("#oauth-login-button"),
+  passwordDetails: document.querySelector("#password-login-details"),
+}, {
+  available: window.location.protocol === "https:" && Boolean(navigator.locks && navigator.serviceWorker),
+  workspace: document.body.dataset.page, note: (...args) => loginController.note(...args),
+  flushDraft: () => composerDocument.flushDraft(), request: sendToServiceWorker, t,
+  navigate: (url) => window.location.assign(url),
+  onPageShow: (reset) => window.addEventListener("pageshow", (event) => { if (event.persisted) { reset(); } }),
+});
 const loginController = createLoginController({
   preset: serverPresetField, custom: customServerField, customWrap: customServerWrap,
   note: loginDialogNote, identifier: identifierField, password: passwordField, dialog: loginDialog,
 }, {
   presets: LOGIN_SERVICE_PRESETS, getState: () => ({ service: authAccountService }),
-  setTimeout: (callback, delay) => window.setTimeout(callback, delay), request: sendToServiceWorker, t,
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay), request: sendToServiceWorker, t, oauth: oauthLogin,
   setBusy: (busy) => setBusy(loginButton, busy, t("loginBusy"), t("loginButton")),
   setIdentity: applyAuthenticationIdentity, setAccounts: (accounts) => { savedAccounts = accounts; },
   restoreAvatars: restoreAccountAvatarCache, resolveWebApp: resolvePostWebBase, updateStatus: updateStatusForAuth,
@@ -10839,7 +10851,7 @@ const loginController = createLoginController({
 const savedAccountActions = createSavedAccountActions({
   defaultService: LOGIN_SERVICE_PRESETS["bsky.social"], setIdentity: applyAuthenticationIdentity,
   setAccounts: (accounts) => { savedAccounts = accounts; },
-  switchAccount: (did) => requestAccountSwitch(sendToServiceWorker, did),
+  switchAccount: (did, method) => requestAccountSwitch(sendToServiceWorker, did, method),
   logout: (did) => requestAccountLogout(sendToServiceWorker, did),
   remove: (did) => requestAccountRemoval(sendToServiceWorker, did),
   restoreAvatars: restoreAccountAvatarCache, renderAccounts: renderAccountSwitcher, resolveWebApp: resolvePostWebBase,

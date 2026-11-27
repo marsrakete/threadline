@@ -31,7 +31,7 @@ globalThis.createThreadlineNetworkDataService = function createThreadlineNetwork
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
 
       let feedItems = [];
@@ -85,7 +85,7 @@ globalThis.createThreadlineNetworkDataService = function createThreadlineNetwork
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
 
       let notifications = [];
@@ -194,7 +194,7 @@ globalThis.createThreadlineNetworkDataService = function createThreadlineNetwork
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
-      base: authXrpcBase(auth),
+      ...auth.oauthRequest, base: authXrpcBase(auth),
     });
     let fieldName = "follows";
     if (endpoint.endsWith("Followers")) { fieldName = "followers"; }
@@ -249,6 +249,7 @@ globalThis.createThreadlineNetworkDataService = function createThreadlineNetwork
       collection: parsed.collection,
       rkey: parsed.rkey,
     }, {
+      ...auth.oauthRequest,
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },

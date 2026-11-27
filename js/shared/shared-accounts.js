@@ -87,6 +87,13 @@ export function createSavedAccountRenderer(elements, options) {
       const fragment = elements.template.content.cloneNode(true);
       const item = fragment.querySelector(".account-chip-wrap"); const button = fragment.querySelector(".account-chip");
       const auth = fragment.querySelector(".account-chip-action"); const remove = fragment.querySelector(".account-chip-remove");
+      const fallback = fragment.querySelector(".account-chip-fallback");
+      if (fallback && account.authMethod === "oauth" && account.hasStoredPassword) {
+        fallback.hidden = false;
+        fallback.textContent = options.t("oauthPasswordShort");
+        fallback.title = options.t("oauthPasswordFallback");
+        fallback.addEventListener("click", () => options.actions.usePassword(account));
+      }
       item.classList.add(`is-${visual}`); button.classList.add(`is-${visual}`); button.disabled = !account.did;
       const needsLogin = !account.hasStoredPassword && !account.hasSession;
       if (needsLogin) { button.classList.add("is-needs-login"); }

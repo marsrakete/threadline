@@ -35,11 +35,11 @@ If you are new to Threadline, think of it as one app with seven focused workspac
 
 ## First Start
 
-1. Create a Bluesky app password.
-2. Add your account in Threadline and sign in.
-3. Open the workspace you need and start there.
+1. Open “Add account” in Threadline and enter your Bluesky handle.
+2. Choose “Sign in with Bluesky” and approve the request at your provider. Select DM read access only if you want to use the message archive.
+3. Open the workspace you need.
 
-Threadline uses an app password, not your main Bluesky password.
+Choose “Connect with an app password” to use the existing sign-in method. Saved app-password connections continue to work. If you connect the same account with OAuth, use “App password” beside its account entry to switch back to the saved connection. Enter your main Bluesky password only at your provider.
 
 ## Workspace Guide
 

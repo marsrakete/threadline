@@ -23,7 +23,7 @@ globalThis.createThreadlineArchiveSourceService = function createThreadlineArchi
       let metadata = globalThis.ThreadlineProfileMetadata.normalize(auth);
       try {
         const profile = await options.request("app.bsky.actor.getProfile", { actor: auth.session.did }, {
-          headers: { authorization: `Bearer ${auth.session.accessJwt}` }, base: options.base(auth),
+          headers: { authorization: `Bearer ${auth.session.accessJwt}` }, ...auth.oauthRequest, base: options.base(auth),
         });
         if (profile) { metadata = globalThis.ThreadlineProfileMetadata.normalize(profile); }
       } catch {
@@ -36,7 +36,7 @@ globalThis.createThreadlineArchiveSourceService = function createThreadlineArchi
       };
     }
     const profile = await options.request("app.bsky.actor.getProfile", { actor }, {
-      headers: { authorization: `Bearer ${auth.session.accessJwt}` }, base: options.base(auth),
+      headers: { authorization: `Bearer ${auth.session.accessJwt}` }, ...auth.oauthRequest, base: options.base(auth),
     });
     const did = String(profile?.did || "").trim();
     return {

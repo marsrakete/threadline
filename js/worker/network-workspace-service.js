@@ -59,7 +59,7 @@ globalThis.createThreadlineNetworkWorkspaceService = function createThreadlineNe
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
-      base: authXrpcBase(auth),
+      ...auth.oauthRequest, base: authXrpcBase(auth),
     }).catch(() => null);
 
     let followerLabel = messages.networkFollowersFirst;
@@ -146,7 +146,7 @@ globalThis.createThreadlineNetworkWorkspaceService = function createThreadlineNe
     });
     const profile = await bskyGet("app.bsky.actor.getProfile", {
       actor: actorDid,
-    }, { headers, base: authXrpcBase(auth) });
+    }, { headers, ...auth.oauthRequest, base: authXrpcBase(auth) });
     let viewer = {};
     if (profile?.viewer && typeof profile.viewer === "object") { viewer = profile.viewer; }
 

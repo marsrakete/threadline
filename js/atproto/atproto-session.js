@@ -21,6 +21,8 @@ function getAtprotoSession() {
       endpoint: (...args) => extractPdsServiceFromDidDocument(...args), avatar: (...args) => fetchAccountAvatar(...args),
       avatarCache: () => getAccountAvatarCache(), cacheAvatar: (...args) => cacheStoredAccountAvatar(...args), saveAvatarCache: (...args) => saveAccountAvatarCache(...args),
       readAuth: () => readStoredAuth(), writeAuth: (value) => writeStoredAuth(value), upsert: (...args) => upsertAccount(...args), response: (...args) => buildAuthResponse(...args),
+      ensureOAuth: (account) => getWorkerOAuth().ensure(account),
+      updateAuth: (update) => updateStoredAuth(update),
       now: () => new Date().toISOString(), nowMs: () => Date.now(), decodeBase64: (value) => atob(value), warn: (...args) => console.warn(...args),
       ensureReference: (...args) => ensureSession(...args), loginAgain: (...args) => login(...args), error: (...args) => createServiceWorkerError(...args),
       defaultService: DEFAULT_LOGIN_SERVICE, muWeb: MU_WEB_CLIENT, messages: globalThis.ThreadlineAdapterMessages,
@@ -88,9 +90,10 @@ async function login({ identifier, appPassword, service, webApp } = {}) { return
 /**
  * Ensures a valid access token for the selected or active account.
  * @param {string|null} targetDid - Optional DID of the account to refresh.
+ * @param {string} method - Explicit stored sign-in method.
  * @returns {Promise<object>} Fresh stored auth entry.
  */
-async function ensureSession(targetDid = null) { return getAtprotoSession().ensure(targetDid); }
+async function ensureSession(targetDid = null, method) { return getAtprotoSession().ensure(targetDid, method); }
 
 /**
  * Checks whether the current service/PDS is reachable.

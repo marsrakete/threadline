@@ -38,7 +38,7 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
-      base: authXrpcBase(auth),
+      ...auth.oauthRequest, base: authXrpcBase(auth),
     });
   }
 
@@ -70,7 +70,7 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
 
       const existingUris = new Set();
@@ -114,7 +114,7 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
           headers: {
             authorization: `Bearer ${auth.session.accessJwt}`,
           },
-          base: authXrpcBase(auth),
+          ...auth.oauthRequest, base: authXrpcBase(auth),
         });
         const displayName = String(response?.view?.displayName || feed.displayName || "").trim();
         enriched.push({
@@ -139,7 +139,7 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
       headers: {
         authorization: `Bearer ${activeAuth.session.accessJwt}`,
       },
-      base: authXrpcBase(activeAuth),
+      ...activeAuth.oauthRequest, base: authXrpcBase(activeAuth),
     });
 
     const feeds = extractThreadExplorerPinnedFeedSources(response?.preferences || []);
@@ -168,7 +168,7 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
-      base: authXrpcBase(auth),
+      ...auth.oauthRequest, base: authXrpcBase(auth),
     });
 
     let feed = [];
@@ -294,7 +294,7 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
         cursor: cursor || undefined,
       }, {
         headers,
-        base: authXrpcBase(activeAuth),
+        ...activeAuth.oauthRequest, base: authXrpcBase(activeAuth),
       });
 
       let feed = [];
@@ -387,7 +387,7 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
         headers: {
           authorization: `Bearer ${activeAuth.session.accessJwt}`,
         },
-        base: authXrpcBase(activeAuth),
+        ...activeAuth.oauthRequest, base: authXrpcBase(activeAuth),
       });
 
       let feed = [];

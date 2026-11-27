@@ -84,7 +84,7 @@ globalThis.createThreadlineAnalysisService = function createThreadlineAnalysisSe
    * @returns {Promise<Array|null>} Normalized profiles or null without a token.
    */
   async function collectAuthListProfiles(auth, endpoint, fieldName) {
-    if (!auth?.session?.accessJwt) {
+    if (!(auth?.session?.accessJwt || auth?.oauthRequest)) {
       return null;
     }
     const collected = [];
@@ -97,7 +97,7 @@ globalThis.createThreadlineAnalysisService = function createThreadlineAnalysisSe
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
       const entries = safeArray(response?.[fieldName]);
       collected.push(...entries
@@ -116,7 +116,7 @@ globalThis.createThreadlineAnalysisService = function createThreadlineAnalysisSe
     const normalizedActors = [...new Set((safeArray(actors))
       .map((value) => String(value || "").trim())
       .filter((value) => value.startsWith("did:")))];
-    if (!normalizedActors.length || !auth?.session?.accessJwt) {
+    if (!normalizedActors.length || !(auth?.session?.accessJwt || auth?.oauthRequest)) {
       return new Map();
     }
 
@@ -139,7 +139,7 @@ globalThis.createThreadlineAnalysisService = function createThreadlineAnalysisSe
           headers: {
             authorization: `Bearer ${auth.session.accessJwt}`,
           },
-          base: authXrpcBase(auth),
+          ...auth.oauthRequest, base: authXrpcBase(auth),
         });
         const profiles = safeArray(response?.profiles);
         profiles.forEach((profile) => {
@@ -239,7 +239,7 @@ globalThis.createThreadlineAnalysisService = function createThreadlineAnalysisSe
         actor: profileActor,
       }, {
         headers,
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
     } catch (error) {
       const message = String(error?.message || "").trim();
@@ -261,7 +261,7 @@ globalThis.createThreadlineAnalysisService = function createThreadlineAnalysisSe
         cursor: cursor || undefined,
       }, {
         headers,
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
 
       const feedItems = safeArray(response?.feed);
@@ -432,7 +432,7 @@ globalThis.createThreadlineAnalysisService = function createThreadlineAnalysisSe
         actor: profileActor,
       }, {
         headers,
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
       return {
         did: String(profile?.did || "").trim(),

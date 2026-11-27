@@ -128,6 +128,7 @@ globalThis.createThreadlineIdentityService = function createThreadlineIdentitySe
       const profile = await bskyFetch(`app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`, {
         method: "GET",
         headers,
+        ...auth?.oauthRequest,
         base: xrpcBaseForService(auth?.pdsUrl || auth?.service || DEFAULT_LOGIN_SERVICE),
       });
       const avatar = typeof profile?.avatar === "string" ? profile.avatar.trim() : "";

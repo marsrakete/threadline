@@ -35,11 +35,11 @@ Wenn du Threadline neu kennenlernst, denke weniger an einen einzelnen Composer u
 
 ## Schnellstart
 
-1. Ein Bluesky-App-Passwort erzeugen.
-2. Das eigene Konto in Threadline hinzufügen und verbinden.
-3. Den passenden Arbeitsbereich öffnen und dort loslegen.
+1. In Threadline „Konto hinzufügen“ öffnen und den Bluesky-Handle eingeben.
+2. „Mit Bluesky anmelden“ wählen und die Freigabe beim Anbieter bestätigen. Den DM-Lesezugriff nur auswählen, wenn du das Nachrichtenarchiv nutzen möchtest.
+3. Den passenden Arbeitsbereich öffnen.
 
-Threadline verwendet ein App-Passwort und nicht das normale Bluesky-Passwort.
+Unter „Mit App-Passwort verbinden“ steht die bisherige Anmeldung zur Verfügung. Bestehende App-Passwort-Verbindungen funktionieren weiter. Wenn du dasselbe Konto mit OAuth verbindest, kannst du über „App-Passwort“ neben dem Konto wieder die gespeicherte Verbindung auswählen. Gib dein normales Bluesky-Passwort nur beim Anbieter ein.
 
 ## Arbeitsbereiche Im Überblick
 

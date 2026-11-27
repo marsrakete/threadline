@@ -21,9 +21,10 @@ export function createApplicationSessionController(options) {
           if (!silent && label) { options.setStatus(options.t("statusAccountOffline", { account: label }), "error"); }
           options.updateAuthButtons(); return false;
         }
-        if (result.reason === "invalid_password" || result.reason === "missing_password") {
+        if (result.reason === "invalid_password" || result.reason === "missing_password" || result.reason === "oauth_reconnect") {
           let key = "statusAccountNeedsLogin";
           if (result.reason === "invalid_password") { key = "statusAccountPasswordRejected"; }
+          if (result.reason === "oauth_reconnect") { key = "oauthReconnect"; }
           const message = options.t(key, { account: label });
           options.disconnect(false);
           if (active) { options.openLogin({ account: active, mode: "repair", note: message, tone: "error" }); }
@@ -112,8 +113,10 @@ export function createLoginController(elements, options) {
     if (account?.webApp === options.presets["mu.social"]) { accountService = account.webApp; }
     selectService(settings.service || accountService || options.presets["bsky.social"]);
     note(settings.note || "", settings.tone || "neutral");
+    options.oauth?.configure(settings);
     if (!elements.dialog.open) { elements.dialog.showModal(); }
     options.setTimeout(() => {
+      if (options.oauth && options.oauth.shouldFocus()) { options.oauth.focus(); return; }
       if (elements.identifier.value) { elements.password.focus(); } else { elements.identifier.focus(); }
     }, 0);
   }
@@ -175,6 +178,7 @@ export function createSavedAccountActions(options) {
     let key = "statusAccountNeedsLogin";
     if (reason === "offline") { key = "statusAccountOffline"; }
     else if (reason === "invalid_password") { key = "statusAccountPasswordRejected"; }
+    else if (reason === "oauth_reconnect") { key = "oauthReconnect"; }
     return options.t(key, { account: account.handle || account.identifier || "" });
   }
   /** Reports action failures. @param {Error} error - Request/UI failure. @returns {void} */
@@ -186,7 +190,9 @@ export function createSavedAccountActions(options) {
       if (!result.authenticated) {
         identity({}, account, false); options.setLoginFields(account.identifier || account.handle || "", true); options.updateStatus();
         const message = reasonMessage(account, result.reason); options.setStatus(message, "error");
-        if (result.reason === "missing_password" || result.reason === "invalid_password") { options.openLogin({ account, mode: "repair", note: message, tone: "error" }); }
+        if (result.reason === "missing_password" || result.reason === "invalid_password" || result.reason === "oauth_reconnect") {
+          options.openLogin({ account, mode: "repair", note: message, tone: "error" });
+        }
         return;
       }
       identity(result, account, true); options.setLoginFields(result.identifier || "", true); options.updateStatus();
@@ -197,6 +203,10 @@ export function createSavedAccountActions(options) {
   async function toggle(account, state) {
     try {
       if (state === "signed-out") {
+        if (account.authMethod === "oauth") {
+          options.openLogin({ account, mode: "repair" });
+          return;
+        }
         if (!account.hasStoredPassword) {
           options.openLogin({ account, mode: "repair", note: reasonMessage(account, "missing_password"), tone: "error" }); return;
         }
@@ -222,5 +232,20 @@ export function createSavedAccountActions(options) {
       options.setStatus(options.t("accountRemovedStatus", { account: account.handle || account.identifier || "account" }));
     } catch (error) { failed(error); }
   }
-  return { select, toggle, remove };
+  /** Explicitly reuses the saved password connection for an OAuth account. @param {object} account - Saved account. @returns {Promise<void>} Completion. */
+  async function usePassword(account) {
+    try {
+      const result = await options.switchAccount(account.did, "password");
+      if (!result.authenticated) {
+        options.openLogin({ account: { ...account, authMethod: "password" }, mode: "repair",
+          note: options.t("statusAccountNeedsLogin", { account: account.handle || account.identifier }), tone: "error" });
+        return;
+      }
+      await refresh(result);
+      identity(result, account, true);
+      options.updateStatus();
+      await options.verify({ silent: true });
+    } catch (error) { failed(error); }
+  }
+  return { select, toggle, remove, usePassword };
 }

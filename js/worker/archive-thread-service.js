@@ -63,7 +63,7 @@ globalThis.createThreadlineArchiveThreadService = function createThreadlineArchi
   async function requestHashtagThread(auth, uri, depth) {
     const activeAuth = await refreshAuthReference(auth);
     return await bskyGet("app.bsky.feed.getPostThread", { uri, depth, parentHeight: 0 }, {
-      headers: { authorization: `Bearer ${activeAuth.session.accessJwt}` }, base: authXrpcBase(activeAuth),
+      headers: { authorization: `Bearer ${activeAuth.session.accessJwt}` }, ...activeAuth.oauthRequest, base: authXrpcBase(activeAuth),
     });
   }
   /** Loads root-only hashtag matches with caller-owned caching.
@@ -217,7 +217,7 @@ globalThis.createThreadlineArchiveThreadService = function createThreadlineArchi
           headers: {
             authorization: `Bearer ${activeAuth.session.accessJwt}`,
           },
-          base: authXrpcBase(activeAuth),
+          ...activeAuth.oauthRequest, base: authXrpcBase(activeAuth),
           signal: controller.signal,
         });
       } catch (error) {

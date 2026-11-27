@@ -99,7 +99,7 @@ globalThis.createThreadlineSearchService = function createThreadlineSearchServic
             headers: {
               authorization: `Bearer ${auth.session.accessJwt}`
             },
-            base: authXrpcBase(auth)
+            ...auth.oauthRequest, base: authXrpcBase(auth)
           });
           let posts;
           if (Array.isArray(response?.posts)) {
@@ -175,7 +175,7 @@ globalThis.createThreadlineSearchService = function createThreadlineSearchServic
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`
         },
-        base: authXrpcBase(auth)
+        ...auth.oauthRequest, base: authXrpcBase(auth)
       });
       let posts;
       if (Array.isArray(response?.posts)) {
@@ -256,7 +256,7 @@ globalThis.createThreadlineSearchService = function createThreadlineSearchServic
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`
         },
-        base: authXrpcBase(auth)
+        ...auth.oauthRequest, base: authXrpcBase(auth)
       });
       let feed;
       if (Array.isArray(response?.feed)) {

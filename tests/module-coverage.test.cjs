@@ -7,6 +7,13 @@ const test = require("node:test");
 const { projectRoot } = require("./module-test-helpers.cjs");
 
 const MODULE_TESTS = {
+  "js/atproto/atproto-oauth.js": "tests/worker-oauth.test.cjs",
+  "js/atproto/oauth-sdk-entry.js": "tests/worker-oauth.test.cjs",
+  "js/core/app-oauth.js": "tests/worker-oauth.test.cjs",
+  "js/core/oauth-callback.js": "tests/worker-oauth.test.cjs",
+  "js/vendor/atproto-oauth.js": "tests/worker-oauth.test.cjs",
+  "js/worker/oauth-service.js": "tests/worker-oauth.test.cjs",
+  "js/worker/oauth-storage.js": "tests/worker-oauth.test.cjs",
   "js/shared/profile-metadata.js": "tests/worker-adapters.test.cjs",
   "js/worker/account-avatar-cache.js": "tests/worker-adapters.test.cjs",
   "js/worker/record-models.js": "tests/worker-adapters.test.cjs",

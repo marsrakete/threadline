@@ -11,9 +11,15 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
   const { readAuth: readStoredAuth, writeAuth: writeStoredAuth, clearAuth: clearStoredAuth, ensure: ensureSession,
     upsert: upsertAccount, response: buildAuthResponse, publicMeta: getAccountPublicMeta, webBase: resolvePostWebBase,
     clearArchiveSession, clearArchiveCatalog, now, defaultService: DEFAULT_LOGIN_SERVICE, messages } = options;
+  /** Checks the selected session, including legacy adapters used outside the worker. @param {object|null} account - Saved account. @returns {boolean} Session availability. */
+  function hasSession(account) {
+    if (typeof options.hasSession === "function") { return options.hasSession(account); }
+    return Boolean(account?.session?.did);
+  }
   /** Preserves offline/password/error precedence. @param {Error} error - Failure. @param {object|null} account - Stored account. @returns {string} Reason code. */
   function failureReason(error, account) {
     if (isOfflineAuthError(error)) { return "offline"; }
+    if (account?.authMethod === "oauth") { return "oauth_reconnect"; }
     if (!account?.appPassword) { return "missing_password"; }
     if (isInvalidCredentialsError(error)) { return "invalid_password"; }
     return "signed_out";
@@ -43,7 +49,7 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
   }
 
   /** Verifies and selects a stored account. @param {object} input - Operation input where applicable. @returns {Promise<object>} Public account response. */
-  async function switchAccount({ did } = {}) {
+  async function switchAccount({ did, method } = {}) {
     const state = await readStoredAuth();
     const account = state.accounts.find((entry) => entry.did && entry.did === did);
 
@@ -52,10 +58,19 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
     }
 
     try {
-      const verified = await ensureSession(did);
-      const refreshedState = await readStoredAuth();
-      refreshedState.activeDid = verified.did || did;
-      const storedState = await writeStoredAuth(refreshedState);
+      let verified;
+      if (method === "password" && account.appPassword) {
+        verified = await ensureSession(did, "password");
+      } else {
+        verified = await ensureSession(did);
+      }
+      const storedState = await updateAuth((refreshedState) => {
+        refreshedState.activeDid = verified.did || did;
+        const selected = refreshedState.accounts.find((entry) => entry.did === refreshedState.activeDid);
+        if (!selected) { throw new Error(messages.accountMissing); }
+        if (method === "password" && account.appPassword) { delete selected.authMethod; }
+        return refreshedState;
+      });
       return buildAuthResponse(storedState, storedState.accounts.find((entry) => entry.did === (verified.did || did)));
     } catch (error) {
       const reason = failureReason(error, account);
@@ -72,6 +87,12 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
     }
   }
 
+  /** Uses the shared state queue for account preference updates. @param {Function} update - Account state mutation. @returns {Promise<object>} Stored state. */
+  async function updateAuth(update) {
+    if (options.updateAuth) { return options.updateAuth(update); }
+    return writeStoredAuth(update(await readStoredAuth()));
+  }
+
   /** Imports public metadata without credentials. @param {object} input - Operation input where applicable. @returns {Promise<object>} Public account response. */
   async function importAccountMetadata({ accounts } = {}) {
     const state = await readStoredAuth();
@@ -83,6 +104,10 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
     }
     for (const entry of entries) {
       if (!(entry?.did || entry?.identifier)) {
+        continue;
+      }
+      if (nextState.accounts.some((saved) => (entry.did && saved.did === entry.did) ||
+          (!entry.did && saved.identifier === (entry.identifier || entry.handle)))) {
         continue;
       }
 
@@ -102,7 +127,7 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
     }
 
     if (nextState.accounts.length > 0 && !nextState.activeDid) {
-      nextState.activeDid = nextState.accounts.find((entry) => entry.session?.did)?.did || "";
+      nextState.activeDid = nextState.accounts.find(hasSession)?.did || "";
     }
 
     const storedState = await writeStoredAuth(nextState);
@@ -114,8 +139,11 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
   /** Removes a stored account and selects the first remaining session. @param {object} input - Operation input where applicable. @returns {Promise<object>} Public account response. */
   async function removeAccount({ did } = {}) {
     const state = await readStoredAuth();
+    if (state.accounts.some((entry) => entry.did === did && entry.oauth)) {
+      await options.revokeOAuth(did);
+    }
     const nextAccounts = state.accounts.filter((entry) => !(entry.did && entry.did === did));
-    const nextActive = nextAccounts.find((entry) => entry.session?.did) || null;
+    const nextActive = nextAccounts.find(hasSession) || null;
 
     if (nextAccounts.length === 0) {
       await clearStoredAuth();
@@ -135,18 +163,22 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
   async function logout({ did } = {}) {
     const state = await readStoredAuth();
     const targetDid = did || state.activeDid;
+    const target = state.accounts.find((entry) => entry.did === targetDid);
+    if (target?.authMethod === "oauth" && target.oauth) { await options.revokeOAuth(targetDid); }
     const nextAccounts = state.accounts.map((entry) => {
       if (!(targetDid && entry.did === targetDid)) {
         return entry;
       }
 
-      return {
-        ...entry,
-        session: null,
-        updatedAt: now(),
-      };
+      const signedOut = { ...entry, updatedAt: now() };
+      if (entry.authMethod === "oauth") {
+        delete signedOut.oauth;
+      } else {
+        signedOut.session = null;
+      }
+      return signedOut;
     });
-    const nextActiveAccount = nextAccounts.find((entry) => entry.did !== targetDid && entry.session?.did) || null;
+    const nextActiveAccount = nextAccounts.find((entry) => entry.did !== targetDid && hasSession(entry)) || null;
     let nextActiveDid = state.activeDid;
     if (state.activeDid === targetDid) {
       nextActiveDid = nextActiveAccount?.did || "";
@@ -183,7 +215,7 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
   async function authStatus() {
     const state = await options.readAuth();
     const activeAccount = state.accounts.find((entry) => entry.did && entry.did === state.activeDid);
-    if (!activeAccount?.session?.did) {
+    if (!hasSession(activeAccount)) {
       return { authenticated: false };
     }
     return buildAuthResponse(state, activeAccount);

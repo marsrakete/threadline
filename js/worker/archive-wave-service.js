@@ -46,7 +46,7 @@ globalThis.createThreadlineArchiveWaveService = function createThreadlineArchive
         headers: {
           authorization: `Bearer ${activeAuth.session.accessJwt}`,
         },
-        base: authXrpcBase(activeAuth),
+        ...activeAuth.oauthRequest, base: authXrpcBase(activeAuth),
       }), {
         runId,
         notifyProgress,
@@ -91,7 +91,7 @@ globalThis.createThreadlineArchiveWaveService = function createThreadlineArchive
         headers: {
           authorization: `Bearer ${activeAuth.session.accessJwt}`,
         },
-        base: authXrpcBase(activeAuth),
+        ...activeAuth.oauthRequest, base: authXrpcBase(activeAuth),
       }), {
         runId,
         notifyProgress,
@@ -164,7 +164,7 @@ globalThis.createThreadlineArchiveWaveService = function createThreadlineArchive
         headers: {
           authorization: `Bearer ${activeAuth.session.accessJwt}`,
         },
-        base: authXrpcBase(activeAuth),
+        ...activeAuth.oauthRequest, base: authXrpcBase(activeAuth),
       }), {
         runId,
         notifyProgress,

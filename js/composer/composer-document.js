@@ -164,15 +164,34 @@ export function createComposerDocumentController(elements, options) {
    */
   function scheduleDraft() {
     options.clearTimer(draftTimer);
-    draftTimer = options.setTimer(async () => {
+    draftTimer = options.setTimer(saveScheduledDraft, 250);
+  }
+
+  /** Persists the current draft snapshot on the existing serial queue. @returns {Promise<unknown>} Draft acknowledgement. */
+  function saveDraftSnapshot() {
+    const state = options.getState();
+    const payload = { draft: sourceText.value, segmentImages: state.segmentImages,
+      segmentLinkCards: state.segmentLinkCards, segmentOverrides: state.segmentOverrides,
+      replyTarget: state.composerReplyTarget };
+    return options.enqueueDraft(() => options.saveDraft(payload));
+  }
+
+  /** Flushes a scheduled draft save and waits for in-progress writes before navigation. @returns {Promise<void>} Completion. */
+  async function flushDraft() {
+    if (draftTimer !== null) {
+      options.clearTimer(draftTimer);
       draftTimer = null;
-      const state = options.getState();
-      const payload = { draft: sourceText.value, segmentImages: state.segmentImages,
-        segmentLinkCards: state.segmentLinkCards, segmentOverrides: state.segmentOverrides,
-        replyTarget: state.composerReplyTarget };
-      try { await options.enqueueDraft(() => options.saveDraft(payload)); }
-      catch (error) { options.reportError(error); options.setStatus(error.message, "error"); }
-    }, 250);
+      await saveDraftSnapshot();
+    } else {
+      await options.enqueueDraft(async () => {});
+    }
+  }
+
+  /** Saves the draft when the debounce timer fires. @returns {Promise<void>} Completion. */
+  async function saveScheduledDraft() {
+    draftTimer = null;
+    try { await saveDraftSnapshot(); }
+    catch (error) { options.reportError(error); options.setStatus(error.message, "error"); }
   }
   /**
    * Confirms and clears the complete document, then persists the empty draft and settings.
@@ -222,5 +241,5 @@ export function createComposerDocumentController(elements, options) {
     try { await importFile(file); }
     catch (error) { options.reportError(error); options.setStatus(error.message || options.translate("threadImportFailed"), "error"); }
   }
-  return { buildExport, exportFile, importFile, clear, scheduleDraft, handlers: { loadClick, saveClick, importChange, clear } };
+  return { buildExport, exportFile, importFile, clear, scheduleDraft, flushDraft, handlers: { loadClick, saveClick, importChange, clear } };
 }

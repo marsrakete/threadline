@@ -154,7 +154,7 @@ globalThis.createThreadlineRichTextService = function createThreadlineRichTextSe
         q: variant,
         limit: 8,
       }, {
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },

@@ -41,7 +41,7 @@ globalThis.createThreadlineExplorerReactionService = function createThreadlineEx
       headers: {
         authorization: `Bearer ${activeAuth.session.accessJwt}`,
       },
-      base: authXrpcBase(activeAuth),
+      ...activeAuth.oauthRequest, base: authXrpcBase(activeAuth),
     };
     const params = {
       uri,

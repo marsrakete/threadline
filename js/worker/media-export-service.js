@@ -38,7 +38,7 @@ globalThis.createThreadlineMediaExportService = function createThreadlineMediaEx
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
-      base: authXrpcBase(auth),
+      ...auth.oauthRequest, base: authXrpcBase(auth),
     });
 
     return {
@@ -86,7 +86,7 @@ globalThis.createThreadlineMediaExportService = function createThreadlineMediaEx
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
 
       let feedItems = [];
