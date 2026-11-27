@@ -5,7 +5,7 @@
   "method": "AST inventory of every top-level named function, not a function-length filter. Category is structural evidence, not a completion verdict. Shared-state reads/writes include nested callbacks; property mutation requires the manual review described in MODULARIZATION-AUDIT.md.",
   "files": {
     "app.js": {
-      "sourceSha256": "af1c45efce170c86e5e4b7d68acd62bbbad39da7f120779b3988575d8258b813",
+      "sourceSha256": "4bc898d92c52e44937f5b2a5213012c66835f7788d9f18ca19e6cf5d0997ba08",
       "functionCount": 661,
       "unresolvedBindings": [],
       "domains": {
@@ -5860,6 +5860,7 @@
           "domain": "core",
           "category": "behavior",
           "stateReads": [
+            "accountStorageUnreadable",
             "appOnline",
             "authAccount",
             "currentWorkspace",
@@ -6291,6 +6292,7 @@
           "category": "behavior",
           "stateReads": [],
           "stateWrites": [
+            "accountStorageUnreadable",
             "addMarkerSpacing",
             "altTextRequired",
             "appendThreadEmoji",
@@ -6336,6 +6338,7 @@
             "authAccountDid"
           ],
           "stateWrites": [
+            "accountStorageUnreadable",
             "authAccount",
             "authAccountDid",
             "authAccountService",

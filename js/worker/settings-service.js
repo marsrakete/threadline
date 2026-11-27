@@ -65,9 +65,21 @@ globalThis.createThreadlineSettingsService = function createThreadlineSettingsSe
     }
     return "first";
   }
-  /** Preserves stored app-state getAppState orchestration. @param {object} input - Existing worker payload. @returns {Promise<object>} App state or save acknowledgement. */
+  /** Loads stored app state even when the encrypted account data is unreadable. @param {object} input - Browser locale. @returns {Promise<object>} App state and account storage status. */
   async function getAppState({ browserLocale } = {}) {
-    const state = await readStoredAuth();
+    let state;
+    let accountStorageUnreadable = false;
+    try {
+      state = await readStoredAuth();
+    } catch (error) {
+      const code = error?.details?.code;
+      if (code !== "AUTH_STORAGE_DECRYPT_FAILED" && code !== "AUTH_STORAGE_ENCRYPTION_UNAVAILABLE") {
+        throw error;
+      }
+      // The encrypted record and its key stay in storage for a later read.
+      state = { activeDid: "", accounts: [] };
+      accountStorageUnreadable = true;
+    }
     const auth = state.accounts.find((entry) => entry.did && entry.did === state.activeDid) || null;
     const accountAvatarCache = await getAccountAvatarCache();
     const draft = await readStoredValue(DRAFT_KEY);
@@ -97,6 +109,7 @@ globalThis.createThreadlineSettingsService = function createThreadlineSettingsSe
 
     return {
       authenticated,
+      accountStorageUnreadable,
       identifier: auth?.identifier || "",
       handle,
       did: auth?.did || "",
