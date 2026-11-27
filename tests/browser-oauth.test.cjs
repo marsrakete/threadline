@@ -145,7 +145,7 @@ test("OAuth in Threadline restores Tools, signs XRPC and retains the original pa
       if (frame === page.mainFrame()) { navigations.push(new URL(frame.url()).pathname); }
     });
     await page.goto(base + "tools.html");
-    await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)).catch(() => false), { timeout: 20_000 }).toBe(true);
     await page.locator("#add-account-button").click();
     await expect(page.locator("#oauth-login-form")).toBeVisible();
     await page.locator("#password-login-details summary").click();
