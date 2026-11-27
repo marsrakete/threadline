@@ -1592,3 +1592,41 @@ Der Service Worker lädt das mit `npm run build:oauth` erzeugte, lokale SDK-Bund
 `oauth-service.js` bindet den Rücksprung an die erwartete DID, verwendet den SDK-Transport für DPoP und reicht ausschließlich öffentliche Kontodaten an die Oberfläche. `oauth-storage.js` speichert den signierenden CryptoKey und verschlüsselt die OAuth-Sitzung sowie den zeitlich begrenzten Transaktionszustand separat in IndexedDB. `oauth-callback.html` wird vom Service Worker ohne Cache ausgeliefert und entfernt die Fragmentparameter vor der Weitergabe an den Worker.
 
 Ein Konto behält seine App-Passwort-Sitzung, wenn OAuth als Anmeldeart ausgewählt wird. Der Kontowechsel über „App-Passwort“ ist ausdrücklich. Für DMs ist eine separate Freigabe erforderlich. Die OAuth-Berechtigungen für Lesezugriffe, Beiträge, Interaktionen und Bilduploads stehen in `scripts/build-oauth.mjs`.
+
+```mermaid
+sequenceDiagram
+    actor Nutzer
+    participant PWA as Threadline-PWA
+    participant SW as Service Worker
+    participant Auth as OAuth-Autorisierungsserver
+    participant Login as App-Passwort-Anmeldeserver
+    participant PDS as Kontoserver (PDS)
+
+    alt Mit Bluesky anmelden
+        Nutzer->>PWA: Bluesky-Handle eingeben
+        PWA->>SW: OAuth starten
+        SW->>Auth: Autorisierungsanfrage per PAR mit PKCE und DPoP vorbereiten
+        Auth-->>SW: Referenz für die Anmelde-URL liefern
+        SW-->>PWA: Anmelde-URL übergeben
+        PWA->>Auth: Zum Anbieter weiterleiten
+        Nutzer->>Auth: Anmelden und Zugriff freigeben
+        Auth-->>PWA: Mit einmaligem Code zur Rücksprungseite zurückkehren
+        PWA->>PWA: OAuth-Parameter aus der URL entfernen
+        PWA->>SW: Code und state-Parameter zur Prüfung übergeben
+        SW->>Auth: Code gegen DPoP-gebundene Sitzung eintauschen
+        SW->>SW: Konto-DID prüfen und OAuth-Sitzung separat verschlüsselt speichern
+        SW-->>PWA: Rücksprungziel bestätigen
+        PWA->>PWA: Composer oder Werkzeuge öffnen
+        SW->>PDS: DPoP-signierte API-Anfragen senden
+    else App-Passwort ausdrücklich wählen
+        Nutzer->>PWA: Gespeicherte Verbindung wählen oder App-Passwort eingeben
+        PWA->>SW: App-Passwort-Verbindung verwenden
+        opt Neue Sitzung nötig
+            SW->>Login: Mit App-Passwort anmelden
+            Login-->>SW: Sitzungstokens liefern
+        end
+        SW->>PDS: API-Anfragen mit Bearer-Token senden
+    end
+
+    Note over PWA,SW: Bestehende App-Passwort-Verbindungen bleiben erhalten.
+```
