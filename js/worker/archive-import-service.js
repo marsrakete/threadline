@@ -77,7 +77,7 @@ globalThis.createThreadlineArchiveImportService = function createThreadlineArchi
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
       if (Array.isArray(entryResponse.posts)) {
         entryPost = entryResponse.posts[0];
@@ -143,7 +143,7 @@ globalThis.createThreadlineArchiveImportService = function createThreadlineArchi
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
-      base: authXrpcBase(auth),
+      ...auth.oauthRequest, base: authXrpcBase(auth),
     });
 
     const threadRoot = threadResponse.thread || threadResponse.post || threadResponse;

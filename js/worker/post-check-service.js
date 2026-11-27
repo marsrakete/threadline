@@ -35,7 +35,7 @@ globalThis.createThreadlinePostCheckService = function createThreadlinePostCheck
         headers: {
           authorization: `Bearer ${auth.session.accessJwt}`,
         },
-        base: authXrpcBase(auth),
+        ...auth.oauthRequest, base: authXrpcBase(auth),
       });
     } catch (error) {
       throw new Error(error?.message || messages.replyPostLoad);

@@ -1677,7 +1677,7 @@
     </dialog>
 
     <dialog id="login-dialog" class="settings-dialog">
-      <form id="login-form" class="settings-sheet login-dialog-sheet">
+      <div class="settings-sheet login-dialog-sheet">
         <div class="section-heading settings-heading">
           <div>
             <p class="eyebrow" data-i18n="accountsEyebrow">Konten</p>
@@ -1688,37 +1688,55 @@
 
         <p id="login-dialog-note" class="settings-note" hidden></p>
 
-        <label>
-          <span data-i18n="serverPresetLabel">Anmeldeserver</span>
-          <select id="server-preset" name="server-preset">
-            <option value="bsky.social" data-i18n="serviceBluesky">Bluesky</option>
-            <option value="eurosky.social" data-i18n="serviceEurosky">Eurosky</option>
-            <option value="mu.social" data-i18n="serviceMu">Mu.social</option>
-            <option value="custom" data-i18n="serviceCustom">Eigener Server</option>
-          </select>
-        </label>
+        <form method="dialog" id="oauth-login-form" class="login-method-form" hidden>
+          <label>
+            <span data-i18n="oauthHandle">Bluesky-Handle</span>
+            <input id="oauth-handle" type="text" required placeholder="name.bsky.social" autocomplete="username" autocapitalize="none" spellcheck="false">
+          </label>
+          <label class="settings-check">
+            <input id="oauth-dm-read" type="checkbox">
+            <span data-i18n="oauthDmRead">DM-Lesezugriff für das Nachrichtenarchiv erlauben</span>
+          </label>
+          <button type="submit" id="oauth-login-button" data-i18n="oauthSignIn">Mit Bluesky anmelden</button>
+        </form>
 
-        <label id="custom-server-wrap" hidden>
-          <span data-i18n="customServerLabel">Eigener Server</span>
-          <input id="custom-server" name="custom-server" type="url" placeholder="https://example.com" inputmode="url">
-        </label>
+        <details id="password-login-details" open>
+          <summary data-i18n="oauthPasswordFallback">Mit App-Passwort verbinden</summary>
+          <form method="dialog" id="login-form" class="login-method-form">
 
-        <label>
-          <span data-i18n="identifierLabel">Handle oder E-Mail</span>
-          <input id="identifier" name="identifier" type="text" placeholder="z. B. name.bsky.social" autocomplete="username" required>
-        </label>
+            <label>
+              <span data-i18n="serverPresetLabel">Anmeldeserver</span>
+              <select id="server-preset" name="server-preset">
+                <option value="bsky.social" data-i18n="serviceBluesky">Bluesky</option>
+                <option value="eurosky.social" data-i18n="serviceEurosky">Eurosky</option>
+                <option value="mu.social" data-i18n="serviceMu">Mu.social</option>
+                <option value="custom" data-i18n="serviceCustom">Eigener Server</option>
+              </select>
+            </label>
 
-        <label>
-          <span data-i18n="passwordLabel">App-Passwort</span>
-          <input id="password" name="password" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password" required>
-          <small class="field-hint" data-i18n="passwordHint">Nicht das Bsky-Passwort!</small>
-        </label>
+            <label id="custom-server-wrap" hidden>
+              <span data-i18n="customServerLabel">Eigener Server</span>
+              <input id="custom-server" name="custom-server" type="url" placeholder="https://example.com" inputmode="url">
+            </label>
 
-        <div class="login-actions">
-          <button type="submit" id="login-button" data-i18n="loginButton">Verbinden</button>
-          <button type="button" id="login-dialog-cancel-button" class="ghost-button" data-i18n="cancelButton">Abbrechen</button>
-        </div>
-      </form>
+            <label>
+              <span data-i18n="identifierLabel">Handle oder E-Mail</span>
+              <input id="identifier" name="identifier" type="text" placeholder="z. B. name.bsky.social" autocomplete="username" required>
+            </label>
+
+            <label>
+              <span data-i18n="passwordLabel">App-Passwort</span>
+              <input id="password" name="password" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password" required>
+              <small class="field-hint" data-i18n="passwordHint">Nicht das Bsky-Passwort!</small>
+            </label>
+
+            <div class="login-actions">
+              <button type="submit" id="login-button" data-i18n="loginButton">Verbinden</button>
+              <button type="button" id="login-dialog-cancel-button" class="ghost-button" data-i18n="cancelButton">Abbrechen</button>
+            </div>
+          </form>
+        </details>
+      </div>
     </dialog>
 
     <dialog id="publish-result-dialog" class="settings-dialog">
@@ -2666,6 +2684,7 @@
             <path d=""></path>
           </svg>
         </button>
+        <button type="button" class="account-chip-fallback ghost-button" hidden data-i18n="oauthPasswordShort">App-Passwort</button>
         <button type="button" class="account-chip-remove" aria-label="" title="">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 8h10l-1 12H8L7 8z"></path>

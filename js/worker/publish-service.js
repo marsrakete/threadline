@@ -117,7 +117,7 @@ globalThis.createThreadlinePublishService = function createThreadlinePublishServ
           headers: {
             authorization: `Bearer ${auth.session.accessJwt}`,
           },
-          base: xrpcBaseForService(auth.pdsUrl || auth.service),
+          ...auth.oauthRequest, base: xrpcBaseForService(auth.pdsUrl || auth.service),
           returnMeta: true,
           body: JSON.stringify({
             repo: auth.session.did,

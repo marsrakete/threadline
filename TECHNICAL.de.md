@@ -1585,3 +1585,48 @@ Für tieferes Nachlesen sind diese Originalquellen besonders hilfreich:
 Threadline unterstützt `pronouns`, geordnete `links` aus `profileViewDetailed` und das veraltete `website`-Fallback aus dem [Bluesky-Actor-Lexikon](https://github.com/bluesky-social/atproto/blob/main/packages/api/lexicons/app/bsky/actor/defs.json). Die gemeinsame Grenze für Seite und klassischen Worker liegt in `js/shared/profile-metadata.js`. Fehlende Felder bleiben abwesend, damit Teilprofile keine bereits geladenen Angaben löschen; explizit leere Werte werden zum Entfernen berücksichtigt. Record-URI/CID, Labels und Icon-Metadaten bleiben erhalten; Icons der Linkziele werden nicht heruntergeladen.
 
 Pronomen erscheinen als Text in Posting-Identitäten, Actor-Fokus und Netzwerk-Profilkarten. HTTP(S)-Profilziele werden in Profilansichten und HTML-Archiven verlinkt; ausführbare Schemes und Ziele mit eingebetteten Zugangsdaten werden ausgelassen. Archiv-Manifeste und Autor-Metadaten erhalten die Angaben über ZIP-Roundtrips und fortgesetzte Wellen; auch die Analyse-Persistenz erhält sie. Der erste PDF-Band bekommt bei vorhandenen Angaben zum Archiv-Account paginierte Profilseiten mit klickbaren Link-Annotationen. Alte Archive ohne diese optionalen Felder bleiben unterstützt. Beim eigenen Archiv-Account werden öffentliche Profilangaben aktualisiert; bei einem Fehler bleiben lokale Angaben verwendbar. Profilbearbeitung gehört nicht zu dieser Erweiterung.
+## OAuth-Anmeldung
+
+Der Service Worker lädt das mit `npm run build:oauth` erzeugte, lokale SDK-Bundle. Die Client-ID entspricht der öffentlichen `oauth-client-metadata.json`. Der OAuth-Autorisierungsserver muss sie unter der dort angegebenen HTTPS-Adresse erreichen können. Für einen getrennten HTTPS-Teststand lässt sich beim Build die Basis-URL mit abschließendem Schrägstrich übergeben.
+
+`oauth-service.js` bindet den Rücksprung an die erwartete DID, verwendet den SDK-Transport für DPoP und reicht ausschließlich öffentliche Kontodaten an die Oberfläche. `oauth-storage.js` speichert den signierenden CryptoKey und verschlüsselt die OAuth-Sitzung sowie den zeitlich begrenzten Transaktionszustand separat in IndexedDB. `oauth-callback.html` wird vom Service Worker ohne Cache ausgeliefert und entfernt die Fragmentparameter vor der Weitergabe an den Worker.
+
+Ein Konto behält seine App-Passwort-Sitzung, wenn OAuth als Anmeldeart ausgewählt wird. Der Kontowechsel über „App-Passwort“ ist ausdrücklich. Für DMs ist eine separate Freigabe erforderlich. Die OAuth-Berechtigungen für Lesezugriffe, Beiträge, Interaktionen und Bilduploads stehen in `scripts/build-oauth.mjs`.
+
+```mermaid
+sequenceDiagram
+    actor Nutzer
+    participant PWA as Threadline-PWA
+    participant SW as Service Worker
+    participant Auth as OAuth-Autorisierungsserver
+    participant Login as App-Passwort-Anmeldeserver
+    participant PDS as Kontoserver (PDS)
+
+    alt Mit Bluesky anmelden
+        Nutzer->>PWA: Bluesky-Handle eingeben
+        PWA->>SW: OAuth starten
+        SW->>Auth: Autorisierungsanfrage per PAR mit PKCE und DPoP vorbereiten
+        Auth-->>SW: Referenz für die Anmelde-URL liefern
+        SW-->>PWA: Anmelde-URL übergeben
+        PWA->>Auth: Zum Anbieter weiterleiten
+        Nutzer->>Auth: Anmelden und Zugriff freigeben
+        Auth-->>PWA: Mit einmaligem Code zur Rücksprungseite zurückkehren
+        PWA->>PWA: OAuth-Parameter aus der URL entfernen
+        PWA->>SW: Code und state-Parameter zur Prüfung übergeben
+        SW->>Auth: Code gegen DPoP-gebundene Sitzung eintauschen
+        SW->>SW: Konto-DID prüfen und OAuth-Sitzung separat verschlüsselt speichern
+        SW-->>PWA: Rücksprungziel bestätigen
+        PWA->>PWA: Composer oder Werkzeuge öffnen
+        SW->>PDS: DPoP-signierte API-Anfragen senden
+    else App-Passwort ausdrücklich wählen
+        Nutzer->>PWA: Gespeicherte Verbindung wählen oder App-Passwort eingeben
+        PWA->>SW: App-Passwort-Verbindung verwenden
+        opt Neue Sitzung nötig
+            SW->>Login: Mit App-Passwort anmelden
+            Login-->>SW: Sitzungstokens liefern
+        end
+        SW->>PDS: API-Anfragen mit Bearer-Token senden
+    end
+
+    Note over PWA,SW: Bestehende App-Passwort-Verbindungen bleiben erhalten.
+```

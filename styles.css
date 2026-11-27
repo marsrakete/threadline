@@ -7886,3 +7886,22 @@ body.theme-dark .post-edit-difference {
     transform: translateY(0);
   }
 }
+/* Account authentication methods and OAuth callback */
+.login-method-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.login-method-form[hidden] {
+  display: none;
+}
+
+#password-login-details > summary {
+  cursor: pointer;
+  margin-block: 0.5rem;
+}
+
+.oauth-callback {
+  width: min(100% - 2rem, 42rem);
+  margin: 2rem auto;
+}

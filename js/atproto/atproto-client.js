@@ -4,6 +4,7 @@ function getAtprotoTransport() {
   if (!atprotoTransportInstance) {
     atprotoTransportInstance = globalThis.createThreadlineTransportService({
       apiBase: API_BASE, fetch: (...args) => fetch(...args), getRequest: (...args) => bskyFetch(...args),
+      oauthRequest: (...args) => getWorkerOAuth().request(...args),
       searchParams: () => new URLSearchParams(), error: (...args) => createServiceWorkerError(...args),
       now: () => Date.now(), messages: globalThis.ThreadlineAdapterMessages,
     });
@@ -139,6 +140,7 @@ function buildChatProxyHeaders(auth, headers = {}) {
  */
 async function chatBskyGet(auth, endpoint, query = {}) {
   return bskyGet(endpoint, query, {
+    ...auth.oauthRequest,
     base: authXrpcBase(auth),
     headers: buildChatProxyHeaders(auth),
   });
@@ -151,6 +153,15 @@ async function chatBskyGet(auth, endpoint, query = {}) {
  * @returns {Promise<object>} Blob reference returned by the repo.
  */
 async function uploadBlob(auth, file) {
+  if (auth.oauthRequest) {
+    const data = await bskyFetch("com.atproto.repo.uploadBlob", {
+      ...auth.oauthRequest,
+      method: "POST",
+      headers: { "content-type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    return data.blob;
+  }
   const response = await fetch(`${xrpcBaseForService(auth.pdsUrl || auth.service)}/com.atproto.repo.uploadBlob`, {
     method: "POST",
     headers: {

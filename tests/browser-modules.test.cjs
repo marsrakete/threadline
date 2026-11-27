@@ -211,6 +211,10 @@ test.describe("Composer image editor application integration", () => {
           sessionStorage.setItem("test:archive-preferences", JSON.stringify(message.payload.archivePreferences));
         }
         if (message.type === "VERIFY_SESSION") { result = { ...account, accounts: [account], authenticated: true }; }
+        if (message.type === "SEARCH_MENTION_ACTORS") {
+          const handle = message.payload.query;
+          result = { actors: [{ did: "did:example:" + handle, handle, displayName: handle }] };
+        }
         if (message.type === "CHECK_ANALYSIS_ACCOUNT") { result = { handle: message.payload.actor }; }
         if (message.type === "LOAD_ANALYSIS_ACCOUNT") {
           window.analysisLoads.push(message.payload);
@@ -234,12 +238,16 @@ test.describe("Composer image editor application integration", () => {
     await page.locator("#analysis-account-b-own-button").click();
     await expect(page.locator("#analysis-account-b-input")).toHaveValue("viewer.test");
     for (const [slot, actor] of [["a", "alpha.test"], ["b", "beta.test"]]) {
-      await page.locator(`#analysis-account-${slot}-input`).fill(actor);
+      const input = page.locator(`#analysis-account-${slot}-input`);
+      await input.fill(actor);
+      await page.locator("#mention-search-input").fill(actor);
+      await page.locator("#mention-search-results .mention-search-result").first().click();
+      await expect(input).toHaveValue(actor);
       await page.locator(`#analysis-account-${slot}-load-button`).click();
       await expect(page.locator("#analysis-summary")).toContainText(actor);
       await expect(page.locator(`#analysis-account-${slot}-load-button`)).toBeEnabled();
     }
-    await page.locator("#analysis-account-b-input").press("Enter");
+    await page.locator("#analysis-compare-button").click();
     await expect(page.locator("#analysis-result-card")).toBeVisible();
     await expect(page.locator(".analysis-result-score")).toHaveText(/^\d+\/100$/);
     await expect(page.locator("#analysis-result-card .analysis-result-details span")).toHaveCount(8);
@@ -272,6 +280,8 @@ test.describe("Composer image editor application integration", () => {
     expect(pdf.length).toBeGreaterThan(10000);
     expect(pdf.toString("latin1")).toContain("%%EOF");
     await page.locator("#analysis-account-a-input").fill("changed.test");
+    await page.locator("#mention-search-input").fill("changed.test");
+    await page.locator("#mention-search-results .mention-search-result").first().click();
     await expect(page.locator("#analysis-result-card")).toBeHidden();
     await expect(page.locator("#analysis-export-pdf-button")).toBeDisabled();
     await page.locator("#analysis-reset-button").click();

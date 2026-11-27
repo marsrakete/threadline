@@ -88,11 +88,17 @@ globalThis.createThreadlineSettingsService = function createThreadlineSettingsSe
     if (typeof draft === "string") {
       draftText = draft;
     }
+    let authenticated = Boolean(auth?.session?.did);
+    let handle = auth?.session?.handle || "";
+    if (auth?.authMethod === "oauth") {
+      authenticated = options.hasSession(auth);
+      handle = auth.handle;
+    }
 
     return {
-      authenticated: Boolean(auth?.session?.did),
+      authenticated,
       identifier: auth?.identifier || "",
-      handle: auth?.session?.handle || "",
+      handle,
       did: auth?.did || "",
       service: auth?.service || DEFAULT_LOGIN_SERVICE,
       webApp: auth?.webApp || resolvePostWebBase(auth?.service),

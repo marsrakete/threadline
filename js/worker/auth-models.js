@@ -75,7 +75,7 @@ globalThis.createThreadlineAuthModels = function createThreadlineAuthModels(opti
     if (entry.session && typeof entry.session === "object") {
       session = entry.session;
     }
-    return {
+    const account = {
       did,
       identifier: String(entry.identifier || handle || ""),
       handle: String(handle || ""),
@@ -89,6 +89,9 @@ globalThis.createThreadlineAuthModels = function createThreadlineAuthModels(opti
       session,
       updatedAt: entry.updatedAt || options.now(),
     };
+    if (entry.authMethod === "oauth") { account.authMethod = "oauth"; }
+    if (entry.oauth?.did === did && did) { account.oauth = { did }; }
+    return account;
   }
 
   /** Normalizes modern account lists and legacy single-account storage.
@@ -128,7 +131,7 @@ globalThis.createThreadlineAuthModels = function createThreadlineAuthModels(opti
    * @returns {object} Public account metadata with password/session availability flags.
    */
   function getAccountPublicMeta(account) {
-    return {
+    const result = {
       did: account.did || "",
       identifier: account.identifier || "",
       handle: account.handle || account.identifier || "",
@@ -138,9 +141,17 @@ globalThis.createThreadlineAuthModels = function createThreadlineAuthModels(opti
       ...globalThis.ThreadlineProfileMetadata.normalize(account),
       avatarPath: account.avatarPath || "",
       hasStoredPassword: Boolean(account.appPassword),
-      hasSession: Boolean(account.session?.did),
+      hasSession: hasActiveSession(account),
       updatedAt: account.updatedAt || "",
     };
+    if (account.authMethod === "oauth") { result.authMethod = "oauth"; }
+    return result;
+  }
+
+  /** Evaluates the currently selected sign-in method. @param {object|null} account - Stored account. @returns {boolean} Whether its selected session exists. */
+  function hasActiveSession(account) {
+    if (account?.authMethod === "oauth") { return Boolean(account.oauth?.did); }
+    return Boolean(account?.session?.did);
   }
 
   /** Builds the public auth response for an explicit or active stored account.
@@ -150,7 +161,7 @@ globalThis.createThreadlineAuthModels = function createThreadlineAuthModels(opti
   function buildAuthResponse(state, account = null) {
     const activeAccount = account || state.accounts.find((entry) => entry.did && entry.did === state.activeDid) || null;
     return {
-      authenticated: Boolean(activeAccount?.session?.did),
+      authenticated: hasActiveSession(activeAccount),
       identifier: activeAccount?.identifier || "",
       handle: activeAccount?.handle || "",
       did: activeAccount?.did || "",
@@ -174,5 +185,5 @@ globalThis.createThreadlineAuthModels = function createThreadlineAuthModels(opti
       accounts,
     };
   }
-  return Object.freeze({ service: normalizeServiceUrl, insecure: isInsecureServiceUrl, secure: assertSecureServiceUrl, account: normalizeAuthAccount, state: normalizeAuthState, publicMeta: getAccountPublicMeta, response: buildAuthResponse, upsert: upsertAccount });
+  return Object.freeze({ service: normalizeServiceUrl, insecure: isInsecureServiceUrl, secure: assertSecureServiceUrl, account: normalizeAuthAccount, state: normalizeAuthState, publicMeta: getAccountPublicMeta, response: buildAuthResponse, upsert: upsertAccount, hasSession: hasActiveSession });
 };

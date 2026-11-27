@@ -1,0 +1,21 @@
+{
+  "client_id": "https://marsrakete.github.io/threadline/oauth-client-metadata.json",
+  "client_name": "Threadline",
+  "client_uri": "https://marsrakete.github.io/threadline/",
+  "logo_uri": "https://marsrakete.github.io/threadline/icons/icon.svg",
+  "policy_uri": "https://marsrakete.github.io/threadline/datenschutz.html",
+  "redirect_uris": [
+    "https://marsrakete.github.io/threadline/oauth-callback.html"
+  ],
+  "scope": "atproto rpc?lxm=app.bsky.actor.getPreferences&lxm=app.bsky.actor.getProfile&lxm=app.bsky.actor.getProfiles&lxm=app.bsky.actor.searchActorsTypeahead&lxm=app.bsky.feed.getAuthorFeed&lxm=app.bsky.feed.getFeed&lxm=app.bsky.feed.getFeedGenerator&lxm=app.bsky.feed.getLikes&lxm=app.bsky.feed.getPosts&lxm=app.bsky.feed.getPostThread&lxm=app.bsky.feed.getQuotes&lxm=app.bsky.feed.getRepostedBy&lxm=app.bsky.feed.getTimeline&lxm=app.bsky.feed.searchPosts&lxm=app.bsky.graph.getBlocks&lxm=app.bsky.graph.getFollowers&lxm=app.bsky.graph.getFollows&lxm=app.bsky.graph.getMutes&lxm=app.bsky.notification.listNotifications&aud=did:web:api.bsky.app%23bsky_appview repo?collection=app.bsky.feed.post&collection=app.bsky.feed.threadgate&collection=app.bsky.feed.postgate&action=create&action=delete repo:app.bsky.feed.like?action=create&action=delete blob:image/* rpc?lxm=chat.bsky.convo.getMessages&lxm=chat.bsky.convo.listConvos&aud=did:web:api.bsky.chat%23bsky_chat",
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "token_endpoint_auth_method": "none",
+  "application_type": "web",
+  "dpop_bound_access_tokens": true
+}

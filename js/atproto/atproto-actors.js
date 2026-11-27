@@ -2,10 +2,13 @@
  * Switches the active ATProto account through the worker.
  * @param {(type: string, payload?: object, options?: object) => Promise<object>} request - Worker request bridge.
  * @param {string} did - DID of the account to activate.
+ * @param {string} method - Optional explicit app-password selection.
  * @returns {Promise<object>} Updated authentication state.
  */
-export function requestAccountSwitch(request, did) {
-  return request("SWITCH_ACCOUNT", { did: String(did || "").trim() });
+export function requestAccountSwitch(request, did, method) {
+  const payload = { did: String(did || "").trim() };
+  if (method === "password") { payload.method = method; }
+  return request("SWITCH_ACCOUNT", payload);
 }
 
 /**

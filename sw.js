@@ -8,6 +8,12 @@ const APP_SHELL = [
   "./index.html",
   "./tools.html",
   "./datenschutz.html",
+  "./oauth-client-metadata.json",
+  "./js/atproto/atproto-oauth.js",
+  "./js/core/app-oauth.js",
+  "./js/worker/oauth-storage.js",
+  "./js/worker/oauth-service.js",
+  "./js/vendor/atproto-oauth.js",
   "./styles.css",
   "./app.js",
   "./js/atproto/atproto-worker.js",
@@ -236,6 +242,7 @@ const MENTION_SEARCH_HANDLE_SUFFIXES = [
 ];
 
 importScripts("./js/shared/profile-metadata.js");
+importScripts("./js/vendor/atproto-oauth.js", "./js/worker/oauth-storage.js", "./js/worker/oauth-service.js", "./js/atproto/atproto-oauth.js");
 importScripts("./js/worker/account-avatar-cache.js", "./js/worker/record-models.js", "./js/worker/adapter-messages.js", "./js/worker/transport-service.js", "./js/worker/auth-models.js", "./js/worker/storage-service.js", "./js/worker/identity-service.js", "./js/worker/session-service.js", "./js/worker/account-service.js", "./js/worker/network-data-service.js", "./js/worker/network-workspace-service.js", "./js/worker/composer-image-store.js", "./js/worker/composer-image-models.js", "./js/worker/explorer-models.js", "./js/worker/explorer-feed-models.js", "./js/worker/explorer-load-service.js", "./js/worker/explorer-hydration-service.js", "./js/worker/explorer-reaction-service.js", "./js/worker/media-export-models.js", "./js/worker/media-export-service.js", "./js/worker/richtext-models.js", "./js/worker/richtext-service.js", "./js/worker/settings-models.js", "./js/worker/settings-service.js", "./js/worker/reply-models.js", "./js/worker/post-check-service.js", "./js/worker/interaction-service.js", "./js/worker/publish-service.js", "./js/worker/archive-wave-controller.js", "./js/atproto/atproto-client.js", "./js/atproto/atproto-session.js", "./js/worker/search-queries.js", "./js/worker/search-filters.js", "./js/worker/search-service.js", "./js/worker/dm-models.js", "./js/worker/dm-messages.js", "./js/worker/dm-service.js", "./js/worker/archive-run-messages.js", "./js/worker/archive-run-control.js", "./js/worker/archive-models.js", "./js/worker/archive-thread-service.js", "./js/worker/archive-source-service.js", "./js/worker/archive-wave-service.js", "./js/worker/archive-asset-service.js", "./js/worker/archive-import-service.js", "./js/worker/analysis-models.js", "./js/worker/analysis-messages.js", "./js/worker/analysis-service.js");
 const {
   normalizeSearchWorkspaceMode,
@@ -489,6 +496,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (requestUrl.pathname.endsWith("/oauth-callback.html")) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
+    return;
+  }
+
   if (requestUrl.pathname.endsWith("/version.js")) {
     event.respondWith(
       fetch(event.request)
@@ -537,7 +549,12 @@ self.addEventListener("message", (event) => {
     return;
   }
 
-  handleMessage(event.data, port)
+  const type = event.data?.type;
+  if ((type === "OAUTH_BEGIN" || type === "OAUTH_FINISH") && !isOAuthMessageSource(event)) {
+    port.postMessage({ ok: false, error: "Invalid OAuth message source", details: { code: "OAUTH_UNAVAILABLE" } });
+    return;
+  }
+  const operation = handleMessage(event.data, port)
     .then((result) => port.postMessage({ ok: true, result }))
     .catch((error) => {
       if (!isExpectedServiceWorkerUiError(error)) {
@@ -549,12 +566,19 @@ self.addEventListener("message", (event) => {
         details: error.details || null,
       });
     });
+  if (type === "OAUTH_BEGIN" || type === "OAUTH_FINISH") {
+    event.waitUntil(operation);
+  }
 });
 
 async function handleMessage(message, port) {
   switch (message.type) {
     case "LOGIN":
       return login(message.payload);
+    case "OAUTH_BEGIN":
+      return getWorkerOAuth().begin(message.payload);
+    case "OAUTH_FINISH":
+      return getWorkerOAuth().finish(message.payload);
     case "AUTH_STATUS":
       return authStatus();
     case "GET_APP_STATE":
@@ -689,7 +713,8 @@ function createServiceWorkerError(message, code, details = {}) {
  */
 function isExpectedServiceWorkerUiError(error = null) {
   const code = String(error?.details?.code || "").trim();
-  return code === "ANALYSIS_ACCOUNT_MISSING"
+  return code.startsWith("OAUTH_")
+    || code === "ANALYSIS_ACCOUNT_MISSING"
     || code === "ANALYSIS_ACCOUNT_NOT_FOUND"
     || code === "THREAD_EXPLORER_ACCOUNT_MISSING"
     || code === "THREAD_EXPLORER_ACCOUNT_NOT_FOUND";
@@ -716,6 +741,18 @@ async function readStoredAuth() {
 /** Writes normalized auth. @param {unknown} value - Auth input. @returns {Promise<object>} Stored auth state. */
 async function writeStoredAuth(value) {
   return workerStorage.writeAuth(value);
+}
+
+/** Serializes account read-modify-write operations where Web Locks is available. @param {Function} update - Maps the current state to the next state. @returns {Promise<object>} Committed account state. */
+async function updateStoredAuth(update) {
+  /** Reads fresh account state and applies the update. @returns {Promise<object>} Stored state. */
+  async function commit() {
+    return writeStoredAuth(await update(await readStoredAuth()));
+  }
+  if (globalThis.navigator?.locks) {
+    return navigator.locks.request("threadline-account-state", commit);
+  }
+  return commit();
 }
 
 /** Clears only the auth key. @returns {Promise<void>} Delete completion. */
@@ -935,6 +972,7 @@ function getWorkerSettingsService() {
       analysis: normalizeStoredAnalysisState,
       avatarAssets: normalizeAccountAvatarAssets,
       publicMeta: getAccountPublicMeta,
+      hasSession: workerAuthModels.hasSession,
       webBase: resolvePostWebBase,
       models: workerSettingsModels, defaultService: DEFAULT_LOGIN_SERVICE,
       draftKey: DRAFT_KEY, settingsKey: SETTINGS_KEY, localeKey: LOCALE_KEY,
@@ -1061,6 +1099,8 @@ function getWorkerAccountService() {
     workerAccountService = globalThis.createThreadlineAccountService({
       readAuth: readStoredAuth, writeAuth: writeStoredAuth, clearAuth: clearStoredAuth, ensure: ensureSession,
       upsert: upsertAccount, response: buildAuthResponse, publicMeta: getAccountPublicMeta, webBase: resolvePostWebBase,
+      hasSession: workerAuthModels.hasSession, revokeOAuth: (did) => getWorkerOAuth().revoke(did),
+      updateAuth: updateStoredAuth,
       clearArchiveSession, clearArchiveCatalog, now: () => new Date().toISOString(),
       defaultService: DEFAULT_LOGIN_SERVICE, messages: globalThis.ThreadlineAdapterMessages,
     });

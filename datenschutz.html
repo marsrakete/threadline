@@ -46,7 +46,7 @@
 
         <section>
           <h2>3. Bluesky und AT Protocol</h2>
-          <p>Erst wenn du eine Funktion startest, sendet der Browser Daten direkt an den gewählten Bluesky-PDS oder an AT-Protocol-Dienste. Beim Login sind das Handle oder Kennung und App-Passwort. Threadline verwendet kein Bluesky-Hauptpasswort. Die Antwort enthält unter anderem DID, Handle sowie Access- und Refresh-Token, die lokal gespeichert werden können.</p>
+          <p>Wenn du eine Funktion startest, sendet der Browser Daten an den gewählten Bluesky-PDS oder an AT-Protocol-Dienste. Bei OAuth wird der Handle über Bluesky aufgelöst. Die Anmeldung und Freigabe erfolgen beim Kontenanbieter. Threadline speichert OAuth-Sitzungen verschlüsselt in IndexedDB und bindet sie über einen lokalen, nicht exportierbaren DPoP-Schlüssel an diesen Browser. Den Zugriff auf DMs kannst du gesondert freigeben. Bei der App-Passwort-Anmeldung sendet der Browser Handle oder Kennung und das App-Passwort an den ausgewählten Anmeldeserver.</p>
           <p>Suche, Thread Explorer, Netzwerk, Analyse und Archiv laden abhängig von deiner Auswahl öffentliche Profildaten, Handles, DIDs, Posts, Threads, Follows, Follower, Reaktionen und Medien. Zur Auflösung einer DID kann Threadline <code>plc.directory</code> oder die jeweilige <code>did:web</code>-Domain abrufen.</p>
           <p>Beim Posten gehen Posttext, Hashtags, Antwort- oder Zitatbezug, Sprach- und Interaktionseinstellungen sowie Bilder einschließlich ALT-Text an den PDS. Like, Unlike, Repost und Antwort werden nur durch den jeweiligen Klick ausgelöst.</p>
         </section>
@@ -91,7 +91,7 @@
 
         <section>
           <h2>3. Bluesky and AT Protocol</h2>
-          <p>Only after you start a feature does the browser send data directly to the selected Bluesky PDS or AT Protocol services. Login sends a handle or identifier and an app password. Threadline does not use a Bluesky main password. The response can include a DID, handle, access token and refresh token, which may be stored locally.</p>
+          <p>When you start a feature, the browser sends data to the chosen Bluesky PDS or AT Protocol services. For OAuth, Bluesky resolves your handle, and sign-in and consent take place at your provider. Threadline encrypts OAuth sessions in IndexedDB and binds them to this browser with a local, non-exportable DPoP key. You can grant access to direct messages separately. For app-password sign-in, the browser sends the handle or identifier and app password to the selected sign-in server.</p>
           <p>Depending on your selection, Search, Thread Explorer, Network, Analysis and Archive load public profile data, handles, DIDs, posts, threads, follows, followers, reactions and media. To resolve a DID, Threadline can request <code>plc.directory</code> or the relevant <code>did:web</code> domain.</p>
           <p>Publishing sends post text, hashtags, reply or quote references, language and interaction settings, plus images including ALT text to the PDS. Like, unlike, repost and reply are only triggered by the respective action.</p>
         </section>
@@ -136,7 +136,7 @@
 
         <section>
           <h2>3. Bluesky et AT Protocol</h2>
-          <p>Le navigateur envoie des données directement au PDS Bluesky sélectionné ou aux services AT Protocol uniquement après le démarrage d'une fonction. La connexion envoie un identifiant ou un handle et un mot de passe d'application. Threadline n'utilise pas le mot de passe principal Bluesky. La réponse peut contenir un DID, un handle, un jeton d'accès et un jeton de renouvellement, qui peuvent être conservés localement.</p>
+          <p>Lorsque vous lancez une fonction, le navigateur envoie des données au PDS Bluesky sélectionné ou aux services AT Protocol. Pour OAuth, Bluesky résout votre identifiant et la connexion ainsi que l’autorisation ont lieu chez votre fournisseur. Threadline chiffre les sessions OAuth dans IndexedDB et les lie à ce navigateur avec une clé DPoP locale non exportable. Vous pouvez autoriser séparément l’accès aux messages privés. Pour la connexion par mot de passe d’application, le navigateur envoie l’identifiant et le mot de passe d’application au serveur sélectionné.</p>
           <p>Selon votre sélection, Recherche, Thread Explorer, Réseau, Analyse et Archive chargent des données de profil publiques, handles, DID, posts, fils, abonnements, abonnés, réactions et médias. Pour résoudre un DID, Threadline peut interroger <code>plc.directory</code> ou le domaine <code>did:web</code> concerné.</p>
           <p>La publication envoie au PDS le texte, les hashtags, les références de réponse ou de citation, les réglages de langue et d'interaction, ainsi que les images avec leurs textes alternatifs. Les actions J'aime, annuler J'aime, repartager et répondre ne sont déclenchées que par l'action correspondante.</p>
         </section>

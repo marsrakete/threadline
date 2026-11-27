@@ -9,7 +9,7 @@ globalThis.createThreadlineTransportService = function createThreadlineTransport
     }
   }
   const searchParams = options.searchParams, getRequest = options.getRequest;
-  const { fetch, error: createServiceWorkerError, now: optionsNow, apiBase: API_BASE, messages } = options;
+  const { fetch, oauthRequest, error: createServiceWorkerError, now: optionsNow, apiBase: API_BASE, messages } = options;
   /** Parses existing rate-limit headers. @param {Response} response - Provider response. @returns {object|null} Header metadata. */
   function extractRateLimitMeta(response) {
     if (!response?.headers) {
@@ -59,14 +59,20 @@ globalThis.createThreadlineTransportService = function createThreadlineTransport
   }
   /** Executes an XRPC request. @param {string} endpoint - Method path. @param {object} options - Fetch/base/metadata options. @returns {Promise<object>} Parsed data or data/meta envelope. */
   async function bskyFetch(endpoint, options = {}) {
-    const base = options.base || API_BASE;
-    const response = await fetch(`${base}/${endpoint}`, {
-      ...options,
+    const { base, oauthDid, ...requestOptions } = options;
+    const init = {
+      ...requestOptions,
       headers: {
         "content-type": "application/json",
         ...(options.headers || {}),
       },
-    });
+    };
+    let response;
+    if (oauthDid) {
+      response = await oauthRequest(oauthDid, endpoint, init);
+    } else {
+      response = await fetch(`${base || API_BASE}/${endpoint}`, init);
+    }
 
     const text = await response.text();
     let data = {};
@@ -131,12 +137,14 @@ globalThis.createThreadlineTransportService = function createThreadlineTransport
     if (search.toString()) {
       suffix = `?${search.toString()}`;
     }
-    return getRequest(`${endpoint}${suffix}`, {
+    const request = {
       method: "GET",
       headers: options.headers || {},
       base: options.base,
       signal: options.signal,
-    });
+    };
+    if (options.oauthDid) { request.oauthDid = options.oauthDid; }
+    return getRequest(`${endpoint}${suffix}`, request);
   }
   return Object.freeze({ request: bskyFetch, get: bskyGet, rateLimit: extractRateLimitMeta });
 };

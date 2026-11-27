@@ -27,6 +27,7 @@ globalThis.createThreadlineInteractionService = function createThreadlineInterac
       const result = await bskyFetch("com.atproto.repo.createRecord", {
         method: "POST",
         headers,
+        ...auth.oauthRequest,
         base,
         returnMeta: true,
         body: JSON.stringify({
@@ -48,6 +49,7 @@ globalThis.createThreadlineInteractionService = function createThreadlineInterac
       const result = await bskyFetch("com.atproto.repo.createRecord", {
         method: "POST",
         headers,
+        ...auth.oauthRequest,
         base,
         returnMeta: true,
         body: JSON.stringify({
@@ -87,7 +89,7 @@ globalThis.createThreadlineInteractionService = function createThreadlineInterac
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
-      base: xrpcBaseForService(auth.pdsUrl || auth.service),
+      ...auth.oauthRequest, base: xrpcBaseForService(auth.pdsUrl || auth.service),
       body: JSON.stringify({
         repo: parsed.repo,
         collection: parsed.collection,
@@ -116,7 +118,7 @@ globalThis.createThreadlineInteractionService = function createThreadlineInterac
       headers: {
         authorization: `Bearer ${auth.session.accessJwt}`,
       },
-      base: xrpcBaseForService(auth.pdsUrl || auth.service),
+      ...auth.oauthRequest, base: xrpcBaseForService(auth.pdsUrl || auth.service),
       body: JSON.stringify({
         repo: auth.session.did,
         collection: "app.bsky.feed.like",

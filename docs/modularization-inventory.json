@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "baseline": "756e440f4655cd9da242cbca4c4f1a51fcd645c7",
+  "baseline": "b4f2d0529dccecd7f2fa66a04da5e76783f3ecab",
   "date": "2026-11-08",
   "method": "AST inventory of every top-level named function, not a function-length filter. Category is structural evidence, not a completion verdict. Shared-state reads/writes include nested callbacks; property mutation requires the manual review described in MODULARIZATION-AUDIT.md.",
   "files": {
     "app.js": {
-      "sourceSha256": "4fa5302f7616fbef5e0d5cf23c109ba56d2267cbcf63f43a80722e8082eb77eb",
+      "sourceSha256": "af1c45efce170c86e5e4b7d68acd62bbbad39da7f120779b3988575d8258b813",
       "functionCount": 661,
       "unresolvedBindings": [],
       "domains": {
@@ -6411,15 +6411,15 @@
       ]
     },
     "sw.js": {
-      "sourceSha256": "6822c493dfab6c8cba8ec5f5137b354fd7d761cd34d256b50a991ebd00ddf4c7",
-      "functionCount": 111,
+      "sourceSha256": "fca26c714ce5efd656562cd01535bccb75d577f339593ae9fccfbd7d6b8fc7c3",
+      "functionCount": 112,
       "unresolvedBindings": [],
       "domains": {
         "core": {
-          "total": 67,
+          "total": 68,
           "adapters": 42,
           "composition": 11,
-          "behavior": 14,
+          "behavior": 15,
           "stateWriters": 11
         },
         "composer": {
@@ -6641,6 +6641,13 @@
           "stateReads": [
             "workerStorage"
           ],
+          "stateWrites": []
+        },
+        {
+          "name": "updateStoredAuth",
+          "domain": "core",
+          "category": "behavior",
+          "stateReads": [],
           "stateWrites": []
         },
         {
@@ -6977,6 +6984,7 @@
             "normalizeSegmentImageMetadata",
             "normalizeSegmentImages",
             "normalizeStoredAnalysisState",
+            "workerAuthModels",
             "workerSettingsModels",
             "workerSettingsService"
           ],
@@ -7173,7 +7181,8 @@
             "buildAuthResponse",
             "getAccountPublicMeta",
             "upsertAccount",
-            "workerAccountService"
+            "workerAccountService",
+            "workerAuthModels"
           ],
           "stateWrites": [
             "workerAccountService"

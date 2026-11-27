@@ -622,7 +622,7 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
     const pending = contacts.filter((contact) => {
       return contact?.did && !contact.avatar && !getBlobCidFromRef(contact.avatar) && !normalizeAvatarUrl(contact.avatar);
     });
-    if (!pending.length || !auth?.session?.accessJwt) {
+    if (!pending.length || !(auth?.session?.accessJwt || auth?.oauthRequest)) {
       return contacts;
     }
 
@@ -631,7 +631,7 @@ globalThis.createThreadlineDmService = function createThreadlineDmService(option
       try {
         const response = await bskyGet("app.bsky.actor.getProfiles", { actors: batch }, {
           headers: { authorization: `Bearer ${auth.session.accessJwt}` },
-          base: authXrpcBase(auth),
+          ...auth.oauthRequest, base: authXrpcBase(auth),
         });
         const profiles = arrayOrEmpty(response?.profiles);
         profiles.forEach((profile) => {
