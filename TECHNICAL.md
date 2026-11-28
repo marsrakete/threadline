@@ -1622,6 +1622,8 @@ Dedicated contract tests cover invalid/legacy records, case changes and duplicat
 
 ## Settings Backup Pipeline
 
+The settings backup does not include OAuth sessions. After restoring a backup in a new installation, sign in again with OAuth.
+
 `app-backup.js` owns three complete units: JSON/gzip and binary-cache encoding, settings backup export/import, and reminder/status lifecycle. Import merges hashtag/history data, restores posting preferences and existing account/avatar/DM metadata contracts, applies appearance/layout/provider preferences and refreshes dependent views. The backup schema and existing export whitelist remain unchanged; account session tokens and Composer image collections are not added to exports. Existing proxy settings retain their previous backup behavior.
 
 The application provides a shared settings snapshot plus explicit state setters, normalizers, worker/persistence and UI adapters. The reminder owns its status timer, defensive timestamp storage, exact due/snooze boundaries and save/close error handling. Unsupported gzip errors are translated in all three languages. Previous inline codec/import/export/reminder implementations and timer state were removed, and the new module is precached.

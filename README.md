@@ -23,6 +23,8 @@ Threadline is a static Bluesky workbench that runs directly in the browser. It h
 
 If you are new to Threadline, think of it as one app with seven focused workspaces instead of one giant composer.
 
+- **OAuth sign-in, including Eurosky.** Threadline uses your handle to find the right sign-in server, so you do not need to select a provider. App passwords remain available as a fallback.
+
 ## The 7 Workspaces
 
 - `Composer`: write one post or a longer thread, split it into segments, add images, hashtags, and post settings, then publish it.
@@ -35,7 +37,7 @@ If you are new to Threadline, think of it as one app with seven focused workspac
 
 ## First Start
 
-1. Open “Add account” in Threadline and enter your Bluesky handle.
+1. Open “Add account” in Threadline and enter your account handle.
 2. Choose “Sign in with Bluesky” and approve the request at your provider. Select DM read access only if you want to use the message archive.
 3. Open the workspace you need.
 

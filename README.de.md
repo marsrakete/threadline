@@ -23,6 +23,8 @@ Threadline ist eine statische Bluesky-Arbeitsumgebung, die direkt im Browser lä
 
 Wenn du Threadline neu kennenlernst, denke weniger an einen einzelnen Composer und mehr an eine App mit sieben klar getrennten Arbeitsbereichen.
 
+- **Anmeldung per OAuth, auch mit Eurosky.** Threadline findet den zuständigen Anmeldeserver anhand deines Handles. Eine Dienstauswahl ist deshalb nicht nötig. Das App-Passwort bleibt als Fallback verfügbar.
+
 ## Die 7 Arbeitsbereiche
 
 - `Composer`: einen Post oder längeren Thread schreiben, in Abschnitte aufteilen, Bilder und Hashtags ergänzen und direkt veröffentlichen.
@@ -35,7 +37,7 @@ Wenn du Threadline neu kennenlernst, denke weniger an einen einzelnen Composer u
 
 ## Schnellstart
 
-1. In Threadline „Konto hinzufügen“ öffnen und den Bluesky-Handle eingeben.
+1. In Threadline „Konto hinzufügen“ öffnen und den Handle deines Kontos eingeben.
 2. „Mit Bluesky anmelden“ wählen und die Freigabe beim Anbieter bestätigen. Den DM-Lesezugriff nur auswählen, wenn du das Nachrichtenarchiv nutzen möchtest.
 3. Den passenden Arbeitsbereich öffnen.
 
