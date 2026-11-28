@@ -6588,6 +6588,12 @@ body.theme-dark .network-list-button {
   color: var(--muted);
 }
 
+.history-views:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
 .history-link {
   display: inline-flex;
   align-items: center;

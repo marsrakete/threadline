@@ -16,6 +16,8 @@ const did = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
 const handle = "owner.bsky.social";
 const otherDid = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
 const postUri = "at://" + did + "/app.bsky.feed.post/3n2opitxdyc2j";
+const secondPostUri = "at://" + did + "/app.bsky.feed.post/second";
+const avatarUrl = "https://cdn.bsky.example/avatar.png";
 
 /**
  * Creates a raw thread-view node returned by the fixture AppView.
@@ -71,7 +73,7 @@ async function startServer(directory) {
 
 /** Emulates discovery, PAR, callback, token exchange and the account XRPC endpoints. @param {import("@playwright/test").BrowserContext} context - Isolated browser. @returns {Promise<object>} Recorded contract values. */
 async function routeProvider(context) {
-  const calls = { writes: [], threadReads: [], auth: null, tokenExchanges: 0 };
+  const calls = { writes: [], threadReads: [], postReads: [], avatarReads: [], auth: null, tokenExchanges: 0 };
   const passwordJwt = "fixture." + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url") + ".fixture";
   await context.route((url) => url.origin !== origin, async (route) => {
     const request = route.request();
@@ -125,6 +127,31 @@ async function routeProvider(context) {
       expect(request.headers().dpop).toBeTruthy();
       await route.fulfill({ headers, json: { sub: did, token_type: "DPoP", access_token: "access-fixture",
         refresh_token: "oauth-refresh-fixture", scope: calls.auth.get("scope"), expires_in: 3600 } });
+    } else if (url.href === avatarUrl) {
+      await route.fulfill({ headers, contentType: "image/png",
+        body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==", "base64") });
+    } else if (url.pathname.endsWith(".getProfile")) {
+      const { authorization, dpop } = request.headers();
+      const profile = { did, handle };
+      if (authorization === "DPoP access-fixture") {
+        calls.avatarReads.push({ actor: url.searchParams.get("actor"), authorization, dpop });
+        profile.avatar = avatarUrl;
+      }
+      await route.fulfill({ headers, json: profile });
+    } else if (url.pathname.endsWith(".getAuthorFeed")) {
+      const ownPost = threadNode({ uri: postUri, author: { did, handle } }, "Latest original post").post;
+      const otherPost = threadNode({ uri: "at://" + otherDid + "/app.bsky.feed.post/reposted",
+        author: { did: otherDid, handle: "other.bsky.social" } }, "Repost of somebody else").post;
+      await route.fulfill({ headers, json: { feed: [{ post: ownPost }, { post: otherPost }] } });
+    } else if (url.pathname.endsWith(".getPosts")) {
+      const uris = url.searchParams.getAll("uris");
+      const { authorization, dpop } = request.headers();
+      calls.postReads.push({ uris, authorization, dpop });
+      const posts = [
+        threadNode({ uri: postUri, author: { did, handle }, viewCount: 364 }, "First post").post,
+        threadNode({ uri: secondPostUri, author: { did, handle }, viewCount: 125 }, "Second post").post,
+      ];
+      await route.fulfill({ headers, json: { posts: posts.filter((post) => uris.includes(post.uri)) } });
     } else if (url.pathname.endsWith(".getPostThread")) {
       const { authorization, dpop } = request.headers();
       calls.threadReads.push({ origin: url.origin, uri: url.searchParams.get("uri"), authorization, dpop });
@@ -207,6 +234,12 @@ test("OAuth in Threadline restores Tools, signs XRPC and retains the original pa
     const oauth = await requestWorker(page, "AUTH_STATUS");
     expect(oauth.accounts).toHaveLength(1);
     expect(oauth.accounts[0]).toMatchObject({ did, authMethod: "oauth", hasStoredPassword: true });
+    const avatar = page.locator(".account-chip-avatar");
+    await expect(avatar).toHaveAttribute("src", avatarUrl);
+    await expect.poll(() => avatar.evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
+    expect(calls.avatarReads[0]).toMatchObject({ actor: did, authorization: "DPoP access-fixture" });
+    expect(calls.avatarReads[0].dpop).toBeTruthy();
+    expect((await requestWorker(page, "AUTH_STATUS")).accounts[0].avatar).toBe(avatarUrl);
     expect(calls.auth.get("scope")).not.toContain("chat.bsky");
     expect(calls.tokenExchanges).toBe(1);
     await requestWorker(page, "PUBLISH_THREAD", { segments: ["Fixture publish"] });
@@ -252,6 +285,32 @@ test("OAuth in Threadline restores Tools, signs XRPC and retains the original pa
     expect(snapshot.svgHasViews).toBe(false);
     expect(snapshot.svgHasLikes).toBe(true);
     await expect(views).toBeVisible();
+
+    await page.locator("#thread-explorer-load-own-posts-button").click();
+    const ownFeed = page.locator("#thread-explorer-actor-focus");
+    await expect(ownFeed.getByText("Latest original post")).toBeVisible();
+    await expect(ownFeed.getByText("Repost of somebody else")).toHaveCount(0);
+
+    const ownPostUrl = "https://bsky.app/profile/" + handle + "/post/3n2opitxdyc2j";
+    const otherPostUrl = "https://bsky.app/profile/other.bsky.social/post/unrelated";
+    await requestWorker(page, "SAVE_SETTINGS", { postingHistory: [
+      { id: "recorded-thread", url: ownPostUrl, createdAt: "2026-11-23T12:00:00Z", threadCount: 2,
+        postUris: [postUri, secondPostUri] },
+      { id: "legacy-thread", url: ownPostUrl, createdAt: "2026-11-22T12:00:00Z", threadCount: 2 },
+      { id: "unrelated", url: otherPostUrl, createdAt: "2026-11-21T12:00:00Z", threadCount: 1 },
+    ] });
+    await page.reload();
+    await expect(avatar).toHaveAttribute("src", avatarUrl);
+    await page.locator("#history-button").click();
+    const history = page.locator("#history-dialog");
+    await expect(history.locator(".history-views span")).toHaveText([
+      "Post 1 · 364 Aufrufe", "Post 2 · 125 Aufrufe", "Post 1 · 364 Aufrufe",
+    ]);
+    const historyRequest = calls.postReads.find((read) => read.uris.includes(secondPostUri));
+    expect(historyRequest).toMatchObject({ uris: [postUri, secondPostUri], authorization: "DPoP access-fixture" });
+    expect(historyRequest.dpop).toBeTruthy();
+    await history.press("Escape");
+    await expect(history).toBeHidden();
 
     await page.locator(".account-chip-fallback").click();
     await expect(page.locator(".account-chip-fallback")).toBeHidden();

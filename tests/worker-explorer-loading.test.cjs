@@ -10,7 +10,45 @@ function fixture(){
 }
 /** Creates an author feed record. @param {string} uri - Post URI. @param {string} createdAt - Time. @param {string} root - Optional reply root. @returns {object} Raw post. */
 function post(uri,createdAt="2026-11-06",root=""){const record={text:uri,createdAt};if(root)record.reply={root:{uri:root}};return {uri,record,author:{did:"did:actor"}};}
-test("load constructor validates adapters and model contracts and freezes its API",()=>{const f=fixture();assert.throws(()=>f.factory(),/requires/);for(const name of ["session","refresh","request","base","resolve","parseSource","graphPage","error"]){assert.throws(()=>f.factory({...f.options,[name]:null}),/requires/);}for(const key of ["feedModels","postModels"]){for(const name of Object.keys(f.options[key])){if(key==="postModels"&&!["post","root","merge","count"].includes(name))continue;if(key==="feedModels"&&["saved","timestamp"].includes(name))continue;assert.throws(()=>f.factory({...f.options,[key]:{...f.options[key],[name]:null}}),/requires/);}}assert.equal(Object.isFrozen(f.service),true);assert.deepEqual(Object.keys(f.service),["sources","actorFeed","feed","resolve","thread"]);});
+test("load constructor validates adapters and model contracts and freezes its API",()=>{const f=fixture();assert.throws(()=>f.factory(),/requires/);for(const name of ["session","refresh","request","base","resolve","parseSource","graphPage","error"]){assert.throws(()=>f.factory({...f.options,[name]:null}),/requires/);}for(const key of ["feedModels","postModels"]){for(const name of Object.keys(f.options[key])){if(key==="postModels"&&!["post","root","merge","count"].includes(name))continue;if(key==="feedModels"&&["saved","timestamp"].includes(name))continue;assert.throws(()=>f.factory({...f.options,[key]:{...f.options[key],[name]:null}}),/requires/);}}assert.equal(Object.isFrozen(f.service),true);assert.deepEqual(Object.keys(f.service),["sources","actorFeed","feed","resolve","thread","ownPostViews"]);});
+
+test("own post views use signed account requests, verify ownership and omit absent counts", async () => {
+  const f = fixture();
+  const did = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const prefix = `at://${did}/app.bsky.feed.post/`;
+  Object.assign(f.auth, { did, handle: "own.test", oauthRequest: { oauthDid: did } });
+  const legacy = "https://bsky.app/profile/own.test/post/legacy";
+  const other = "https://bsky.app/profile/someone.test/post/unrelated";
+  f.queue.push({ posts: [
+    { uri: prefix + "legacy", author: { did }, viewCount: 364 },
+    { uri: prefix + "missing", author: { did } },
+    { uri: prefix + "foreign", author: { did: "did:other" }, viewCount: 999 },
+    { uri: prefix + "not-requested", author: { did }, viewCount: 888 },
+  ] });
+  const input = { accountDid: did, sources: [legacy, prefix + "legacy", prefix + "missing", prefix + "foreign", other] };
+  assert.deepEqual(plain(await f.service.ownPostViews(input)), {
+    accountDid: did,
+    counts: [{ source: legacy, count: 364 }, { source: prefix + "legacy", count: 364 }],
+  });
+  const request = f.calls.find(([operation]) => operation === "request");
+  assert.equal(request[1], "app.bsky.feed.getPosts");
+  assert.deepEqual(plain(request[2].uris), [prefix + "legacy", prefix + "missing", prefix + "foreign"]);
+  assert.equal(request[3].oauthDid, did);
+  assert.deepEqual(plain(await f.service.ownPostViews({ ...input, accountDid: "did:other" })), { accountDid: did, counts: [] });
+  assert.equal(f.calls.filter(([operation]) => operation === "request").length, 1);
+});
+
+test("the authored-only actor feed omits other authors and reposted items", async () => {
+  const f = fixture();
+  const original = post("original");
+  f.queue.push({ feed: [
+    { post: original },
+    { post: { ...post("foreign"), author: { did: "did:other" } } },
+    { post: post("reposted"), reason: { $type: "app.bsky.feed.defs#reasonRepost" } },
+  ] }, { posts: [original] });
+  const result = await f.service.actorFeed({ actor: "did:actor", originalOnly: true });
+  assert.deepEqual(plain(result.items.map((item) => item.post.uri)), ["original"]);
+});
 test("saved and pinned models support legacy/current preference formats, precedence and deduplication",()=>{const m=fixture().feedModels,uri="at://did:own/app.bsky.feed.generator/one";assert.equal(m.saved({uri:"bad"}),null);assert.deepEqual(plain(m.pinned(null)),[]);const result=m.pinned([{$type:"app.bsky.actor.defs#savedFeedsPref",saved:[{value:uri,pinned:true,name:" First "},{uri,pinned:true}]},{items:[{uri,pinned:true},{uri:"at://did:own/app.bsky.feed.generator/two",pinned:false}]}]);assert.equal(result.length,1);assert.equal(result[0].displayName,"First");assert.equal(Object.isFrozen(m),true);});
 test("relationship and actor-mode rules preserve strict flags and fallback modes",()=>{const m=fixture().feedModels;for(const source of ["follows","followers","mutuals"])assert.equal(m.relationship(source),true);assert.equal(m.relationship("timeline"),false);assert.equal(m.endpoint("followers"),"app.bsky.graph.getFollowers");assert.equal(m.profileSource("mutuals"),"following");assert.equal(m.profileMatch({followingViewer:true,followedByViewer:true},"mutuals"),true);assert.equal(m.profileMatch({followingViewer:1},"follows"),false);assert.equal(m.profileMatch({followedByViewer:true},"followers"),true);assert.equal(m.mode(" replies "),"replies");assert.equal(m.mode("all"),"all");assert.equal(m.mode("bad"),"posts");assert.equal(m.match({uri:"reply",rootUri:"root"},"replies"),true);assert.equal(m.match({uri:"reply",rootUri:"root"}),false);assert.throws(()=>m.match(null,"all"));});
 test("sorting preserves stable ties and item identity with created/indexed/zero fallbacks",()=>{const m=fixture().feedModels,a={post:{createdAt:"2026-01-01"}},b={post:{indexedAt:"2026-01-01"}},c={post:{createdAt:"invalid"}};const result=m.sort([c,a,b]);assert.equal(result[0],a);assert.equal(result[1],b);assert.equal(result[2],c);assert.equal(m.timestamp(c),0);assert.deepEqual(plain(m.sort(null)),[]);});

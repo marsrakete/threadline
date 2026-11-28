@@ -149,6 +149,9 @@ export function renderThreadExplorerControls(elements, state, actions) {
   if (elements.threadExplorerUseOwnAccountButton) {
     elements.threadExplorerUseOwnAccountButton.disabled = !hasAuth || state.loadingFeed;
   }
+  if (elements.threadExplorerLoadOwnPostsButton) {
+    elements.threadExplorerLoadOwnPostsButton.disabled = !hasAuth || state.loadingOwnPosts;
+  }
   if (elements.threadExplorerSourceField) {
     elements.threadExplorerSourceField.hidden = isForeignActorFocusMode;
   }
@@ -251,17 +254,20 @@ export function renderThreadExplorerFeedSources(options) {
   placeholder.value = "";
   placeholder.textContent = options.placeholder;
   options.select.replaceChildren(placeholder);
+  let activeSource = "";
   options.feeds.forEach((feed) => {
     const source = options.buildSource(feed.uri);
-    if (!source) {
+    const displayName = String(feed.displayName || "").trim();
+    if (!source || !displayName || /^at:(?:\/\/\S*)?$/i.test(displayName)) {
       return;
     }
     const option = options.cloneTemplate(options.template).querySelector("option");
     option.value = source;
-    option.textContent = feed.displayName || feed.uri;
+    option.textContent = displayName;
     options.select.appendChild(option);
+    if (options.activeSource === source) { activeSource = source; }
   });
-  options.select.value = options.activeSource;
+  options.select.value = activeSource;
   options.select.disabled = options.disabled;
 }
 

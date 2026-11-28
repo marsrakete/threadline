@@ -162,7 +162,7 @@ globalThis.createThreadlineSettingsModels = function createThreadlineSettingsMod
       }
 
       seen.add(key);
-      result.push({
+      const normalized = {
         id: stringField(entry, "id", false) || key,
         url,
         createdAt,
@@ -171,7 +171,14 @@ globalThis.createThreadlineSettingsModels = function createThreadlineSettingsMod
         firstSegmentText: stringField(entry, "firstSegmentText", true),
         threadCount: Math.max(1, Number(entry.threadCount) || 1),
         imageCount: Math.max(0, Number(entry.imageCount) || 0),
-      });
+      };
+      if (Array.isArray(entry.postUris) && entry.postUris.length) {
+        normalized.postUris = entry.postUris.map((uri) => {
+          if (typeof uri === "string") { return uri.trim(); }
+          return "";
+        });
+      }
+      result.push(normalized);
     }
 
     return result

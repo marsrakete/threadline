@@ -876,6 +876,11 @@ test("Composer history entries preserve publication fallbacks, previews and imag
   assert.equal(overridden.service, "other-service");
   assert.equal(overridden.threadCount, 2);
   assert.equal(overridden.imageCount, 0);
+  const firstUri = "at://did:plc:aaaaaaaaaaaaaaaaaaaaaaaa/app.bsky.feed.post/first";
+  const thirdUri = "at://did:plc:aaaaaaaaaaaaaaaaaaaaaaaa/app.bsky.feed.post/third";
+  const recorded = module.buildComposerHistoryEntry({ posts: [{ uri: firstUri }, {}, { uri: thirdUri }] }, [], options);
+  assert.deepEqual(recorded.postUris, [firstUri, "", thirdUri]);
+  assert.deepEqual(module.normalizeComposerPostingHistory([recorded], 30)[0].postUris, recorded.postUris);
 });
 
 test("Composer history recording normalizes, updates and renders before awaiting persistence", async () => {

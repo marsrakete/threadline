@@ -1201,6 +1201,7 @@ const threadExplorerAccountField = document.querySelector("#thread-explorer-acco
 const threadExplorerSourceSelect = document.querySelector("#thread-explorer-source-select");
 const threadExplorerAccountInput = document.querySelector("#thread-explorer-account-input");
 const threadExplorerUseOwnAccountButton = document.querySelector("#thread-explorer-use-own-account-button");
+const threadExplorerLoadOwnPostsButton = document.querySelector("#thread-explorer-load-own-posts-button");
 const threadExplorerAccountModeField = document.querySelector("#thread-explorer-account-mode-field");
 const threadExplorerAccountModeSelect = document.querySelector("#thread-explorer-account-mode-select");
 const threadExplorerAccountNote = document.querySelector("#thread-explorer-account-note");
@@ -3093,6 +3094,7 @@ function applyDisconnectedState(showStatus = true) {
   getThreadExplorerAccountContext().invalidate();
   authAccount = null;
   authAccountDid = "";
+  if (historyDialog.open) { renderHistoryList(); }
   resetNetworkState();
   updateAuthButtons();
   if (currentWorkspace === "archive" || currentWorkspace === "dm" || currentWorkspace === "network" || currentWorkspace === "threadExplorer" || currentWorkspace === "analysis") {
@@ -5075,6 +5077,7 @@ function updateThreadExplorerControls() {
     threadExplorerRefreshButton,
     threadExplorerAccountInput,
     threadExplorerUseOwnAccountButton,
+    threadExplorerLoadOwnPostsButton,
     threadExplorerSourceField,
     threadExplorerAccountField,
     threadExplorerAccountModeField,
@@ -5099,6 +5102,7 @@ function updateThreadExplorerControls() {
     threadExplorerSourceSelect,
   }, {
     authenticated: Boolean(authAccount), loadingThread: threadExplorerLoadingThread, loadingFeed: threadExplorerLoadingFeed,
+    loadingOwnPosts: threadExplorerActorFocusLoading,
     foreignAccount: isThreadExplorerForeignAccountMode(), actorFocus: isThreadExplorerForeignActorFocusMode(),
     clusterMode: isThreadExplorerReplyClusterModeActive(), saved: isCurrentThreadExplorerThreadSaved(),
     accountActor: normalizeThreadExplorerActor(threadExplorerAccountActor), accountMode: normalizeThreadExplorerAccountMode(threadExplorerAccountMode),
@@ -9072,6 +9076,10 @@ function renderHistoryList() {
     emptyTemplate: document.querySelector("#history-empty-template"),
   }, {
     translate: t, formatTimestamp: formatHistoryTimestamp, formatMeta: formatHistoryMeta,
+    views: {
+      dialog: historyDialog, getAccount: () => authAccountDid, request: sendToServiceWorker,
+      template: document.querySelector("#history-view-count-template"), translate: t, formatCount,
+    },
     createActions: (entry, controls) => createComposerHistoryItemActions(entry, controls, {
       translate: t, setBusy, openPost: openPostUrlInThreadExplorer,
       closeDialog: () => historyDialog.close(),
@@ -9533,8 +9541,8 @@ bindApplicationEvents(settingsButton, [{ type: "click", handler: () => {
 } }]);
 
 bindApplicationEvents(historyButton, [{ type: "click", handler: () => {
-  renderHistoryList();
   historyDialog.showModal();
+  renderHistoryList();
 } }]);
 
 bindOptionalApplicationEvent(publishResultThreadExplorerButton, "click", handlePublishResultThreadExplorerClick);
@@ -9554,6 +9562,7 @@ bindThreadExplorerWorkspaceEvents({
   sourceSelect: threadExplorerSourceSelect,
   accountInput: threadExplorerAccountInput,
   useOwnAccountButton: threadExplorerUseOwnAccountButton,
+  loadOwnPostsButton: threadExplorerLoadOwnPostsButton,
   accountModeSelect: threadExplorerAccountModeSelect,
   feedSelect: threadExplorerFeedSelect,
 }, {
@@ -9578,6 +9587,7 @@ bindThreadExplorerWorkspaceEvents({
     applyThreadExplorerAccountInput({ loadFeed: true });
   },
   useOwnAccountClick: handleThreadExplorerUseOwnAccountClick,
+  loadOwnPostsClick: () => getThreadExplorerAccountContext().loadOwnPosts(),
   accountModeChange: handleThreadExplorerAccountModeChange,
   feedChange: handleThreadExplorerFeedSelectChange,
 });
@@ -10832,7 +10842,10 @@ function applyAuthenticationIdentity(identity) {
   authAccountDid = identity.did;
   authAccountService = identity.service;
   authAccountWebApp = identity.webApp;
-  if (changedAccount) { getThreadExplorerAccountContext().invalidate(); }
+  if (changedAccount) {
+    getThreadExplorerAccountContext().invalidate();
+    if (historyDialog.open) { renderHistoryList(); }
+  }
 }
 const oauthLogin = createOAuthLoginController({
   form: document.querySelector("#oauth-login-form"), handle: document.querySelector("#oauth-handle"),

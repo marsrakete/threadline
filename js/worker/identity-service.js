@@ -117,9 +117,10 @@ globalThis.createThreadlineIdentityService = function createThreadlineIdentitySe
 
   /** Loads a profile avatar using the supplied PDS/auth context.
    * @param {string} did - Actor DID. @param {object|null} auth - Optional account.
+   * @param {AbortSignal} [signal] - Optional profile request deadline.
    * @returns {Promise<string>} Trimmed avatar URL or empty on failure.
    */
-  async function fetchAccountAvatar(did, auth = null) {
+  async function fetchAccountAvatar(did, auth = null, signal) {
     try {
       let headers;
       if (auth?.session?.accessJwt) {
@@ -128,6 +129,7 @@ globalThis.createThreadlineIdentityService = function createThreadlineIdentitySe
       const profile = await bskyFetch(`app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`, {
         method: "GET",
         headers,
+        signal,
         ...auth?.oauthRequest,
         base: xrpcBaseForService(auth?.pdsUrl || auth?.service || DEFAULT_LOGIN_SERVICE),
       });

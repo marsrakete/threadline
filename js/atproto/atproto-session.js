@@ -67,9 +67,10 @@ function extractPdsServiceFromDidDocument(documentNode, fallbackService) { retur
  * Loads the current avatar URL for an actor profile.
  * @param {string} did - Actor DID.
  * @param {object|null} auth - Optional auth context.
+ * @param {AbortSignal} [signal] - Optional profile request deadline.
  * @returns {Promise<string>} Avatar URL or an empty string.
  */
-async function fetchAccountAvatar(did, auth = null) { return getAtprotoIdentity().avatar(did, auth); }
+async function fetchAccountAvatar(did, auth = null, signal) { return getAtprotoIdentity().avatar(did, auth, signal); }
 
 /**
  * Infers the matching public web app for an account entry.

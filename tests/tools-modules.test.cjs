@@ -2544,6 +2544,18 @@ test("account input, mode and own-account actions reset only the selected contex
   f.state.authAccountDid="did:other";assert.notEqual(f.context.contextKey(),key);
 });
 
+test("the own posts shortcut opens the current account in posts mode", async () => {
+  const f = await explorerContextFixture();
+  f.context.open({ did: "did:other", handle: "other.test" });
+  f.calls.length = 0;
+  f.context.loadOwnPosts();
+  assert.deepEqual(f.state.actorFocusActor, { did: "did:own", handle: "own.test", originalOnly: true });
+  assert.equal(f.state.actorFocusMode, "posts");
+  assert.equal(f.elements.account.value, "own.test");
+  assert.deepEqual(f.calls.find(([name]) => name === "loadActor"), ["loadActor", { append: false }]);
+  assert.equal(f.context.foreignAccount(), false);
+});
+
 test("late feed, actor and thread responses cannot mutate a newer context or clear its loading flag",async()=>{
   const f=await explorerContextFixture();
   for(const kind of ["feed","foreignFeed","actor","thread"]){

@@ -722,6 +722,7 @@
                 </select>
               </label>
               <p id="thread-explorer-account-note" class="settings-note account-field-note" hidden></p>
+              <button type="button" class="ghost-button" id="thread-explorer-load-own-posts-button" data-i18n="threadExplorerLoadOwnPostsButton" disabled>Eigene letzte Postings laden</button>
               <label id="thread-explorer-feed-picker-field" class="settings-field thread-explorer-feed-picker">
                 <span data-i18n="threadExplorerFeedPickerLabel">Angepinnte Feeds</span>
                 <select id="thread-explorer-feed-select">
@@ -2706,6 +2707,7 @@
             <p class="history-timestamp"></p>
             <p class="history-meta history-counts"></p>
             <p class="history-meta history-account"></p>
+              <div class="history-views history-meta" hidden></div>
           </div>
         </div>
         <div class="history-item-actions">
@@ -2719,6 +2721,7 @@
       </article>
     </template>
     <template id="history-empty-template"><p class="history-empty"></p></template>
+    <template id="history-view-count-template"><span></span></template>
 
     <template id="composer-link-card-preview-template">
       <div class="segment-link-card-preview">

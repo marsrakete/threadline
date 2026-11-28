@@ -632,6 +632,7 @@ export async function loadThreadExplorerActorFocusWorkflow(options = {}) {
       actor: options.actorId,
       cursor: state.cursor,
       mode: options.mode,
+      originalOnly: options.actor.originalOnly === true,
       limit: 30,
     }, { timeoutMs: 120000 });
     if (!isCurrent()) { return; }
@@ -720,6 +721,7 @@ export function bindThreadExplorerWorkspaceEvents(elements = {}, handlers = {}) 
   bind(elements.accountInput, "change", handlers.accountChange);
   bind(elements.accountInput, "keydown", handlers.accountKeydown);
   bind(elements.useOwnAccountButton, "click", handlers.useOwnAccountClick);
+  bind(elements.loadOwnPostsButton, "click", handlers.loadOwnPostsClick);
   bind(elements.accountModeSelect, "change", handlers.accountModeChange);
   bind(elements.feedSelect, "change", handlers.feedChange);
   return boundCount;
@@ -1360,6 +1362,22 @@ export function createThreadExplorerAccountContext(state, elements, models, acti
     applyThreadExplorerAccountInput({ loadFeed: true });
   }
 
+  /** Opens the active account's newest original posts in Actor-Fokus. @returns {void} Starts the author feed load. */
+  function loadOwnPosts() {
+    const did = state.authAccountDid;
+    const handle = getThreadExplorerOwnActor();
+    if (!did || !handle) { return; }
+    state.accountActor = handle;
+    state.accountError = "";
+    state.accountMode = "posts";
+    state.actorFocusMode = "posts";
+    state.accountActorBeforeFocus = "";
+    state.accountModeBeforeFocus = "posts";
+    if (elements.account) { elements.account.value = handle; }
+    openThreadExplorerActorFocus({ did, handle, originalOnly: true });
+    void actions.loadSources();
+  }
+
   /**
    * Updates the Thread Explorer account-mode filter and reloads the current foreign-account feed.
    * @param {Event} event - Change event from the account-mode select.
@@ -1378,5 +1396,5 @@ export function createThreadExplorerAccountContext(state, elements, models, acti
     void actions.loadActor({ append: false });
   }
 
-  return Object.freeze({ invalidate, contextKey: () => JSON.stringify([revision, state.authAccountDid, state.authAccount]), foreignAccount: isThreadExplorerForeignAccountMode, foreignFocus: isThreadExplorerForeignActorFocusMode, open: openThreadExplorerActorFocus, close: closeThreadExplorerActorFocus, apply: applyThreadExplorerAccountInput, useOwn: handleThreadExplorerUseOwnAccountClick, mode: handleThreadExplorerAccountModeChange });
+  return Object.freeze({ invalidate, contextKey: () => JSON.stringify([revision, state.authAccountDid, state.authAccount]), foreignAccount: isThreadExplorerForeignAccountMode, foreignFocus: isThreadExplorerForeignActorFocusMode, open: openThreadExplorerActorFocus, close: closeThreadExplorerActorFocus, apply: applyThreadExplorerAccountInput, useOwn: handleThreadExplorerUseOwnAccountClick, loadOwnPosts, mode: handleThreadExplorerAccountModeChange });
 }
