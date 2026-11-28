@@ -156,20 +156,16 @@ body[data-design="threadline"] .intro-section {
 }
 
 body[data-design="threadline"] .intro-copy {
+  display: block;
   padding: 28px 30px 21px;
 }
 
-body[data-design="threadline"] h1 {
+body[data-design="threadline"] .intro-copy h2 {
+  margin: 0;
   font-size: clamp(1.8rem, 3vw, 2.5rem);
+  font-weight: 600;
   letter-spacing: -0.045em;
   line-height: 1.15;
-}
-
-body[data-design="threadline"] h1 em {
-  font-family: inherit;
-  font-style: normal;
-  font-weight: 700;
-  letter-spacing: inherit;
 }
 
 body[data-design="threadline"] .threadline-title,
@@ -180,10 +176,6 @@ body[data-design="threadline"] .threadline-description {
 body[data-design="threadline"] .artcraft-title,
 body[data-design="threadline"] .artcraft-description {
   display: none;
-}
-
-body[data-design="threadline"] .intro-description {
-  margin-top: 8px;
 }
 
 body[data-design="threadline"] .composer-layout {
@@ -268,8 +260,14 @@ main {
   letter-spacing: 0.12em;
 }
 
+.section-bar h1 {
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
 .intro-copy {
-  padding: 66px 42px 59px;
+  display: none;
 }
 
 .eyebrow,
@@ -289,22 +287,8 @@ main {
   color: var(--muted);
 }
 
-h1 {
-  margin: 0;
-  font-size: clamp(3.2rem, 7vw, 6.7rem);
-  font-weight: 600;
-  letter-spacing: -0.075em;
-  line-height: 0.95;
-}
-
-h1 em {
-  font-family: Georgia, "Times New Roman", serif;
-  font-weight: 400;
-  letter-spacing: -0.07em;
-}
-
 .intro-description {
-  margin: 24px 0 0;
+  margin: 8px 0 0;
   color: var(--muted);
   font-size: 1rem;
 }
@@ -499,13 +483,10 @@ textarea:focus-visible {
 .avatar {
   width: 38px;
   height: 38px;
-  display: grid;
-  place-items: center;
+  flex: 0 0 auto;
+  object-fit: cover;
   border-radius: 50%;
   background: #dfe7f2;
-  color: #26384e;
-  font-size: 0.72rem;
-  font-weight: 700;
 }
 
 .post-author strong,
@@ -612,9 +593,6 @@ textarea:focus-visible {
     border-bottom: 1px solid var(--rule);
   }
 
-  .intro-copy {
-    padding: 52px 30px 48px;
-  }
 }
 
 @media (max-width: 560px) {
@@ -641,14 +619,6 @@ textarea:focus-visible {
     padding-right: 18px;
     padding-left: 18px;
     font-size: 0.58rem;
-  }
-
-  .intro-copy {
-    padding: 42px 20px 39px;
-  }
-
-  h1 {
-    font-size: clamp(3rem, 14vw, 4.2rem);
   }
 
   .field-label,
