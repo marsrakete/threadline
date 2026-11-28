@@ -5,7 +5,7 @@
   "method": "AST inventory of every top-level named function, not a function-length filter. Category is structural evidence, not a completion verdict. Shared-state reads/writes include nested callbacks; property mutation requires the manual review described in MODULARIZATION-AUDIT.md.",
   "files": {
     "app.js": {
-      "sourceSha256": "4bc898d92c52e44937f5b2a5213012c66835f7788d9f18ca19e6cf5d0997ba08",
+      "sourceSha256": "fa85b31d3002afca77367fd07d838e4013bd4c6bb923fdbafe35b1c4a60cf728",
       "functionCount": 661,
       "unresolvedBindings": [],
       "domains": {
@@ -2674,6 +2674,7 @@
           "domain": "explorer",
           "category": "adapter",
           "stateReads": [
+            "authAccountDid",
             "renderThreadExplorerEditButton",
             "renderThreadExplorerInteractionActions",
             "renderThreadExplorerMetricEntries",

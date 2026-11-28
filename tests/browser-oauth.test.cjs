@@ -14,6 +14,27 @@ const base = origin + "/threadline/";
 const provider = "https://oauth.threadline.test";
 const did = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
 const handle = "owner.bsky.social";
+const otherDid = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+const postUri = "at://" + did + "/app.bsky.feed.post/3n2opitxdyc2j";
+
+/**
+ * Creates a raw thread-view node returned by the fixture AppView.
+ * @param {object} post - Post URI, author and fields supplied by the fixture.
+ * @param {string} text - Visible post body.
+ * @returns {object} Bluesky thread node with an empty reply list.
+ */
+function threadNode(post, text) {
+  return {
+    $type: "app.bsky.feed.defs#threadViewPost",
+    post: {
+      cid: "fixture",
+      indexedAt: "2026-11-23T12:00:00Z",
+      record: { $type: "app.bsky.feed.post", text, createdAt: "2026-11-23T12:00:00Z" },
+      ...post,
+    },
+    replies: [],
+  };
+}
 
 /** Hosts the checked-in app at its declared HTTPS origin within the isolated test browser. @param {string} directory - Temporary certificate directory. @returns {Promise<import("node:https").Server>} Listening server. */
 async function startServer(directory) {
@@ -50,7 +71,7 @@ async function startServer(directory) {
 
 /** Emulates discovery, PAR, callback, token exchange and the account XRPC endpoints. @param {import("@playwright/test").BrowserContext} context - Isolated browser. @returns {Promise<object>} Recorded contract values. */
 async function routeProvider(context) {
-  const calls = { writes: [], auth: null, tokenExchanges: 0 };
+  const calls = { writes: [], threadReads: [], auth: null, tokenExchanges: 0 };
   const passwordJwt = "fixture." + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url") + ".fixture";
   await context.route((url) => url.origin !== origin, async (route) => {
     const request = route.request();
@@ -104,6 +125,16 @@ async function routeProvider(context) {
       expect(request.headers().dpop).toBeTruthy();
       await route.fulfill({ headers, json: { sub: did, token_type: "DPoP", access_token: "access-fixture",
         refresh_token: "oauth-refresh-fixture", scope: calls.auth.get("scope"), expires_in: 3600 } });
+    } else if (url.pathname.endsWith(".getPostThread")) {
+      const { authorization, dpop } = request.headers();
+      calls.threadReads.push({ origin: url.origin, uri: url.searchParams.get("uri"), authorization, dpop });
+      const author = { did, handle };
+      const thread = threadNode({ uri: postUri, author, viewCount: 364, replyCount: 2, likeCount: 5 }, "Own post with views");
+      thread.replies = [
+        threadNode({ uri: "at://" + otherDid + "/app.bsky.feed.post/other", author: { did: otherDid, handle: "other.bsky.social" }, viewCount: 777 }, "Another author's post"),
+        threadNode({ uri: "at://" + did + "/app.bsky.feed.post/no-count", author }, "Own post without views"),
+      ];
+      await route.fulfill({ headers, json: { thread } });
     } else if (url.pathname.endsWith(".createRecord")) {
       calls.writes.push({ ...request.headers() });
       await route.fulfill({ headers, json: { uri: "at://" + did + "/app.bsky.feed.post/fixture", cid: "fixture" } });
@@ -181,6 +212,46 @@ test("OAuth in Threadline restores Tools, signs XRPC and retains the original pa
     await requestWorker(page, "PUBLISH_THREAD", { segments: ["Fixture publish"] });
     expect(calls.writes[0].authorization).toBe("DPoP access-fixture");
     expect(calls.writes[0].dpop).toBeTruthy();
+
+    await page.locator("#thread-explorer-button").click();
+    await page.locator("#thread-explorer-url-button").click();
+    await page.locator("#thread-explorer-url-input").fill("https://bsky.app/profile/" + did + "/post/3n2opitxdyc2j");
+    await page.locator("#thread-explorer-url-load-button").click();
+    const stage = page.locator("#thread-explorer-thread-stage");
+    const views = stage.locator("[data-thread-explorer-live-only]");
+    await expect(views).toHaveText("364 Aufrufe");
+    await expect(views).toBeVisible();
+    await expect(stage.getByText("Another author's post", { exact: true })).toBeAttached();
+    await expect(stage.getByText("Own post without views", { exact: true })).toBeAttached();
+    expect(calls.threadReads).toHaveLength(1);
+    expect(calls.threadReads[0]).toMatchObject({ origin: provider, uri: postUri, authorization: "DPoP access-fixture" });
+    expect(calls.threadReads[0].dpop).toBeTruthy();
+
+    const snapshot = await stage.evaluate(async (element) => {
+      const { getThreadExplorerSnapshotCountsText, renderThreadExplorerForeignObjectSnapshot } =
+        await import("./js/tools/thread-explorer-snapshot.js");
+      const card = element.querySelector(".thread-explorer-post-card");
+      const canvasCounts = getThreadExplorerSnapshotCountsText(card);
+      let svgBlob;
+      await renderThreadExplorerForeignObjectSnapshot({
+        stage: element, width: 800, height: 600, mimeType: "image/png",
+        text: (key) => key, getComputedStyle, inlineImages() {}, collectCss: () => "",
+        createCanvas: () => ({ context: { drawImage() {} } }), encodeCanvas() {},
+        createObjectUrl(blob) { svgBlob = blob; return "fixture"; }, revokeObjectUrl() {},
+        createImage() {
+          const image = new EventTarget();
+          Object.defineProperty(image, "src", { set() { image.dispatchEvent(new Event("load")); } });
+          return image;
+        },
+      });
+      const svg = await svgBlob.text();
+      return { canvasCounts, svgHasViews: svg.includes("364 Aufrufe"), svgHasLikes: svg.includes("5 Likes") };
+    });
+    expect(snapshot.canvasCounts).toContain("5 Likes");
+    expect(snapshot.canvasCounts).not.toContain("364");
+    expect(snapshot.svgHasViews).toBe(false);
+    expect(snapshot.svgHasLikes).toBe(true);
+    await expect(views).toBeVisible();
 
     await page.locator(".account-chip-fallback").click();
     await expect(page.locator(".account-chip-fallback")).toBeHidden();

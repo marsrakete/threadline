@@ -482,13 +482,13 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
     const auth = await ensureSession();
     const activeAuth = await refreshAuthReference(auth);
     const selectedResponse = await fetchThreadExplorerThreadView(activeAuth, uri, 100);
-    let root = normalizeThreadExplorerThreadRoot(selectedResponse?.thread || {});
+    let root = normalizeThreadExplorerThreadRoot(selectedResponse?.thread || {}, activeAuth.did);
     const rootUri = String(root?.post?.uri || "").trim();
     const rootIsDeletedAnchor = root?.post?.isDeletedThreadAnchor === true;
 
     if (rootUri && rootUri !== uri && !rootIsDeletedAnchor) {
       const rootResponse = await fetchThreadExplorerThreadView(activeAuth, rootUri, 0);
-      const fullRoot = normalizeThreadExplorerThreadRoot(rootResponse?.thread || {});
+      const fullRoot = normalizeThreadExplorerThreadRoot(rootResponse?.thread || {}, activeAuth.did);
       if (fullRoot) {
         root = mergeThreadExplorerSelectedPath(fullRoot, root, uri);
       }

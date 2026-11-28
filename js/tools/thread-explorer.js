@@ -1733,6 +1733,7 @@ export function getThreadExplorerRenderedNodeParts(fragment = null) {
     text: fragment.querySelector(".thread-explorer-post-text"),
     gallery: fragment.querySelector(".thread-explorer-post-gallery"),
     counts: fragment.querySelector(".thread-explorer-post-counts"),
+    viewsTemplate: fragment.querySelector(".thread-explorer-post-views-template"),
     children: fragment.querySelector(".thread-explorer-children"),
   };
 }
@@ -2042,6 +2043,7 @@ export function bindThreadExplorerCardInteractions(card, handlers = {}) {
  * @param {Function} options.renderEditButton - Renders the edit marker.
  * @param {Function} options.renderActions - Renders post interaction actions.
  * @param {Function} options.renderMetrics - Renders post metrics.
+ * @param {string} options.viewerDid - Current account DID used to show private counts.
  * @param {Function} options.applyTranslatedTitle - Applies translated titles.
  * @param {Function} options.openActorFocus - Opens Actor-Fokus for an actor.
  * @param {Function} options.prepareHydration - Schedules card content hydration.
@@ -2092,6 +2094,12 @@ export function createThreadExplorerRenderedItem(node = {}, options = {}) {
     }
     if (typeof options.renderMetrics === "function") {
       options.renderMetrics(post, parts.counts, prepared.postDisplay?.metricEntries || []);
+    }
+    if (parts.viewsTemplate && parts.counts && options.viewerDid && post.author?.did === options.viewerDid
+      && Number.isSafeInteger(post.viewCount) && post.viewCount >= 0) {
+      const views = parts.viewsTemplate.content.firstElementChild.cloneNode(true);
+      views.textContent = options.translate("threadExplorerCountViews", { count: post.viewCount });
+      parts.counts.append(views);
     }
     configureThreadExplorerActorFocusTriggers(parts.actorTriggers, post.author || {}, {
       applyTranslatedTitle: options.applyTranslatedTitle,

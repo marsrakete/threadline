@@ -1648,7 +1648,11 @@ test("Thread Explorer snapshot helpers build safe export data", async () => {
   snapshot.drawThreadExplorerSnapshotRoundRect(canvasContext, 0, 0, 20, 10, 4);
   snapshot.strokeThreadExplorerSnapshotRoundRect(canvasContext, 0, 0, 20, 10, 4, "black", 2);
   assert.deepEqual(pathCalls, ["begin", "close", "begin", "close"]);
-  const countCard = { querySelector: () => ({ children: [{ textContent: " 1 Like " }, { textContent: " 2 Replies " }] }) };
+  const countCard = { querySelector: () => ({ children: [
+    { textContent: " 1 Like " },
+    { textContent: " 2 Replies " },
+    { textContent: "364 views", dataset: { threadExplorerLiveOnly: "true" } },
+  ] }) };
   assert.equal(snapshot.getThreadExplorerSnapshotCountsText(countCard), "1 Like   2 Replies");
 
   const edgeCalls = [];

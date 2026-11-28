@@ -283,9 +283,10 @@ globalThis.createThreadlineExplorerModels = function createThreadlineExplorerMod
   /**
    * Converts a getPostThread node to a recursive UI tree.
    * @param {object} node - ThreadViewPost node from app.bsky.feed.getPostThread.
+   * @param {string} viewerDid - Authenticated account DID for private view counts.
    * @returns {object|null} Tree node with normalized post and child replies.
    */
-  function normalizeThreadExplorerThreadNode(node = {}) {
+  function normalizeThreadExplorerThreadNode(node = {}, viewerDid = "") {
     if (!node || typeof node !== "object") {
       return null;
     }
@@ -294,7 +295,12 @@ globalThis.createThreadlineExplorerModels = function createThreadlineExplorerMod
     if (node.notFound === true) {
       post = normalizeThreadExplorerMissingPost(node);
     } else {
-      post = normalizeThreadExplorerPost(node.post || node);
+      const postView = node.post || node;
+      post = normalizeThreadExplorerPost(postView);
+      if (viewerDid && post?.author.did === viewerDid
+        && Number.isSafeInteger(postView.viewCount) && postView.viewCount >= 0) {
+        post.viewCount = postView.viewCount;
+      }
     }
     if (!post) {
       return null;
@@ -303,7 +309,7 @@ globalThis.createThreadlineExplorerModels = function createThreadlineExplorerMod
     const replies = [];
     if (Array.isArray(node.replies)) {
       node.replies.forEach((reply) => {
-        const normalizedReply = normalizeThreadExplorerThreadNode(reply);
+        const normalizedReply = normalizeThreadExplorerThreadNode(reply, viewerDid);
         if (normalizedReply) {
           replies.push(normalizedReply);
         }
@@ -362,14 +368,15 @@ globalThis.createThreadlineExplorerModels = function createThreadlineExplorerMod
   /**
    * Builds the visible Thread Explorer root tree from a getPostThread response.
    * @param {object} threadNode - ThreadViewPost node for the selected post.
+   * @param {string} viewerDid - Authenticated account DID for private view counts.
    * @returns {object|null} Normalized tree rooted at the conversation root.
    */
-  function normalizeThreadExplorerThreadRoot(threadNode = {}) {
-    let childTree = normalizeThreadExplorerThreadNode(threadNode);
+  function normalizeThreadExplorerThreadRoot(threadNode = {}, viewerDid = "") {
+    let childTree = normalizeThreadExplorerThreadNode(threadNode, viewerDid);
     let parentSource = threadNode?.parent;
 
     while (parentSource && typeof parentSource === "object") {
-      const parentTree = normalizeThreadExplorerThreadNode(parentSource);
+      const parentTree = normalizeThreadExplorerThreadNode(parentSource, viewerDid);
       if (!parentTree) {
         break;
       }

@@ -5613,6 +5613,7 @@ function createThreadExplorerRenderedItem(node, options = {}) {
     renderEditButton: renderThreadExplorerEditButton,
     renderActions: renderThreadExplorerInteractionActions,
     renderMetrics: renderThreadExplorerMetricEntries,
+    viewerDid: authAccountDid,
     applyTranslatedTitle,
     openActorFocus: openThreadExplorerActorFocus,
     prepareHydration: prepareThreadExplorerCardHydration,
