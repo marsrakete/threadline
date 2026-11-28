@@ -173,8 +173,8 @@ body[data-design="threadline"] .threadline-description {
   display: inline;
 }
 
-body[data-design="threadline"] .artcraft-title,
-body[data-design="threadline"] .artcraft-description {
+body[data-design="threadline"] .editorial-title,
+body[data-design="threadline"] .editorial-description {
   display: none;
 }
 

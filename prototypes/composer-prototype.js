@@ -35,32 +35,51 @@ function updateComposerPreview() {
 }
 
 /**
- * Switches between the ArtCraft-inspired palette and Threadline's existing palette.
+ * Updates the active palette and labels the button with the palette it switches to.
+ * @param {string} scheme The palette to activate.
  * @returns {void}
  */
-function toggleColorScheme() {
-  const currentScheme = document.body.dataset.colorScheme;
-  const nextScheme = currentScheme === "threadline" ? "artcraft" : "threadline";
-
-  document.body.dataset.colorScheme = nextScheme;
-  colorSchemeToggle.textContent = nextScheme === "threadline" ? "ARTCRAFT-FARBEN" : "THREADLINE-FARBEN";
-  colorSchemeToggle.setAttribute("aria-pressed", String(nextScheme === "threadline"));
+function setColorScheme(scheme) {
+  const usesThreadlineColors = scheme === "threadline";
+  document.body.dataset.colorScheme = scheme;
+  if (usesThreadlineColors) {
+    colorSchemeToggle.textContent = "Gedeckte Farben";
+  } else {
+    colorSchemeToggle.textContent = "THREADLINE-FARBEN";
+  }
+  colorSchemeToggle.setAttribute("aria-pressed", String(usesThreadlineColors));
 }
 
 /**
- * Switches the prototype between the existing Threadline layout and the ArtCraft-inspired layout.
+ * Switches between muted colors and Threadline's existing palette.
+ * @returns {void}
+ */
+function toggleColorScheme() {
+  if (document.body.dataset.colorScheme === "threadline") {
+    setColorScheme("muted");
+  } else {
+    setColorScheme("threadline");
+  }
+}
+
+/**
+ * Switches the prototype layout and applies the matching palette.
  * @returns {void}
  */
 function toggleDesign() {
-  const nextDesign = document.body.dataset.design === "threadline" ? "artcraft" : "threadline";
-  const matchingColorScheme = nextDesign === "threadline" ? "threadline" : "artcraft";
+  let nextDesign = "threadline";
+  let matchingScheme = "threadline";
+  if (document.body.dataset.design === "threadline") {
+    nextDesign = "editorial";
+    matchingScheme = "muted";
+    designToggle.textContent = "ALTES DESIGN";
+  } else {
+    designToggle.textContent = "NEUES DESIGN";
+  }
 
   document.body.dataset.design = nextDesign;
-  document.body.dataset.colorScheme = matchingColorScheme;
-  designToggle.textContent = nextDesign === "threadline" ? "NEUES DESIGN" : "ALTES DESIGN";
   designToggle.setAttribute("aria-pressed", String(nextDesign === "threadline"));
-  colorSchemeToggle.textContent = matchingColorScheme === "threadline" ? "ARTCRAFT-FARBEN" : "THREADLINE-FARBEN";
-  colorSchemeToggle.setAttribute("aria-pressed", String(matchingColorScheme === "threadline"));
+  setColorScheme(matchingScheme);
 }
 
 composerField.addEventListener("input", updateComposerPreview);

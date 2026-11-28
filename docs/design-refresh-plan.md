@@ -5,18 +5,18 @@
 Threadline erhält zwei voneinander unabhängige Darstellungsoptionen in den Einstellungen:
 
 1. **Design:** bisherige Threadline-Oberfläche oder neues Editorial-Design.
-2. **Farbschema:** Threadline-Blau/Türkis oder ArtCraft-inspiriertes Off-White/Blau.
+2. **Farbschema:** Threadline-Blau/Türkis oder gedeckte Farben in Off-White und Blau.
 
 Der bestehende Dark Mode und der Kompaktmodus bleiben erhalten. Beide Farbschemata brauchen deshalb helle und dunkle Varianten.
 
-## Begriffe und Prototyp
+## Begriffe und Composer-Prototyp
 
 Das im Prototyp „alte“ Layout ist **nicht** die aktuelle Threadline-Oberfläche. Es ist eine eigenständige Kartenvariante, die dem Nutzer gefällt. Die aktuelle App-Oberfläche ist der tatsächliche Vergleichsstand.
 
 Empfohlene Umsetzung:
 
 - **Bisheriges Threadline-Design:** aktuelle App-Struktur und -Gestaltung.
-- **Editorial-Design:** ArtCraft-inspirierte Typografie, klare Raster und feine Linien; die im Prototyp gelobten abgerundeten Karten fließen als Gestaltungselement ein.
+- **Editorial-Design:** Markante Typografie, klare Raster und feine Linien. Die abgerundeten Karten aus dem Prototyp fließen als Gestaltungselement ein.
 - **Farbschemata:** unabhängig vom Design wählbar. So können beide Layouts mit beiden Paletten betrachtet werden.
 
 Die Kartenvariante aus dem Prototyp wird zunächst nicht als drittes vollständiges Design eingeführt. Falls sie später als eigenständige Oberfläche gewünscht ist, kann die Designauswahl erweitert werden.
@@ -51,7 +51,7 @@ Die Kartenvariante aus dem Prototyp wird zunächst nicht als drittes vollständi
 
 ### 3. Einstellungsmodell erweitern
 
-- Zwei normalisierte Werte ergänzen, zum Beispiel `designMode` (`threadline` oder `editorial`) und `colorScheme` (`threadline` oder `artcraft`).
+- Zwei normalisierte Werte ergänzen, zum Beispiel `designMode` (`threadline` oder `editorial`) und `colorScheme` (`threadline` oder `muted`).
 - Die Werte über den bestehenden Darstellungscontroller auf beide App-Seiten anwenden und früh genug beim Start wiederherstellen, damit kein falsches Farbschema aufblitzt.
 - Speicherung in den Worker-Einstellungen und im lokalen Sofort-Cache konsistent halten.
 - Seitenwechsel-URLs um die beiden Werte ergänzen und die temporären Parameter nach dem Einlesen entfernen.
