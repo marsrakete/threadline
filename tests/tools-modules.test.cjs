@@ -1648,7 +1648,11 @@ test("Thread Explorer snapshot helpers build safe export data", async () => {
   snapshot.drawThreadExplorerSnapshotRoundRect(canvasContext, 0, 0, 20, 10, 4);
   snapshot.strokeThreadExplorerSnapshotRoundRect(canvasContext, 0, 0, 20, 10, 4, "black", 2);
   assert.deepEqual(pathCalls, ["begin", "close", "begin", "close"]);
-  const countCard = { querySelector: () => ({ children: [{ textContent: " 1 Like " }, { textContent: " 2 Replies " }] }) };
+  const countCard = { querySelector: () => ({ children: [
+    { textContent: " 1 Like " },
+    { textContent: " 2 Replies " },
+    { textContent: "364 views", dataset: { threadExplorerLiveOnly: "true" } },
+  ] }) };
   assert.equal(snapshot.getThreadExplorerSnapshotCountsText(countCard), "1 Like   2 Replies");
 
   const edgeCalls = [];
@@ -2538,6 +2542,18 @@ test("account input, mode and own-account actions reset only the selected contex
   const key=f.context.contextKey();f.context.mode({currentTarget:{value:"all"}});assert.notEqual(f.context.contextKey(),key);assert.equal(f.state.actorFocusMode,"all");
   f.context.useOwn();assert.equal(f.state.accountActor,"own.test");assert.equal(f.state.actorFocusActor,null);assert.equal(f.context.foreignAccount(),false);
   f.state.authAccountDid="did:other";assert.notEqual(f.context.contextKey(),key);
+});
+
+test("the own posts shortcut opens the current account in posts mode", async () => {
+  const f = await explorerContextFixture();
+  f.context.open({ did: "did:other", handle: "other.test" });
+  f.calls.length = 0;
+  f.context.loadOwnPosts();
+  assert.deepEqual(f.state.actorFocusActor, { did: "did:own", handle: "own.test", originalOnly: true });
+  assert.equal(f.state.actorFocusMode, "posts");
+  assert.equal(f.elements.account.value, "own.test");
+  assert.deepEqual(f.calls.find(([name]) => name === "loadActor"), ["loadActor", { append: false }]);
+  assert.equal(f.context.foreignAccount(), false);
 });
 
 test("late feed, actor and thread responses cannot mutate a newer context or clear its loading flag",async()=>{

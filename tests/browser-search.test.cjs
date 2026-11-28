@@ -1185,12 +1185,18 @@ for (const pathname of ["/", "/tools.html"]) {
       const disabledWhileLoading=select.disabled;
       pending[0].resolve({feeds:[{uri:"at://one/app.bsky.feed.generator/old",displayName:"Old"}]});await first;
       const ignored=state.feeds.length===0&&state.loading;
-      pending[1].resolve({feeds:[{uri:"at://two/app.bsky.feed.generator/new",displayName:"<b>Literal feed</b>"}]});await second;
+      pending[1].resolve({feeds:[
+        {uri:"at://two/app.bsky.feed.generator/new",displayName:"<b>Literal feed</b>"},
+        {uri:"at://two/app.bsky.feed.generator/missing",displayName:""},
+        {uri:"at://two/app.bsky.feed.generator/raw",displayName:"at://two/app.bsky.feed.generator/raw"},
+        {uri:"at://two/app.bsky.feed.generator/short",displayName:"at:"},
+        {uri:"at://two/app.bsky.feed.generator/named-at",displayName:"AT: Kultur"},
+      ]});await second;
       await controller.load();
       return {disabledWhileLoading,ignored,labels:Array.from(select.options,option=>option.textContent),disabled:select.disabled,
         account:state.accountDid,pending:pending.length,markup:select.querySelectorAll("b").length,type:pending[1].type,timeout:pending[1].options.timeoutMs};
     });
-    expect(result).toEqual({disabledWhileLoading:true,ignored:true,labels:["Choose feed","<b>Literal feed</b>"],disabled:false,account:"two",pending:2,markup:0,
+    expect(result).toEqual({disabledWhileLoading:true,ignored:true,labels:["Choose feed","<b>Literal feed</b>","AT: Kultur"],disabled:false,account:"two",pending:2,markup:0,
       type:"LOAD_THREAD_EXPLORER_FEED_SOURCES",timeout:60000});expect(errors).toEqual([]);
   });
   test(`explorer focus centers rendered cards and synchronizes viewport state from ${pathname}`,async({page})=>{

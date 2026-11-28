@@ -200,7 +200,11 @@ globalThis.createThreadlineAccountService = function createThreadlineAccountServ
   async function verifySession() {
     try {
       const auth = await ensureSession();
+      if (auth?.oauthRequest && !auth.avatar && options.backfillOAuthAvatar) {
+        await options.backfillOAuthAvatar(auth).catch(() => {});
+      }
       const state = await readStoredAuth();
+      if (state.activeDid !== auth?.did) { return buildAuthResponse(state); }
       return buildAuthResponse(state, auth);
     } catch (error) {
       const state = await readStoredAuth().catch(() => ({ activeDid: "", accounts: [] }));

@@ -5,7 +5,7 @@
   "method": "AST inventory of every top-level named function, not a function-length filter. Category is structural evidence, not a completion verdict. Shared-state reads/writes include nested callbacks; property mutation requires the manual review described in MODULARIZATION-AUDIT.md.",
   "files": {
     "app.js": {
-      "sourceSha256": "4bc898d92c52e44937f5b2a5213012c66835f7788d9f18ca19e6cf5d0997ba08",
+      "sourceSha256": "66282fa36d1e9fe687ab70707492d9d808dbad2fd3d16e951a20a2d6fcd60d95",
       "functionCount": 661,
       "unresolvedBindings": [],
       "domains": {
@@ -773,7 +773,8 @@
           "domain": "core",
           "category": "behavior",
           "stateReads": [
-            "currentWorkspace"
+            "currentWorkspace",
+            "historyDialog"
           ],
           "stateWrites": [
             "authAccount",
@@ -2295,6 +2296,7 @@
             "threadExplorerAccountMode",
             "threadExplorerAccountModeField",
             "threadExplorerAccountModeSelect",
+            "threadExplorerActorFocusLoading",
             "threadExplorerCollapseButton",
             "threadExplorerExpandButton",
             "threadExplorerFavoritesButton",
@@ -2304,6 +2306,7 @@
             "threadExplorerFullscreen",
             "threadExplorerFullscreenButton",
             "threadExplorerFullscreenCloseButton",
+            "threadExplorerLoadOwnPostsButton",
             "threadExplorerLoadingFeed",
             "threadExplorerLoadingThread",
             "threadExplorerOrientationButton",
@@ -2674,6 +2677,7 @@
           "domain": "explorer",
           "category": "adapter",
           "stateReads": [
+            "authAccountDid",
             "renderThreadExplorerEditButton",
             "renderThreadExplorerInteractionActions",
             "renderThreadExplorerMetricEntries",
@@ -5953,6 +5957,7 @@
           "domain": "composer",
           "category": "adapter",
           "stateReads": [
+            "authAccountDid",
             "historyButton",
             "historyDialog",
             "historyList",
@@ -6335,7 +6340,8 @@
           "domain": "core",
           "category": "behavior",
           "stateReads": [
-            "authAccountDid"
+            "authAccountDid",
+            "historyDialog"
           ],
           "stateWrites": [
             "accountStorageUnreadable",
@@ -6414,7 +6420,7 @@
       ]
     },
     "sw.js": {
-      "sourceSha256": "fca26c714ce5efd656562cd01535bccb75d577f339593ae9fccfbd7d6b8fc7c3",
+      "sourceSha256": "1fa48d48cf91363a696ff1e3964ea7bdc6d9917d3f4aea4f231308f4a76e89ca",
       "functionCount": 112,
       "unresolvedBindings": [],
       "domains": {

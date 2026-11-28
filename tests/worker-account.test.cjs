@@ -27,6 +27,25 @@ test("switch and verify preserve failure precedence without exposing credentials
   for(const method of ["switch","verify"]){const result=await f.service[method]({did:"a"});assert.equal(result.reason,reason);assert.equal(result.authenticated,false);assert.equal(JSON.stringify(result).includes("secret"),false);}
  }
 });
+test("OAuth verification keeps the session when optional avatar loading fails", async () => {
+  const f = fixture();
+  const account = f.data.state.accounts[0];
+  Object.assign(account, { authMethod: "oauth", oauth: { did: "a" }, oauthRequest: { oauthDid: "a" } });
+  let avatarReads = 0;
+  const service = f.factory({ ...f.options, async backfillOAuthAvatar(verified) {
+    assert.equal(verified.did, "a");
+    avatarReads += 1;
+    throw new Error("profile unavailable");
+  } });
+  const result = await service.verify();
+  assert.equal(result.authenticated, true);
+  assert.equal(result.accounts[0].hasStoredPassword, true);
+  assert.equal(avatarReads, 1);
+  account.avatar = "https://cdn.example/already-stored";
+  await service.verify();
+  assert.equal(avatarReads, 1);
+});
+
 test("metadata import ignores malformed lists and never imports credentials",async()=>{
  const f=fixture();await f.service.import({accounts:null});assert.equal(f.data.state.accounts.length,2);
  await f.service.import({accounts:[null,{}, {did:"c",handle:"c.test",appPassword:"ignored",session:{did:"c"}}]});

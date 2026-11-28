@@ -1,6 +1,6 @@
 /** Creates authenticated Explorer source/feed/actor/thread loading and URL resolution.
  * @param {object} options - Session/refresh, request/base, handle/URL/graph/error adapters and feed/post models.
- * @returns {object} Frozen sources/actorFeed/feed/resolve/thread API.
+ * @returns {object} Frozen sources, feed, thread and own post views operations.
  */
 globalThis.createThreadlineExplorerLoadService = function createThreadlineExplorerLoadService(options) {
   for (const name of ["session", "refresh", "request", "base", "resolve", "parseSource", "graphPage", "error"]) {
@@ -43,6 +43,66 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
   }
 
   /**
+   * Retrieves post views through the active account's AppView session.
+   * @param {object} auth - Active account auth reference.
+   * @param {string[]} uris - At most 25 post URIs.
+   * @returns {Promise<object[]>} Post views returned by Bluesky.
+   */
+  async function fetchExplorerPostViews(auth, uris) {
+    const response = await bskyGet("app.bsky.feed.getPosts", { uris }, {
+      headers: { authorization: `Bearer ${auth.session.accessJwt}` },
+      ...auth.oauthRequest, base: authXrpcBase(auth),
+    });
+    if (Array.isArray(response?.posts)) {
+      return response.posts;
+    }
+    return [];
+  }
+
+  /**
+   * Looks up private counts for references belonging to the active account.
+   * @param {object} input - Rendered account DID and recorded AT URIs or legacy post links.
+   * @returns {Promise<object>} Account DID and counts indexed by original reference.
+   */
+  async function loadOwnPostViews({ accountDid, sources } = {}) {
+    const counts = [];
+    if (!accountDid || !Array.isArray(sources) || !sources.length) { return { accountDid, counts }; }
+    const auth = await ensureSession();
+    if (auth.did !== accountDid) { return { accountDid: auth.did, counts }; }
+    const activeAuth = await refreshAuthReference(auth);
+    const handle = (activeAuth.session?.handle || activeAuth.handle || "").toLowerCase();
+    const sourcesByUri = new Map();
+    for (const source of new Set(sources)) {
+      if (typeof source !== "string") { continue; }
+      let parsed;
+      try {
+        parsed = parseArchiveThreadSource(source);
+      } catch {
+        continue;
+      }
+      if (parsed.actor !== accountDid && (!handle || parsed.actor.toLowerCase() !== handle)) { continue; }
+      if (!/^[A-Za-z0-9._~:-]{1,512}$/.test(parsed.rkey) || parsed.rkey === "." || parsed.rkey === "..") { continue; }
+      const uri = `at://${accountDid}/app.bsky.feed.post/${parsed.rkey}`;
+      const references = sourcesByUri.get(uri) || [];
+      references.push(source);
+      sourcesByUri.set(uri, references);
+    }
+    const uris = [...sourcesByUri.keys()];
+    for (let index = 0; index < uris.length; index += 25) {
+      const batch = uris.slice(index, index + 25);
+      const posts = await fetchExplorerPostViews(activeAuth, batch);
+      for (const post of posts) {
+        if (!batch.includes(post?.uri) || post.author?.did !== accountDid
+          || !Number.isSafeInteger(post.viewCount) || post.viewCount < 0) { continue; }
+        for (const source of sourcesByUri.get(post.uri)) {
+          counts.push({ source, count: post.viewCount });
+        }
+      }
+    }
+    return { accountDid, counts };
+  }
+
+  /**
    * Keeps only feed items whose post URI is still resolvable through getPosts.
    * @param {object} auth - Active account auth reference.
    * @param {object[]} items - Normalized feed items from getTimeline.
@@ -64,24 +124,14 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
 
     for (let index = 0; index < uris.length; index += 25) {
       const batch = uris.slice(index, index + 25);
-      const response = await bskyGet("app.bsky.feed.getPosts", {
-        uris: batch,
-      }, {
-        headers: {
-          authorization: `Bearer ${auth.session.accessJwt}`,
-        },
-        ...auth.oauthRequest, base: authXrpcBase(auth),
-      });
-
+      const posts = await fetchExplorerPostViews(auth, batch);
       const existingUris = new Set();
-      if (Array.isArray(response?.posts)) {
-        response.posts.forEach((post) => {
-          const uri = String(post?.uri || "").trim();
-          if (uri) {
-            existingUris.add(uri);
-          }
-        });
-      }
+      posts.forEach((post) => {
+        const uri = String(post?.uri || "").trim();
+        if (uri) {
+          existingUris.add(uri);
+        }
+      });
 
       items.forEach((item) => {
         const uri = String(item?.post?.uri || "").trim();
@@ -253,7 +303,7 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
 
   /**
    * Loads posts and replies from one account for the Thread Explorer Actor-Fokus.
-   * @param {object} payload - Actor, mode, cursor and limit from the UI.
+   * @param {object} payload - Actor, mode, cursor, limit and optional authored-only filter.
    * @returns {Promise<object>} Actor feed items and next cursor.
    */
   async function loadThreadExplorerActorFeed(payload = {}) {
@@ -305,6 +355,10 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
       for (const entry of feed) {
         const post = normalizeThreadExplorerPost(entry?.post || {});
         if (!post) {
+          continue;
+        }
+        if (payload.originalOnly === true && (post.author.did !== actor
+          || entry?.reason?.$type === "app.bsky.feed.defs#reasonRepost")) {
           continue;
         }
         if (!isThreadExplorerActorFeedPostMatch(post, mode)) {
@@ -482,13 +536,13 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
     const auth = await ensureSession();
     const activeAuth = await refreshAuthReference(auth);
     const selectedResponse = await fetchThreadExplorerThreadView(activeAuth, uri, 100);
-    let root = normalizeThreadExplorerThreadRoot(selectedResponse?.thread || {});
+    let root = normalizeThreadExplorerThreadRoot(selectedResponse?.thread || {}, activeAuth.did);
     const rootUri = String(root?.post?.uri || "").trim();
     const rootIsDeletedAnchor = root?.post?.isDeletedThreadAnchor === true;
 
     if (rootUri && rootUri !== uri && !rootIsDeletedAnchor) {
       const rootResponse = await fetchThreadExplorerThreadView(activeAuth, rootUri, 0);
-      const fullRoot = normalizeThreadExplorerThreadRoot(rootResponse?.thread || {});
+      const fullRoot = normalizeThreadExplorerThreadRoot(rootResponse?.thread || {}, activeAuth.did);
       if (fullRoot) {
         root = mergeThreadExplorerSelectedPath(fullRoot, root, uri);
       }
@@ -501,5 +555,5 @@ globalThis.createThreadlineExplorerLoadService = function createThreadlineExplor
     };
   }
 
-  return Object.freeze({ sources: loadThreadExplorerFeedSources, actorFeed: loadThreadExplorerActorFeed, feed: loadThreadExplorerFeed, resolve: resolveThreadExplorerPostUrl, thread: loadThreadExplorerThread });
+  return Object.freeze({ sources: loadThreadExplorerFeedSources, actorFeed: loadThreadExplorerActorFeed, feed: loadThreadExplorerFeed, resolve: resolveThreadExplorerPostUrl, thread: loadThreadExplorerThread, ownPostViews: loadOwnPostViews });
 };

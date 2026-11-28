@@ -443,7 +443,9 @@ function searchMentionActors(payload) { return getWorkerRichTextService().search
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()),
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(
+      APP_SHELL.map((path) => new Request(new URL(path, self.location.href), { cache: "reload" })),
+    )).then(() => self.skipWaiting()),
   );
 });
 
@@ -509,7 +511,8 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseCopy));
           return networkResponse;
         })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./version.js"))),
+        .catch(() => caches.match(event.request, { cacheName: CACHE_NAME }).then((cached) =>
+          cached || caches.match("./version.js", { cacheName: CACHE_NAME }))),
     );
     return;
   }
@@ -522,13 +525,14 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseCopy));
           return networkResponse;
         })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./README.md"))),
+        .catch(() => caches.match(event.request, { cacheName: CACHE_NAME }).then((cached) =>
+          cached || caches.match("./README.md", { cacheName: CACHE_NAME }))),
     );
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
+    caches.match(event.request, { cacheName: CACHE_NAME }).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }
@@ -669,6 +673,8 @@ async function handleMessage(message, port) {
       return resolveThreadExplorerPostUrl(message.payload);
     case "LOAD_THREAD_EXPLORER_THREAD":
       return loadThreadExplorerThread(message.payload);
+    case "LOAD_OWN_POST_VIEWS":
+      return getWorkerExplorerLoadService().ownPostViews(message.payload);
     case "HYDRATE_THREAD_EXPLORER_AVATARS":
       return hydrateThreadExplorerAvatars(message.payload, (progress) => port.postMessage({ progress }));
     case "HYDRATE_THREAD_EXPLORER_MEDIA":
@@ -1100,6 +1106,7 @@ function getWorkerAccountService() {
       readAuth: readStoredAuth, writeAuth: writeStoredAuth, clearAuth: clearStoredAuth, ensure: ensureSession,
       upsert: upsertAccount, response: buildAuthResponse, publicMeta: getAccountPublicMeta, webBase: resolvePostWebBase,
       hasSession: workerAuthModels.hasSession, revokeOAuth: (did) => getWorkerOAuth().revoke(did),
+      backfillOAuthAvatar: backfillOAuthAccountAvatar,
       updateAuth: updateStoredAuth,
       clearArchiveSession, clearArchiveCatalog, now: () => new Date().toISOString(),
       defaultService: DEFAULT_LOGIN_SERVICE, messages: globalThis.ThreadlineAdapterMessages,

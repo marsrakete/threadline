@@ -967,7 +967,7 @@ export function drawThreadExplorerSnapshotTextBlock(context, lines, x, y, lineHe
 }
 
 /**
- * Extracts visible engagement counts into a compact snapshot text line.
+ * Extracts exportable engagement counts into a compact snapshot text line.
  * @param {HTMLElement|null} card - Rendered post card.
  * @returns {string} Count labels joined with explicit spaces.
  */
@@ -981,6 +981,9 @@ export function getThreadExplorerSnapshotCountsText(card = null) {
   }
   const parts = [];
   Array.from(container.children).forEach((child) => {
+    if (child.dataset?.threadExplorerLiveOnly === "true") {
+      return;
+    }
     const text = String(child.textContent || "").replace(/\s+/g, " ").trim();
     if (text) {
       parts.push(text);
@@ -1567,6 +1570,7 @@ export async function renderThreadExplorerForeignObjectSnapshot(options = {}) {
   throwIfThreadExplorerSnapshotAborted(signal);
   await onProgress({ percent: 62, step: text("threadExplorerSnapshotProgressRenderSvg"), detail: text("threadExplorerSnapshotProgressClone") });
   const clone = stage.cloneNode(true);
+  clone.querySelectorAll('[data-thread-explorer-live-only="true"]').forEach((element) => element.remove());
   clone.style.setProperty("--thread-explorer-zoom", "1");
   clone.style.setProperty("--thread-explorer-pan-x", "0px");
   clone.style.setProperty("--thread-explorer-pan-y", "0px");

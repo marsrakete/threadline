@@ -12,12 +12,17 @@ export function buildComposerHistoryEntry(result, segments, options) {
   if (!url) {
     return null;
   }
-  return {
+  const entry = {
     id: options.createId(), url, createdAt: options.now(), account: account || options.account || "", service,
     firstSegmentText: options.preview(segments[0]?.text || ""),
     threadCount: result.posts?.length || segments.length || 1,
     imageCount: segments.reduce((total, segment) => total + (segment.images?.length || 0), 0),
   };
+  if (Array.isArray(result.posts)) {
+    const postUris = result.posts.map((post) => String(post?.uri || ""));
+    if (postUris.some((uri) => uri.startsWith("at://"))) { entry.postUris = postUris; }
+  }
+  return entry;
 }
 
 /**
@@ -97,10 +102,11 @@ export function createComposerHistoryItemActions(entry, elements, actions) {
  * Renders saved publications from reusable templates and wires their item actions.
  * @param {Array<object>} entries - Normalized history entries.
  * @param {object} elements - List, history button, item template and empty-state template.
- * @param {object} options - Translator, metadata/date formatters and item action factory.
+ * @param {object} options - Translator, formatters, item actions and optional live view-count adapters.
  * @returns {void}
  */
 export function renderComposerHistoryList(entries, elements, options) {
+  const viewRows = [];
   elements.list.replaceChildren();
   if (entries.length === 0) {
     const fragment = elements.emptyTemplate.content.cloneNode(true);
@@ -127,6 +133,8 @@ export function renderComposerHistoryList(entries, elements, options) {
       item.querySelector(".history-account").textContent = options.translate("historyAccountMeta", {
         account: entry.account || options.translate("historyUnknownAccount"),
       });
+      const viewList = item.querySelector(".history-views");
+      if (viewList) { viewRows.push({ entry, viewList }); }
       const link = item.querySelector("a.history-link");
       link.href = entry.url;
       link.textContent = options.translate("historyOpenLink");
@@ -140,6 +148,51 @@ export function renderComposerHistoryList(entries, elements, options) {
     }
   }
   elements.button.disabled = entries.length === 0;
+  if (options.views) {
+    void loadComposerHistoryViews(viewRows, options.views);
+  }
+}
+
+/**
+ * Loads live view counts for the current account and updates only the still-open history rows.
+ * @param {Array<object>} rows - Rendered history entries and their view count containers.
+ * @param {object} options - Dialog, account, request, template and translation adapters.
+ * @returns {Promise<void>} Completion after optional view counts are rendered.
+ */
+async function loadComposerHistoryViews(rows, options) {
+  const accountDid = options.getAccount();
+  if (!options.dialog.open || !accountDid || !rows.length) { return; }
+  const targets = rows.map(({ entry, viewList }) => {
+    let sources = [entry.url];
+    if (entry.postUris?.length) { sources = entry.postUris; }
+    return { viewList, sources, isThread: entry.threadCount > 1 };
+  });
+  const sources = [...new Set(targets.flatMap((target) => target.sources).filter(Boolean))];
+  let result;
+  try {
+    result = await options.request("LOAD_OWN_POST_VIEWS", { accountDid, sources });
+  } catch {
+    // Private metrics are optional. The history and its links remain usable.
+    return;
+  }
+  if (result?.accountDid !== accountDid || !Array.isArray(result.counts)
+    || options.getAccount() !== accountDid || !options.dialog.open) { return; }
+  const counts = new Map(result.counts.map(({ source, count }) => [source, count]));
+  for (const target of targets) {
+    if (!target.viewList.isConnected) { continue; }
+    target.sources.forEach((source, index) => {
+      const count = counts.get(source);
+      if (!Number.isSafeInteger(count) || count < 0) { return; }
+      const fragment = options.template.content.cloneNode(true);
+      let key = "threadExplorerCountViews";
+      if (target.isThread) { key = "historyThreadPostViews"; }
+      fragment.firstElementChild.textContent = options.translate(key, {
+        index: options.formatCount(index + 1), count: options.formatCount(count),
+      });
+      target.viewList.appendChild(fragment);
+      target.viewList.hidden = false;
+    });
+  }
 }
 
 /**
@@ -187,7 +240,7 @@ export function normalizeComposerPostingHistory(entries, maxEntries) {
     if (typeof entry?.firstSegmentText === "string") {
       firstSegmentText = entry.firstSegmentText.trim();
     }
-    result.push({
+    const normalized = {
       id,
       url,
       createdAt,
@@ -196,7 +249,14 @@ export function normalizeComposerPostingHistory(entries, maxEntries) {
       firstSegmentText,
       threadCount: Math.max(1, Number(entry?.threadCount) || 1),
       imageCount: Math.max(0, Number(entry?.imageCount) || 0),
-    });
+    };
+    if (Array.isArray(entry.postUris) && entry.postUris.length) {
+      normalized.postUris = entry.postUris.map((uri) => {
+        if (typeof uri === "string") { return uri.trim(); }
+        return "";
+      });
+    }
+    result.push(normalized);
   }
 
   return result
